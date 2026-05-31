@@ -1004,7 +1004,14 @@ function startClock(taskInfo) {
 function clockOut() {
   if (!clockState || !clockState.running) return;
   const endMs = Date.now();
-  const durationHours = (endMs - clockState.startMs) / 3600000;
+  // If still on break, close it out
+  let breakTotal = clockState.breakTotal || 0;
+  if (clockState.onBreak && clockState.breakStartMs) {
+    breakTotal += endMs - clockState.breakStartMs;
+  }
+  const breakHours = breakTotal / 3600000;
+  const totalHours = (endMs - clockState.startMs) / 3600000;
+  const durationHours = Math.max(0, totalHours - breakHours);
   const entry = {
     id: clockState.tempId,
     date: clockState.date,
@@ -1018,7 +1025,7 @@ function clockOut() {
     clockIn: clockState.startTime,
     clockOut: new Date().toTimeString().slice(0,5),
     durationHours: parseFloat(durationHours.toFixed(2)),
-    break: 0,
+    break: parseFloat(breakHours.toFixed(2)),
     synced: false,
     createdAt: new Date().toISOString(),
   };
@@ -1027,7 +1034,8 @@ function clockOut() {
   clockState = null;
   localStorage.removeItem('kr_clock');
   renderClockState();
-  showToast('Clocked out — ' + entry.durationHours + 'h logged');
+  const breakStr = entry.break > 0 ? ` (${(entry.break * 60).toFixed(0)}min break)` : '';
+  showToast('Clocked out — ' + entry.durationHours + 'h logged' + breakStr);
 }
 
 function renderClockState() {
@@ -1160,6 +1168,7 @@ function renderTimesheets() {
       </div>
       <div class="ts-entry-tag" style="margin-top:4px">${tag}</div>
       ${e.tool ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${e.tool}</div>` : ''}
+      ${e.break > 0 ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☕ ${(e.break * 60).toFixed(0)}min break</div>` : ''}
       ${e.notes ? `<div class="ts-entry-note">${e.notes}</div>` : ''}
     </div>`;
   }).join('');
