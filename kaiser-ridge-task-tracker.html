@@ -1,0 +1,1480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>Kaiser Ridge Task Tracker</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  :root {
+    --blue: #007AFF;
+    --green: #34C759;
+    --red: #FF3B30;
+    --bg: #F2F2F7;
+    --card: #FFFFFF;
+    --text: #1C1C1E;
+    --subtext: #8E8E93;
+    --border: #E5E5EA;
+    --nav-height: 72px;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    max-width: 430px;
+    margin: 0 auto;
+    min-height: 100vh;
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  /* ── SCREENS ── */
+  .screen { display: none; flex-direction: column; height: 100vh; height: 100dvh; padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom)); }
+  .screen.active { display: flex; }
+
+  /* ── HEADER ── */
+  .header {
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 20px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .header-title { font-size: 17px; font-weight: 600; }
+  .header-sub { font-size: 13px; color: var(--subtext); }
+  .header-right { font-size: 13px; color: var(--blue); font-weight: 500; }
+
+  /* ── CLOCK SCREEN ── */
+  .clock-summary {
+    background: var(--card);
+    margin: 12px 16px 0;
+    border-radius: 14px;
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    gap: 0;
+    border: 1px solid var(--border);
+  }
+  .clock-summary-item {
+    flex: 1;
+    text-align: center;
+  }
+  .clock-summary-item + .clock-summary-item {
+    border-left: 1px solid var(--border);
+  }
+  .clock-summary-value { font-size: 28px; font-weight: 300; color: var(--subtext); }
+  .clock-summary-value.active-timer { font-size: 28px; font-weight: 300; color: var(--text); }
+  .clock-summary-label { font-size: 12px; color: var(--subtext); margin-top: 2px; }
+
+  .clock-display-area {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .clock-big-timer {
+    font-size: 80px;
+    font-weight: 200;
+    letter-spacing: -2px;
+    color: var(--subtext);
+  }
+  .clock-big-timer.running { color: #ffffff; }
+
+  /* ── RUNNING STATE (dark overlay) ── */
+  .clock-running-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: #000;
+    z-index: 40;
+    flex-direction: column;
+    padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom));
+  }
+  .clock-running-overlay.active { display: flex; }
+
+  .running-top-bar {
+    padding: 16px 20px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #222;
+  }
+  .running-period { font-size: 13px; color: #666; }
+  .running-hours { font-size: 13px; color: #666; }
+
+  .running-meta {
+    padding: 12px 20px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .running-add-note {
+    display: flex; align-items: center; gap: 6px;
+    color: var(--blue); font-size: 15px; font-weight: 500;
+    background: none; border: none; cursor: pointer;
+  }
+  .running-tag-btn {
+    display: flex; align-items: center; gap: 6px;
+    color: var(--blue); font-size: 15px; font-weight: 500;
+    background: none; border: none; cursor: pointer;
+  }
+
+  .running-timer-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+  }
+  .running-big-timer {
+    font-size: 88px;
+    font-weight: 200;
+    letter-spacing: -3px;
+    color: white;
+    font-variant-numeric: tabular-nums;
+  }
+  .running-clocked-in {
+    font-size: 15px;
+    color: #666;
+  }
+  .running-clocked-in span {
+    color: var(--blue);
+    cursor: pointer;
+    margin-left: 8px;
+  }
+  .running-task-info {
+    font-size: 14px;
+    color: #888;
+    text-align: center;
+    padding: 0 30px;
+  }
+
+  .running-buttons {
+    padding: 0 20px 24px;
+    display: flex;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .btn-break {
+    flex: 1;
+    height: 56px;
+    border-radius: 28px;
+    border: none;
+    background: var(--blue);
+    color: white;
+    font-size: 17px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-break.on-break {
+    background: #333;
+    color: #aaa;
+  }
+
+  .clock-buttons {
+    padding: 0 20px 24px;
+    display: flex;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .btn-create {
+    flex: 1;
+    height: 56px;
+    border-radius: 28px;
+    border: none;
+    background: #E5E5EA;
+    color: var(--text);
+    font-size: 18px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-clock-in {
+    flex: 1.6;
+    height: 56px;
+    border-radius: 28px;
+    border: none;
+    background: var(--green);
+    color: white;
+    font-size: 18px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-clock-out {
+    flex: 1.6;
+    height: 56px;
+    border-radius: 28px;
+    border: none;
+    background: var(--red);
+    color: white;
+    font-size: 18px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  /* ── ACTIVE TASK CARD ── */
+  .active-task-card {
+    background: var(--card);
+    margin: 12px 16px 0;
+    border-radius: 14px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+  }
+  .active-task-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+  .active-task-tag {
+    display: inline-block;
+    background: var(--blue);
+    color: white;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 10px;
+    margin-bottom: 6px;
+  }
+  .active-task-name { font-size: 15px; font-weight: 500; line-height: 1.4; flex: 1; }
+  .active-task-edit {
+    background: none;
+    border: none;
+    color: var(--blue);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    padding: 2px 0;
+  }
+  .active-task-times { font-size: 13px; color: var(--subtext); margin-top: 6px; }
+  .active-task-note { font-size: 13px; color: var(--subtext); margin-top: 4px; font-style: italic; }
+
+  /* ── TIMESHEETS SCREEN ── */
+  .ts-summary {
+    background: var(--card);
+    margin: 12px 16px 0;
+    border-radius: 14px;
+    padding: 16px 20px;
+    border: 1px solid var(--border);
+  }
+  .ts-summary-top { display: flex; justify-content: space-between; align-items: center; }
+  .ts-summary-amount { font-size: 28px; font-weight: 600; }
+  .ts-summary-hours { font-size: 22px; font-weight: 600; color: var(--subtext); }
+  .ts-period { font-size: 13px; color: var(--subtext); margin-bottom: 8px; }
+
+  .ts-section-header {
+    padding: 16px 20px 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--subtext);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .ts-entry {
+    background: var(--card);
+    margin: 0 16px 8px;
+    border-radius: 14px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .ts-entry-row { display: flex; justify-content: space-between; align-items: flex-start; }
+  .ts-entry-date { font-size: 15px; font-weight: 600; }
+  .ts-entry-hours { font-size: 15px; font-weight: 600; }
+  .ts-entry-time { font-size: 13px; color: var(--subtext); }
+  .ts-entry-tag {
+    display: inline-block;
+    color: var(--blue);
+    font-size: 13px;
+    font-weight: 500;
+    margin-top: 2px;
+  }
+  .ts-entry-note { font-size: 13px; color: var(--subtext); margin-top: 4px; font-style: italic; }
+
+  .ts-filter-row {
+    padding: 8px 16px;
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .ts-filter-row::-webkit-scrollbar { display: none; }
+  .filter-chip {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+    color: var(--text);
+  }
+  .filter-chip.active {
+    background: var(--blue);
+    border-color: var(--blue);
+    color: white;
+  }
+
+  /* ── MODAL / SHEET ── */
+  .modal-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 100;
+    align-items: flex-end;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal-sheet {
+    background: var(--bg);
+    width: 100%;
+    max-width: 430px;
+    margin: 0 auto;
+    border-radius: 20px 20px 0 0;
+    padding: 16px 0 40px;
+    max-height: 92vh;
+    overflow-y: auto;
+    animation: slideUp 0.28s ease;
+  }
+  @keyframes slideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+  .modal-handle {
+    width: 36px; height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    margin: 0 auto 16px;
+  }
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal-title { font-size: 17px; font-weight: 600; }
+  .modal-cancel { font-size: 17px; color: var(--blue); cursor: pointer; background: none; border: none; }
+  .modal-save { font-size: 17px; color: var(--blue); font-weight: 600; cursor: pointer; background: none; border: none; }
+
+  .form-section {
+    background: var(--card);
+    margin: 16px 16px 0;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .form-row {
+    display: flex;
+    align-items: center;
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--border);
+    gap: 12px;
+  }
+  .form-row:last-child { border-bottom: none; }
+  .form-label { font-size: 15px; font-weight: 500; min-width: 80px; }
+  .form-select, .form-input {
+    flex: 1;
+    font-size: 15px;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--text);
+    text-align: right;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+  .form-select { cursor: pointer; }
+  .form-select option { text-align: left; }
+  .form-chevron { font-size: 12px; color: var(--subtext); }
+
+  .form-textarea {
+    width: 100%;
+    padding: 13px 16px;
+    font-size: 15px;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--text);
+    resize: none;
+    min-height: 100px;
+    font-family: inherit;
+  }
+
+  .time-row-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+  }
+  .time-row-pair .form-row { border-bottom: none; }
+  .time-row-pair .form-row:first-child { border-right: 1px solid var(--border); }
+  .time-input {
+    font-size: 15px;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--text);
+    text-align: right;
+    width: 100%;
+  }
+
+  /* ── BOTTOM NAV ── */
+  .bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+    max-width: 430px;
+    height: calc(var(--nav-height) + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    background: rgba(255,255,255,0.95);
+    backdrop-filter: blur(10px);
+    border-top: 1px solid var(--border);
+    display: flex;
+    z-index: 50;
+  }
+  .nav-tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    cursor: pointer;
+    background: none;
+    border: none;
+    color: var(--subtext);
+    font-size: 10px;
+    font-weight: 500;
+    padding-bottom: 8px;
+  }
+  .nav-tab.active { color: var(--blue); }
+  .nav-icon { font-size: 22px; line-height: 1; }
+
+  /* ── SETTINGS / SYNC SCREEN ── */
+  .settings-section {
+    background: var(--card);
+    margin: 16px 16px 0;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .settings-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    gap: 10px;
+  }
+  .settings-row:last-child { border-bottom: none; }
+  .settings-label { font-size: 15px; flex: 1; }
+  .settings-value { font-size: 15px; color: var(--subtext); }
+  .settings-input {
+    flex: 2;
+    font-size: 14px;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--text);
+    text-align: right;
+  }
+  .btn-sync {
+    width: calc(100% - 32px);
+    margin: 16px 16px 0;
+    height: 50px;
+    border-radius: 14px;
+    border: none;
+    background: var(--blue);
+    color: white;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-danger {
+    background: var(--red);
+    width: calc(100% - 32px);
+    margin: 10px 16px 0;
+    height: 50px;
+    border-radius: 14px;
+    border: none;
+    color: white;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .settings-note {
+    padding: 10px 20px;
+    font-size: 12px;
+    color: var(--subtext);
+    line-height: 1.5;
+  }
+
+  /* ── TOAST ── */
+  .toast {
+    position: fixed;
+    bottom: calc(var(--nav-height) + 12px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.8);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 20px;
+    font-size: 14px;
+    z-index: 200;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .toast.show { opacity: 1; }
+
+  .empty-state {
+    text-align: center;
+    padding: 48px 20px;
+    color: var(--subtext);
+    font-size: 15px;
+  }
+  .empty-icon { font-size: 40px; margin-bottom: 12px; }
+
+  /* Weekly hours bar */
+  .hours-bar-wrap { padding: 8px 0 4px; }
+  .hours-bar-track { height: 4px; background: var(--border); border-radius: 2px; margin: 0 20px; overflow: hidden; }
+  .hours-bar-fill { height: 100%; background: var(--blue); border-radius: 2px; transition: width 0.3s; }
+
+  .scroll-area { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+</style>
+</head>
+<body>
+
+<!-- ══════════════ CLOCK SCREEN ══════════════ -->
+<div class="screen active" id="screen-clock">
+  <div class="header">
+    <div>
+      <div class="header-title">Kaiser Ridge</div>
+      <div class="header-sub" id="header-date"></div>
+    </div>
+    <div class="header-right" id="header-week-hours">0.00h this week</div>
+  </div>
+
+  <div class="scroll-area">
+    <!-- Summary bar -->
+    <div class="clock-summary">
+      <div class="clock-summary-item">
+        <div class="clock-summary-value" id="sum-daily">0.00h</div>
+        <div class="clock-summary-label">Daily</div>
+      </div>
+      <div class="clock-summary-item">
+        <div class="clock-summary-value" id="sum-weekly">0.00h</div>
+        <div class="clock-summary-label">Weekly</div>
+      </div>
+      <div class="clock-summary-item">
+        <div class="clock-summary-value" id="sum-monthly">0.00h</div>
+        <div class="clock-summary-label">Monthly</div>
+      </div>
+    </div>
+
+    <!-- Active task (hidden when none) -->
+    <div class="active-task-card" id="active-task-card" style="display:none">
+      <div class="active-task-row">
+        <div>
+          <div class="active-task-tag" id="at-tag"></div>
+          <div class="active-task-name" id="at-name"></div>
+        </div>
+        <button class="active-task-edit" onclick="openEditActive()">Edit</button>
+      </div>
+      <div class="active-task-times" id="at-times"></div>
+      <div class="active-task-note" id="at-tool" style="color:var(--subtext);font-size:13px;margin-top:2px;"></div>
+      <div class="active-task-note" id="at-note"></div>
+    </div>
+
+    <!-- Big timer -->
+    <div class="clock-display-area">
+      <div class="clock-big-timer" id="big-timer">0:00</div>
+    </div>
+  </div>
+
+  <!-- Buttons -->
+  <div class="clock-buttons">
+    <button class="btn-create" onclick="openCreate()">Create</button>
+    <button class="btn-clock-in" id="btn-main" onclick="handleMainBtn()">Clock In</button>
+  </div>
+</div>
+
+<!-- ══════════════ TIMESHEETS SCREEN ══════════════ -->
+<div class="screen" id="screen-timesheets">
+  <div class="header">
+    <div>
+      <div class="header-title">Timesheets</div>
+    </div>
+    <div class="header-right" id="ts-header-period"></div>
+  </div>
+
+  <div class="scroll-area">
+    <div class="ts-summary">
+      <div class="ts-period" id="ts-period-label">This pay period</div>
+      <div class="ts-summary-top">
+        <div class="ts-summary-amount" id="ts-total-hours">0.00h</div>
+      </div>
+      <div class="hours-bar-wrap">
+        <div class="hours-bar-track"><div class="hours-bar-fill" id="ts-bar" style="width:0%"></div></div>
+      </div>
+    </div>
+
+    <div class="ts-filter-row">
+      <div class="filter-chip active" onclick="setFilter('all',this)">All</div>
+      <div class="filter-chip" onclick="setFilter('Property',this)">Property</div>
+      <div class="filter-chip" onclick="setFilter('Kaiser',this)">Kaiser</div>
+      <div class="filter-chip" onclick="setFilter('Heritage',this)">Heritage</div>
+      <div class="filter-chip" onclick="setFilter('Serene',this)">Serene</div>
+      <div class="filter-chip" onclick="setFilter('Shed',this)">Shed</div>
+    </div>
+
+    <div id="ts-list"></div>
+  </div>
+</div>
+
+<!-- ══════════════ SETTINGS SCREEN ══════════════ -->
+<div class="screen" id="screen-settings">
+  <div class="header">
+    <div class="header-title">Settings & Sync</div>
+  </div>
+  <div class="scroll-area">
+    <div class="settings-section">
+      <div class="settings-row">
+        <div class="settings-label">Google Sheet Web App URL</div>
+      </div>
+      <div class="settings-row">
+        <input class="settings-input" id="sheet-url" type="url" placeholder="Paste your Apps Script URL here" />
+      </div>
+    </div>
+    <div class="settings-note">
+      To enable Google Sheets sync, deploy a Google Apps Script as a Web App from your spreadsheet.
+      See the setup guide below. Once deployed, paste the URL above.
+    </div>
+
+    <button class="btn-sync" onclick="syncToSheet()">⬆ Sync Unsynced Entries to Sheet</button>
+
+    <div class="settings-section" style="margin-top:16px">
+      <div class="settings-row">
+        <div class="settings-label">Total entries</div>
+        <div class="settings-value" id="stat-entries">0</div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-label">Unsynced entries</div>
+        <div class="settings-value" id="stat-unsynced">0</div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-label">Total hours logged</div>
+        <div class="settings-value" id="stat-hours">0.00h</div>
+      </div>
+    </div>
+
+    <div class="settings-section" style="margin-top:16px">
+      <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
+        <div class="settings-label" style="font-weight:600;">Google Apps Script Setup</div>
+        <div style="font-size:13px; color:var(--subtext); line-height:1.6;">
+          1. Open your Google Sheet → Extensions → Apps Script<br>
+          2. Delete any existing code and paste the Apps Script from the .txt file saved alongside this app<br>
+          3. Click Deploy → New deployment → Web app<br>
+          4. Set "Who has access" to <strong>Anyone</strong><br>
+          5. Copy the Web App URL and paste it above
+        </div>
+      </div>
+    </div>
+
+    <button class="btn-danger" onclick="confirmClear()">🗑 Clear All Local Data</button>
+    <div style="height:20px"></div>
+  </div>
+</div>
+
+<!-- ══════════════ RUNNING OVERLAY ══════════════ -->
+<div class="clock-running-overlay" id="running-overlay">
+  <div class="running-top-bar">
+    <div class="running-period" id="run-period"></div>
+    <div class="running-hours" id="run-week-hours"></div>
+  </div>
+  <div class="running-meta">
+    <button class="running-add-note" onclick="openEditActive()">📋 Add Note</button>
+    <button class="running-tag-btn" onclick="openEditActive()">🏷 Edit Entry</button>
+  </div>
+  <div class="running-timer-area">
+    <div class="running-big-timer" id="run-timer">0:00</div>
+    <div class="running-clocked-in">
+      <span id="run-clockedin-text">Clocked In @ --:--</span>
+      <span onclick="undoClockIn()">Undo</span>
+    </div>
+    <div class="running-task-info" id="run-task-info"></div>
+  </div>
+  <div class="running-buttons">
+    <button class="btn-break" id="btn-break" onclick="toggleBreak()">Start Break</button>
+    <button class="btn-clock-out" style="flex:1.4" onclick="clockOut()">Clock Out</button>
+  </div>
+</div>
+
+<!-- ══════════════ BOTTOM NAV ══════════════ -->
+<nav class="bottom-nav">
+  <button class="nav-tab active" onclick="showScreen('clock',this)">
+    <span class="nav-icon">⏱</span>Clock
+  </button>
+  <button class="nav-tab" onclick="showScreen('timesheets',this)">
+    <span class="nav-icon">📋</span>Timesheets
+  </button>
+  <button class="nav-tab" onclick="showScreen('settings',this)">
+    <span class="nav-icon">⚙️</span>Settings
+  </button>
+</nav>
+
+<!-- ══════════════ CREATE/EDIT MODAL ══════════════ -->
+<div class="modal-backdrop" id="modal-task">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <button class="modal-cancel" onclick="closeModal('modal-task')">Cancel</button>
+      <span class="modal-title" id="modal-task-title">New Entry</span>
+      <button class="modal-save" onclick="saveEntry()">Save</button>
+    </div>
+
+    <div class="form-section">
+      <div class="form-row">
+        <span class="form-label">Location</span>
+        <select class="form-select" id="f-location">
+          <option value="">Select…</option>
+          <option>Kaiser</option>
+          <option>Heritage</option>
+          <option>Serene</option>
+          <option>Property</option>
+          <option>Shed</option>
+          <option>BESS#2</option>
+        </select>
+        <span class="form-chevron">›</span>
+      </div>
+      <div class="form-row">
+        <span class="form-label">Group</span>
+        <select class="form-select" id="f-group" onchange="updateTaskOptions()">
+          <option value="">Select…</option>
+          <option>Capital Improvements</option>
+          <option>Firewood</option>
+          <option>Hiring</option>
+          <option>Maintenance</option>
+          <option>Routines</option>
+        </select>
+        <span class="form-chevron">›</span>
+      </div>
+      <div class="form-row">
+        <span class="form-label">Tool</span>
+        <select class="form-select" id="f-tool">
+          <option value="">None</option>
+          <option>Basic Trailer 8x5 Plant Trailer 2026</option>
+          <option>Basic Trailer 8x5 Tipper Trailer 2026</option>
+          <option>Beaver Saw Bench 2017</option>
+          <option>Cox Lawn Mower Ride On 52"</option>
+          <option>Fiskars Xact Weed Puller</option>
+          <option>Forestwest 18 Ton Kinetic Log Splitter 2025</option>
+          <option>Hardi 15L Backpack Sprayer</option>
+          <option>Husqvarna Chainsaw</option>
+          <option>Karcher S4 Twin Push Sweeper 2025</option>
+          <option>Kubota Generator</option>
+          <option>Lymow One Robotic Lawn Mower 2025</option>
+          <option>Stihl MS 400 Chainsaw 2021</option>
+          <option>Toyota Hilux SR5 2009</option>
+          <option>XCMG XE19U Mini Excavator 2024</option>
+        </select>
+        <span class="form-chevron">›</span>
+      </div>
+      <div class="form-row">
+        <span class="form-label">Task</span>
+        <select class="form-select" id="f-task">
+          <option value="">Select…</option>
+        </select>
+        <span class="form-chevron">›</span>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div class="form-row time-row-pair" style="display:grid; grid-template-columns:1fr 1fr; padding:0; gap:0;">
+        <div class="form-row" style="border-right:1px solid var(--border);">
+          <span class="form-label">Clock In</span>
+          <input class="time-input" id="f-clockin" type="time" />
+        </div>
+        <div class="form-row">
+          <span class="form-label">Clock Out</span>
+          <input class="time-input" id="f-clockout" type="time" />
+        </div>
+      </div>
+      <div class="form-row">
+        <span class="form-label">Break</span>
+        <select class="form-select" id="f-break">
+          <option value="0">None</option>
+          <option value="0.25">15 min</option>
+          <option value="0.5">30 min</option>
+          <option value="0.75">45 min</option>
+          <option value="1">1 hour</option>
+        </select>
+        <span class="form-chevron">›</span>
+      </div>
+      <div class="form-row">
+        <span class="form-label">Date</span>
+        <input class="form-input" id="f-date" type="date" />
+      </div>
+    </div>
+
+    <div class="form-section">
+      <textarea class="form-textarea" id="f-notes" placeholder="Add notes…"></textarea>
+    </div>
+
+    <div id="f-delete-wrap" style="display:none">
+      <button class="btn-danger" onclick="deleteEntry()" style="margin-top:10px;">Delete Entry</button>
+    </div>
+    <div style="height:10px"></div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ════════════════════════════════
+//  DATA STRUCTURE FROM SHEET
+// ════════════════════════════════
+const TASK_DATA = {
+  "Capital Improvements": [
+    "Building walking trails",
+    "Installing water drains",
+  ],
+  "Firewood": [
+    "Chainsawing",
+    "Holding logs with thumb grab",
+    "Loading tip trailer with saw bench wood",
+    "Loading trailer with cut rounds",
+    "Loading trailer with split firewood",
+    "Splitting firewood",
+  ],
+  "Hiring": [
+    "Mowing",
+  ],
+  "Maintenance": [
+    "Applying gravel",
+    "Applying mulch",
+    "Cleaning out culvert",
+    "Garden irrigation",
+    "Maintaining tools",
+    "Overseeding lawn",
+    "Painting",
+    "Picking up sticks",
+    "Picking up sticks & stones",
+    "Picking up stones",
+    "Removing box thorns",
+    "Removing small trees",
+    "Removing tree stumps",
+  ],
+  "Routines": [
+    "Change batteries in B-Hyve Timer",
+    "Change over tiny house",
+    "Change the batteries in the McGrath TTLock",
+    "Change the codes in the McGrath TTLock",
+    "Fill generator with diesel",
+    "Grading driveways",
+    "Mowing grass",
+    "Pickup bins after being emptied",
+    "Pulling weeds",
+    "Spraying weeds",
+    "Swap over compost toilet",
+    "Sweep shed",
+    "Take down bins for emptying",
+    "Tidy shed",
+    "Wash out bins",
+  ],
+};
+
+// ════════════════════════════════
+//  STATE
+// ════════════════════════════════
+let entries = JSON.parse(localStorage.getItem('kr_entries') || '[]');
+let clockState = JSON.parse(localStorage.getItem('kr_clock') || 'null');
+let editingId = null;
+let filterLocation = 'all';
+let timerInterval = null;
+
+// ════════════════════════════════
+//  INIT
+// ════════════════════════════════
+window.addEventListener('load', () => {
+  // Load sheet URL
+  const url = localStorage.getItem('kr_sheet_url');
+  if (url) document.getElementById('sheet-url').value = url;
+  document.getElementById('sheet-url').addEventListener('input', e => {
+    localStorage.setItem('kr_sheet_url', e.target.value);
+  });
+
+  updateHeaderDate();
+  renderClockState();
+  renderTimesheets();
+  updateStats();
+  startTimerTick();
+});
+
+function updateHeaderDate() {
+  const now = new Date();
+  const opts = { weekday: 'short', day: 'numeric', month: 'short' };
+  document.getElementById('header-date').textContent = now.toLocaleDateString('en-AU', opts);
+}
+
+// ════════════════════════════════
+//  NAVIGATION
+// ════════════════════════════════
+function showScreen(id, tab) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('screen-' + id).classList.add('active');
+  if (tab) tab.classList.add('active');
+  if (id === 'timesheets') renderTimesheets();
+  if (id === 'settings') updateStats();
+}
+
+// ════════════════════════════════
+//  TIMER
+// ════════════════════════════════
+function startTimerTick() {
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    if (clockState && clockState.running) {
+      const elapsed = (Date.now() - clockState.startMs) / 1000;
+      const fmt = formatSeconds(elapsed);
+      document.getElementById('big-timer').textContent = fmt;
+      document.getElementById('big-timer').classList.add('running');
+      document.getElementById('run-timer').textContent = fmt;
+      updateAtTimes();
+    }
+  }, 1000);
+}
+
+function formatSeconds(s) {
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = Math.floor(s % 60);
+  if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+  return `${m}:${String(sec).padStart(2,'0')}`;
+}
+
+function formatHours(h) {
+  return h.toFixed(2) + 'h';
+}
+
+function msToHours(ms) { return ms / 3600000; }
+
+// ════════════════════════════════
+//  CLOCK IN / OUT
+// ════════════════════════════════
+function handleMainBtn() {
+  if (!clockState || !clockState.running) {
+    openCreate();
+  } else {
+    clockOut();
+  }
+}
+
+function startClock(taskInfo) {
+  clockState = {
+    running: true,
+    startMs: Date.now(),
+    startTime: new Date().toTimeString().slice(0,5),
+    date: todayStr(),
+    location: taskInfo.location,
+    group: taskInfo.group,
+    task: taskInfo.task,
+    subtask: taskInfo.subtask,
+    tool: taskInfo.tool,
+    notes: taskInfo.notes,
+    tempId: Date.now().toString(),
+  };
+  localStorage.setItem('kr_clock', JSON.stringify(clockState));
+  renderClockState();
+  startTimerTick();
+}
+
+function clockOut() {
+  if (!clockState || !clockState.running) return;
+  const endMs = Date.now();
+  const durationHours = (endMs - clockState.startMs) / 3600000;
+  const entry = {
+    id: clockState.tempId,
+    date: clockState.date,
+    personnel: 'Lincoln',
+    location: clockState.location,
+    group: clockState.group,
+    task: clockState.task,
+    subtask: clockState.subtask,
+    tool: clockState.tool,
+    notes: clockState.notes,
+    clockIn: clockState.startTime,
+    clockOut: new Date().toTimeString().slice(0,5),
+    durationHours: parseFloat(durationHours.toFixed(2)),
+    break: 0,
+    synced: false,
+    createdAt: new Date().toISOString(),
+  };
+  entries.unshift(entry);
+  saveEntries();
+  clockState = null;
+  localStorage.removeItem('kr_clock');
+  renderClockState();
+  showToast('Clocked out — ' + entry.durationHours + 'h logged');
+}
+
+function renderClockState() {
+  const btn = document.getElementById('btn-main');
+  const card = document.getElementById('active-task-card');
+  const timer = document.getElementById('big-timer');
+  const overlay = document.getElementById('running-overlay');
+
+  if (clockState && clockState.running) {
+    // Show running overlay
+    overlay.classList.add('active');
+
+    // Populate overlay fields
+    const clockInFmt = formatTimeAmPm(clockState.startTime);
+    document.getElementById('run-clockedin-text').textContent = 'Clocked In @ ' + clockInFmt;
+    const taskParts = [clockState.group, clockState.task].filter(Boolean).join(' · ');
+    const locationPart = clockState.location || '';
+    document.getElementById('run-task-info').textContent = [locationPart, taskParts].filter(Boolean).join(' — ');
+    const now = new Date();
+    const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay()); weekStart.setHours(0,0,0,0);
+    let weekH = entries.filter(e => new Date(e.date.split('/').reverse().join('-')) >= weekStart).reduce((s,e) => s+e.durationHours, 0);
+    document.getElementById('run-week-hours').textContent = weekH.toFixed(2) + 'h this week';
+    const opts = { weekday:'short', day:'numeric', month:'short' };
+    document.getElementById('run-period').textContent = now.toLocaleDateString('en-AU', opts);
+
+    // Keep background clock screen up to date too
+    btn.textContent = 'Clock Out';
+    btn.className = 'btn-clock-out';
+    card.style.display = 'block';
+    document.getElementById('at-tag').textContent = clockState.location || 'No Location';
+    document.getElementById('at-name').textContent = [clockState.group, clockState.task].filter(Boolean).join(' · ');
+    document.getElementById('at-tool').textContent = clockState.tool ? '🔧 ' + clockState.tool : '';
+    document.getElementById('at-note').textContent = clockState.notes || '';
+    updateAtTimes();
+    timer.classList.add('running');
+  } else {
+    overlay.classList.remove('active');
+    btn.textContent = 'Clock In';
+    btn.className = 'btn-clock-in';
+    card.style.display = 'none';
+    timer.textContent = '0:00';
+    document.getElementById('run-timer').textContent = '0:00';
+    timer.classList.remove('running');
+  }
+  updateSummary();
+}
+
+function formatTimeAmPm(t) {
+  if (!t) return '--:--';
+  const [h, m] = t.split(':').map(Number);
+  const ampm = h >= 12 ? 'pm' : 'am';
+  const h12 = h % 12 || 12;
+  return h12 + ':' + String(m).padStart(2,'0') + ampm;
+}
+
+function updateAtTimes() {
+  if (!clockState) return;
+  const elapsed = (Date.now() - clockState.startMs) / 1000;
+  document.getElementById('at-times').textContent =
+    clockState.startTime + ' – now · ' + formatHours(elapsed / 3600);
+}
+
+function updateSummary() {
+  const today = todayStr();
+  const now = new Date();
+  const weekStart = new Date(now);
+  weekStart.setDate(now.getDate() - now.getDay());
+  weekStart.setHours(0,0,0,0);
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  let daily = 0, weekly = 0, monthly = 0;
+  for (const e of entries) {
+    const d = new Date(e.date.split('/').reverse().join('-'));
+    if (e.date === today || e.date === todayStr()) daily += e.durationHours;
+    if (d >= weekStart) weekly += e.durationHours;
+    if (d >= monthStart) monthly += e.durationHours;
+  }
+
+  document.getElementById('sum-daily').textContent = formatHours(daily);
+  document.getElementById('sum-weekly').textContent = formatHours(weekly);
+  document.getElementById('sum-monthly').textContent = formatHours(monthly);
+  document.getElementById('header-week-hours').textContent = formatHours(weekly) + ' this week';
+}
+
+// ════════════════════════════════
+//  TIMESHEETS
+// ════════════════════════════════
+function setFilter(loc, el) {
+  document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  filterLocation = loc;
+  renderTimesheets();
+}
+
+function renderTimesheets() {
+  const list = document.getElementById('ts-list');
+  let filtered = filterLocation === 'all' ? entries : entries.filter(e => e.location === filterLocation);
+
+  let total = filtered.reduce((s, e) => s + e.durationHours, 0);
+  document.getElementById('ts-total-hours').textContent = formatHours(total);
+  document.getElementById('ts-bar').style.width = Math.min(100, (total / 40) * 100) + '%';
+
+  const now = new Date();
+  const periodStart = new Date(now);
+  periodStart.setDate(now.getDate() - 13);
+  document.getElementById('ts-period-label').textContent =
+    periodStart.toLocaleDateString('en-AU', {day:'numeric', month:'short'}) + ' – ' +
+    new Date(periodStart.getTime() + 13*86400000).toLocaleDateString('en-AU', {day:'numeric', month:'short'});
+
+  if (!filtered.length) {
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div>No entries yet</div>';
+    return;
+  }
+
+  list.innerHTML = filtered.map(e => {
+    const tag = [e.group, e.task].filter(Boolean).join(' · ');
+    const dateObj = new Date(e.date.split('/').reverse().join('-'));
+    const dateStr = dateObj.toLocaleDateString('en-AU', {weekday:'short', day:'numeric', month:'long', year:'numeric'});
+    const syncBadge = e.synced ? '' : ' 🔄';
+    return `<div class="ts-entry" onclick="openEdit('${e.id}')">
+      <div class="ts-entry-row">
+        <div>
+          <div class="ts-entry-date">${dateStr}${syncBadge}</div>
+          <div class="ts-entry-time">${e.clockIn || '—'} – ${e.clockOut || '—'}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="ts-entry-hours">${formatHours(e.durationHours)}</div>
+          <div class="ts-entry-tag">${e.location || ''}</div>
+        </div>
+      </div>
+      <div class="ts-entry-tag" style="margin-top:4px">${tag}</div>
+      ${e.tool ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${e.tool}</div>` : ''}
+      ${e.notes ? `<div class="ts-entry-note">${e.notes}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// ════════════════════════════════
+//  CREATE / EDIT MODAL
+// ════════════════════════════════
+function openCreate() {
+  editingId = null;
+  document.getElementById('modal-task-title').textContent = 'New Entry';
+  document.getElementById('f-delete-wrap').style.display = 'none';
+
+  // Reset form
+  document.getElementById('f-location').value = '';
+  document.getElementById('f-group').value = '';
+  document.getElementById('f-task').innerHTML = '<option value="">Select…</option>';
+  document.getElementById('f-tool').value = '';
+  document.getElementById('f-break').value = '0';
+  document.getElementById('f-notes').value = '';
+  document.getElementById('f-date').value = todayStr('-');
+
+  const now = new Date();
+  document.getElementById('f-clockin').value = now.toTimeString().slice(0,5);
+  document.getElementById('f-clockout').value = '';
+
+  openModal('modal-task');
+}
+
+function openEdit(id) {
+  const e = entries.find(x => x.id === id);
+  if (!e) return;
+  editingId = id;
+  document.getElementById('modal-task-title').textContent = 'Edit Entry';
+  document.getElementById('f-delete-wrap').style.display = 'block';
+
+  document.getElementById('f-location').value = e.location || '';
+  document.getElementById('f-group').value = e.group || '';
+  updateTaskOptions();
+  document.getElementById('f-task').value = e.task || '';
+  document.getElementById('f-tool').value = e.tool || '';
+  document.getElementById('f-break').value = e.break || '0';
+  document.getElementById('f-notes').value = e.notes || '';
+
+  const parts = e.date.split('/');
+  document.getElementById('f-date').value = `${parts[2]}-${parts[1]}-${parts[0]}`;
+  document.getElementById('f-clockin').value = e.clockIn || '';
+  document.getElementById('f-clockout').value = e.clockOut || '';
+
+  openModal('modal-task');
+}
+
+function openEditActive() {
+  if (!clockState) return;
+  editingId = 'active';
+  document.getElementById('modal-task-title').textContent = 'Edit Active Entry';
+  document.getElementById('f-delete-wrap').style.display = 'none';
+
+  document.getElementById('f-location').value = clockState.location || '';
+  document.getElementById('f-group').value = clockState.group || '';
+  updateTaskOptions();
+  document.getElementById('f-task').value = clockState.task || '';
+  document.getElementById('f-tool').value = clockState.tool || '';
+  document.getElementById('f-break').value = '0';
+  document.getElementById('f-notes').value = clockState.notes || '';
+  document.getElementById('f-date').value = todayStr('-');
+  document.getElementById('f-clockin').value = clockState.startTime || '';
+  document.getElementById('f-clockout').value = '';
+
+  openModal('modal-task');
+}
+
+function saveEntry() {
+  const location = document.getElementById('f-location').value;
+  const group = document.getElementById('f-group').value;
+  const task = document.getElementById('f-task').value;
+  const tool = document.getElementById('f-tool').value;
+  const notes = document.getElementById('f-notes').value.trim();
+  const clockIn = document.getElementById('f-clockin').value;
+  const clockOut = document.getElementById('f-clockout').value;
+  const breakH = parseFloat(document.getElementById('f-break').value) || 0;
+  const dateVal = document.getElementById('f-date').value;
+
+  // Convert date from YYYY-MM-DD to DD/MM/YYYY
+  const dateFormatted = dateVal ? dateVal.split('-').reverse().join('/') : todayStr();
+
+  // Calculate duration
+  let duration = 0;
+  if (clockIn && clockOut) {
+    const [ih, im] = clockIn.split(':').map(Number);
+    const [oh, om] = clockOut.split(':').map(Number);
+    duration = Math.max(0, ((oh * 60 + om) - (ih * 60 + im)) / 60 - breakH);
+  }
+
+  if (editingId === 'active') {
+    // Update active clockState
+    clockState.location = location;
+    clockState.group = group;
+    clockState.task = task;
+    clockState.tool = tool;
+    clockState.notes = notes;
+    if (clockIn) clockState.startTime = clockIn;
+    localStorage.setItem('kr_clock', JSON.stringify(clockState));
+    renderClockState();
+    closeModal('modal-task');
+    showToast('Active entry updated');
+    return;
+  }
+
+  if (editingId) {
+    // Edit existing
+    const idx = entries.findIndex(e => e.id === editingId);
+    if (idx >= 0) {
+      entries[idx] = {
+        ...entries[idx],
+        location, group, task, tool, notes,
+        clockIn, clockOut, break: breakH,
+        date: dateFormatted,
+        durationHours: parseFloat(duration.toFixed(2)),
+        synced: false,
+      };
+    }
+  } else {
+    // New entry from Create button (not clock-in flow)
+    if (!clockOut) {
+      // If no clock-out, treat as clock-in action
+      const taskInfo = { location, group, task, tool, notes };
+      closeModal('modal-task');
+      startClock(taskInfo);
+      return;
+    }
+    entries.unshift({
+      id: Date.now().toString(),
+      date: dateFormatted,
+      personnel: 'Lincoln',
+      location, group, task, tool, notes,
+      clockIn, clockOut, break: breakH,
+      durationHours: parseFloat(duration.toFixed(2)),
+      synced: false,
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  saveEntries();
+  closeModal('modal-task');
+  renderTimesheets();
+  updateSummary();
+  showToast(editingId ? 'Entry updated' : 'Entry saved');
+}
+
+function deleteEntry() {
+  if (!editingId || editingId === 'active') return;
+  if (!confirm('Delete this entry?')) return;
+  entries = entries.filter(e => e.id !== editingId);
+  saveEntries();
+  closeModal('modal-task');
+  renderTimesheets();
+  updateSummary();
+  showToast('Entry deleted');
+}
+
+// ════════════════════════════════
+//  FORM DROPDOWNS
+// ════════════════════════════════
+function updateTaskOptions() {
+  const group = document.getElementById('f-group').value;
+  const taskSel = document.getElementById('f-task');
+  taskSel.innerHTML = '<option value="">Select…</option>';
+  const tasks = TASK_DATA[group] || [];
+  tasks.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t;
+    opt.textContent = t;
+    taskSel.appendChild(opt);
+  });
+}
+
+// ════════════════════════════════
+//  MODAL HELPERS
+// ════════════════════════════════
+function openModal(id) {
+  document.getElementById(id).classList.add('open');
+}
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+  editingId = null;
+}
+
+// close on backdrop click
+document.getElementById('modal-task').addEventListener('click', function(e) {
+  if (e.target === this) closeModal('modal-task');
+});
+
+// ════════════════════════════════
+//  GOOGLE SHEETS SYNC
+// ════════════════════════════════
+async function syncToSheet() {
+  const url = localStorage.getItem('kr_sheet_url');
+  if (!url) { showToast('No Web App URL set'); return; }
+
+  const unsynced = entries.filter(e => !e.synced);
+  if (!unsynced.length) { showToast('All entries already synced'); return; }
+
+  showToast('Syncing ' + unsynced.length + ' entries…');
+
+  let synced = 0;
+  for (const entry of unsynced) {
+    try {
+      await fetch(url, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(entry),
+      });
+      const idx = entries.findIndex(e => e.id === entry.id);
+      if (idx >= 0) entries[idx].synced = true;
+      synced++;
+    } catch (err) {
+      console.error('Sync error:', err);
+    }
+  }
+
+  saveEntries();
+  updateStats();
+  showToast(synced + ' entries synced ✓');
+}
+
+// ════════════════════════════════
+//  STATS & STORAGE
+// ════════════════════════════════
+function updateStats() {
+  document.getElementById('stat-entries').textContent = entries.length;
+  document.getElementById('stat-unsynced').textContent = entries.filter(e => !e.synced).length;
+  const total = entries.reduce((s, e) => s + e.durationHours, 0);
+  document.getElementById('stat-hours').textContent = formatHours(total);
+}
+
+function saveEntries() {
+  localStorage.setItem('kr_entries', JSON.stringify(entries));
+  updateSummary();
+}
+
+function confirmClear() {
+  if (!confirm('Clear all local data? This cannot be undone.')) return;
+  entries = [];
+  clockState = null;
+  localStorage.removeItem('kr_entries');
+  localStorage.removeItem('kr_clock');
+  renderClockState();
+  renderTimesheets();
+  updateStats();
+  showToast('All data cleared');
+}
+
+// ════════════════════════════════
+//  UTILITIES
+// ════════════════════════════════
+function todayStr(sep='/') {
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2,'0');
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  const yyyy = d.getFullYear();
+  if (sep === '-') return `${yyyy}-${mm}-${dd}`;
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// ════════════════════════════════
+//  BREAK & UNDO
+// ════════════════════════════════
+function toggleBreak() {
+  if (!clockState) return;
+  const btn = document.getElementById('btn-break');
+  if (!clockState.onBreak) {
+    // Start break — record break start time but keep timer running
+    clockState.onBreak = true;
+    clockState.breakStartMs = Date.now();
+    clockState.breakStartTime = new Date().toTimeString().slice(0,5);
+    clockState.breakTotal = clockState.breakTotal || 0;
+    localStorage.setItem('kr_clock', JSON.stringify(clockState));
+    btn.textContent = 'End Break';
+    btn.classList.add('on-break');
+    // Update the clocked-in text to show break started
+    document.getElementById('run-clockedin-text').textContent = 'Break Started @ ' + formatTimeAmPm(clockState.breakStartTime);
+    showToast('Break started');
+  } else {
+    // End break — accumulate break time
+    const breakElapsed = Date.now() - clockState.breakStartMs;
+    clockState.breakTotal = (clockState.breakTotal || 0) + breakElapsed;
+    clockState.onBreak = false;
+    clockState.breakStartMs = null;
+    clockState.breakStartTime = null;
+    localStorage.setItem('kr_clock', JSON.stringify(clockState));
+    btn.textContent = 'Start Break';
+    btn.classList.remove('on-break');
+    // Restore clocked-in text
+    document.getElementById('run-clockedin-text').textContent = 'Clocked In @ ' + formatTimeAmPm(clockState.startTime);
+    showToast('Break ended');
+  }
+}
+
+function undoClockIn() {
+  if (!clockState) return;
+  if (!confirm('Discard this clock-in? No entry will be saved.')) return;
+  clockState = null;
+  localStorage.removeItem('kr_clock');
+  renderClockState();
+  showToast('Clock-in discarded');
+}
+</script>
+</body>
+</html>
