@@ -1173,7 +1173,7 @@ function openCreate() {
   // Reset form
   currentPin = null;
   document.getElementById('pin-row').style.display = 'none';
-  document.getElementById('pin-btn').textContent = '📍 Drop Pin';
+  document.getElementById('pin-btn').innerHTML = '📍 Drop Pin';
   document.getElementById('pin-btn').style.color = 'var(--blue)';
   document.getElementById('f-location').value = '';
   document.getElementById('f-group').value = '';
@@ -1334,8 +1334,9 @@ function onLocationChange() {
   pinRow.style.display = loc === 'Property' ? 'flex' : 'none';
   if (loc !== 'Property') {
     currentPin = null;
-    document.getElementById('pin-btn').textContent = '📍 Drop Pin';
-    document.getElementById('pin-btn').style.color = 'var(--blue)';
+    const btn = document.getElementById('pin-btn');
+    btn.innerHTML = '📍 Drop Pin';
+    btn.style.color = 'var(--blue)';
   }
 }
 
@@ -1350,8 +1351,9 @@ function dropPin() {
       const lat = pos.coords.latitude.toFixed(6);
       const lng = pos.coords.longitude.toFixed(6);
       currentPin = { lat, lng, url: `https://maps.google.com/?q=${lat},${lng}` };
-      document.getElementById('pin-btn').textContent = `✅ ${lat}, ${lng}`;
-      document.getElementById('pin-btn').style.color = 'var(--green)';
+      const btn = document.getElementById('pin-btn');
+      btn.innerHTML = `<a href="${currentPin.url}" target="_blank" style="color:var(--green);text-decoration:none;">✅ ${lat}, ${lng}</a>`;
+      btn.style.color = 'var(--green)';
       showToast('Pin dropped');
     },
     err => {
