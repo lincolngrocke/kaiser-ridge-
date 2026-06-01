@@ -731,17 +731,17 @@
           <!-- Selection highlight bar -->
           <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:160px;height:44px;background:var(--border);border-radius:10px;pointer-events:none;opacity:0.5;"></div>
           <!-- Hour drum -->
-          <div id="drum-hour" style="width:72px;height:180px;overflow-y:scroll;overflow-x:hidden;cursor:pointer;-webkit-overflow-scrolling:touch;scrollbar-width:none;">
-            <div id="drum-hour-inner" style="padding:68px 0;text-align:center;"></div>
+          <div id="drum-hour" style="width:72px;height:180px;overflow:hidden;cursor:pointer;touch-action:none;">
+            <div id="drum-hour-inner" style="will-change:transform;"></div>
           </div>
           <div style="font-size:22px;font-weight:300;color:var(--text);padding:0 2px;z-index:1;">:</div>
           <!-- Minute drum -->
-          <div id="drum-min" style="width:72px;height:180px;overflow-y:scroll;overflow-x:hidden;cursor:pointer;-webkit-overflow-scrolling:touch;scrollbar-width:none;">
-            <div id="drum-min-inner" style="padding:68px 0;text-align:center;"></div>
+          <div id="drum-min" style="width:72px;height:180px;overflow:hidden;cursor:pointer;touch-action:none;">
+            <div id="drum-min-inner" style="will-change:transform;"></div>
           </div>
           <!-- AM/PM drum -->
-          <div id="drum-ampm" style="width:52px;height:180px;overflow-y:scroll;overflow-x:hidden;cursor:pointer;-webkit-overflow-scrolling:touch;scrollbar-width:none;">
-            <div id="drum-ampm-inner" style="padding:68px 0;text-align:center;"></div>
+          <div id="drum-ampm" style="width:52px;height:180px;overflow:hidden;cursor:pointer;touch-action:none;">
+            <div id="drum-ampm-inner" style="will-change:transform;"></div>
           </div>
         </div>
         <div style="border-top:1px solid var(--border);padding:12px 16px;">
@@ -1469,36 +1469,68 @@ document.getElementById('modal-time').addEventListener('click', function(e) {
 let _timeModalMode = null;
 let _pendingTaskInfo = null;
 
-// ── Drum scroll wheel ──
+// ── Drum scroll wheel (touch-drag, iOS safe) ──
+const ITEM_H = 44;
+const _drumState = {};
+
 function buildDrum(wrapperId, innerId, items, selectedIndex) {
   const inner = document.getElementById(innerId);
-  inner.innerHTML = items.map((v, i) =>
-    `<div data-idx="${i}" style="height:44px;line-height:44px;font-size:22px;font-weight:${i===selectedIndex?'600':'400'};color:${i===selectedIndex?'var(--text)':'var(--subtext)'};text-align:center;">${v}</div>`
-  ).join('');
   const wrapper = document.getElementById(wrapperId);
-  requestAnimationFrame(() => { wrapper.scrollTop = selectedIndex * 44; });
-  wrapper.onscroll = () => snapDrum(wrapperId, innerId, items);
+  _drumState[wrapperId] = { items, idx: selectedIndex, offset: 0, startY: 0, dragging: false };
+
+  inner.innerHTML = items.map((v, i) =>
+    `<div style="height:${ITEM_H}px;line-height:${ITEM_H}px;font-size:22px;text-align:center;">${v}</div>`
+  ).join('');
+
+  renderDrum(wrapperId, innerId);
+
+  // Touch events
+  wrapper.addEventListener('touchstart', e => {
+    const s = _drumState[wrapperId];
+    s.startY = e.touches[0].clientY;
+    s.startOffset = s.offset;
+    s.dragging = true;
+    e.preventDefault();
+  }, { passive: false });
+
+  wrapper.addEventListener('touchmove', e => {
+    const s = _drumState[wrapperId];
+    if (!s.dragging) return;
+    const dy = e.touches[0].clientY - s.startY;
+    s.offset = s.startOffset + dy;
+    renderDrum(wrapperId, innerId);
+    e.preventDefault();
+  }, { passive: false });
+
+  wrapper.addEventListener('touchend', e => {
+    const s = _drumState[wrapperId];
+    s.dragging = false;
+    // Snap to nearest
+    const raw = -s.offset / ITEM_H;
+    s.idx = Math.max(0, Math.min(s.items.length - 1, Math.round(raw)));
+    s.offset = -s.idx * ITEM_H;
+    renderDrum(wrapperId, innerId);
+    e.preventDefault();
+  }, { passive: false });
 }
 
-function snapDrum(wrapperId, innerId, items) {
-  const wrapper = document.getElementById(wrapperId);
-  clearTimeout(wrapper._snapTimer);
-  wrapper._snapTimer = setTimeout(() => {
-    const idx = Math.round(wrapper.scrollTop / 44);
-    const clamped = Math.max(0, Math.min(items.length - 1, idx));
-    wrapper.scrollTo({ top: clamped * 44, behavior: 'smooth' });
-    // Update highlight
-    const inner = document.getElementById(innerId);
-    inner.querySelectorAll('div').forEach((el, i) => {
-      el.style.fontWeight = i === clamped ? '600' : '400';
-      el.style.color = i === clamped ? 'var(--text)' : 'var(--subtext)';
-    });
-  }, 120);
+function renderDrum(wrapperId, innerId) {
+  const s = _drumState[wrapperId];
+  const inner = document.getElementById(innerId);
+  // Translate inner so selected item sits in the centre row
+  const translateY = s.offset + 68; // 68 = (180-44)/2
+  inner.style.transform = `translateY(${translateY}px)`;
+  inner.style.padding = '0';
+  // Highlight selected
+  const currentIdx = Math.max(0, Math.min(s.items.length - 1, Math.round(-s.offset / ITEM_H)));
+  inner.querySelectorAll('div').forEach((el, i) => {
+    el.style.fontWeight = i === currentIdx ? '600' : '400';
+    el.style.color = i === currentIdx ? 'var(--text)' : 'var(--subtext)';
+  });
 }
 
 function getDrumValue(wrapperId) {
-  const wrapper = document.getElementById(wrapperId);
-  return Math.round(wrapper.scrollTop / 44);
+  return _drumState[wrapperId]?.idx ?? 0;
 }
 
 function openTimeModal(mode, taskInfo) {
