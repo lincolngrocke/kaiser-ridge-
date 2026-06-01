@@ -731,16 +731,16 @@
           <!-- Selection highlight bar -->
           <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:160px;height:44px;background:var(--border);border-radius:10px;pointer-events:none;opacity:0.5;"></div>
           <!-- Hour drum -->
-          <div id="drum-hour" style="width:72px;height:180px;overflow:hidden;cursor:pointer;-webkit-overflow-scrolling:touch;">
+          <div id="drum-hour" style="width:72px;height:180px;overflow-y:scroll;overflow-x:hidden;cursor:pointer;-webkit-overflow-scrolling:touch;scrollbar-width:none;">
             <div id="drum-hour-inner" style="padding:68px 0;text-align:center;"></div>
           </div>
           <div style="font-size:22px;font-weight:300;color:var(--text);padding:0 2px;z-index:1;">:</div>
           <!-- Minute drum -->
-          <div id="drum-min" style="width:72px;height:180px;overflow:hidden;cursor:pointer;-webkit-overflow-scrolling:touch;">
+          <div id="drum-min" style="width:72px;height:180px;overflow-y:scroll;overflow-x:hidden;cursor:pointer;-webkit-overflow-scrolling:touch;scrollbar-width:none;">
             <div id="drum-min-inner" style="padding:68px 0;text-align:center;"></div>
           </div>
           <!-- AM/PM drum -->
-          <div id="drum-ampm" style="width:52px;height:180px;overflow:hidden;cursor:pointer;-webkit-overflow-scrolling:touch;">
+          <div id="drum-ampm" style="width:52px;height:180px;overflow-y:scroll;overflow-x:hidden;cursor:pointer;-webkit-overflow-scrolling:touch;scrollbar-width:none;">
             <div id="drum-ampm-inner" style="padding:68px 0;text-align:center;"></div>
           </div>
         </div>
@@ -1476,7 +1476,7 @@ function buildDrum(wrapperId, innerId, items, selectedIndex) {
     `<div data-idx="${i}" style="height:44px;line-height:44px;font-size:22px;font-weight:${i===selectedIndex?'600':'400'};color:${i===selectedIndex?'var(--text)':'var(--subtext)'};text-align:center;">${v}</div>`
   ).join('');
   const wrapper = document.getElementById(wrapperId);
-  wrapper.scrollTop = selectedIndex * 44;
+  requestAnimationFrame(() => { wrapper.scrollTop = selectedIndex * 44; });
   wrapper.onscroll = () => snapDrum(wrapperId, innerId, items);
 }
 
