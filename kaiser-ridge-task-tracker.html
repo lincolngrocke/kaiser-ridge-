@@ -722,11 +722,27 @@
     <div class="modal-handle"></div>
     <div style="text-align:center;font-size:17px;font-weight:600;padding:0 20px 16px;border-bottom:1px solid var(--border);" id="modal-time-title">Clock In</div>
     <div style="padding:20px 20px 0;">
-      <button onclick="confirmTime('now')" style="width:100%;height:56px;border-radius:14px;border:none;background:var(--blue);color:#fff;font-size:17px;font-weight:600;cursor:pointer;margin-bottom:12px;">Now</button>
-      <div style="border:1px solid var(--border);border-radius:14px;overflow:hidden;">
-        <div style="padding:14px 16px;display:flex;align-items:center;justify-content:space-between;">
-          <span style="font-size:15px;color:var(--text);">Earlier</span>
-          <input type="time" id="modal-time-input" style="border:none;background:none;font-size:15px;color:var(--blue);text-align:right;outline:none;" />
+      <button onclick="confirmTime('now')" style="width:100%;height:56px;border-radius:14px;border:none;background:var(--blue);color:#fff;font-size:17px;font-weight:600;cursor:pointer;margin-bottom:16px;">Now</button>
+
+      <!-- Scroll-wheel time picker -->
+      <div style="border:1px solid var(--border);border-radius:14px;overflow:hidden;background:var(--card);">
+        <div style="padding:12px 16px 0;text-align:center;font-size:13px;color:var(--subtext);">Earlier</div>
+        <div style="position:relative;display:flex;justify-content:center;align-items:center;height:180px;gap:0;user-select:none;">
+          <!-- Selection highlight bar -->
+          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:160px;height:44px;background:var(--border);border-radius:10px;pointer-events:none;opacity:0.5;"></div>
+          <!-- Hour drum -->
+          <div id="drum-hour" style="width:72px;height:180px;overflow:hidden;cursor:pointer;-webkit-overflow-scrolling:touch;">
+            <div id="drum-hour-inner" style="padding:68px 0;text-align:center;"></div>
+          </div>
+          <div style="font-size:22px;font-weight:300;color:var(--text);padding:0 2px;z-index:1;">:</div>
+          <!-- Minute drum -->
+          <div id="drum-min" style="width:72px;height:180px;overflow:hidden;cursor:pointer;-webkit-overflow-scrolling:touch;">
+            <div id="drum-min-inner" style="padding:68px 0;text-align:center;"></div>
+          </div>
+          <!-- AM/PM drum -->
+          <div id="drum-ampm" style="width:52px;height:180px;overflow:hidden;cursor:pointer;-webkit-overflow-scrolling:touch;">
+            <div id="drum-ampm-inner" style="padding:68px 0;text-align:center;"></div>
+          </div>
         </div>
         <div style="border-top:1px solid var(--border);padding:12px 16px;">
           <button onclick="confirmTime('earlier')" style="width:100%;height:46px;border-radius:10px;border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:600;cursor:pointer;">Set Earlier Time</button>
@@ -1450,30 +1466,82 @@ document.getElementById('modal-time').addEventListener('click', function(e) {
 // ════════════════════════════════
 //  NOW / EARLIER TIME MODAL
 // ════════════════════════════════
-let _timeModalMode = null;   // 'in' or 'out'
+let _timeModalMode = null;
 let _pendingTaskInfo = null;
+
+// ── Drum scroll wheel ──
+function buildDrum(wrapperId, innerId, items, selectedIndex) {
+  const inner = document.getElementById(innerId);
+  inner.innerHTML = items.map((v, i) =>
+    `<div data-idx="${i}" style="height:44px;line-height:44px;font-size:22px;font-weight:${i===selectedIndex?'600':'400'};color:${i===selectedIndex?'var(--text)':'var(--subtext)'};text-align:center;">${v}</div>`
+  ).join('');
+  const wrapper = document.getElementById(wrapperId);
+  wrapper.scrollTop = selectedIndex * 44;
+  wrapper.onscroll = () => snapDrum(wrapperId, innerId, items);
+}
+
+function snapDrum(wrapperId, innerId, items) {
+  const wrapper = document.getElementById(wrapperId);
+  clearTimeout(wrapper._snapTimer);
+  wrapper._snapTimer = setTimeout(() => {
+    const idx = Math.round(wrapper.scrollTop / 44);
+    const clamped = Math.max(0, Math.min(items.length - 1, idx));
+    wrapper.scrollTo({ top: clamped * 44, behavior: 'smooth' });
+    // Update highlight
+    const inner = document.getElementById(innerId);
+    inner.querySelectorAll('div').forEach((el, i) => {
+      el.style.fontWeight = i === clamped ? '600' : '400';
+      el.style.color = i === clamped ? 'var(--text)' : 'var(--subtext)';
+    });
+  }, 120);
+}
+
+function getDrumValue(wrapperId) {
+  const wrapper = document.getElementById(wrapperId);
+  return Math.round(wrapper.scrollTop / 44);
+}
 
 function openTimeModal(mode, taskInfo) {
   _timeModalMode = mode;
   _pendingTaskInfo = taskInfo || null;
   const now = new Date();
-  const hhmm = now.toTimeString().slice(0,5);
-  document.getElementById('modal-time-input').value = hhmm;
+  let h = now.getHours();
+  let m = now.getMinutes();
+  const ampm = h >= 12 ? 1 : 0;
+  const h12 = h % 12 || 12;
+
+  const hours = Array.from({length:12}, (_,i) => String(i+1).padStart(2,'0'));
+  const mins  = Array.from({length:60}, (_,i) => String(i).padStart(2,'0'));
+  const ampms = ['am','pm'];
+
+  buildDrum('drum-hour',  'drum-hour-inner',  hours, h12 - 1);
+  buildDrum('drum-min',   'drum-min-inner',   mins,  m);
+  buildDrum('drum-ampm',  'drum-ampm-inner',  ampms, ampm);
+
   document.getElementById('modal-time-title').textContent = mode === 'in' ? 'Clock In' : 'Clock Out';
   openModal('modal-time');
 }
 
+function getDrumTimeStr() {
+  const hours = Array.from({length:12}, (_,i) => String(i+1).padStart(2,'0'));
+  const mins  = Array.from({length:60}, (_,i) => String(i).padStart(2,'0'));
+  const ampms = ['am','pm'];
+  const h12 = parseInt(hours[getDrumValue('drum-hour')]);
+  const m   = parseInt(mins[getDrumValue('drum-min')]);
+  const ap  = ampms[getDrumValue('drum-ampm')];
+  let h24 = h12 % 12 + (ap === 'pm' ? 12 : 0);
+  return String(h24).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+}
+
 function confirmTime(choice) {
-  const input = document.getElementById('modal-time-input').value;
   const timeStr = choice === 'now'
     ? new Date().toTimeString().slice(0,5)
-    : (input || new Date().toTimeString().slice(0,5));
+    : getDrumTimeStr();
 
   closeModal('modal-time');
 
   if (_timeModalMode === 'in') {
     const taskInfo = _pendingTaskInfo || {};
-    // Start clock with chosen time
     const now = new Date();
     const [h, m] = timeStr.split(':').map(Number);
     const chosenMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0).getTime();
@@ -1495,7 +1563,6 @@ function confirmTime(choice) {
     renderClockState();
     startTimerTick();
   } else {
-    // Clock out with chosen time
     clockOut(timeStr);
   }
 }
