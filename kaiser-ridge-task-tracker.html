@@ -635,6 +635,18 @@
   <div class="scroll-area">
     <div class="settings-section">
       <div class="settings-row">
+        <div class="settings-label">Your Name</div>
+      </div>
+      <div class="settings-row">
+        <input class="settings-input" id="user-name" type="text" placeholder="e.g. Lincoln" oninput="saveName()" />
+      </div>
+    </div>
+    <div class="settings-note" style="margin-top:0">
+      This name will be used as the default Personnel on every new entry.
+    </div>
+
+    <div class="settings-section" style="margin-top:16px">
+      <div class="settings-row">
         <div class="settings-label">Google Sheet Web App URL</div>
       </div>
       <div class="settings-row">
@@ -895,7 +907,20 @@ let timerInterval = null;
 // ════════════════════════════════
 //  INIT
 // ════════════════════════════════
+function getUserName() {
+  return localStorage.getItem('kr_user_name') || 'Lincoln';
+}
+
+function saveName() {
+  const val = document.getElementById('user-name').value.trim();
+  localStorage.setItem('kr_user_name', val || 'Lincoln');
+}
+
 window.addEventListener('load', () => {
+  // Load user name
+  const name = localStorage.getItem('kr_user_name');
+  if (name) document.getElementById('user-name').value = name;
+
   // Load sheet URL
   const url = localStorage.getItem('kr_sheet_url');
   if (url) document.getElementById('sheet-url').value = url;
@@ -1003,7 +1028,7 @@ function clockOut() {
   const entry = {
     id: clockState.tempId,
     date: clockState.date,
-    personnel: 'Lincoln',
+    personnel: getUserName(),
     location: clockState.location,
     group: clockState.group,
     task: clockState.task,
@@ -1295,7 +1320,7 @@ function saveEntry() {
     entries.unshift({
       id: Date.now().toString(),
       date: dateFormatted,
-      personnel: 'Lincoln',
+      personnel: getUserName(),
       location, group, task, tool, notes,
       clockIn, clockOut, break: breakH,
       durationHours: parseFloat(duration.toFixed(2)),
