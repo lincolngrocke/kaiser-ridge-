@@ -164,21 +164,6 @@
     gap: 12px;
     flex-shrink: 0;
   }
-  .btn-break {
-    flex: 1;
-    height: 56px;
-    border-radius: 28px;
-    border: none;
-    background: var(--blue);
-    color: white;
-    font-size: 17px;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  .btn-break.on-break {
-    background: #333;
-    color: #aaa;
-  }
 
   .clock-buttons {
     padding: 0 20px 24px;
@@ -715,8 +700,7 @@
     <div class="running-task-info" id="run-task-info"></div>
   </div>
   <div class="running-buttons">
-    <button class="btn-break" id="btn-break" onclick="toggleBreak()">Start Break</button>
-    <button class="btn-clock-out" style="flex:1.4" onclick="clockOut()">Clock Out</button>
+<button class="btn-clock-out" style="flex:1.4" onclick="clockOut()">Clock Out</button>
   </div>
 </div>
 
