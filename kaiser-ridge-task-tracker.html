@@ -702,6 +702,7 @@
   </div>
   <div class="running-meta">
     <button class="running-add-note" onclick="openNoteModal()">📋 Add Note</button>
+    <button class="running-tag-btn" id="btn-subtasks" onclick="openSubtaskModal()" style="display:none">☑️ Subtasks</button>
     <button class="running-tag-btn" onclick="openEditActive()">🏷 Edit Entry</button>
   </div>
   <div class="running-timer-area">
@@ -1182,6 +1183,7 @@ function renderClockState() {
     document.getElementById('at-name').textContent = [clockState.group, clockState.task].filter(Boolean).join(' · ');
     document.getElementById('at-tool').textContent = clockState.tool ? '🔧 ' + clockState.tool : '';
     document.getElementById('at-note').textContent = clockState.notes || '';
+    document.getElementById('btn-subtasks').style.display = clockState.task === 'Change over tiny house' ? 'inline-flex' : 'none';
     updateAtTimes();
     timer.classList.add('running');
   } else {
@@ -1574,10 +1576,19 @@ function confirmSubtasks() {
   if (checked.length === 0) return;
   const time = new Date().toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: true });
   const note = `[${time}] ${checked.join(', ')}`;
-  const textarea = document.getElementById('f-notes');
-  textarea.value = textarea.value ? textarea.value + '\n' + note : note;
-  // Immediately trigger save with the subtask notes included
-  saveEntry();
+
+  if (clockState && clockState.running) {
+    // Called from running screen — save directly to clockState
+    clockState.notes = clockState.notes ? clockState.notes + '\n' + note : note;
+    localStorage.setItem('kr_clock', JSON.stringify(clockState));
+    renderClockState();
+    showToast('Subtasks added');
+  } else {
+    // Called from new entry form — write to textarea then save
+    const textarea = document.getElementById('f-notes');
+    textarea.value = textarea.value ? textarea.value + '\n' + note : note;
+    saveEntry();
+  }
 }
 
 function updateTaskOptions() { onGroupChange(); }
