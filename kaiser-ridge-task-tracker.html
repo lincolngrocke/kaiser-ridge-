@@ -791,7 +791,7 @@
         </select>
         <span class="form-chevron">›</span>
       </div>
-      <div class="form-row" id="pin-row" style="display:none">
+      <div class="form-row" id="pin-row">
         <span class="form-label">Pin</span>
         <button type="button" id="pin-btn" onclick="dropPin()" style="flex:1;text-align:right;background:none;border:none;color:var(--blue);font-size:15px;font-weight:500;cursor:pointer;">📍 Drop Pin</button>
       </div>
@@ -1274,7 +1274,6 @@ function openCreate() {
 
   // Reset form
   currentPin = null;
-  document.getElementById('pin-row').style.display = 'none';
   document.getElementById('pin-btn').innerHTML = '📍 Drop Pin';
   document.getElementById('pin-btn').style.color = 'var(--blue)';
   document.getElementById('f-location').value = '';
@@ -1421,15 +1420,6 @@ function deleteEntry() {
 let currentPin = null;
 
 function onLocationChange() {
-  const loc = document.getElementById('f-location').value;
-  const pinRow = document.getElementById('pin-row');
-  pinRow.style.display = loc === 'Property' ? 'flex' : 'none';
-  if (loc !== 'Property') {
-    currentPin = null;
-    const btn = document.getElementById('pin-btn');
-    btn.innerHTML = '📍 Drop Pin';
-    btn.style.color = 'var(--blue)';
-  }
 }
 
 function dropPin() {
