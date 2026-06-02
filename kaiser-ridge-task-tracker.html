@@ -767,6 +767,18 @@
   </button>
 </nav>
 
+<!-- ══════════════ SUBTASK MODAL ══════════════ -->
+<div class="modal-backdrop" id="modal-subtask">
+  <div class="modal-sheet" style="padding:16px 20px 24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+      <button onclick="closeModal('modal-subtask')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;">Skip</button>
+      <span style="font-size:17px;font-weight:600;">Subtasks</span>
+      <button onclick="confirmSubtasks()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Add</button>
+    </div>
+    <div id="subtask-list" style="display:flex;flex-direction:column;gap:2px;max-height:60vh;overflow-y:auto;"></div>
+  </div>
+</div>
+
 <!-- ══════════════ NOTE MODAL ══════════════ -->
 <div class="modal-backdrop" id="modal-note">
   <div class="modal-sheet" style="padding:16px 20px 24px;">
@@ -1516,6 +1528,22 @@ function onGroupChange() {
   setOptions('f-tool', [], 'Select…');
 }
 
+const CHANGEOVER_SUBTASKS = [
+  'Filling the wood boxes at the shed',
+  'Filling back of vehicle with all materials needed for changeover',
+  'Cleaning and setting the kindling and wood in wood heater',
+  'Stacking the wood rack',
+  'Vacuum behind and under wood rack',
+  'Vacuum inside the door of wood heater',
+  'Filling the wood box',
+  'Emptying the coles out of the firepit',
+  'Cleaning the firepit grill',
+  'Raking the gravel paths and around firepit with chairs removed',
+  'Blowing the pavers with Milwaukee blower',
+  'Emptying the compost box',
+  'Emptying the refundable & recycling box',
+];
+
 function onTaskChange() {
   const freq  = document.getElementById('f-frequency').value;
   const group = document.getElementById('f-group').value;
@@ -1525,6 +1553,29 @@ function onTaskChange() {
     .map(r => r.equipment);
   setOptions('f-tool', equip, 'Select…');
   if (equip.length === 1) document.getElementById('f-tool').value = equip[0];
+
+  if (task === 'Change over tiny house') openSubtaskModal();
+}
+
+function openSubtaskModal() {
+  const list = document.getElementById('subtask-list');
+  list.innerHTML = CHANGEOVER_SUBTASKS.map((s, i) => `
+    <label style="display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid var(--border);cursor:pointer;">
+      <input type="checkbox" id="st-${i}" value="${s}" style="width:20px;height:20px;accent-color:var(--blue);flex-shrink:0;">
+      <span style="font-size:15px;">${s}</span>
+    </label>
+  `).join('');
+  openModal('modal-subtask');
+}
+
+function confirmSubtasks() {
+  const checked = CHANGEOVER_SUBTASKS.filter((s, i) => document.getElementById('st-' + i)?.checked);
+  if (checked.length === 0) { closeModal('modal-subtask'); return; }
+  const time = new Date().toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: true });
+  const note = `[${time}] ${checked.join(', ')}`;
+  const textarea = document.getElementById('f-notes');
+  textarea.value = textarea.value ? textarea.value + '\n' + note : note;
+  closeModal('modal-subtask');
 }
 
 function updateTaskOptions() { onGroupChange(); }
