@@ -1560,6 +1560,9 @@ function onTaskChange() {
 }
 
 function openSubtaskModal() {
+  // Refresh clockState from localStorage in case notes were updated
+  const saved = localStorage.getItem('kr_clock');
+  if (saved) clockState = JSON.parse(saved);
   // Work out which subtasks have already been added to notes
   const existingNotes = (clockState && clockState.notes) || document.getElementById('f-notes')?.value || '';
   const remaining = CHANGEOVER_SUBTASKS.filter(s => !existingNotes.includes(s));
