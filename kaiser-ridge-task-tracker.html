@@ -1313,10 +1313,23 @@ function openEdit(id) {
   document.getElementById('f-time-row').style.display = 'block';
 
   document.getElementById('f-location').value = e.location || '';
+  document.getElementById('f-frequency').value = e.frequency || '';
+
+  // Populate group options for this frequency, then set value
+  const groups = [...new Set(DIRECTORY.filter(r => r.frequency === e.frequency).map(r => r.group))];
+  setOptions('f-group', groups, 'Select…');
   document.getElementById('f-group').value = e.group || '';
-  updateTaskOptions();
+
+  // Populate task options for this frequency+group, then set value
+  const tasks = [...new Set(DIRECTORY.filter(r => r.frequency === e.frequency && r.group === e.group).map(r => r.task))];
+  setOptions('f-task', tasks, 'Select…');
   document.getElementById('f-task').value = e.task || '';
+
+  // Populate equipment options for this frequency+group+task, then set value
+  const equip = DIRECTORY.filter(r => r.frequency === e.frequency && r.group === e.group && r.task === e.task).map(r => r.equipment);
+  setOptions('f-tool', equip, 'Select…');
   document.getElementById('f-tool').value = e.tool || '';
+
   document.getElementById('f-break').value = e.break || '0';
   document.getElementById('f-notes').value = e.notes || '';
 
@@ -1336,9 +1349,18 @@ function openEditActive() {
   document.getElementById('f-time-row').style.display = 'none';
 
   document.getElementById('f-location').value = clockState.location || '';
+  document.getElementById('f-frequency').value = clockState.frequency || '';
+
+  const csGroups = [...new Set(DIRECTORY.filter(r => r.frequency === clockState.frequency).map(r => r.group))];
+  setOptions('f-group', csGroups, 'Select…');
   document.getElementById('f-group').value = clockState.group || '';
-  updateTaskOptions();
+
+  const csTasks = [...new Set(DIRECTORY.filter(r => r.frequency === clockState.frequency && r.group === clockState.group).map(r => r.task))];
+  setOptions('f-task', csTasks, 'Select…');
   document.getElementById('f-task').value = clockState.task || '';
+
+  const csEquip = DIRECTORY.filter(r => r.frequency === clockState.frequency && r.group === clockState.group && r.task === clockState.task).map(r => r.equipment);
+  setOptions('f-tool', csEquip, 'Select…');
   document.getElementById('f-tool').value = clockState.tool || '';
   document.getElementById('f-break').value = '0';
   document.getElementById('f-notes').value = clockState.notes || '';
