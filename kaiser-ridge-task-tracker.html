@@ -1114,6 +1114,7 @@ function clockOut(overrideTime) {
     clockOut: overrideTime || new Date().toTimeString().slice(0,5),
     durationHours: parseFloat(durationHours.toFixed(2)),
     break: parseFloat(breakHours.toFixed(2)),
+    pin: clockState.pin || null,
     synced: false,
     createdAt: new Date().toISOString(),
   };
@@ -1390,7 +1391,7 @@ function saveEntry() {
     }
   } else {
     // New entry — show Now/Earlier for clock-in
-    const taskInfo = { location, frequency, group, task, tool, notes };
+    const taskInfo = { location, frequency, group, task, tool, notes, pin: currentPin || null };
     closeModal('modal-task');
     openTimeModal('in', taskInfo);
     return;
@@ -1670,7 +1671,7 @@ async function syncToSheet() {
         method: 'POST',
         mode: 'no-cors',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...entry, equipment: entry.tool, hyperlink: entry.pin ? entry.pin.url : '' }),
+        body: JSON.stringify({ ...entry, equipment: entry.tool || '', hyperlink: entry.pin ? entry.pin.url : '' }),
       });
       const idx = entries.findIndex(e => e.id === entry.id);
       if (idx >= 0) entries[idx].synced = true;
