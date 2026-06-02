@@ -1253,6 +1253,7 @@ function renderTimesheets() {
         <div style="text-align:right">
           <div class="ts-entry-hours">${formatHours(e.durationHours)}</div>
           <div class="ts-entry-tag">${e.location || ''}</div>
+          ${e.sheetId ? `<div style="font-size:11px;color:var(--subtext);margin-top:2px;">${e.sheetId}</div>` : ''}
         </div>
       </div>
       <div class="ts-entry-tag" style="margin-top:4px">${tag}</div>
@@ -1654,9 +1655,17 @@ async function syncToSheet() {
 
   showToast('Syncing ' + unsynced.length + ' entries…');
 
+  // Work out next sheet ID from already-synced entries
+  const usedNums = entries
+    .filter(e => e.sheetId)
+    .map(e => parseInt(e.sheetId.replace('#', ''), 10))
+    .filter(n => !isNaN(n));
+  let nextNum = usedNums.length > 0 ? Math.max(...usedNums) + 1 : 1;
+
   let synced = 0;
   for (const entry of unsynced) {
     try {
+      const sheetId = '#' + String(nextNum).padStart(4, '0');
       await fetch(url, {
         method: 'POST',
         mode: 'no-cors',
@@ -1664,7 +1673,8 @@ async function syncToSheet() {
         body: JSON.stringify({ ...entry, equipment: entry.tool || '', hyperlink: entry.pin ? entry.pin.url : '' }),
       });
       const idx = entries.findIndex(e => e.id === entry.id);
-      if (idx >= 0) entries[idx].synced = true;
+      if (idx >= 0) { entries[idx].synced = true; entries[idx].sheetId = sheetId; }
+      nextNum++;
       synced++;
     } catch (err) {
       console.error('Sync error:', err);
