@@ -1570,12 +1570,14 @@ function openSubtaskModal() {
 
 function confirmSubtasks() {
   const checked = CHANGEOVER_SUBTASKS.filter((s, i) => document.getElementById('st-' + i)?.checked);
-  if (checked.length === 0) { closeModal('modal-subtask'); return; }
+  closeModal('modal-subtask');
+  if (checked.length === 0) return;
   const time = new Date().toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: true });
   const note = `[${time}] ${checked.join(', ')}`;
   const textarea = document.getElementById('f-notes');
   textarea.value = textarea.value ? textarea.value + '\n' + note : note;
-  closeModal('modal-subtask');
+  // Immediately trigger save with the subtask notes included
+  saveEntry();
 }
 
 function updateTaskOptions() { onGroupChange(); }
