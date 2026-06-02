@@ -1260,7 +1260,7 @@ function renderTimesheets() {
       <div class="ts-entry-row">
         <div>
           <div class="ts-entry-date">${dateStr}${syncBadge}</div>
-          <div class="ts-entry-time">${e.clockIn || '—'} – ${e.clockOut || '—'}</div>
+          <div class="ts-entry-time">${e.clockIn ? formatTimeAmPm(e.clockIn) : '—'} – ${e.clockOut ? formatTimeAmPm(e.clockOut) : '—'}</div>
         </div>
         <div style="text-align:right">
           <div class="ts-entry-hours">${formatHours(e.durationHours)}</div>
