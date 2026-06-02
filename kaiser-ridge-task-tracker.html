@@ -1659,7 +1659,7 @@ const _drumState = {};
 function buildDrum(wrapperId, innerId, items, selectedIndex) {
   const inner = document.getElementById(innerId);
   const wrapper = document.getElementById(wrapperId);
-  _drumState[wrapperId] = { items, idx: selectedIndex, offset: 0, startY: 0, dragging: false };
+  _drumState[wrapperId] = { items, idx: selectedIndex, offset: -selectedIndex * ITEM_H, startY: 0, dragging: false };
 
   inner.innerHTML = items.map((v, i) =>
     `<div style="height:${ITEM_H}px;line-height:${ITEM_H}px;font-size:22px;text-align:center;">${v}</div>`
