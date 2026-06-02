@@ -1560,8 +1560,17 @@ function onTaskChange() {
 }
 
 function openSubtaskModal() {
+  // Work out which subtasks have already been added to notes
+  const existingNotes = (clockState && clockState.notes) || document.getElementById('f-notes')?.value || '';
+  const remaining = CHANGEOVER_SUBTASKS.filter(s => !existingNotes.includes(s));
+
+  if (remaining.length === 0) {
+    showToast('All subtasks have been completed!');
+    return;
+  }
+
   const list = document.getElementById('subtask-list');
-  list.innerHTML = CHANGEOVER_SUBTASKS.map((s, i) => `
+  list.innerHTML = remaining.map((s, i) => `
     <label style="display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid var(--border);cursor:pointer;">
       <input type="checkbox" id="st-${i}" value="${s}" style="width:20px;height:20px;accent-color:var(--blue);flex-shrink:0;">
       <span style="font-size:15px;">${s}</span>
@@ -1571,7 +1580,9 @@ function openSubtaskModal() {
 }
 
 function confirmSubtasks() {
-  const checked = CHANGEOVER_SUBTASKS.filter((s, i) => document.getElementById('st-' + i)?.checked);
+  const existingNotes = (clockState && clockState.notes) || document.getElementById('f-notes')?.value || '';
+  const remaining = CHANGEOVER_SUBTASKS.filter(s => !existingNotes.includes(s));
+  const checked = remaining.filter((s, i) => document.getElementById('st-' + i)?.checked);
   closeModal('modal-subtask');
   if (checked.length === 0) return;
   const time = new Date().toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: true });
