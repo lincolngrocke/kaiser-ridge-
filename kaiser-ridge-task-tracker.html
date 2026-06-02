@@ -1253,7 +1253,7 @@ function renderTimesheets() {
         <div style="text-align:right">
           <div class="ts-entry-hours">${formatHours(e.durationHours)}</div>
           <div class="ts-entry-tag">${e.location || ''}</div>
-          ${e.sheetId ? `<div style="font-size:11px;color:var(--subtext);margin-top:2px;">${e.sheetId}</div>` : ''}
+          <div style="font-size:11px;color:var(--subtext);margin-top:2px;">${e.sheetId || '—'}</div>
         </div>
       </div>
       <div class="ts-entry-tag" style="margin-top:4px">${tag}</div>
