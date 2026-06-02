@@ -701,7 +701,7 @@
     <div class="running-hours" id="run-week-hours"></div>
   </div>
   <div class="running-meta">
-    <button class="running-add-note" onclick="openEditActive()">📋 Add Note</button>
+    <button class="running-add-note" onclick="openNoteModal()">📋 Add Note</button>
     <button class="running-tag-btn" onclick="openEditActive()">🏷 Edit Entry</button>
   </div>
   <div class="running-timer-area">
@@ -766,6 +766,18 @@
     <span class="nav-icon">⚙️</span>Settings
   </button>
 </nav>
+
+<!-- ══════════════ NOTE MODAL ══════════════ -->
+<div class="modal-backdrop" id="modal-note">
+  <div class="modal-sheet" style="padding:16px 20px 24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <button onclick="closeModal('modal-note')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;">Cancel</button>
+      <span style="font-size:17px;font-weight:600;">Add Note</span>
+      <button onclick="saveNote()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Save</button>
+    </div>
+    <textarea id="note-input" placeholder="Type your note…" style="width:100%;min-height:160px;border:1px solid var(--border);border-radius:12px;padding:12px;font-size:16px;font-family:inherit;resize:none;outline:none;"></textarea>
+  </div>
+</div>
 
 <!-- ══════════════ CREATE/EDIT MODAL ══════════════ -->
 <div class="modal-backdrop" id="modal-task">
@@ -1504,6 +1516,23 @@ function openModal(id) {
 function closeModal(id) {
   document.getElementById(id).classList.remove('open');
   editingId = null;
+}
+
+function openNoteModal() {
+  const input = document.getElementById('note-input');
+  input.value = clockState && clockState.notes ? clockState.notes : '';
+  openModal('modal-note');
+  setTimeout(() => input.focus(), 100);
+}
+
+function saveNote() {
+  const note = document.getElementById('note-input').value.trim();
+  if (clockState) {
+    clockState.notes = note;
+    localStorage.setItem('kr_clock', JSON.stringify(clockState));
+  }
+  closeModal('modal-note');
+  showToast('Note saved');
 }
 
 // close on backdrop click
