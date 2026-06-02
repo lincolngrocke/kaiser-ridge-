@@ -659,6 +659,7 @@
     </div>
 
     <button class="btn-sync" onclick="syncToSheet()">⬆ Sync Unsynced Entries to Sheet</button>
+    <button class="btn-sync" style="background:var(--subtext); margin-top:8px;" onclick="reloadDirectory()">↺ Reload Task Directory</button>
 
     <div class="settings-section" style="margin-top:16px">
       <div class="settings-row">
@@ -938,6 +939,13 @@ const DIRECTORY_FALLBACK = [
 ];
 
 let DIRECTORY = [...DIRECTORY_FALLBACK];
+
+async function reloadDirectory() {
+  localStorage.removeItem('kr_directory');
+  DIRECTORY = [...DIRECTORY_FALLBACK];
+  await loadDirectory();
+  alert('Task directory reloaded (' + DIRECTORY.length + ' entries)');
+}
 
 async function loadDirectory() {
   const url = localStorage.getItem('kr_sheet_url');
