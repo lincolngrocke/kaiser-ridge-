@@ -795,41 +795,35 @@
         <button type="button" id="pin-btn" onclick="dropPin()" style="flex:1;text-align:right;background:none;border:none;color:var(--blue);font-size:15px;font-weight:500;cursor:pointer;">📍 Drop Pin</button>
       </div>
       <div class="form-row">
-        <span class="form-label">Group</span>
-        <select class="form-select" id="f-group" onchange="updateTaskOptions()">
+        <span class="form-label">Frequency</span>
+        <select class="form-select" id="f-frequency" onchange="onFrequencyChange()">
           <option value="">Select…</option>
-          <option>Capital Improvements</option>
-          <option>Firewood</option>
-          <option>Hiring</option>
-          <option>Maintenance</option>
-          <option>Routines</option>
+          <option>Daily</option>
+          <option>Weekly</option>
+          <option>Fortnightly</option>
+          <option>Monthly</option>
+          <option>Quarterly</option>
+          <option>Annually</option>
         </select>
         <span class="form-chevron">›</span>
       </div>
       <div class="form-row">
-        <span class="form-label">Tool</span>
-        <select class="form-select" id="f-tool">
-          <option value="">None</option>
-          <option>Basic Trailer 8x5 Plant Trailer 2026</option>
-          <option>Basic Trailer 8x5 Tipper Trailer 2026</option>
-          <option>Beaver Saw Bench 2017</option>
-          <option>Cox Lawn Mower Ride On 52"</option>
-          <option>Fiskars Xact Weed Puller</option>
-          <option>Forestwest 18 Ton Kinetic Log Splitter 2025</option>
-          <option>Hardi 15L Backpack Sprayer</option>
-          <option>Husqvarna Chainsaw</option>
-          <option>Karcher S4 Twin Push Sweeper 2025</option>
-          <option>Kubota Generator</option>
-          <option>Lymow One Robotic Lawn Mower 2025</option>
-          <option>Stihl MS 400 Chainsaw 2021</option>
-          <option>Toyota Hilux SR5 2009</option>
-          <option>XCMG XE19U Mini Excavator 2024</option>
+        <span class="form-label">Group</span>
+        <select class="form-select" id="f-group" onchange="onGroupChange()">
+          <option value="">Select…</option>
         </select>
         <span class="form-chevron">›</span>
       </div>
       <div class="form-row">
         <span class="form-label">Task</span>
-        <select class="form-select" id="f-task">
+        <select class="form-select" id="f-task" onchange="onTaskChange()">
+          <option value="">Select…</option>
+        </select>
+        <span class="form-chevron">›</span>
+      </div>
+      <div class="form-row">
+        <span class="form-label">Equipment</span>
+        <select class="form-select" id="f-tool">
           <option value="">Select…</option>
         </select>
         <span class="form-chevron">›</span>
@@ -882,57 +876,26 @@
 
 <script>
 // ════════════════════════════════
-//  DATA STRUCTURE FROM SHEET
+//  DIRECTORY (loaded from sheet)
 // ════════════════════════════════
-const TASK_DATA = {
-  "Capital Improvements": [
-    "Building walking trails",
-    "Installing water drains",
-  ],
-  "Firewood": [
-    "Chainsawing",
-    "Holding logs with thumb grab",
-    "Loading tip trailer with saw bench wood",
-    "Loading trailer with cut rounds",
-    "Loading trailer with split firewood",
-    "Splitting firewood",
-  ],
-  "Hiring": [
-    "Mowing",
-  ],
-  "Maintenance": [
-    "Applying gravel",
-    "Applying mulch",
-    "Cleaning out culvert",
-    "Garden irrigation",
-    "Maintaining tools",
-    "Overseeding lawn",
-    "Painting",
-    "Picking up sticks",
-    "Picking up sticks & stones",
-    "Picking up stones",
-    "Removing box thorns",
-    "Removing small trees",
-    "Removing tree stumps",
-  ],
-  "Routines": [
-    "Change batteries in B-Hyve Timer",
-    "Change over tiny house",
-    "Change the batteries in the McGrath TTLock",
-    "Change the codes in the McGrath TTLock",
-    "Fill generator with diesel",
-    "Grading driveways",
-    "Mowing grass",
-    "Pickup bins after being emptied",
-    "Pulling weeds",
-    "Spraying weeds",
-    "Swap over compost toilet",
-    "Sweep shed",
-    "Take down bins for emptying",
-    "Tidy shed",
-    "Wash out bins",
-  ],
-};
+let DIRECTORY = []; // [{frequency, group, task, equipment}]
+
+async function loadDirectory() {
+  const url = localStorage.getItem('kr_sheet_url');
+  if (!url) return;
+  try {
+    const res = await fetch(url);
+    const json = await res.json();
+    if (json.success && json.directory) {
+      DIRECTORY = json.directory;
+      localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
+    }
+  } catch (e) {
+    // Offline — use cached
+    const cached = localStorage.getItem('kr_directory');
+    if (cached) DIRECTORY = JSON.parse(cached);
+  }
+}
 
 // ════════════════════════════════
 //  STATE
@@ -972,6 +935,7 @@ window.addEventListener('load', () => {
   renderTimesheets();
   updateStats();
   startTimerTick();
+  loadDirectory();
 });
 
 function updateHeaderDate() {
@@ -1074,6 +1038,7 @@ function clockOut(overrideTime) {
     date: clockState.date,
     personnel: getUserName(),
     location: clockState.location,
+    frequency: clockState.frequency || '',
     group: clockState.group,
     task: clockState.task,
     subtask: clockState.subtask,
@@ -1246,9 +1211,11 @@ function openCreate() {
   document.getElementById('pin-btn').innerHTML = '📍 Drop Pin';
   document.getElementById('pin-btn').style.color = 'var(--blue)';
   document.getElementById('f-location').value = '';
+  document.getElementById('f-frequency').value = '';
   document.getElementById('f-group').value = '';
-  document.getElementById('f-task').innerHTML = '<option value="">Select…</option>';
-  document.getElementById('f-tool').value = '';
+  setOptions('f-group', [], 'Select…');
+  setOptions('f-task', [], 'Select…');
+  setOptions('f-tool', [], 'Select…');
   document.getElementById('f-break').value = '0';
   document.getElementById('f-notes').value = '';
   document.getElementById('f-date').value = todayStr('-');
@@ -1304,11 +1271,12 @@ function openEditActive() {
 }
 
 function saveEntry() {
-  const location = document.getElementById('f-location').value;
-  const group = document.getElementById('f-group').value;
-  const task = document.getElementById('f-task').value;
-  const tool = document.getElementById('f-tool').value;
-  const notes = document.getElementById('f-notes').value.trim();
+  const location  = document.getElementById('f-location').value;
+  const frequency = document.getElementById('f-frequency').value;
+  const group     = document.getElementById('f-group').value;
+  const task      = document.getElementById('f-task').value;
+  const tool      = document.getElementById('f-tool').value;
+  const notes     = document.getElementById('f-notes').value.trim();
   const clockIn = document.getElementById('f-clockin').value;
   const clockOut = document.getElementById('f-clockout').value;
   const breakH = parseFloat(document.getElementById('f-break').value) || 0;
@@ -1326,11 +1294,12 @@ function saveEntry() {
   }
 
   if (editingId === 'active') {
-    clockState.location = location;
-    clockState.group = group;
-    clockState.task = task;
-    clockState.tool = tool;
-    clockState.notes = notes;
+    clockState.location  = location;
+    clockState.frequency = frequency;
+    clockState.group     = group;
+    clockState.task      = task;
+    clockState.tool      = tool;
+    clockState.notes     = notes;
     if (currentPin) clockState.pin = currentPin;
     if (clockIn) clockState.startTime = clockIn;
     localStorage.setItem('kr_clock', JSON.stringify(clockState));
@@ -1346,7 +1315,7 @@ function saveEntry() {
     if (idx >= 0) {
       entries[idx] = {
         ...entries[idx],
-        location, group, task, tool, notes,
+        location, frequency, group, task, tool, notes,
         clockIn, clockOut, break: breakH,
         date: dateFormatted,
         durationHours: parseFloat(duration.toFixed(2)),
@@ -1354,22 +1323,11 @@ function saveEntry() {
       };
     }
   } else {
-    // New entry — always show Now/Earlier for clock-in
-    const taskInfo = { location, group, task, tool, notes };
+    // New entry — show Now/Earlier for clock-in
+    const taskInfo = { location, frequency, group, task, tool, notes };
     closeModal('modal-task');
     openTimeModal('in', taskInfo);
     return;
-    entries.unshift({
-      id: Date.now().toString(),
-      date: dateFormatted,
-      personnel: getUserName(),
-      location, group, task, tool, notes,
-      clockIn, clockOut, break: breakH,
-      durationHours: parseFloat(duration.toFixed(2)),
-      pin: currentPin || null,
-      synced: false,
-      createdAt: new Date().toISOString(),
-    });
   }
 
   saveEntries();
@@ -1431,18 +1389,45 @@ function dropPin() {
   );
 }
 
-function updateTaskOptions() {
-  const group = document.getElementById('f-group').value;
-  const taskSel = document.getElementById('f-task');
-  taskSel.innerHTML = '<option value="">Select…</option>';
-  const tasks = TASK_DATA[group] || [];
-  tasks.forEach(t => {
-    const opt = document.createElement('option');
-    opt.value = t;
-    opt.textContent = t;
-    taskSel.appendChild(opt);
+// ── Cascade helpers ──
+function setOptions(selId, values, placeholder) {
+  const sel = document.getElementById(selId);
+  sel.innerHTML = `<option value="">${placeholder}</option>`;
+  [...new Set(values)].forEach(v => {
+    const o = document.createElement('option');
+    o.value = o.textContent = v;
+    sel.appendChild(o);
   });
 }
+
+function onFrequencyChange() {
+  const freq = document.getElementById('f-frequency').value;
+  const groups = DIRECTORY.filter(r => r.frequency === freq).map(r => r.group);
+  setOptions('f-group', groups, 'Select…');
+  setOptions('f-task', [], 'Select…');
+  setOptions('f-tool', [], 'Select…');
+}
+
+function onGroupChange() {
+  const freq  = document.getElementById('f-frequency').value;
+  const group = document.getElementById('f-group').value;
+  const tasks = DIRECTORY.filter(r => r.frequency === freq && r.group === group).map(r => r.task);
+  setOptions('f-task', tasks, 'Select…');
+  setOptions('f-tool', [], 'Select…');
+}
+
+function onTaskChange() {
+  const freq  = document.getElementById('f-frequency').value;
+  const group = document.getElementById('f-group').value;
+  const task  = document.getElementById('f-task').value;
+  const equip = DIRECTORY
+    .filter(r => r.frequency === freq && r.group === group && r.task === task)
+    .map(r => r.equipment);
+  setOptions('f-tool', equip, 'Select…');
+  if (equip.length === 1) document.getElementById('f-tool').value = equip[0];
+}
+
+function updateTaskOptions() { onGroupChange(); }
 
 // ════════════════════════════════
 //  MODAL HELPERS
@@ -1582,12 +1567,13 @@ function confirmTime(choice) {
       startMs: chosenMs,
       startTime: timeStr,
       date: todayStr(),
-      location: taskInfo.location || '',
-      group: taskInfo.group || '',
-      task: taskInfo.task || '',
-      subtask: taskInfo.subtask || '',
-      tool: taskInfo.tool || '',
-      notes: taskInfo.notes || '',
+      location:  taskInfo.location  || '',
+      frequency: taskInfo.frequency || '',
+      group:     taskInfo.group     || '',
+      task:      taskInfo.task      || '',
+      subtask:   taskInfo.subtask   || '',
+      tool:      taskInfo.tool      || '',
+      notes:     taskInfo.notes     || '',
       pin: _pendingTaskInfo && _pendingTaskInfo.pin ? _pendingTaskInfo.pin : (currentPin || null),
       tempId: Date.now().toString(),
     };
@@ -1618,7 +1604,7 @@ async function syncToSheet() {
         method: 'POST',
         mode: 'no-cors',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...entry, hyperlink: entry.pin ? entry.pin.url : '' }),
+        body: JSON.stringify({ ...entry, equipment: entry.tool, hyperlink: entry.pin ? entry.pin.url : '' }),
       });
       const idx = entries.findIndex(e => e.id === entry.id);
       if (idx >= 0) entries[idx].synced = true;
