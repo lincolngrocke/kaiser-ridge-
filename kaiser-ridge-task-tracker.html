@@ -1588,7 +1588,7 @@ function openModal(id) {
 }
 function closeModal(id) {
   document.getElementById(id).classList.remove('open');
-  editingId = null;
+  if (id === 'modal-task') editingId = null;
 }
 
 function openNoteModal() {
