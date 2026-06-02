@@ -1649,7 +1649,7 @@ async function syncToSheet() {
   const url = localStorage.getItem('kr_sheet_url');
   if (!url) { showToast('No Web App URL set'); return; }
 
-  const unsynced = entries.filter(e => !e.synced);
+  const unsynced = entries.filter(e => !e.synced).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
   if (!unsynced.length) { showToast('All entries already synced'); return; }
 
   showToast('Syncing ' + unsynced.length + ' entries…');
