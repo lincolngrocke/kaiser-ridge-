@@ -70,6 +70,7 @@ function doPost(e) {
       data.durationHours || 0,
       data.clockIn     || '',
       data.clockOut    || '',
+      data.break       || 0,
       data.hyperlink   || '',
       data.equipment   || '',
     ];
