@@ -1793,9 +1793,20 @@ function getDrumTimeStr() {
 }
 
 function confirmTime(choice) {
-  const timeStr = choice === 'now'
+  let timeStr = choice === 'now'
     ? new Date().toTimeString().slice(0,5)
     : getDrumTimeStr();
+
+  // Prevent setting a future time
+  if (choice === 'earlier') {
+    const now = new Date();
+    const [h, m] = timeStr.split(':').map(Number);
+    const chosen = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0);
+    if (chosen > now) {
+      showToast('Time cannot be in the future');
+      return;
+    }
+  }
 
   closeModal('modal-time');
 
