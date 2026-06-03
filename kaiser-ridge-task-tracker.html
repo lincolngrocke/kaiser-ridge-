@@ -1001,7 +1001,7 @@ async function loadDirectory() {
     const cached = localStorage.getItem('kr_directory');
     if (cached) DIRECTORY = JSON.parse(cached);
     const cachedSt = localStorage.getItem('kr_subtasks');
-    if (cachedSt) SUBTASKS = JSON.parse(cachedSt);
+    SUBTASKS = cachedSt ? JSON.parse(cachedSt) : SUBTASKS_FALLBACK;
   }
 }
 
@@ -1560,7 +1560,27 @@ function onGroupChange() {
 }
 
 // Subtasks loaded dynamically from sheet; falls back to empty
-let SUBTASKS = JSON.parse(localStorage.getItem('kr_subtasks') || '{}');
+const SUBTASKS_FALLBACK = {
+  'Change over tiny house': [
+    'Filling the wood boxes at the shed',
+    'Filling back of vehicle with all materials needed for changeover',
+    'Cleaning and setting the kindling and wood in wood heater',
+    'Stacking the wood rack',
+    'Vacuum behind and under wood rack',
+    'Vacuum inside the door of wood heater',
+    'Filling the wood box',
+    'Emptying the coals out of the firepit',
+    'Cleaning the firepit grill',
+    'Raking the gravel paths and around firepit with chairs removed',
+    'Blowing the pavers with Milwaukee blower',
+    'Emptying the compost box',
+    'Emptying the refundable & recycling box',
+    'Check the wall clock time and change if slow',
+    'Check the key lockbox opens',
+    'Empty out vehicle with changeover materials back at shed',
+  ],
+};
+let SUBTASKS = JSON.parse(localStorage.getItem('kr_subtasks') || 'null') || SUBTASKS_FALLBACK;
 
 function onTaskChange() {
   const freq  = document.getElementById('f-frequency').value;
