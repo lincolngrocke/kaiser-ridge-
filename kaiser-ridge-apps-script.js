@@ -11,24 +11,39 @@
 
 const SHEET_NAME      = 'KR Task Tracker';
 const DIRECTORY_NAME  = 'App Directory';
+const SUBTASKS_NAME   = 'Subtasks';
 
-// ── Serve directory data to the app ──
+// ── Serve directory and subtask data to the app ──
 function doGet(e) {
   try {
-    const ss    = SpreadsheetApp.getActiveSpreadsheet();
-    const sheet = ss.getSheetByName(DIRECTORY_NAME);
-    if (!sheet) return jsonResponse({ success: false, error: 'App Directory tab not found' });
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-    const rows = sheet.getDataRange().getValues();
-    const headers = rows[0]; // Frequency, Group, Task, Equipment
-    const data = rows.slice(1).map(r => ({
+    // App Directory
+    const dirSheet = ss.getSheetByName(DIRECTORY_NAME);
+    if (!dirSheet) return jsonResponse({ success: false, error: 'App Directory tab not found' });
+    const dirRows = dirSheet.getDataRange().getValues();
+    const directory = dirRows.slice(1).map(r => ({
       frequency: r[0],
       group:     r[1],
       task:      r[2],
       equipment: r[3],
     }));
 
-    return jsonResponse({ success: true, directory: data });
+    // Subtasks (optional tab)
+    let subtasks = {};
+    const stSheet = ss.getSheetByName(SUBTASKS_NAME);
+    if (stSheet) {
+      const stRows = stSheet.getDataRange().getValues();
+      stRows.slice(1).forEach(r => {
+        const task    = String(r[0]).trim();
+        const subtask = String(r[1]).trim();
+        if (!task || !subtask) return;
+        if (!subtasks[task]) subtasks[task] = [];
+        subtasks[task].push(subtask);
+      });
+    }
+
+    return jsonResponse({ success: true, directory, subtasks });
   } catch (err) {
     return jsonResponse({ success: false, error: err.toString() });
   }
