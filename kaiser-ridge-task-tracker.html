@@ -623,6 +623,15 @@
       <div class="filter-chip" onclick="setFilter('Shed',this)">Shed</div>
     </div>
 
+    <div style="padding:0 16px 10px;">
+      <div style="position:relative;">
+        <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--subtext);">🔍</span>
+        <input id="ts-search" type="search" placeholder="Search tasks, notes, equipment…"
+          oninput="renderTimesheets()"
+          style="width:100%;padding:9px 12px 9px 36px;border-radius:10px;border:1px solid var(--border);background:var(--card);font-size:14px;color:var(--text);outline:none;-webkit-appearance:none;">
+      </div>
+    </div>
+
     <div id="ts-list"></div>
   </div>
 </div>
@@ -1247,7 +1256,13 @@ function setFilter(loc, el) {
 
 function renderTimesheets() {
   const list = document.getElementById('ts-list');
+  const searchTerm = (document.getElementById('ts-search')?.value || '').toLowerCase().trim();
   let filtered = filterLocation === 'all' ? entries : entries.filter(e => e.location === filterLocation);
+  if (searchTerm) {
+    filtered = filtered.filter(e =>
+      [e.task, e.group, e.notes, e.tool, e.location, e.frequency, e.sheetId].some(f => f && f.toLowerCase().includes(searchTerm))
+    );
+  }
 
   let total = filtered.reduce((s, e) => s + e.durationHours, 0);
   document.getElementById('ts-total-hours').textContent = formatHours(total);
