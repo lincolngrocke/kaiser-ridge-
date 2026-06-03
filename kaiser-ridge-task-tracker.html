@@ -1280,6 +1280,12 @@ function renderTimesheets() {
     return;
   }
 
+  const hl = (text) => {
+    if (!searchTerm || !text) return text || '';
+    const regex = new RegExp('(' + searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+    return text.replace(regex, '<mark style="background:#FFD60A;color:#000;border-radius:2px;padding:0 1px;">$1</mark>');
+  };
+
   list.innerHTML = filtered.map(e => {
     const tag = [e.group, e.task].filter(Boolean).join(' · ');
     const dateObj = new Date(e.date.split('/').reverse().join('-'));
@@ -1297,10 +1303,10 @@ function renderTimesheets() {
           <div style="font-size:11px;color:var(--subtext);margin-top:2px;">${e.sheetId || '—'}</div>
         </div>
       </div>
-      <div class="ts-entry-tag" style="margin-top:4px">${tag}</div>
-      ${e.tool ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${e.tool}</div>` : ''}
+      <div class="ts-entry-tag" style="margin-top:4px">${hl(tag)}</div>
+      ${e.tool ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${hl(e.tool)}</div>` : ''}
       ${e.break > 0 ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☕ ${(e.break * 60).toFixed(0)}min break</div>` : ''}
-      ${e.notes ? `<div class="ts-entry-note">${e.notes}</div>` : ''}
+      ${e.notes ? `<div class="ts-entry-note">${hl(e.notes)}</div>` : ''}
     </div>`;
   }).join('');
 }
