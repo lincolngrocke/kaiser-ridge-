@@ -1771,7 +1771,8 @@ function openTimeModal(mode, taskInfo) {
 
   const hours = Array.from({length:12}, (_,i) => String(i+1).padStart(2,'0'));
   const mins  = Array.from({length:60}, (_,i) => String(i).padStart(2,'0'));
-  const ampms = ['am','pm'];
+  // Only show am/pm options up to current period (can't go into future)
+  const ampms = ampm === 0 ? ['am'] : ['am','pm'];
 
   buildDrum('drum-hour',  'drum-hour-inner',  hours, h12 - 1);
   buildDrum('drum-min',   'drum-min-inner',   mins,  m);
@@ -1797,14 +1798,14 @@ function confirmTime(choice) {
     ? new Date().toTimeString().slice(0,5)
     : getDrumTimeStr();
 
-  // Prevent setting a future time
+  // Clamp to current time if drum was scrolled into the future
   if (choice === 'earlier') {
     const now = new Date();
     const [h, m] = timeStr.split(':').map(Number);
     const chosen = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0);
     if (chosen > now) {
-      showToast('Time cannot be in the future');
-      return;
+      timeStr = now.toTimeString().slice(0, 5);
+      showToast('Clamped to current time');
     }
   }
 
