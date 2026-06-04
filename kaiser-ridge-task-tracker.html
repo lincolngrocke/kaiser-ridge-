@@ -989,6 +989,7 @@
       <div style="display:flex;align-items:center;background:var(--bg);border-radius:12px;padding:0 12px;">
         <span style="font-size:16px;color:var(--subtext);margin-right:8px;">🔍</span>
         <input id="group-picker-search" type="search" placeholder="Find or add a group"
+          autocomplete="off" autocorrect="off" spellcheck="false"
           oninput="renderGroupPickerList()"
           style="flex:1;padding:10px 0;border:none;background:transparent;font-size:16px;color:var(--text);outline:none;">
       </div>
@@ -1008,7 +1009,8 @@
     <div style="padding:8px 16px 12px;">
       <div style="display:flex;align-items:center;background:var(--bg);border-radius:12px;padding:0 12px;">
         <span style="font-size:16px;color:var(--subtext);margin-right:8px;">🔍</span>
-        <input id="location-picker-search" type="search" placeholder="Find a location"
+        <input id="location-picker-search" type="search" placeholder="Find or add a location"
+          autocomplete="off" autocorrect="off" spellcheck="false"
           oninput="renderLocationPickerList()"
           style="flex:1;padding:10px 0;border:none;background:transparent;font-size:16px;color:var(--text);outline:none;">
       </div>
@@ -1029,6 +1031,7 @@
       <div style="display:flex;align-items:center;background:var(--bg);border-radius:12px;padding:0 12px;">
         <span style="font-size:16px;color:var(--subtext);margin-right:8px;">🔍</span>
         <input id="equip-picker-search" type="search" placeholder="Find or add equipment"
+          autocomplete="off" autocorrect="off" spellcheck="false"
           oninput="renderEquipmentPickerList()"
           style="flex:1;padding:10px 0;border:none;background:transparent;font-size:16px;color:var(--text);outline:none;">
       </div>
@@ -2179,23 +2182,39 @@ function openLocationPicker() {
 }
 
 function renderLocationPickerList() {
-  const query = document.getElementById('location-picker-search').value.trim().toLowerCase();
-  const filtered = query ? LOCATIONS.filter(l => l.toLowerCase().includes(query)) : LOCATIONS;
+  const query = document.getElementById('location-picker-search').value.trim();
+  const queryLower = query.toLowerCase();
+  const allLocs = [...new Set([...LOCATIONS, ...(JSON.parse(localStorage.getItem('kr_extra_locations') || '[]'))])];
+  const filtered = queryLower ? allLocs.filter(l => l.toLowerCase().includes(queryLower)) : allLocs;
   const list = document.getElementById('location-picker-list');
-  list.innerHTML = filtered.map(l => {
+  let html = '';
+  const exactMatch = allLocs.some(l => l.toLowerCase() === queryLower);
+  if (query && !exactMatch) {
+    html += `<div onclick="selectLocation('${query.replace(/'/g,"\\'")}')"
+      style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:pointer;">
+      <span style="font-size:20px;color:var(--blue);">＋</span>
+      <span style="font-size:16px;color:var(--blue);">Add "<strong>${query}</strong>"</span>
+    </div>`;
+  }
+  html += filtered.map(l => {
     const isSelected = l === _selectedLocation;
-    return `<div onclick="selectLocation('${l}')"
+    return `<div onclick="selectLocation('${l.replace(/'/g,"\\'")}')"
       style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;">
       <span style="font-size:16px;color:var(--text);">${l}</span>
       ${isSelected ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}
     </div>`;
-  }).join('') || '<div style="padding:24px;text-align:center;color:var(--subtext);">No matches</div>';
+  }).join('');
+  list.innerHTML = html || '<div style="padding:24px;text-align:center;color:var(--subtext);">No matches</div>';
 }
 
 function selectLocation(name) {
+  // Save new location if not in the fixed list
+  if (!LOCATIONS.includes(name)) {
+    const extras = JSON.parse(localStorage.getItem('kr_extra_locations') || '[]');
+    if (!extras.includes(name)) { extras.push(name); localStorage.setItem('kr_extra_locations', JSON.stringify(extras)); }
+  }
   setLocationDisplay(name);
-  closeModal('modal-location-picker');
-}
+
 
 function openGroupPicker() {
   document.getElementById('group-picker-search').value = '';
