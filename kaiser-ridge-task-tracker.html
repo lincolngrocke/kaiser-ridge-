@@ -2542,7 +2542,7 @@ function renderEquipmentManager() {
       ondragover="emDragOver(event,${i})" ondrop="emDrop(event,${i})" ondragleave="emDragLeave(event)">
       <div draggable="true" ondragstart="emDragStart(event,${i})"
         style="cursor:grab;color:var(--subtext);font-size:22px;padding:0 8px;user-select:none;-webkit-user-select:none;"
-        ontouchstart="emTouchStart(event,${i})" ontouchend="emTouchEnd(event)">≡</div>
+        ontouchstart="emTouchStart(event,${i})">≡</div>
       <span style="flex:1;font-size:16px;color:var(--text);">${e.name}</span>
       <button onclick="archiveEquipment('${e.name.replace(/'/g,"\\'")}');"
         style="background:none;border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:13px;color:var(--subtext);cursor:pointer;">Archive</button>
@@ -2612,8 +2612,11 @@ function emTouchStart(event, idx) {
   _touchDragging = false;
   _touchClone = null;
   _rowRects = [];
-  // Attach move listener with passive:false so we can preventDefault only when dragging
+  // passive:false only on move/end so we can preventDefault scroll during drag
+  // touchstart itself stays passive so iOS can still scroll before drag activates
   document.addEventListener('touchmove', emTouchMove, { passive: false });
+  document.addEventListener('touchend', emTouchEnd, { once: true });
+  document.addEventListener('touchcancel', emTouchCancel, { once: true });
 }
 
 function emTouchMove(event) {
@@ -2645,6 +2648,14 @@ function emTouchMove(event) {
   // Only prevent scroll once we're confirmed dragging
   event.preventDefault();
   if (_touchClone) _touchClone.style.top = (fingerY - 24) + 'px';
+}
+
+function emTouchCancel() {
+  document.removeEventListener('touchmove', emTouchMove);
+  if (_touchClone) { _touchClone.remove(); _touchClone = null; }
+  const row = _touchSrcIdx !== null ? document.getElementById('emrow-' + _touchSrcIdx) : null;
+  if (row) row.style.opacity = '';
+  _touchSrcIdx = null; _touchDragging = false; _rowRects = [];
 }
 
 function emTouchEnd(event) {
