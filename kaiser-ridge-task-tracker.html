@@ -2541,8 +2541,8 @@ function renderEquipmentManager() {
       style="display:flex;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid var(--border);background:var(--card);"
       ondragover="emDragOver(event,${i})" ondrop="emDrop(event,${i})" ondragleave="emDragLeave(event)">
       <div style="display:flex;flex-direction:column;gap:2px;">
-        <button onclick="emMoveUp(${i})" ${i===0?'disabled':''} style="background:none;border:none;color:${i===0?'var(--border)':'var(--blue)'};font-size:18px;cursor:pointer;padding:0;line-height:1;">▲</button>
-        <button onclick="emMoveDown(${i})" ${i===active.length-1?'disabled':''} style="background:none;border:none;color:${i===active.length-1?'var(--border)':'var(--blue)'};font-size:18px;cursor:pointer;padding:0;line-height:1;">▼</button>
+        <button onclick="emMoveUp(${i})" style="background:none;border:none;color:var(--blue);font-size:18px;cursor:pointer;padding:0;line-height:1;opacity:${i===0?0.2:1};">▲</button>
+        <button onclick="emMoveDown(${i})" style="background:none;border:none;color:var(--blue);font-size:18px;cursor:pointer;padding:0;line-height:1;opacity:${i===active.length-1?0.2:1};">▼</button>
       </div>
       <span style="flex:1;font-size:16px;color:var(--text);">${e.name}</span>
       <button onclick="archiveEquipment('${e.name.replace(/'/g,"\\'")}');"
