@@ -2722,10 +2722,13 @@ function renderSubtaskPickerList() {
       </div>` : '';
   list.innerHTML = addRow + (filtered.map(s => {
     const isSelected = _subtaskItems.includes(s);
-    return `<div onclick="selectSubtask('${s.replace(/'/g,"\\'")}',false)"
-      style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;">
-      <span style="font-size:16px;color:var(--text);">${s}</span>
-      ${isSelected ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}
+    const enc = s.replace(/'/g,"\\'");
+    return `<div style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">
+      <div onclick="selectSubtask('${enc}',false)" style="flex:1;display:flex;align-items:center;justify-content:space-between;cursor:pointer;">
+        <span style="font-size:16px;color:var(--text);">${s}</span>
+        ${isSelected ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}
+      </div>
+      <button onclick="editSubtaskName('${enc}')" style="background:none;border:none;color:var(--subtext);font-size:18px;cursor:pointer;padding:4px 6px;flex-shrink:0;">✎</button>
     </div>`;
   }).join('') || (!addRow ? '<div style="padding:24px;text-align:center;color:var(--subtext);">No subtasks found</div>' : ''));
 }
@@ -2737,6 +2740,28 @@ function selectSubtask(name, isNew) {
     renderDirSubtaskList();
   }
   closeModal('modal-subtask-picker');
+}
+
+function editSubtaskName(oldName) {
+  const newName = prompt('Rename subtask:', oldName);
+  if (!newName || newName.trim() === '' || newName.trim() === oldName) return;
+  const trimmed = newName.trim();
+  // Update globally across all tasks in SUBTASKS
+  let changed = false;
+  Object.keys(SUBTASKS).forEach(task => {
+    SUBTASKS[task] = SUBTASKS[task].map(s => {
+      if (s === oldName) { changed = true; return trimmed; }
+      return s;
+    });
+  });
+  if (changed) {
+    localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
+    // Also update current task's picker list if it contains oldName
+    const idx = _subtaskItems.indexOf(oldName);
+    if (idx !== -1) { _subtaskItems[idx] = trimmed; renderDirSubtaskList(); }
+    showToast('Subtask renamed everywhere');
+  }
+  renderSubtaskPickerList();
 }
 
 function getDirEquipment() {
