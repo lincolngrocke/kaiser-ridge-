@@ -2542,7 +2542,7 @@ function renderEquipmentManager() {
       ondragover="emDragOver(event,${i})" ondrop="emDrop(event,${i})" ondragleave="emDragLeave(event)">
       <div draggable="true" ondragstart="emDragStart(event,${i})"
         style="cursor:grab;color:var(--subtext);font-size:22px;padding:0 8px;user-select:none;-webkit-user-select:none;"
-        ontouchstart="emTouchStart(event,${i})" ontouchmove="emTouchMove(event)" ontouchend="emTouchEnd(event)">≡</div>
+        ontouchstart="emTouchStart(event,${i})" ontouchend="emTouchEnd(event)">≡</div>
       <span style="flex:1;font-size:16px;color:var(--text);">${e.name}</span>
       <button onclick="archiveEquipment('${e.name.replace(/'/g,"\\'")}');"
         style="background:none;border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:13px;color:var(--subtext);cursor:pointer;">Archive</button>
@@ -2612,6 +2612,8 @@ function emTouchStart(event, idx) {
   _touchDragging = false;
   _touchClone = null;
   _rowRects = [];
+  // Attach move listener with passive:false so we can preventDefault only when dragging
+  document.addEventListener('touchmove', emTouchMove, { passive: false });
 }
 
 function emTouchMove(event) {
@@ -2620,12 +2622,11 @@ function emTouchMove(event) {
   const dy = fingerY - _touchStartY;
 
   if (!_touchDragging) {
-    if (Math.abs(dy) < 6) return;
+    if (Math.abs(dy) < 6) return; // not moved enough — let scroll happen freely
     // Activate drag
     _touchDragging = true;
     const master = getEquipmentMaster();
     const active = master.filter(e => !e.archived);
-    // Snapshot all row rects NOW before anything changes
     _rowRects = active.map((_, i) => {
       const r = document.getElementById('emrow-' + i);
       return r ? r.getBoundingClientRect() : null;
@@ -2641,11 +2642,13 @@ function emTouchMove(event) {
     if (navigator.vibrate) navigator.vibrate(30);
   }
 
+  // Only prevent scroll once we're confirmed dragging
   event.preventDefault();
   if (_touchClone) _touchClone.style.top = (fingerY - 24) + 'px';
 }
 
 function emTouchEnd(event) {
+  document.removeEventListener('touchmove', emTouchMove);
   if (!_touchDragging || _touchSrcIdx === null) {
     _touchSrcIdx = null; _touchDragging = false; return;
   }
