@@ -2541,8 +2541,8 @@ function renderEquipmentManager() {
       style="display:flex;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid var(--border);background:var(--card);"
       ondragover="emDragOver(event,${i})" ondrop="emDrop(event,${i})" ondragleave="emDragLeave(event)">
       <div draggable="true" ondragstart="emDragStart(event,${i})"
-        style="cursor:grab;color:var(--subtext);font-size:22px;padding:0 4px;"
-        ontouchstart="emTouchStart(event,${i})" ontouchmove="emTouchMove(event)" ontouchend="emTouchEnd(event)">≡</div>
+        style="cursor:grab;color:var(--subtext);font-size:22px;padding:0 8px;user-select:none;-webkit-user-select:none;"
+        onpointerdown="emPointerDown(event,${i})">≡</div>
       <span style="flex:1;font-size:16px;color:var(--text);">${e.name}</span>
       <button onclick="archiveEquipment('${e.name.replace(/'/g,"\\'")}');"
         style="background:none;border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:13px;color:var(--subtext);cursor:pointer;">Archive</button>
@@ -2602,52 +2602,58 @@ function emDrop(event, targetIdx) {
 }
 
 // Touch drag-to-reorder (iOS)
-// Touch drag-to-reorder — long-press on ≡ handle to activate, then drag
-let _touchSrcIdx = null, _touchClone = null, _touchStartY = 0, _touchStartX = 0;
-let _touchDragging = false, _longPressTimer = null;
+// Pointer-based drag-to-reorder (works on iOS touch + desktop mouse)
+let _touchSrcIdx = null, _touchClone = null, _touchStartY = 0, _touchDragging = false;
 
-function emTouchStart(event, idx) {
-  _touchSrcIdx = idx;
-  _touchStartY = event.touches[0].clientY;
-  _touchStartX = event.touches[0].clientX;
-  _touchDragging = false;
-  // Long-press threshold: 300ms hold activates drag
-  _longPressTimer = setTimeout(() => {
-    _touchDragging = true;
-    const row = document.getElementById('emrow-' + idx);
-    if (!row) return;
-    _touchClone = row.cloneNode(true);
-    _touchClone.style.cssText = `position:fixed;left:0;right:0;background:var(--card);opacity:0.9;z-index:999;pointer-events:none;box-shadow:0 4px 20px rgba(0,0,0,0.2);padding:0 20px;`;
-    _touchClone.style.top = row.getBoundingClientRect().top + 'px';
-    document.body.appendChild(_touchClone);
-    row.style.opacity = '0.3';
-    // Haptic if supported
-    if (navigator.vibrate) navigator.vibrate(40);
-  }, 300);
-}
-
-function emTouchMove(event) {
-  if (!_touchDragging) {
-    // If finger moved significantly before long-press, cancel drag and allow scroll
-    const dy = Math.abs(event.touches[0].clientY - _touchStartY);
-    const dx = Math.abs(event.touches[0].clientX - _touchStartX);
-    if (dy > 8 || dx > 8) { clearTimeout(_longPressTimer); _longPressTimer = null; _touchSrcIdx = null; }
-    return;
-  }
+function emPointerDown(event, idx) {
+  // Only left button / primary touch
+  if (event.button !== undefined && event.button !== 0) return;
   event.preventDefault();
-  if (!_touchClone) return;
-  const currentY = event.touches[0].clientY;
-  const dy = currentY - _touchStartY;
-  const row = document.getElementById('emrow-' + _touchSrcIdx);
-  if (row) _touchClone.style.top = (row.getBoundingClientRect().top + dy) + 'px';
+  _touchSrcIdx = idx;
+  _touchStartY = event.clientY;
+  _touchDragging = false;
+
+  const row = document.getElementById('emrow-' + idx);
+  const rowRect = row.getBoundingClientRect();
+
+  // Create ghost immediately but invisible — shown once dragging starts
+  _touchClone = row.cloneNode(true);
+  _touchClone.style.cssText = `position:fixed;left:0;right:0;background:var(--card);opacity:0;z-index:999;pointer-events:none;box-shadow:0 4px 20px rgba(0,0,0,0.2);padding:0 20px;top:${rowRect.top}px;transition:opacity 0.1s;`;
+  document.body.appendChild(_touchClone);
+
+  document.addEventListener('pointermove', emPointerMove, { passive: false });
+  document.addEventListener('pointerup', emPointerUp, { once: true });
+  document.addEventListener('pointercancel', emPointerCancel, { once: true });
 }
 
-function emTouchEnd(event) {
-  clearTimeout(_longPressTimer); _longPressTimer = null;
-  if (!_touchDragging || _touchSrcIdx === null) { _touchDragging = false; _touchSrcIdx = null; return; }
-  const touchY = event.changedTouches[0].clientY;
+function emPointerMove(event) {
+  if (_touchSrcIdx === null) return;
+  const dy = event.clientY - _touchStartY;
+
+  if (!_touchDragging && Math.abs(dy) > 6) {
+    _touchDragging = true;
+    const row = document.getElementById('emrow-' + _touchSrcIdx);
+    if (row) row.style.opacity = '0.3';
+    if (_touchClone) _touchClone.style.opacity = '0.9';
+    if (navigator.vibrate) navigator.vibrate(30);
+  }
+
+  if (_touchDragging) {
+    event.preventDefault();
+    const row = document.getElementById('emrow-' + _touchSrcIdx);
+    if (row && _touchClone) {
+      _touchClone.style.top = (row.getBoundingClientRect().top + dy) + 'px';
+    }
+  }
+}
+
+function emPointerUp(event) {
+  document.removeEventListener('pointermove', emPointerMove);
+  if (!_touchDragging) { emPointerCleanup(); return; }
+
+  const touchY = event.clientY;
   if (_touchClone) { _touchClone.remove(); _touchClone = null; }
-  // Find target row
+
   const master = getEquipmentMaster();
   const active = master.filter(e => !e.archived);
   let targetIdx = _touchSrcIdx;
@@ -2664,8 +2670,21 @@ function emTouchEnd(event) {
     saveEquipmentMaster([...active, ...rest]);
     showToast('Order saved');
   }
-  _touchSrcIdx = null; _touchDragging = false;
+  emPointerCleanup();
   renderEquipmentManager();
+}
+
+function emPointerCancel() {
+  document.removeEventListener('pointermove', emPointerMove);
+  emPointerCleanup();
+  renderEquipmentManager();
+}
+
+function emPointerCleanup() {
+  if (_touchClone) { _touchClone.remove(); _touchClone = null; }
+  const row = _touchSrcIdx !== null ? document.getElementById('emrow-' + _touchSrcIdx) : null;
+  if (row) row.style.opacity = '';
+  _touchSrcIdx = null; _touchDragging = false;
 }
 
 let _subtaskItems = [];
