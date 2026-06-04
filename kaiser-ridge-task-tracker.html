@@ -2542,7 +2542,7 @@ function renderEquipmentManager() {
       ondragover="emDragOver(event,${i})" ondrop="emDrop(event,${i})" ondragleave="emDragLeave(event)">
       <div draggable="true" ondragstart="emDragStart(event,${i})"
         style="cursor:grab;color:var(--subtext);font-size:22px;padding:0 8px;user-select:none;-webkit-user-select:none;"
-        onpointerdown="emPointerDown(event,${i})">≡</div>
+        ontouchstart="emTouchStart(event,${i})" ontouchmove="emTouchMove(event)" ontouchend="emTouchEnd(event)">≡</div>
       <span style="flex:1;font-size:16px;color:var(--text);">${e.name}</span>
       <button onclick="archiveEquipment('${e.name.replace(/'/g,"\\'")}');"
         style="background:none;border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:13px;color:var(--subtext);cursor:pointer;">Archive</button>
@@ -2602,65 +2602,57 @@ function emDrop(event, targetIdx) {
 }
 
 // Touch drag-to-reorder (iOS)
-// Pointer-based drag-to-reorder (works on iOS touch + desktop mouse)
+// Touch drag-to-reorder on ≡ handle
 let _touchSrcIdx = null, _touchClone = null, _touchStartY = 0, _touchDragging = false;
 
-function emPointerDown(event, idx) {
-  // Only left button / primary touch
-  if (event.button !== undefined && event.button !== 0) return;
-  event.preventDefault();
+function emTouchStart(event, idx) {
   _touchSrcIdx = idx;
-  _touchStartY = event.clientY;
+  _touchStartY = event.touches[0].clientY;
   _touchDragging = false;
-
-  const row = document.getElementById('emrow-' + idx);
-  const rowRect = row.getBoundingClientRect();
-
-  // Create ghost immediately but invisible — shown once dragging starts
-  _touchClone = row.cloneNode(true);
-  _touchClone.style.cssText = `position:fixed;left:0;right:0;background:var(--card);opacity:0;z-index:999;pointer-events:none;box-shadow:0 4px 20px rgba(0,0,0,0.2);padding:0 20px;top:${rowRect.top}px;transition:opacity 0.1s;`;
-  document.body.appendChild(_touchClone);
-
-  document.addEventListener('pointermove', emPointerMove, { passive: false });
-  document.addEventListener('pointerup', emPointerUp, { once: true });
-  document.addEventListener('pointercancel', emPointerCancel, { once: true });
+  _touchClone = null;
+  // Don't preventDefault here — lets the page scroll if needed
 }
 
-function emPointerMove(event) {
+function emTouchMove(event) {
   if (_touchSrcIdx === null) return;
-  const dy = event.clientY - _touchStartY;
+  const currentY = event.touches[0].clientY;
+  const dy = currentY - _touchStartY;
 
-  if (!_touchDragging && Math.abs(dy) > 6) {
+  if (!_touchDragging) {
+    if (Math.abs(dy) < 8) return; // haven't moved enough yet
+    // Confirmed drag — activate
     _touchDragging = true;
     const row = document.getElementById('emrow-' + _touchSrcIdx);
-    if (row) row.style.opacity = '0.3';
-    if (_touchClone) _touchClone.style.opacity = '0.9';
+    if (!row) return;
+    row.style.opacity = '0.3';
+    _touchClone = document.createElement('div');
+    _touchClone.textContent = row.querySelector('span') ? row.querySelector('span').textContent : '';
+    _touchClone.style.cssText = `position:fixed;left:20px;right:20px;background:var(--card);padding:14px 12px;border-radius:10px;font-size:16px;color:var(--text);box-shadow:0 6px 24px rgba(0,0,0,0.18);z-index:999;pointer-events:none;top:${row.getBoundingClientRect().top}px;`;
+    document.body.appendChild(_touchClone);
     if (navigator.vibrate) navigator.vibrate(30);
   }
 
-  if (_touchDragging) {
-    event.preventDefault();
-    const row = document.getElementById('emrow-' + _touchSrcIdx);
-    if (row && _touchClone) {
-      _touchClone.style.top = (row.getBoundingClientRect().top + dy) + 'px';
-    }
-  }
+  event.preventDefault(); // now block scroll since we're dragging
+  if (_touchClone) _touchClone.style.top = (_touchStartY + dy - 20) + 'px';
 }
 
-function emPointerUp(event) {
-  document.removeEventListener('pointermove', emPointerMove);
-  if (!_touchDragging) { emPointerCleanup(); return; }
-
-  const touchY = event.clientY;
+function emTouchEnd(event) {
+  if (!_touchDragging || _touchSrcIdx === null) {
+    _touchSrcIdx = null; _touchDragging = false; return;
+  }
+  const touchY = event.changedTouches[0].clientY;
   if (_touchClone) { _touchClone.remove(); _touchClone = null; }
 
   const master = getEquipmentMaster();
   const active = master.filter(e => !e.archived);
+  const row = document.getElementById('emrow-' + _touchSrcIdx);
+  if (row) row.style.opacity = '';
+
   let targetIdx = _touchSrcIdx;
   for (let i = 0; i < active.length; i++) {
-    const row = document.getElementById('emrow-' + i);
-    if (!row) continue;
-    const rect = row.getBoundingClientRect();
+    const r = document.getElementById('emrow-' + i);
+    if (!r) continue;
+    const rect = r.getBoundingClientRect();
     if (touchY >= rect.top && touchY <= rect.bottom) { targetIdx = i; break; }
   }
   if (targetIdx !== _touchSrcIdx) {
@@ -2670,21 +2662,8 @@ function emPointerUp(event) {
     saveEquipmentMaster([...active, ...rest]);
     showToast('Order saved');
   }
-  emPointerCleanup();
-  renderEquipmentManager();
-}
-
-function emPointerCancel() {
-  document.removeEventListener('pointermove', emPointerMove);
-  emPointerCleanup();
-  renderEquipmentManager();
-}
-
-function emPointerCleanup() {
-  if (_touchClone) { _touchClone.remove(); _touchClone = null; }
-  const row = _touchSrcIdx !== null ? document.getElementById('emrow-' + _touchSrcIdx) : null;
-  if (row) row.style.opacity = '';
   _touchSrcIdx = null; _touchDragging = false;
+  renderEquipmentManager();
 }
 
 let _subtaskItems = [];
