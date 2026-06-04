@@ -930,6 +930,18 @@
     </div>
     <div style="padding:0 0 24px;">
 
+      <div class="form-row"><div class="form-label">Location</div>
+        <select class="form-select" id="dir-location">
+          <option value="">Select…</option>
+          <option>Property</option>
+          <option>Heritage</option>
+          <option>Serene</option>
+          <option>Kaiser</option>
+          <option>Shed</option>
+          <option>BESS#2</option>
+        </select>
+      </div>
+
       <div class="form-row"><div class="form-label">Frequency</div>
         <select class="form-select" id="dir-frequency">
           <option value="Daily">Daily</option>
@@ -2082,6 +2094,7 @@ function renderDirectory() {
 
   // Group DIRECTORY by frequency then group
   const grouped = {};
+  const taskMeta = {}; // store location per task key
   DIRECTORY.forEach(r => {
     const freq = r.frequency || 'Other';
     const grp  = r.group || 'Other';
@@ -2091,6 +2104,7 @@ function renderDirectory() {
     if (!grouped[freq][grp]) grouped[freq][grp] = {};
     if (!grouped[freq][grp][task]) grouped[freq][grp][task] = [];
     if (r.equipment) grouped[freq][grp][task].push(r.equipment);
+    if (r.location && !taskMeta[key]) taskMeta[key] = { location: r.location };
   });
 
   const freqOrder = ['Daily','Weekly','Fortnightly','Monthly','Quarterly','Annually'];
@@ -2106,9 +2120,11 @@ function renderDirectory() {
             const equip = grouped[freq][grp][task];
             const subtaskList = (SUBTASKS[task] || []);
             const key = encodeURIComponent(freq + '||' + grp + '||' + task);
+            const meta = taskMeta[freq + '||' + grp + '||' + task] || {};
             return `<div onclick="openDirEditTask('${key}')" style="padding:12px 16px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;align-items:center;justify-content:space-between;">
               <div>
                 <div style="font-size:15px;font-weight:500;color:var(--text);">${task}</div>
+                ${meta.location ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">📍 ${meta.location}</div>` : ''}
                 ${equip.length ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${equip.join(', ')}</div>` : ''}
                 ${subtaskList.length ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☑️ ${subtaskList.length} subtask${subtaskList.length > 1 ? 's' : ''}</div>` : ''}
               </div>
@@ -2181,6 +2197,7 @@ function selectGroup(name) {
 function openDirAddTask() {
   _dirEditingKey = null;
   document.getElementById('dir-modal-title').textContent = 'Add Task';
+  document.getElementById('dir-location').value = '';
   document.getElementById('dir-frequency').value = 'Daily';
   document.getElementById('dir-task').value = '';
   document.getElementById('dir-delete-wrap').style.display = 'none';
@@ -2195,6 +2212,8 @@ function openDirEditTask(encodedKey) {
   const [freq, grp, task] = key.split('||');
   _dirEditingKey = key;
   document.getElementById('dir-modal-title').textContent = 'Edit Task';
+  const entry = DIRECTORY.find(r => r.frequency === freq && r.group === grp && r.task === task);
+  document.getElementById('dir-location').value = entry && entry.location ? entry.location : '';
   document.getElementById('dir-frequency').value = freq;
   document.getElementById('dir-task').value = task;
   document.getElementById('dir-delete-wrap').style.display = 'block';
@@ -2313,6 +2332,7 @@ function getDirSubtasks() {
 }
 
 function saveDirTask() {
+  const location = document.getElementById('dir-location').value;
   const freq = document.getElementById('dir-frequency').value;
   const grp  = _selectedGroup;
   const task = document.getElementById('dir-task').value.trim();
@@ -2332,9 +2352,9 @@ function saveDirTask() {
 
   // Add new directory entries (one per equipment, or one with empty equipment)
   if (equip.length === 0) {
-    DIRECTORY.push({ frequency: freq, group: grp, task, equipment: '' });
+    DIRECTORY.push({ frequency: freq, group: grp, task, equipment: '', location });
   } else {
-    equip.forEach(e => DIRECTORY.push({ frequency: freq, group: grp, task, equipment: e }));
+    equip.forEach(e => DIRECTORY.push({ frequency: freq, group: grp, task, equipment: e, location }));
   }
 
   // Save subtasks
