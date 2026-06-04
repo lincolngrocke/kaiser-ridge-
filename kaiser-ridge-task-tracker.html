@@ -937,16 +937,10 @@
         <div style="color:var(--subtext);margin-left:6px;">›</div>
       </div>
 
-      <div class="form-row"><div class="form-label">Frequency</div>
-        <select class="form-select" id="dir-frequency">
-          <option value="Daily">Daily</option>
-          <option value="Weekly">Weekly</option>
-          <option value="Fortnightly">Fortnightly</option>
-          <option value="Monthly">Monthly</option>
-          <option value="Quarterly">Quarterly</option>
-          <option value="Bi-annually">Bi-annually</option>
-          <option value="Annually">Annually</option>
-        </select>
+      <div class="form-row" onclick="openFrequencyPicker()" style="cursor:pointer;">
+        <div class="form-label">Frequency</div>
+        <div id="dir-frequency-display" style="flex:1;text-align:right;font-size:16px;color:var(--subtext);">Select…</div>
+        <div style="color:var(--subtext);margin-left:6px;">›</div>
       </div>
 
       <div class="form-row" onclick="openGroupPicker()" style="cursor:pointer;">
@@ -996,6 +990,18 @@
       </div>
     </div>
     <div id="group-picker-list" style="flex:1;overflow-y:auto;padding:0 16px 24px;"></div>
+  </div>
+</div>
+
+<!-- ══════════════ FREQUENCY PICKER ══════════════ -->
+<div class="modal-backdrop" id="modal-frequency-picker" style="z-index:300;">
+  <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:85vh;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;padding:16px 20px 8px;">
+      <button onclick="closeModal('modal-frequency-picker')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:0;margin-right:12px;">‹ Back</button>
+      <span style="font-size:17px;font-weight:600;flex:1;text-align:center;">Frequency</span>
+      <span style="width:60px;"></span>
+    </div>
+    <div id="frequency-picker-list" style="flex:1;overflow-y:auto;padding:0 16px 24px;"></div>
   </div>
 </div>
 
@@ -2178,6 +2184,40 @@ function populateDirGroupDropdown(selectedGrp) {
   if (display) display.style.color = _selectedGroup ? 'var(--text)' : 'var(--subtext)';
 }
 
+const FREQUENCIES = ['Daily','Weekly','Fortnightly','Monthly','Quarterly','Bi-annually','Annually'];
+let _selectedFrequency = '';
+
+function setFrequencyDisplay(val) {
+  _selectedFrequency = val;
+  const display = document.getElementById('dir-frequency-display');
+  if (display) {
+    display.textContent = val || 'Select…';
+    display.style.color = val ? 'var(--text)' : 'var(--subtext)';
+  }
+}
+
+function openFrequencyPicker() {
+  renderFrequencyPickerList();
+  openModal('modal-frequency-picker');
+}
+
+function renderFrequencyPickerList() {
+  const list = document.getElementById('frequency-picker-list');
+  list.innerHTML = FREQUENCIES.map(f => {
+    const isSelected = f === _selectedFrequency;
+    return `<div onclick="selectFrequency('${f}')"
+      style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;">
+      <span style="font-size:16px;color:var(--text);">${f}</span>
+      ${isSelected ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}
+    </div>`;
+  }).join('');
+}
+
+function selectFrequency(name) {
+  setFrequencyDisplay(name);
+  closeModal('modal-frequency-picker');
+}
+
 const LOCATIONS = ['Property','Heritage','Serene','Kaiser','Shed','BESS#2'];
 let _selectedLocation = '';
 
@@ -2283,7 +2323,7 @@ function openDirAddTask() {
   _dirEditingKey = null;
   document.getElementById('dir-modal-title').textContent = 'Add Task';
   setLocationDisplay('');
-  document.getElementById('dir-frequency').value = 'Daily';
+  setFrequencyDisplay('');
   document.getElementById('dir-task').value = '';
   document.getElementById('dir-delete-wrap').style.display = 'none';
   populateDirGroupDropdown('');
@@ -2299,7 +2339,7 @@ function openDirEditTask(encodedKey) {
   document.getElementById('dir-modal-title').textContent = 'Edit Task';
   const entry = DIRECTORY.find(r => r.frequency === freq && r.group === grp && r.task === task);
   setLocationDisplay(entry && entry.location ? entry.location : '');
-  document.getElementById('dir-frequency').value = freq;
+  setFrequencyDisplay(freq);
   document.getElementById('dir-task').value = task;
   document.getElementById('dir-delete-wrap').style.display = 'block';
   populateDirGroupDropdown(grp);
@@ -2418,10 +2458,10 @@ function getDirSubtasks() {
 
 function saveDirTask() {
   const location = _selectedLocation;
-  const freq = document.getElementById('dir-frequency').value;
+  const freq = _selectedFrequency;
   const grp  = _selectedGroup;
   const task = document.getElementById('dir-task').value.trim();
-  if (!freq) { showToast('Please select a Frequency'); return; }
+  if (!freq)     { showToast('Please select a Frequency'); return; }
   if (!grp)  { showToast('Please select a Group'); return; }
   if (!task) { showToast('Please enter a Task Name'); return; }
 
