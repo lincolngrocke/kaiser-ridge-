@@ -636,6 +636,17 @@
   </div>
 </div>
 
+<!-- ══════════════ DIRECTORY SCREEN ══════════════ -->
+<div class="screen" id="screen-directory">
+  <div class="header">
+    <div class="header-title">Task Directory</div>
+    <button onclick="openDirAddTask()" style="background:var(--blue);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:14px;font-weight:600;cursor:pointer;">+ Add</button>
+  </div>
+  <div class="scroll-area">
+    <div id="dir-list"></div>
+  </div>
+</div>
+
 <!-- ══════════════ SETTINGS SCREEN ══════════════ -->
 <div class="screen" id="screen-settings">
   <div class="header">
@@ -772,6 +783,9 @@
   <button class="nav-tab" onclick="showScreen('timesheets',this)">
     <span class="nav-icon">📋</span>Timesheets
   </button>
+  <button class="nav-tab" onclick="showScreen('directory',this)">
+    <span class="nav-icon">📁</span>Directory
+  </button>
   <button class="nav-tab" onclick="showScreen('settings',this)">
     <span class="nav-icon">⚙️</span>Settings
   </button>
@@ -903,6 +917,50 @@
       <button class="btn-danger" onclick="deleteEntry()" style="margin-top:10px;">Delete Entry</button>
     </div>
     <div style="height:10px"></div>
+  </div>
+</div>
+
+<!-- ══════════════ DIRECTORY ADD/EDIT MODAL ══════════════ -->
+<div class="modal-backdrop" id="modal-dir-task" style="z-index:200;">
+  <div class="modal-sheet" style="max-height:90vh;overflow-y:auto;">
+    <div class="modal-header">
+      <button class="modal-cancel" onclick="closeModal('modal-dir-task')">Cancel</button>
+      <span class="modal-title" id="dir-modal-title">Add Task</span>
+      <button class="modal-save" onclick="saveDirTask()">Save</button>
+    </div>
+    <div style="padding:0 0 24px;">
+
+      <div class="form-row"><div class="form-label">Frequency</div>
+        <select class="form-select" id="dir-frequency">
+          <option>Daily</option><option>Weekly</option><option>Fortnightly</option>
+          <option>Monthly</option><option>Quarterly</option><option>Annually</option>
+        </select>
+      </div>
+
+      <div class="form-row"><div class="form-label">Group</div>
+        <input class="form-select" id="dir-group" type="text" placeholder="e.g. Routines" style="font-size:16px;border:none;width:100%;text-align:right;background:transparent;color:var(--text);">
+      </div>
+
+      <div class="form-row"><div class="form-label">Task Name</div>
+        <input class="form-select" id="dir-task" type="text" placeholder="e.g. Change over tiny house" style="font-size:16px;border:none;width:100%;text-align:right;background:transparent;color:var(--text);">
+      </div>
+
+      <div style="padding:16px 20px 8px;">
+        <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">EQUIPMENT OPTIONS</div>
+        <div id="dir-equipment-list"></div>
+        <button onclick="addDirEquipment()" style="margin-top:8px;background:none;border:1px dashed var(--border);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">+ Add Equipment</button>
+      </div>
+
+      <div style="padding:16px 20px 8px;">
+        <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">SUBTASKS</div>
+        <div id="dir-subtask-list"></div>
+        <button onclick="addDirSubtask()" style="margin-top:8px;background:none;border:1px dashed var(--border);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">+ Add Subtask</button>
+      </div>
+
+      <div style="padding:16px 20px 0;" id="dir-delete-wrap">
+        <button onclick="deleteDirTask()" style="width:100%;padding:14px;background:none;border:1px solid var(--red);border-radius:12px;color:var(--red);font-size:16px;font-weight:600;cursor:pointer;">Delete Task</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1964,6 +2022,193 @@ function undoClockIn() {
   renderClockState();
   showToast('Clock-in discarded');
 }
+
+// ════════════════════════════════
+//  DIRECTORY MANAGER
+// ════════════════════════════════
+
+let _dirEditingKey = null; // "frequency|group|task" key for editing
+
+function renderDirectory() {
+  const list = document.getElementById('dir-list');
+  if (!list) return;
+
+  // Group DIRECTORY by frequency then group
+  const grouped = {};
+  DIRECTORY.forEach(r => {
+    const freq = r.frequency || 'Other';
+    const grp  = r.group || 'Other';
+    const task = r.task || '';
+    const key  = freq + '||' + grp + '||' + task;
+    if (!grouped[freq]) grouped[freq] = {};
+    if (!grouped[freq][grp]) grouped[freq][grp] = {};
+    if (!grouped[freq][grp][task]) grouped[freq][grp][task] = [];
+    if (r.equipment) grouped[freq][grp][task].push(r.equipment);
+  });
+
+  const freqOrder = ['Daily','Weekly','Fortnightly','Monthly','Quarterly','Annually'];
+  const freqs = [...new Set([...freqOrder.filter(f => grouped[f]), ...Object.keys(grouped).filter(f => !freqOrder.includes(f))])];
+
+  list.innerHTML = freqs.map(freq => `
+    <div style="margin-bottom:8px;">
+      <div style="padding:8px 16px 4px;font-size:11px;font-weight:700;color:var(--subtext);letter-spacing:0.5px;text-transform:uppercase;">${freq}</div>
+      ${Object.keys(grouped[freq]).map(grp => `
+        <div style="margin:0 12px 8px;background:var(--card);border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+          <div style="padding:10px 16px;background:var(--blue);color:#fff;font-size:12px;font-weight:700;letter-spacing:0.3px;">${grp}</div>
+          ${Object.keys(grouped[freq][grp]).map(task => {
+            const equip = grouped[freq][grp][task];
+            const subtaskList = (SUBTASKS[task] || []);
+            const key = encodeURIComponent(freq + '||' + grp + '||' + task);
+            return `<div onclick="openDirEditTask('${key}')" style="padding:12px 16px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;align-items:center;justify-content:space-between;">
+              <div>
+                <div style="font-size:15px;font-weight:500;color:var(--text);">${task}</div>
+                ${equip.length ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${equip.join(', ')}</div>` : ''}
+                ${subtaskList.length ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☑️ ${subtaskList.length} subtask${subtaskList.length > 1 ? 's' : ''}</div>` : ''}
+              </div>
+              <div style="color:var(--subtext);font-size:18px;">›</div>
+            </div>`;
+          }).join('')}
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+}
+
+function openDirAddTask() {
+  _dirEditingKey = null;
+  document.getElementById('dir-modal-title').textContent = 'Add Task';
+  document.getElementById('dir-frequency').value = 'Daily';
+  document.getElementById('dir-group').value = '';
+  document.getElementById('dir-task').value = '';
+  document.getElementById('dir-delete-wrap').style.display = 'none';
+  renderDirEquipmentList([]);
+  renderDirSubtaskList([]);
+  openModal('modal-dir-task');
+}
+
+function openDirEditTask(encodedKey) {
+  const key = decodeURIComponent(encodedKey);
+  const [freq, grp, task] = key.split('||');
+  _dirEditingKey = key;
+  document.getElementById('dir-modal-title').textContent = 'Edit Task';
+  document.getElementById('dir-frequency').value = freq;
+  document.getElementById('dir-group').value = grp;
+  document.getElementById('dir-task').value = task;
+  document.getElementById('dir-delete-wrap').style.display = 'block';
+  const equip = DIRECTORY.filter(r => r.frequency === freq && r.group === grp && r.task === task).map(r => r.equipment).filter(Boolean);
+  renderDirEquipmentList(equip);
+  renderDirSubtaskList(SUBTASKS[task] || []);
+  openModal('modal-dir-task');
+}
+
+function renderDirEquipmentList(items) {
+  document.getElementById('dir-equipment-list').innerHTML = items.map((e, i) => `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+      <input type="text" value="${e}" id="dir-eq-${i}" style="flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--bg);">
+      <button onclick="removeDirItem('dir-equipment-list','dir-eq-${i}',this)" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:4px;">✕</button>
+    </div>
+  `).join('');
+}
+
+function renderDirSubtaskList(items) {
+  document.getElementById('dir-subtask-list').innerHTML = items.map((s, i) => `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+      <input type="text" value="${s}" id="dir-st-${i}" style="flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--bg);">
+      <button onclick="removeDirItem('dir-subtask-list','dir-st-${i}',this)" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:4px;">✕</button>
+    </div>
+  `).join('');
+}
+
+function addDirEquipment() {
+  const list = document.getElementById('dir-equipment-list');
+  const i = list.children.length;
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;';
+  div.innerHTML = `<input type="text" id="dir-eq-${i}" placeholder="Equipment name" style="flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--bg);">
+    <button onclick="this.parentElement.remove()" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:4px;">✕</button>`;
+  list.appendChild(div);
+  div.querySelector('input').focus();
+}
+
+function addDirSubtask() {
+  const list = document.getElementById('dir-subtask-list');
+  const i = list.children.length;
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;';
+  div.innerHTML = `<input type="text" id="dir-st-${i}" placeholder="Subtask description" style="flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--bg);">
+    <button onclick="this.parentElement.remove()" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:4px;">✕</button>`;
+  list.appendChild(div);
+  div.querySelector('input').focus();
+}
+
+function removeDirItem(listId, inputId, btn) {
+  btn.parentElement.remove();
+}
+
+function getDirEquipment() {
+  return Array.from(document.getElementById('dir-equipment-list').querySelectorAll('input')).map(i => i.value.trim()).filter(Boolean);
+}
+
+function getDirSubtasks() {
+  return Array.from(document.getElementById('dir-subtask-list').querySelectorAll('input')).map(i => i.value.trim()).filter(Boolean);
+}
+
+function saveDirTask() {
+  const freq  = document.getElementById('dir-frequency').value.trim();
+  const grp   = document.getElementById('dir-group').value.trim();
+  const task  = document.getElementById('dir-task').value.trim();
+  if (!freq || !grp || !task) { showToast('Please fill in all fields'); return; }
+
+  const equip    = getDirEquipment();
+  const subtasks = getDirSubtasks();
+
+  // Remove old entries for this task if editing
+  if (_dirEditingKey) {
+    const [oldFreq, oldGrp, oldTask] = _dirEditingKey.split('||');
+    DIRECTORY = DIRECTORY.filter(r => !(r.frequency === oldFreq && r.group === oldGrp && r.task === oldTask));
+    if (SUBTASKS[oldTask] && oldTask !== task) delete SUBTASKS[oldTask];
+  }
+
+  // Add new directory entries (one per equipment, or one with empty equipment)
+  if (equip.length === 0) {
+    DIRECTORY.push({ frequency: freq, group: grp, task, equipment: '' });
+  } else {
+    equip.forEach(e => DIRECTORY.push({ frequency: freq, group: grp, task, equipment: e }));
+  }
+
+  // Save subtasks
+  if (subtasks.length > 0) {
+    SUBTASKS[task] = subtasks;
+  } else {
+    delete SUBTASKS[task];
+  }
+
+  localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
+  localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
+  closeModal('modal-dir-task');
+  renderDirectory();
+  showToast('Task saved');
+}
+
+function deleteDirTask() {
+  if (!_dirEditingKey) return;
+  if (!confirm('Delete this task?')) return;
+  const [freq, grp, task] = _dirEditingKey.split('||');
+  DIRECTORY = DIRECTORY.filter(r => !(r.frequency === freq && r.group === grp && r.task === task));
+  delete SUBTASKS[task];
+  localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
+  localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
+  closeModal('modal-dir-task');
+  renderDirectory();
+  showToast('Task deleted');
+}
+
+// Render directory when switching to that screen
+const _origShowScreen = showScreen;
+showScreen = function(id, tab) {
+  _origShowScreen(id, tab);
+  if (id === 'directory') renderDirectory();
+};
 </script>
 </body>
 </html>
