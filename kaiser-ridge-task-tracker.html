@@ -972,7 +972,7 @@
 </div>
 
 <!-- ══════════════ GROUP PICKER ══════════════ -->
-<div class="modal-backdrop" id="modal-group-picker" style="z-index:300;display:none;">
+<div class="modal-backdrop" id="modal-group-picker" style="z-index:300;">
   <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:85vh;display:flex;flex-direction:column;">
     <div style="display:flex;align-items:center;padding:16px 20px 8px;">
       <button onclick="closeModal('modal-group-picker')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:0;margin-right:12px;">‹ Back</button>
@@ -2113,8 +2113,7 @@ function populateDirGroupDropdown(selectedGrp) {
 function openGroupPicker() {
   document.getElementById('group-picker-search').value = '';
   renderGroupPickerList();
-  document.getElementById('modal-group-picker').style.display = 'flex';
-  setTimeout(() => document.getElementById('group-picker-search').focus(), 200);
+  openModal('modal-group-picker');
 }
 
 function renderGroupPickerList() {
@@ -2128,7 +2127,7 @@ function renderGroupPickerList() {
   // "Add new" row if search has text not matching an existing group exactly
   const exactMatch = groups.some(g => g.toLowerCase() === query);
   if (query && !exactMatch) {
-    html += `<div onclick="selectGroup('${query.replace(/'/g,"\\'")}', true)"
+    html += `<div onclick="selectGroup('${query.replace(/'/g,"\\'")}')"
       style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:pointer;">
       <span style="font-size:20px;color:var(--blue);">＋</span>
       <span style="font-size:16px;color:var(--blue);">Add "<strong>${query}</strong>"</span>
@@ -2138,7 +2137,7 @@ function renderGroupPickerList() {
   // Existing groups
   filtered.forEach(g => {
     const isSelected = g === _selectedGroup;
-    html += `<div onclick="selectGroup('${g.replace(/'/g,"\\'")}', false)"
+    html += `<div onclick="selectGroup('${g.replace(/'/g,"\\'")}')"
       style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;">
       <span style="font-size:16px;color:var(--text);">${g}</span>
       ${isSelected ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}
@@ -2149,8 +2148,7 @@ function renderGroupPickerList() {
   list.innerHTML = html;
 }
 
-function selectGroup(name, isNew) {
-  // Capitalise first letter
+function selectGroup(name) {
   const formatted = name.charAt(0).toUpperCase() + name.slice(1);
   _selectedGroup = formatted;
   const display = document.getElementById('dir-group-display');
