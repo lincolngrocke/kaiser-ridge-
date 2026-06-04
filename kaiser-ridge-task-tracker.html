@@ -1064,7 +1064,7 @@
       <span style="font-size:17px;font-weight:600;flex:1;text-align:center;">Manage Equipment</span>
       <button onclick="closeModal('modal-equipment-manager');showToast('Equipment saved');" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;padding:0;width:60px;text-align:right;">Done</button>
     </div>
-    <div style="flex:1;overflow-y:auto;">
+    <div id="equip-manager-scroll" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;">
       <div style="padding:16px 20px 4px;">
         <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:4px;">ACTIVE</div>
         <div style="font-size:12px;color:var(--subtext);margin-bottom:12px;">Hold and drag ≡ to reorder</div>
@@ -2612,9 +2612,10 @@ function emTouchStart(event, idx) {
   _touchDragging = false;
   _touchClone = null;
   _rowRects = [];
-  // passive:false only on move/end so we can preventDefault scroll during drag
-  // touchstart itself stays passive so iOS can still scroll before drag activates
-  document.addEventListener('touchmove', emTouchMove, { passive: false });
+  // Attach to the scroll container with passive:false so we can preventDefault during drag
+  // but leave touchstart passive so iOS scroll works freely until drag is confirmed
+  const scroller = document.getElementById('equip-manager-scroll');
+  if (scroller) scroller.addEventListener('touchmove', emTouchMove, { passive: false });
   document.addEventListener('touchend', emTouchEnd, { once: true });
   document.addEventListener('touchcancel', emTouchCancel, { once: true });
 }
@@ -2651,7 +2652,8 @@ function emTouchMove(event) {
 }
 
 function emTouchCancel() {
-  document.removeEventListener('touchmove', emTouchMove);
+  const scroller = document.getElementById('equip-manager-scroll');
+  if (scroller) scroller.removeEventListener('touchmove', emTouchMove);
   if (_touchClone) { _touchClone.remove(); _touchClone = null; }
   const row = _touchSrcIdx !== null ? document.getElementById('emrow-' + _touchSrcIdx) : null;
   if (row) row.style.opacity = '';
@@ -2659,7 +2661,8 @@ function emTouchCancel() {
 }
 
 function emTouchEnd(event) {
-  document.removeEventListener('touchmove', emTouchMove);
+  const scroller = document.getElementById('equip-manager-scroll');
+  if (scroller) scroller.removeEventListener('touchmove', emTouchMove);
   if (!_touchDragging || _touchSrcIdx === null) {
     _touchSrcIdx = null; _touchDragging = false; return;
   }
