@@ -2160,17 +2160,17 @@ function getAllEquipment() {
 function equipRowHTML(id, selectedVal) {
   const allEquip = getAllEquipment();
   const isNew = selectedVal && !allEquip.includes(selectedVal);
-  return `<div id="dir-eq-wrap-${id}" style="margin-bottom:8px;">
-    <div style="display:flex;align-items:center;gap:8px;">
-      <select onchange="onDirEquipChange(this,'${id}')" style="flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--bg);">
-        ${allEquip.map(eq => `<option value="${eq}"${eq===selectedVal?' selected':''}>${eq}</option>`).join('')}
-        <option value="__new__"${isNew?' selected':''}>+ New Equipment...</option>
-      </select>
-      <button onclick="document.getElementById('dir-eq-wrap-${id}').remove()" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:4px;">x</button>
-    </div>
-    <div id="dir-eq-new-${id}" style="display:${isNew?'block':'none'};margin-top:6px;">
-      <input type="text" value="${isNew?selectedVal:''}" placeholder="New equipment name" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--bg);">
-    </div>
+  const selDisplay = isNew ? 'none' : '';
+  const inpDisplay = isNew ? 'flex' : 'none';
+  const inpVal = isNew ? selectedVal : '';
+  return `<div id="dir-eq-wrap-${id}" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+    <select id="dir-eq-sel-${id}" onchange="onDirEquipChange(this,'${id}')" style="display:${selDisplay};flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--bg);">
+      ${allEquip.map(eq => `<option value="${eq}"${eq===selectedVal?' selected':''}>${eq}</option>`).join('')}
+      <option value="__new__"${isNew?' selected':''}>New</option>
+    </select>
+    <input id="dir-eq-inp-${id}" type="text" value="${inpVal}" placeholder="New equipment name…" style="display:${inpDisplay};flex:1;font-size:14px;border:none;text-align:right;background:transparent;color:var(--text);outline:none;min-width:0;"
+      onblur="if(!this.value.trim()){this.style.display='none';document.getElementById('dir-eq-sel-${id}').style.display='';}">
+    <button onclick="document.getElementById('dir-eq-wrap-${id}').remove()" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:4px;">✕</button>
   </div>`;
 }
 
@@ -2179,10 +2179,12 @@ function renderDirEquipmentList(items) {
 }
 
 function onDirEquipChange(sel, id) {
-  const newRow = document.getElementById('dir-eq-new-' + id);
-  if (newRow) {
-    newRow.style.display = sel.value === '__new__' ? 'block' : 'none';
-    if (sel.value === '__new__') newRow.querySelector('input').focus();
+  if (sel.value === '__new__') {
+    const inp = document.getElementById('dir-eq-inp-' + id);
+    inp.value = '';
+    sel.style.display = 'none';
+    inp.style.display = 'block';
+    setTimeout(() => inp.focus(), 100);
   }
 }
 
@@ -2221,12 +2223,11 @@ function removeDirItem(listId, inputId, btn) {
 function getDirEquipment() {
   return Array.from(document.getElementById('dir-equipment-list').children).map(row => {
     const sel = row.querySelector('select');
-    if (!sel) return '';
-    if (sel.value === '__new__') {
-      const inp = row.querySelector('input[type="text"]');
-      return inp ? inp.value.trim() : '';
-    }
-    return sel.value.trim();
+    const inp = row.querySelector('input[type="text"]');
+    // If input is visible, use its value (New mode)
+    if (inp && inp.style.display !== 'none') return inp.value.trim();
+    if (sel && sel.value !== '__new__') return sel.value.trim();
+    return '';
   }).filter(Boolean);
 }
 
