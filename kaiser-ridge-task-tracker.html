@@ -1062,7 +1062,7 @@
     <div style="display:flex;align-items:center;padding:16px 20px 8px;border-bottom:1px solid var(--border);">
       <button onclick="closeModal('modal-equipment-manager')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:0;margin-right:12px;">‹ Back</button>
       <span style="font-size:17px;font-weight:600;flex:1;text-align:center;">Manage Equipment</span>
-      <span style="width:60px;"></span>
+      <button onclick="closeModal('modal-equipment-manager');showToast('Equipment saved');" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;padding:0;width:60px;text-align:right;">Done</button>
     </div>
     <div style="flex:1;overflow-y:auto;">
       <div style="padding:16px 20px 4px;">
@@ -2563,13 +2563,13 @@ function renderEquipmentManager() {
 function archiveEquipment(name) {
   const master = getEquipmentMaster();
   const item = master.find(e => e.name === name);
-  if (item) { item.archived = true; saveEquipmentMaster(master); renderEquipmentManager(); }
+  if (item) { item.archived = true; saveEquipmentMaster(master); renderEquipmentManager(); showToast('Archived'); }
 }
 
 function restoreEquipment(name) {
   const master = getEquipmentMaster();
   const item = master.find(e => e.name === name);
-  if (item) { item.archived = false; saveEquipmentMaster(master); renderEquipmentManager(); }
+  if (item) { item.archived = false; saveEquipmentMaster(master); renderEquipmentManager(); showToast('Restored'); }
 }
 
 // Drag-to-reorder (desktop)
