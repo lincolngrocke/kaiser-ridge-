@@ -962,7 +962,7 @@
       <div style="padding:16px 20px 8px;">
         <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">SUBTASKS</div>
         <div id="dir-subtask-list"></div>
-        <button onclick="addDirSubtask()" style="margin-top:8px;background:none;border:1px dashed var(--border);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">+ Add Subtask</button>
+        <button onclick="openSubtaskPicker()" style="margin-top:8px;background:none;border:1px dashed var(--border);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">+ Add Subtask</button>
       </div>
 
       <div style="padding:16px 20px 0;" id="dir-delete-wrap">
@@ -1000,6 +1000,15 @@
       <button onclick="closeModal('modal-frequency-picker')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:0;margin-right:12px;">‹ Back</button>
       <span style="font-size:17px;font-weight:600;flex:1;text-align:center;">Frequency</span>
       <span style="width:60px;"></span>
+    </div>
+    <div style="padding:8px 16px 12px;">
+      <div style="display:flex;align-items:center;background:var(--bg);border-radius:12px;padding:0 12px;">
+        <span style="font-size:16px;color:var(--subtext);margin-right:8px;">🔍</span>
+        <input id="frequency-picker-search" type="search" placeholder="Find a frequency"
+          autocomplete="off" autocorrect="off" spellcheck="false"
+          oninput="renderFrequencyPickerList()"
+          style="flex:1;padding:10px 0;border:none;background:transparent;font-size:16px;color:var(--text);outline:none;">
+      </div>
     </div>
     <div id="frequency-picker-list" style="flex:1;overflow-y:auto;padding:0 16px 24px;"></div>
   </div>
@@ -1044,6 +1053,27 @@
       </div>
     </div>
     <div id="equip-picker-list" style="flex:1;overflow-y:auto;padding:0 16px 24px;"></div>
+  </div>
+</div>
+
+<!-- ══════════════ SUBTASK PICKER ══════════════ -->
+<div class="modal-backdrop" id="modal-subtask-picker" style="z-index:300;">
+  <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:85vh;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;padding:16px 20px 8px;">
+      <button onclick="closeModal('modal-subtask-picker')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:0;margin-right:12px;">‹ Back</button>
+      <span style="font-size:17px;font-weight:600;flex:1;text-align:center;">Subtask</span>
+      <span style="width:60px;"></span>
+    </div>
+    <div style="padding:8px 16px 12px;">
+      <div style="display:flex;align-items:center;background:var(--bg);border-radius:12px;padding:0 12px;">
+        <span style="font-size:16px;color:var(--subtext);margin-right:8px;">🔍</span>
+        <input id="subtask-picker-search" type="search" placeholder="Find or add subtask"
+          autocomplete="off" autocorrect="off" spellcheck="false"
+          oninput="renderSubtaskPickerList()"
+          style="flex:1;padding:10px 0;border:none;background:transparent;font-size:16px;color:var(--text);outline:none;">
+      </div>
+    </div>
+    <div id="subtask-picker-list" style="flex:1;overflow-y:auto;padding:0 16px 24px;"></div>
   </div>
 </div>
 
@@ -2197,20 +2227,23 @@ function setFrequencyDisplay(val) {
 }
 
 function openFrequencyPicker() {
+  document.getElementById('frequency-picker-search').value = '';
   renderFrequencyPickerList();
   openModal('modal-frequency-picker');
 }
 
 function renderFrequencyPickerList() {
+  const query = document.getElementById('frequency-picker-search').value.trim().toLowerCase();
+  const filtered = query ? FREQUENCIES.filter(f => f.toLowerCase().includes(query)) : FREQUENCIES;
   const list = document.getElementById('frequency-picker-list');
-  list.innerHTML = FREQUENCIES.map(f => {
+  list.innerHTML = filtered.map(f => {
     const isSelected = f === _selectedFrequency;
     return `<div onclick="selectFrequency('${f}')"
       style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;">
       <span style="font-size:16px;color:var(--text);">${f}</span>
       ${isSelected ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}
     </div>`;
-  }).join('');
+  }).join('') || '<div style="padding:24px;text-align:center;color:var(--subtext);">No matches</div>';
 }
 
 function selectFrequency(name) {
@@ -2424,28 +2457,62 @@ function selectEquipment(name) {
   closeModal('modal-equipment-picker');
 }
 
+let _subtaskItems = [];
+
 function renderDirSubtaskList(items) {
-  document.getElementById('dir-subtask-list').innerHTML = items.map((s, i) => `
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-      <input type="text" value="${s}" id="dir-st-${i}" style="flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--bg);">
-      <button onclick="removeDirItem('dir-subtask-list','dir-st-${i}',this)" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:4px;">x</button>
-    </div>
-  `).join('');
+  _subtaskItems = items ? [...items] : _subtaskItems;
+  document.getElementById('dir-subtask-list').innerHTML = _subtaskItems.map((s, i) => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">
+      <span style="font-size:15px;color:var(--text);">${s}</span>
+      <button onclick="removeSubtaskItem(${i})" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:4px;">✕</button>
+    </div>`).join('');
 }
 
-function addDirSubtask() {
-  const list = document.getElementById('dir-subtask-list');
-  const i = list.children.length;
-  const div = document.createElement('div');
-  div.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;';
-  div.innerHTML = `<input type="text" id="dir-st-${i}" placeholder="Subtask description" style="flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--bg);">
-    <button onclick="this.parentElement.remove()" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:4px;">✕</button>`;
-  list.appendChild(div);
-  div.querySelector('input').focus();
+function removeSubtaskItem(i) {
+  _subtaskItems.splice(i, 1);
+  renderDirSubtaskList();
 }
 
-function removeDirItem(listId, inputId, btn) {
-  btn.parentElement.remove();
+function openSubtaskPicker() {
+  document.getElementById('subtask-picker-search').value = '';
+  renderSubtaskPickerList();
+  openModal('modal-subtask-picker');
+}
+
+function getAllSubtasks() {
+  const subs = [];
+  Object.values(SUBTASKS).forEach(arr => arr.forEach(s => { if (s && !subs.includes(s)) subs.push(s); }));
+  return subs.sort();
+}
+
+function renderSubtaskPickerList() {
+  const query = document.getElementById('subtask-picker-search').value.trim();
+  const all = getAllSubtasks();
+  const filtered = query ? all.filter(s => s.toLowerCase().includes(query.toLowerCase())) : all;
+  const list = document.getElementById('subtask-picker-list');
+  const addRow = query && !all.some(s => s.toLowerCase() === query.toLowerCase())
+    ? `<div onclick="selectSubtask('${query.replace(/'/g,"\\'")}',true)"
+        style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;cursor:pointer;">
+        <span style="font-size:20px;color:var(--blue);">＋</span>
+        <span style="font-size:16px;color:var(--blue);">Add "${query}"</span>
+      </div>` : '';
+  list.innerHTML = addRow + (filtered.map(s => {
+    const isSelected = _subtaskItems.includes(s);
+    return `<div onclick="selectSubtask('${s.replace(/'/g,"\\'")}',false)"
+      style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;">
+      <span style="font-size:16px;color:var(--text);">${s}</span>
+      ${isSelected ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}
+    </div>`;
+  }).join('') || (!addRow ? '<div style="padding:24px;text-align:center;color:var(--subtext);">No subtasks found</div>' : ''));
+}
+
+function selectSubtask(name, isNew) {
+  const formatted = name.charAt(0).toUpperCase() + name.slice(1);
+  if (!_subtaskItems.includes(formatted)) {
+    _subtaskItems.push(formatted);
+    renderDirSubtaskList();
+  }
+  closeModal('modal-subtask-picker');
 }
 
 function getDirEquipment() {
@@ -2453,7 +2520,7 @@ function getDirEquipment() {
 }
 
 function getDirSubtasks() {
-  return Array.from(document.getElementById('dir-subtask-list').querySelectorAll('input')).map(i => i.value.trim()).filter(Boolean);
+  return [..._subtaskItems];
 }
 
 function saveDirTask() {
