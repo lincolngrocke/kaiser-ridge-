@@ -938,7 +938,11 @@
       </div>
 
       <div class="form-row"><div class="form-label">Group</div>
-        <input class="form-select" id="dir-group" type="text" placeholder="e.g. Routines" style="font-size:16px;border:none;width:100%;text-align:right;background:transparent;color:var(--text);">
+        <select class="form-select" id="dir-group" onchange="onDirGroupChange(this)"></select>
+      </div>
+      <div class="form-row" id="dir-new-group-row" style="display:none;">
+        <div class="form-label">New Group Name</div>
+        <input class="form-select" id="dir-new-group" type="text" placeholder="e.g. Admin" style="font-size:16px;border:none;width:100%;text-align:right;background:transparent;color:var(--text);">
       </div>
 
       <div class="form-row"><div class="form-label">Task Name</div>
@@ -2074,13 +2078,31 @@ function renderDirectory() {
   `).join('');
 }
 
+function populateDirGroupDropdown(selectedGrp) {
+  const groups = [...new Set(DIRECTORY.map(r => r.group).filter(Boolean))].sort();
+  const sel = document.getElementById('dir-group');
+  sel.innerHTML = groups.map(g => `<option value="${g}"${g === selectedGrp ? ' selected' : ''}>${g}</option>`).join('') +
+    `<option value="__new__"${selectedGrp === '__new__' ? ' selected' : ''}>＋ New Group…</option>`;
+  document.getElementById('dir-new-group-row').style.display = selectedGrp && !groups.includes(selectedGrp) ? 'flex' : 'none';
+  if (selectedGrp && !groups.includes(selectedGrp) && selectedGrp !== '__new__') {
+    sel.value = '__new__';
+    document.getElementById('dir-new-group').value = selectedGrp;
+    document.getElementById('dir-new-group-row').style.display = 'flex';
+  }
+}
+
+function onDirGroupChange(sel) {
+  document.getElementById('dir-new-group-row').style.display = sel.value === '__new__' ? 'flex' : 'none';
+  if (sel.value === '__new__') document.getElementById('dir-new-group').focus();
+}
+
 function openDirAddTask() {
   _dirEditingKey = null;
   document.getElementById('dir-modal-title').textContent = 'Add Task';
   document.getElementById('dir-frequency').value = 'Daily';
-  document.getElementById('dir-group').value = '';
   document.getElementById('dir-task').value = '';
   document.getElementById('dir-delete-wrap').style.display = 'none';
+  populateDirGroupDropdown('');
   renderDirEquipmentList([]);
   renderDirSubtaskList([]);
   openModal('modal-dir-task');
@@ -2092,9 +2114,9 @@ function openDirEditTask(encodedKey) {
   _dirEditingKey = key;
   document.getElementById('dir-modal-title').textContent = 'Edit Task';
   document.getElementById('dir-frequency').value = freq;
-  document.getElementById('dir-group').value = grp;
   document.getElementById('dir-task').value = task;
   document.getElementById('dir-delete-wrap').style.display = 'block';
+  populateDirGroupDropdown(grp);
   const equip = DIRECTORY.filter(r => r.frequency === freq && r.group === grp && r.task === task).map(r => r.equipment).filter(Boolean);
   renderDirEquipmentList(equip);
   renderDirSubtaskList(SUBTASKS[task] || []);
@@ -2155,7 +2177,8 @@ function getDirSubtasks() {
 
 function saveDirTask() {
   const freq  = document.getElementById('dir-frequency').value.trim();
-  const grp   = document.getElementById('dir-group').value.trim();
+  const grpSel = document.getElementById('dir-group').value;
+  const grp   = grpSel === '__new__' ? document.getElementById('dir-new-group').value.trim() : grpSel;
   const task  = document.getElementById('dir-task').value.trim();
   if (!freq || !grp || !task) { showToast('Please fill in all fields'); return; }
 
