@@ -1004,7 +1004,7 @@
     <div style="padding:8px 16px 12px;">
       <div style="display:flex;align-items:center;background:var(--bg);border-radius:12px;padding:0 12px;">
         <span style="font-size:16px;color:var(--subtext);margin-right:8px;">🔍</span>
-        <input id="frequency-picker-search" type="search" placeholder="Find a frequency"
+        <input id="frequency-picker-search" type="search" placeholder="Find or add frequency"
           autocomplete="off" autocorrect="off" spellcheck="false"
           oninput="renderFrequencyPickerList()"
           style="flex:1;padding:10px 0;border:none;background:transparent;font-size:16px;color:var(--text);outline:none;">
@@ -2214,8 +2214,13 @@ function populateDirGroupDropdown(selectedGrp) {
   if (display) display.style.color = _selectedGroup ? 'var(--text)' : 'var(--subtext)';
 }
 
-const FREQUENCIES = ['Daily','Weekly','Fortnightly','Monthly','Quarterly','Bi-annually','Annually'];
+const FREQUENCIES_BASE = ['Daily','Weekly','Fortnightly','Monthly','Quarterly','Bi-annually','Annually'];
 let _selectedFrequency = '';
+
+function getAllFrequencies() {
+  const extras = JSON.parse(localStorage.getItem('kr_extra_frequencies') || '[]');
+  return [...FREQUENCIES_BASE, ...extras.filter(e => !FREQUENCIES_BASE.includes(e))];
+}
 
 function setFrequencyDisplay(val) {
   _selectedFrequency = val;
@@ -2233,20 +2238,31 @@ function openFrequencyPicker() {
 }
 
 function renderFrequencyPickerList() {
-  const query = document.getElementById('frequency-picker-search').value.trim().toLowerCase();
-  const filtered = query ? FREQUENCIES.filter(f => f.toLowerCase().includes(query)) : FREQUENCIES;
+  const query = document.getElementById('frequency-picker-search').value.trim();
+  const all = getAllFrequencies();
+  const filtered = query ? all.filter(f => f.toLowerCase().includes(query.toLowerCase())) : all;
   const list = document.getElementById('frequency-picker-list');
-  list.innerHTML = filtered.map(f => {
+  const addRow = query && !all.some(f => f.toLowerCase() === query.toLowerCase())
+    ? `<div onclick="selectFrequency('${query.replace(/'/g,"\\'")}',true)"
+        style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;cursor:pointer;">
+        <span style="font-size:20px;color:var(--blue);">＋</span>
+        <span style="font-size:16px;color:var(--blue);">Add "${query}"</span>
+      </div>` : '';
+  list.innerHTML = addRow + (filtered.map(f => {
     const isSelected = f === _selectedFrequency;
-    return `<div onclick="selectFrequency('${f}')"
+    return `<div onclick="selectFrequency('${f.replace(/'/g,"\\'")}',false)"
       style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;">
       <span style="font-size:16px;color:var(--text);">${f}</span>
       ${isSelected ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}
     </div>`;
-  }).join('') || '<div style="padding:24px;text-align:center;color:var(--subtext);">No matches</div>';
+  }).join('') || (!addRow ? '<div style="padding:24px;text-align:center;color:var(--subtext);">No matches</div>' : ''));
 }
 
-function selectFrequency(name) {
+function selectFrequency(name, isNew) {
+  if (isNew) {
+    const extras = JSON.parse(localStorage.getItem('kr_extra_frequencies') || '[]');
+    if (!extras.includes(name)) { extras.push(name); localStorage.setItem('kr_extra_frequencies', JSON.stringify(extras)); }
+  }
   setFrequencyDisplay(name);
   closeModal('modal-frequency-picker');
 }
