@@ -2736,16 +2736,19 @@ function removeSubtaskItem(i) {
   renderDirSubtaskList();
 }
 
+let _subtaskPickerTask = ''; // task name the picker is currently scoped to
+
 function openSubtaskPicker() {
+  _subtaskPickerTask = document.getElementById('dir-task').value.trim();
   document.getElementById('subtask-picker-search').value = '';
   renderSubtaskPickerList();
   openModal('modal-subtask-picker');
 }
 
 function getAllSubtasks() {
-  const subs = [];
-  Object.values(SUBTASKS).forEach(arr => arr.forEach(s => { if (s && !subs.includes(s)) subs.push(s); }));
-  return subs.sort();
+  // Only return subtasks for the current task being edited
+  const taskSubs = SUBTASKS[_subtaskPickerTask] || [];
+  return [...new Set(taskSubs.filter(s => s))].sort();
 }
 
 function renderSubtaskPickerList() {
@@ -2772,11 +2775,19 @@ function renderSubtaskPickerList() {
       </div>
       <button onclick="openSubtaskGuide('${enc}')" style="background:none;border:none;color:var(--subtext);font-size:18px;cursor:pointer;padding:4px 6px;flex-shrink:0;">✎</button>
     </div>`;
-  }).join('') || (!addRow ? '<div style="padding:24px;text-align:center;color:var(--subtext);">No subtasks found</div>' : ''));
+  }).join('') || (!addRow ? '<div style="padding:24px;text-align:center;color:var(--subtext);">No subtasks for this task yet — type above to add one</div>' : ''));
 }
 
 function selectSubtask(name, isNew) {
   const formatted = name.charAt(0).toUpperCase() + name.slice(1);
+  // If new, persist into SUBTASKS for this task
+  if (isNew && _subtaskPickerTask) {
+    if (!SUBTASKS[_subtaskPickerTask]) SUBTASKS[_subtaskPickerTask] = [];
+    if (!SUBTASKS[_subtaskPickerTask].includes(formatted)) {
+      SUBTASKS[_subtaskPickerTask].push(formatted);
+      localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
+    }
+  }
   if (!_subtaskItems.includes(formatted)) {
     _subtaskItems.push(formatted);
     renderDirSubtaskList();
