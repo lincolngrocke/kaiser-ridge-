@@ -1100,6 +1100,39 @@
   </div>
 </div>
 
+<!-- ══════════════ SUBTASK GUIDE MODAL ══════════════ -->
+<div class="modal-backdrop" id="modal-subtask-guide" style="z-index:500;">
+  <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:92vh;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;padding:16px 20px 8px;border-bottom:1px solid var(--border);">
+      <button onclick="closeModal('modal-subtask-guide')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:0;margin-right:12px;">‹ Back</button>
+      <span id="guide-modal-title" style="font-size:17px;font-weight:600;flex:1;text-align:center;">Guide</span>
+      <button onclick="saveSubtaskGuide()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;padding:0;width:60px;text-align:right;">Save</button>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:20px;">
+      <input type="hidden" id="guide-subtask-name">
+      <div id="guide-rename-section">
+        <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">RENAME</div>
+        <input id="guide-rename" type="text" autocomplete="off" autocorrect="off" spellcheck="false"
+          style="width:100%;padding:14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;margin-bottom:20px;">
+      </div>
+      <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">INSTRUCTIONS</div>
+      <textarea id="guide-instructions" placeholder="Add step-by-step instructions or notes for this subtask…"
+        style="width:100%;min-height:200px;padding:14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);font-family:inherit;resize:vertical;outline:none;line-height:1.5;"></textarea>
+      <div style="font-size:13px;font-weight:600;color:var(--subtext);margin:20px 0 8px;">VIDEO / LINK</div>
+      <input id="guide-url" type="url" placeholder="https://youtube.com/…"
+        autocomplete="off" autocorrect="off" spellcheck="false"
+        style="width:100%;padding:14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;">
+      <div id="guide-url-preview" style="margin-top:12px;display:none;">
+        <a id="guide-url-link" href="#" target="_blank"
+          style="display:flex;align-items:center;gap:8px;padding:12px 16px;background:var(--bg);border-radius:12px;color:var(--blue);font-size:15px;text-decoration:none;">
+          <span style="font-size:20px;">▶️</span>
+          <span id="guide-url-label">Open video / link</span>
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 
@@ -1822,13 +1855,19 @@ function openSubtaskModal() {
     return;
   }
 
+  const guides = getSubtaskGuides();
   const list = document.getElementById('subtask-list');
-  list.innerHTML = remaining.map((s, i) => `
-    <label style="display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid var(--border);cursor:pointer;">
-      <input type="checkbox" id="st-${i}" value="${s}" style="width:20px;height:20px;accent-color:var(--blue);flex-shrink:0;">
-      <span style="font-size:15px;">${s}</span>
-    </label>
-  `).join('');
+  list.innerHTML = remaining.map((s, i) => {
+    const hasGuide = guides[s] && (guides[s].instructions || guides[s].url);
+    const enc = s.replace(/'/g,"\\'");
+    return `<div style="display:flex;align-items:center;gap:8px;padding:12px 4px;border-bottom:1px solid var(--border);">
+      <label style="display:flex;align-items:center;gap:12px;flex:1;cursor:pointer;">
+        <input type="checkbox" id="st-${i}" value="${s}" style="width:20px;height:20px;accent-color:var(--blue);flex-shrink:0;">
+        <span style="font-size:15px;">${s}</span>
+      </label>
+      ${hasGuide ? `<button onclick="viewSubtaskGuide('${enc}')" style="background:none;border:1px solid var(--blue);border-radius:8px;padding:4px 10px;color:var(--blue);font-size:13px;cursor:pointer;flex-shrink:0;">Guide</button>` : ''}
+    </div>`;
+  }).join('');
   openModal('modal-subtask');
 }
 
@@ -2720,15 +2759,18 @@ function renderSubtaskPickerList() {
         <span style="font-size:20px;color:var(--blue);">＋</span>
         <span style="font-size:16px;color:var(--blue);">Add "${query}"</span>
       </div>` : '';
+  const guides = getSubtaskGuides();
   list.innerHTML = addRow + (filtered.map(s => {
     const isSelected = _subtaskItems.includes(s);
     const enc = s.replace(/'/g,"\\'");
+    const hasGuide = guides[s] && (guides[s].instructions || guides[s].url);
     return `<div style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">
-      <div onclick="selectSubtask('${enc}',false)" style="flex:1;display:flex;align-items:center;justify-content:space-between;cursor:pointer;">
+      <div onclick="selectSubtask('${enc}',false)" style="flex:1;display:flex;align-items:center;gap:8px;cursor:pointer;">
         <span style="font-size:16px;color:var(--text);">${s}</span>
-        ${isSelected ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}
+        ${hasGuide ? '<span style="font-size:13px;color:var(--blue);background:#e8f0fe;padding:2px 6px;border-radius:6px;">Guide</span>' : ''}
+        ${isSelected ? '<span style="color:var(--blue);font-size:18px;margin-left:auto;">✓</span>' : '<span style="margin-left:auto;"></span>'}
       </div>
-      <button onclick="editSubtaskName('${enc}')" style="background:none;border:none;color:var(--subtext);font-size:18px;cursor:pointer;padding:4px 6px;flex-shrink:0;">✎</button>
+      <button onclick="openSubtaskGuide('${enc}')" style="background:none;border:none;color:var(--subtext);font-size:18px;cursor:pointer;padding:4px 6px;flex-shrink:0;">✎</button>
     </div>`;
   }).join('') || (!addRow ? '<div style="padding:24px;text-align:center;color:var(--subtext);">No subtasks found</div>' : ''));
 }
@@ -2742,25 +2784,88 @@ function selectSubtask(name, isNew) {
   closeModal('modal-subtask-picker');
 }
 
-function editSubtaskName(oldName) {
-  const newName = prompt('Rename subtask:', oldName);
-  if (!newName || newName.trim() === '' || newName.trim() === oldName) return;
-  const trimmed = newName.trim();
-  // Update globally across all tasks in SUBTASKS
+// ── Subtask Guides ──
+function getSubtaskGuides() {
+  return JSON.parse(localStorage.getItem('kr_subtask_guides') || '{}');
+}
+function saveSubtaskGuides(guides) {
+  localStorage.setItem('kr_subtask_guides', JSON.stringify(guides));
+}
+
+function openSubtaskGuide(name) {
+  const guides = getSubtaskGuides();
+  const guide = guides[name] || { instructions: '', url: '' };
+  document.getElementById('guide-subtask-name').value = name;
+  document.getElementById('guide-modal-title').textContent = name.length > 28 ? name.slice(0,28)+'…' : name;
+  document.getElementById('guide-rename').value = name;
+  document.getElementById('guide-instructions').value = guide.instructions || '';
+  document.getElementById('guide-url').value = guide.url || '';
+  updateGuideUrlPreview(guide.url || '');
+  document.getElementById('guide-url').oninput = () => updateGuideUrlPreview(document.getElementById('guide-url').value);
+  document.getElementById('guide-rename-section').style.display = 'block';
+  openModal('modal-subtask-guide');
+}
+
+function updateGuideUrlPreview(url) {
+  const preview = document.getElementById('guide-url-preview');
+  const link = document.getElementById('guide-url-link');
+  const label = document.getElementById('guide-url-label');
+  if (url && url.startsWith('http')) {
+    preview.style.display = 'block';
+    link.href = url;
+    try {
+      const host = new URL(url).hostname.replace('www.','');
+      label.textContent = 'Open ' + host;
+    } catch(e) { label.textContent = 'Open link'; }
+  } else {
+    preview.style.display = 'none';
+  }
+}
+
+function saveSubtaskGuide() {
+  const oldName = document.getElementById('guide-subtask-name').value;
+  const newName = document.getElementById('guide-rename').value.trim();
+  const instructions = document.getElementById('guide-instructions').value.trim();
+  const url = document.getElementById('guide-url').value.trim();
+  // Handle rename first
+  if (newName && newName !== oldName) {
+    renameSubtaskGlobally(oldName, newName);
+  }
+  const finalName = (newName && newName !== oldName) ? newName : oldName;
+  const guides = getSubtaskGuides();
+  if (instructions || url) {
+    guides[finalName] = { instructions, url };
+  } else {
+    delete guides[finalName];
+  }
+  saveSubtaskGuides(guides);
+  showToast('Guide saved');
+  closeModal('modal-subtask-guide');
+  renderSubtaskPickerList();
+}
+
+function viewSubtaskGuide(name) {
+  openSubtaskGuide(name);
+  document.getElementById('guide-rename-section').style.display = 'none';
+}
+
+function renameSubtaskGlobally(oldName, newName) {
+  // Rename in SUBTASKS
   let changed = false;
   Object.keys(SUBTASKS).forEach(task => {
     SUBTASKS[task] = SUBTASKS[task].map(s => {
-      if (s === oldName) { changed = true; return trimmed; }
+      if (s === oldName) { changed = true; return newName; }
       return s;
     });
   });
-  if (changed) {
-    localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
-    // Also update current task's picker list if it contains oldName
-    const idx = _subtaskItems.indexOf(oldName);
-    if (idx !== -1) { _subtaskItems[idx] = trimmed; renderDirSubtaskList(); }
-    showToast('Subtask renamed everywhere');
-  }
+  if (changed) localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
+  // Rename guide key if exists
+  const guides = getSubtaskGuides();
+  if (guides[oldName]) { guides[newName] = guides[oldName]; delete guides[oldName]; saveSubtaskGuides(guides); }
+  // Update picker list
+  const idx = _subtaskItems.indexOf(oldName);
+  if (idx !== -1) { _subtaskItems[idx] = newName; renderDirSubtaskList(); }
+  if (changed) showToast('Subtask renamed everywhere');
   renderSubtaskPickerList();
 }
 
