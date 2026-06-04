@@ -931,10 +931,15 @@
     <div style="padding:0 0 24px;">
 
       <div class="form-row"><div class="form-label">Frequency</div>
-        <select class="form-select" id="dir-frequency">
-          <option>Daily</option><option>Weekly</option><option>Fortnightly</option>
-          <option>Monthly</option><option>Quarterly</option><option>Annually</option>
+        <select class="form-select" id="dir-frequency" onchange="onDirFreqChange(this)">
+          <option value="Daily">Daily</option><option value="Weekly">Weekly</option><option value="Fortnightly">Fortnightly</option>
+          <option value="Monthly">Monthly</option><option value="Quarterly">Quarterly</option><option value="Annually">Annually</option>
+          <option value="__new__">＋ New Frequency…</option>
         </select>
+      </div>
+      <div class="form-row" id="dir-new-freq-row" style="display:none;">
+        <div class="form-label">New Frequency</div>
+        <input class="form-select" id="dir-new-freq" type="text" placeholder="e.g. Bi-annually" style="font-size:16px;border:none;width:100%;text-align:right;background:transparent;color:var(--text);">
       </div>
 
       <div class="form-row"><div class="form-label">Group</div>
@@ -2083,11 +2088,16 @@ function populateDirGroupDropdown(selectedGrp) {
   const sel = document.getElementById('dir-group');
   sel.innerHTML = groups.map(g => `<option value="${g}"${g === selectedGrp ? ' selected' : ''}>${g}</option>`).join('') +
     `<option value="__new__"${selectedGrp === '__new__' ? ' selected' : ''}>＋ New Group…</option>`;
-  document.getElementById('dir-new-group-row').style.display = selectedGrp && !groups.includes(selectedGrp) ? 'flex' : 'none';
-  if (selectedGrp && !groups.includes(selectedGrp) && selectedGrp !== '__new__') {
+  if (selectedGrp === '__new__') {
+    sel.value = '__new__';
+    document.getElementById('dir-new-group').value = '';
+    document.getElementById('dir-new-group-row').style.display = 'flex';
+  } else if (selectedGrp && !groups.includes(selectedGrp)) {
     sel.value = '__new__';
     document.getElementById('dir-new-group').value = selectedGrp;
     document.getElementById('dir-new-group-row').style.display = 'flex';
+  } else {
+    document.getElementById('dir-new-group-row').style.display = 'none';
   }
 }
 
@@ -2096,15 +2106,39 @@ function onDirGroupChange(sel) {
   if (sel.value === '__new__') document.getElementById('dir-new-group').focus();
 }
 
+function onDirFreqChange(sel) {
+  document.getElementById('dir-new-freq-row').style.display = sel.value === '__new__' ? 'flex' : 'none';
+  if (sel.value === '__new__') document.getElementById('dir-new-freq').focus();
+}
+
+function populateDirFreqDropdown(selectedFreq) {
+  const fixed = ['Daily','Weekly','Fortnightly','Monthly','Quarterly','Annually'];
+  const sel = document.getElementById('dir-frequency');
+  sel.innerHTML = fixed.map(f => `<option value="${f}"${f === selectedFreq ? ' selected' : ''}>${f}</option>`).join('') +
+    `<option value="__new__"${selectedFreq === '__new__' || (selectedFreq && !fixed.includes(selectedFreq)) ? ' selected' : ''}>＋ New Frequency…</option>`;
+  if (selectedFreq === '__new__') {
+    document.getElementById('dir-new-freq').value = '';
+    document.getElementById('dir-new-freq-row').style.display = 'flex';
+  } else if (selectedFreq && !fixed.includes(selectedFreq)) {
+    sel.value = '__new__';
+    document.getElementById('dir-new-freq').value = selectedFreq;
+    document.getElementById('dir-new-freq-row').style.display = 'flex';
+  } else {
+    document.getElementById('dir-new-freq-row').style.display = 'none';
+  }
+}
+
 function openDirAddTask() {
   _dirEditingKey = null;
   document.getElementById('dir-modal-title').textContent = 'Add Task';
-  document.getElementById('dir-frequency').value = 'Daily';
   document.getElementById('dir-task').value = '';
   document.getElementById('dir-delete-wrap').style.display = 'none';
-  populateDirGroupDropdown('');
+  populateDirFreqDropdown('__new__');
+  populateDirGroupDropdown('__new__');
   renderDirEquipmentList([]);
+  addDirEquipment(); // pre-populate one blank equipment row
   renderDirSubtaskList([]);
+  addDirSubtask();  // pre-populate one blank subtask row
   openModal('modal-dir-task');
 }
 
@@ -2113,7 +2147,7 @@ function openDirEditTask(encodedKey) {
   const [freq, grp, task] = key.split('||');
   _dirEditingKey = key;
   document.getElementById('dir-modal-title').textContent = 'Edit Task';
-  document.getElementById('dir-frequency').value = freq;
+  populateDirFreqDropdown(freq);
   document.getElementById('dir-task').value = task;
   document.getElementById('dir-delete-wrap').style.display = 'block';
   populateDirGroupDropdown(grp);
@@ -2124,7 +2158,18 @@ function openDirEditTask(encodedKey) {
 }
 
 function getAllEquipment() {
-  return [...new Set(DIRECTORY.map(r => r.equipment).filter(Boolean))].sort();
+  // Collect all subtask values so we can exclude them
+  const allSubtasks = new Set(Object.values(SUBTASKS).flat().map(s => s.trim().toLowerCase()));
+  const equip = [];
+  DIRECTORY.forEach(r => {
+    if (!r.equipment) return;
+    // Equipment may be stored as comma-separated string
+    String(r.equipment).split(',').forEach(e => {
+      const val = e.trim();
+      if (val && !allSubtasks.has(val.toLowerCase())) equip.push(val);
+    });
+  });
+  return [...new Set(equip)].sort();
 }
 
 function equipRowHTML(id, selectedVal) {
@@ -2205,7 +2250,8 @@ function getDirSubtasks() {
 }
 
 function saveDirTask() {
-  const freq  = document.getElementById('dir-frequency').value.trim();
+  const freqSel = document.getElementById('dir-frequency').value;
+  const freq  = freqSel === '__new__' ? document.getElementById('dir-new-freq').value.trim() : freqSel;
   const grpSel = document.getElementById('dir-group').value;
   const grp   = grpSel === '__new__' ? document.getElementById('dir-new-group').value.trim() : grpSel;
   const task  = document.getElementById('dir-task').value.trim();
