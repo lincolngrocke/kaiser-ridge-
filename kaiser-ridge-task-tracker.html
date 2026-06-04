@@ -932,9 +932,9 @@
 
       <div class="form-row"><div class="form-label">Frequency</div>
         <select class="form-select" id="dir-frequency" onchange="onDirFreqChange(this)">
+          <option value="__new__">＋ Add new…</option>
           <option value="Daily">Daily</option><option value="Weekly">Weekly</option><option value="Fortnightly">Fortnightly</option>
           <option value="Monthly">Monthly</option><option value="Quarterly">Quarterly</option><option value="Annually">Annually</option>
-          <option value="__new__">＋ New Frequency…</option>
         </select>
       </div>
       <div class="form-row" id="dir-new-freq-row" style="display:none;">
@@ -2133,12 +2133,12 @@ function openDirAddTask() {
   document.getElementById('dir-modal-title').textContent = 'Add Task';
   document.getElementById('dir-task').value = '';
   document.getElementById('dir-delete-wrap').style.display = 'none';
-  populateDirFreqDropdown('__new__');
+  document.getElementById('dir-frequency').value = '__new__';
+  document.getElementById('dir-new-freq').value = '';
+  document.getElementById('dir-new-freq-row').style.display = 'flex';
   populateDirGroupDropdown('__new__');
   renderDirEquipmentList([]);
-  addDirEquipment(); // pre-populate one blank equipment row
   renderDirSubtaskList([]);
-  addDirSubtask();  // pre-populate one blank subtask row
   openModal('modal-dir-task');
 }
 
