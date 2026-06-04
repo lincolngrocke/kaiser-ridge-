@@ -2544,7 +2544,7 @@ function renderEquipmentManager() {
         style="cursor:grab;color:var(--subtext);font-size:22px;padding:0 4px;touch-action:none;"
         ontouchstart="emTouchStart(event,${i})" ontouchmove="emTouchMove(event)" ontouchend="emTouchEnd(event)">≡</div>
       <span style="flex:1;font-size:16px;color:var(--text);">${e.name}</span>
-      <button onclick="archiveEquipment('${e.name.replace(/'/g,"\\'")}'"
+      <button onclick="archiveEquipment('${e.name.replace(/'/g,"\\'")}');"
         style="background:none;border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:13px;color:var(--subtext);cursor:pointer;">Archive</button>
     </div>`).join('')
     : '<div style="padding:16px 0;color:var(--subtext);font-size:15px;">No active equipment</div>';
@@ -2554,7 +2554,7 @@ function renderEquipmentManager() {
   archivedEl.innerHTML = archived.length ? archived.map(e => `
     <div style="display:flex;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid var(--border);">
       <span style="flex:1;font-size:16px;color:var(--subtext);text-decoration:line-through;">${e.name}</span>
-      <button onclick="restoreEquipment('${e.name.replace(/'/g,"\\'")}'"
+      <button onclick="restoreEquipment('${e.name.replace(/'/g,"\\'")}');"
         style="background:none;border:1px solid var(--blue);border-radius:8px;padding:6px 12px;font-size:13px;color:var(--blue);cursor:pointer;">Restore</button>
     </div>`).join('')
     : '<div style="padding:16px 0;color:var(--subtext);font-size:15px;">Nothing archived yet</div>';
