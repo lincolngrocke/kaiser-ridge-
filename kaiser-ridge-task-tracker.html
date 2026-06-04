@@ -2208,13 +2208,13 @@ function renderLocationPickerList() {
 }
 
 function selectLocation(name) {
-  // Save new location if not in the fixed list
   if (!LOCATIONS.includes(name)) {
     const extras = JSON.parse(localStorage.getItem('kr_extra_locations') || '[]');
     if (!extras.includes(name)) { extras.push(name); localStorage.setItem('kr_extra_locations', JSON.stringify(extras)); }
   }
   setLocationDisplay(name);
-
+  closeModal('modal-location-picker');
+}
 
 function openGroupPicker() {
   document.getElementById('group-picker-search').value = '';
