@@ -680,6 +680,7 @@
 
     <button class="btn-sync" onclick="syncToSheet()">⬆ Sync Unsynced Entries to Sheet</button>
     <button class="btn-sync" style="background:var(--subtext); margin-top:8px;" onclick="reloadDirectory()">↺ Reload Task Directory</button>
+    <button class="btn-sync" style="background:#34C759; margin-top:8px;" onclick="forceAppUpdate()">⟳ Force Update App</button>
 
     <div class="settings-section" style="margin-top:16px">
       <div class="settings-row">
@@ -1107,6 +1108,20 @@ const DIRECTORY_FALLBACK = [
 ];
 
 let DIRECTORY = [...DIRECTORY_FALLBACK];
+
+async function forceAppUpdate() {
+  if ('serviceWorker' in navigator) {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    for (const reg of registrations) await reg.unregister();
+  }
+  // Clear all caches
+  if ('caches' in window) {
+    const keys = await caches.keys();
+    for (const key of keys) await caches.delete(key);
+  }
+  showToast('Updating app…');
+  setTimeout(() => location.reload(true), 800);
+}
 
 async function reloadDirectory() {
   localStorage.removeItem('kr_directory');
