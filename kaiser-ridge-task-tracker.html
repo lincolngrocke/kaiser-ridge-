@@ -2316,7 +2316,9 @@ function saveDirTask() {
   const freq = document.getElementById('dir-frequency').value;
   const grp  = _selectedGroup;
   const task = document.getElementById('dir-task').value.trim();
-  if (!freq || !grp || !task) { showToast('Please fill in all fields'); return; }
+  if (!freq) { showToast('Please select a Frequency'); return; }
+  if (!grp)  { showToast('Please select a Group'); return; }
+  if (!task) { showToast('Please enter a Task Name'); return; }
 
   const equip    = getDirEquipment();
   const subtasks = getDirSubtasks();
