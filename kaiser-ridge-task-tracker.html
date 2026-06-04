@@ -944,10 +944,7 @@
 
       <div class="form-row"><div class="form-label">Group</div>
         <select class="form-select" id="dir-group" onchange="onDirGroupChange(this)"></select>
-      </div>
-      <div class="form-row" id="dir-new-group-row" style="display:none;">
-        <div class="form-label">New Group Name</div>
-        <input class="form-select" id="dir-new-group" type="text" placeholder="e.g. Admin" style="font-size:16px;border:none;width:100%;text-align:right;background:transparent;color:var(--text);">
+        <input id="dir-new-group" type="text" placeholder="New group name…" style="display:none;flex:1;font-size:16px;border:none;text-align:right;background:transparent;color:var(--text);outline:none;min-width:0;" onblur="if(!this.value.trim()){this.style.display='none';document.getElementById('dir-group').style.display='';}">
       </div>
 
       <div class="form-row"><div class="form-label">Task Name</div>
@@ -2086,24 +2083,35 @@ function renderDirectory() {
 function populateDirGroupDropdown(selectedGrp) {
   const groups = [...new Set(DIRECTORY.map(r => r.group).filter(Boolean))].sort();
   const sel = document.getElementById('dir-group');
+  const inp = document.getElementById('dir-new-group');
   sel.innerHTML = groups.map(g => `<option value="${g}"${g === selectedGrp ? ' selected' : ''}>${g}</option>`).join('') +
-    `<option value="__new__"${selectedGrp === '__new__' ? ' selected' : ''}>＋ New Group…</option>`;
+    `<option value="__new__">New</option>`;
   if (selectedGrp === '__new__') {
     sel.value = '__new__';
-    document.getElementById('dir-new-group').value = '';
-    document.getElementById('dir-new-group-row').style.display = 'flex';
+    inp.value = '';
+    sel.style.display = 'none';
+    inp.style.display = 'block';
+    setTimeout(() => inp.focus(), 100);
   } else if (selectedGrp && !groups.includes(selectedGrp)) {
     sel.value = '__new__';
-    document.getElementById('dir-new-group').value = selectedGrp;
-    document.getElementById('dir-new-group-row').style.display = 'flex';
+    inp.value = selectedGrp;
+    sel.style.display = 'none';
+    inp.style.display = 'block';
   } else {
-    document.getElementById('dir-new-group-row').style.display = 'none';
+    sel.style.display = '';
+    inp.style.display = 'none';
+    if (selectedGrp) sel.value = selectedGrp;
   }
 }
 
 function onDirGroupChange(sel) {
-  document.getElementById('dir-new-group-row').style.display = sel.value === '__new__' ? 'flex' : 'none';
-  if (sel.value === '__new__') document.getElementById('dir-new-group').focus();
+  const inp = document.getElementById('dir-new-group');
+  if (sel.value === '__new__') {
+    inp.value = '';
+    sel.style.display = 'none';
+    inp.style.display = 'block';
+    setTimeout(() => inp.focus(), 100);
+  }
 }
 
 
