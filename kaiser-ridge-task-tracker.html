@@ -1067,7 +1067,7 @@
     <div id="equip-manager-scroll" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;">
       <div style="padding:16px 20px 4px;">
         <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:4px;">ACTIVE</div>
-        <div style="font-size:12px;color:var(--subtext);margin-bottom:12px;">Hold and drag ≡ to reorder</div>
+        <div style="font-size:12px;color:var(--subtext);margin-bottom:12px;">Use ▲ ▼ to reorder</div>
       </div>
       <div id="equip-manager-active" style="padding:0 20px;"></div>
       <div style="padding:24px 20px 4px;">
@@ -2540,9 +2540,10 @@ function renderEquipmentManager() {
     <div id="emrow-${i}" data-idx="${i}"
       style="display:flex;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid var(--border);background:var(--card);"
       ondragover="emDragOver(event,${i})" ondrop="emDrop(event,${i})" ondragleave="emDragLeave(event)">
-      <div draggable="true" ondragstart="emDragStart(event,${i})"
-        style="cursor:grab;color:var(--subtext);font-size:22px;padding:0 8px;user-select:none;-webkit-user-select:none;"
-        ontouchstart="emTouchStart(event,${i})">≡</div>
+      <div style="display:flex;flex-direction:column;gap:2px;">
+        <button onclick="emMoveUp(${i})" ${i===0?'disabled':''} style="background:none;border:none;color:${i===0?'var(--border)':'var(--blue)'};font-size:18px;cursor:pointer;padding:0;line-height:1;">▲</button>
+        <button onclick="emMoveDown(${i})" ${i===active.length-1?'disabled':''} style="background:none;border:none;color:${i===active.length-1?'var(--border)':'var(--blue)'};font-size:18px;cursor:pointer;padding:0;line-height:1;">▼</button>
+      </div>
       <span style="flex:1;font-size:16px;color:var(--text);">${e.name}</span>
       <button onclick="archiveEquipment('${e.name.replace(/'/g,"\\'")}');"
         style="background:none;border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:13px;color:var(--subtext);cursor:pointer;">Archive</button>
@@ -2601,102 +2602,28 @@ function emDrop(event, targetIdx) {
   renderEquipmentManager();
 }
 
-// Touch drag-to-reorder (iOS)
-// Touch drag-to-reorder on ≡ handle
-let _touchSrcIdx = null, _touchClone = null, _touchStartY = 0, _touchDragging = false;
-let _rowRects = []; // captured at drag start so re-render doesn't break hit-test
-
-function emTouchStart(event, idx) {
-  _touchSrcIdx = idx;
-  _touchStartY = event.touches[0].clientY;
-  _touchDragging = false;
-  _touchClone = null;
-  _rowRects = [];
-  // Attach to the scroll container with passive:false so we can preventDefault during drag
-  // but leave touchstart passive so iOS scroll works freely until drag is confirmed
-  const scroller = document.getElementById('equip-manager-scroll');
-  if (scroller) scroller.addEventListener('touchmove', emTouchMove, { passive: false });
-  document.addEventListener('touchend', emTouchEnd, { once: true });
-  document.addEventListener('touchcancel', emTouchCancel, { once: true });
-}
-
-function emTouchMove(event) {
-  if (_touchSrcIdx === null) return;
-  const fingerY = event.touches[0].clientY;
-  const dy = fingerY - _touchStartY;
-
-  if (!_touchDragging) {
-    if (Math.abs(dy) < 6) return; // not moved enough — let scroll happen freely
-    // Activate drag
-    _touchDragging = true;
-    const master = getEquipmentMaster();
-    const active = master.filter(e => !e.archived);
-    _rowRects = active.map((_, i) => {
-      const r = document.getElementById('emrow-' + i);
-      return r ? r.getBoundingClientRect() : null;
-    });
-    const row = document.getElementById('emrow-' + _touchSrcIdx);
-    if (!row) return;
-    row.style.opacity = '0.3';
-    _touchClone = document.createElement('div');
-    _touchClone.textContent = row.querySelector('span') ? row.querySelector('span').textContent : '';
-    _touchClone.style.cssText = `position:fixed;left:20px;right:20px;background:var(--card);padding:14px 16px;border-radius:12px;font-size:16px;color:var(--text);box-shadow:0 6px 24px rgba(0,0,0,0.18);z-index:999;pointer-events:none;`;
-    _touchClone.style.top = (fingerY - 24) + 'px';
-    document.body.appendChild(_touchClone);
-    if (navigator.vibrate) navigator.vibrate(30);
-  }
-
-  // Only prevent scroll once we're confirmed dragging
-  event.preventDefault();
-  if (_touchClone) _touchClone.style.top = (fingerY - 24) + 'px';
-}
-
-function emTouchCancel() {
-  const scroller = document.getElementById('equip-manager-scroll');
-  if (scroller) scroller.removeEventListener('touchmove', emTouchMove);
-  if (_touchClone) { _touchClone.remove(); _touchClone = null; }
-  const row = _touchSrcIdx !== null ? document.getElementById('emrow-' + _touchSrcIdx) : null;
-  if (row) row.style.opacity = '';
-  _touchSrcIdx = null; _touchDragging = false; _rowRects = [];
-}
-
-function emTouchEnd(event) {
-  const scroller = document.getElementById('equip-manager-scroll');
-  if (scroller) scroller.removeEventListener('touchmove', emTouchMove);
-  if (!_touchDragging || _touchSrcIdx === null) {
-    _touchSrcIdx = null; _touchDragging = false; return;
-  }
-  const fingerY = event.changedTouches[0].clientY;
-  if (_touchClone) { _touchClone.remove(); _touchClone = null; }
-  const row = document.getElementById('emrow-' + _touchSrcIdx);
-  if (row) row.style.opacity = '';
-
-  // Use snapshotted rects to find target
-  let targetIdx = _touchSrcIdx;
-  for (let i = 0; i < _rowRects.length; i++) {
-    const rect = _rowRects[i];
-    if (!rect) continue;
-    if (fingerY >= rect.top && fingerY <= rect.bottom) { targetIdx = i; break; }
-  }
-  // If finger is above all rows, go to top; below all, go to bottom
-  if (_rowRects.length > 0) {
-    if (fingerY < _rowRects[0].top) targetIdx = 0;
-    const last = _rowRects[_rowRects.length - 1];
-    if (last && fingerY > last.bottom) targetIdx = _rowRects.length - 1;
-  }
-
-  if (targetIdx !== _touchSrcIdx) {
-    const master = getEquipmentMaster();
-    const active = master.filter(e => !e.archived);
-    const rest = master.filter(e => e.archived);
-    const [moved] = active.splice(_touchSrcIdx, 1);
-    active.splice(targetIdx, 0, moved);
-    saveEquipmentMaster([...active, ...rest]);
-    showToast('Order saved');
-  }
-  _touchSrcIdx = null; _touchDragging = false; _rowRects = [];
+function emMoveUp(idx) {
+  if (idx === 0) return;
+  const master = getEquipmentMaster();
+  const active = master.filter(e => !e.archived);
+  const rest = master.filter(e => e.archived);
+  [active[idx - 1], active[idx]] = [active[idx], active[idx - 1]];
+  saveEquipmentMaster([...active, ...rest]);
+  showToast('Order saved');
   renderEquipmentManager();
 }
+
+function emMoveDown(idx) {
+  const master = getEquipmentMaster();
+  const active = master.filter(e => !e.archived);
+  if (idx >= active.length - 1) return;
+  const rest = master.filter(e => e.archived);
+  [active[idx], active[idx + 1]] = [active[idx + 1], active[idx]];
+  saveEquipmentMaster([...active, ...rest]);
+  showToast('Order saved');
+  renderEquipmentManager();
+}
+
 
 let _subtaskItems = [];
 
