@@ -2309,29 +2309,41 @@ function renderDirectory() {
   const freqOrder = ['Daily','Weekly','Fortnightly','Monthly','Quarterly','Annually'];
   const freqs = [...new Set([...freqOrder.filter(f => grouped[f]), ...Object.keys(grouped).filter(f => !freqOrder.includes(f))])];
 
+  const taskOrder = JSON.parse(localStorage.getItem('kr_task_order') || '{}');
+
   list.innerHTML = freqs.map(freq => `
     <div style="margin-bottom:8px;" data-freq="${freq}">
       <div style="padding:8px 16px 4px;font-size:11px;font-weight:700;color:var(--subtext);letter-spacing:0.5px;text-transform:uppercase;">${freq}</div>
-      ${Object.keys(grouped[freq]).map(grp => `
+      ${Object.keys(grouped[freq]).map(grp => {
+        const orderKey = freq + '||' + grp;
+        const savedOrder = taskOrder[orderKey] || [];
+        const tasks = Object.keys(grouped[freq][grp]);
+        const ordered = [...savedOrder.filter(t => tasks.includes(t)), ...tasks.filter(t => !savedOrder.includes(t))];
+        return `
         <div style="margin:0 12px 8px;background:var(--card);border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
           <div style="padding:10px 16px;background:var(--blue);color:#fff;font-size:12px;font-weight:700;letter-spacing:0.3px;">${grp}</div>
-          ${Object.keys(grouped[freq][grp]).map(task => {
+          <div class="dir-group-tasks" data-orderkey="${encodeURIComponent(orderKey)}">
+          ${ordered.map(task => {
             const equip = grouped[freq][grp][task];
             const subtaskList = (SUBTASKS[task] || []);
             const key = encodeURIComponent(freq + '||' + grp + '||' + task);
             const meta = taskMeta[freq + '||' + grp + '||' + task] || {};
-            return `<div onclick="openDirEditTask('${key}')" style="padding:12px 16px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;align-items:center;justify-content:space-between;">
-              <div>
+            return `<div class="dir-task-row" data-task="${task}" data-key="${key}"
+              ontouchstart="dirTaskTouchStart(event,this)"
+              onclick="dirTaskClick(event,this)"
+              style="padding:12px 16px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none;-webkit-user-select:none;">
+              <div style="flex:1;min-width:0;">
                 <div style="font-size:15px;font-weight:500;color:var(--text);">${task}</div>
                 ${meta.location ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">📍 ${meta.location}</div>` : ''}
                 ${equip.length ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${equip.join(', ')}</div>` : ''}
                 ${subtaskList.length ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☑️ ${subtaskList.length} subtask${subtaskList.length > 1 ? 's' : ''}</div>` : ''}
               </div>
-              <div style="color:var(--subtext);font-size:18px;">›</div>
+              <div style="color:var(--subtext);font-size:18px;padding-left:8px;">›</div>
             </div>`;
           }).join('')}
-        </div>
-      `).join('')}
+          </div>
+        </div>`;
+      }).join('')}
     </div>
   `).join('');
 
@@ -3175,6 +3187,154 @@ showScreen = function(id, tab) {
   _origShowScreen(id, tab);
   if (id === 'directory') renderDirectory();
 };
+
+// ════════════════════════════════
+//  DIRECTORY TASK LONG-PRESS DRAG
+// ════════════════════════════════
+let _dtLongTimer = null;
+let _dtDragging = false;
+let _dtSrcRow = null;
+let _dtClone = null;
+let _dtGroupEl = null;
+let _dtRects = [];
+let _dtStartY = 0;
+let _dtScrollInterval = null;
+
+function dirTaskTouchStart(e, row) {
+  _dtDragging = false;
+  _dtSrcRow = row;
+  _dtStartY = e.touches[0].clientY;
+  _dtLongTimer = setTimeout(() => {
+    _dtDragging = true;
+    _activateDirDrag(e, row);
+  }, 400);
+  document.addEventListener('touchmove', _dtTouchMoveEarly, { passive: true });
+  document.addEventListener('touchend', _dtCancelLong, { once: true });
+  document.addEventListener('touchcancel', _dtCancelLong, { once: true });
+}
+
+function _dtTouchMoveEarly(e) {
+  const dy = Math.abs(e.touches[0].clientY - _dtStartY);
+  if (dy > 8) _dtCancelLong();
+}
+
+function _dtCancelLong() {
+  clearTimeout(_dtLongTimer);
+  _dtLongTimer = null;
+  document.removeEventListener('touchmove', _dtTouchMoveEarly);
+}
+
+function dirTaskClick(e, row) {
+  if (_dtDragging) { e.stopPropagation(); return; }
+  const key = row.dataset.key;
+  if (key) openDirEditTask(key);
+}
+
+function _activateDirDrag(e, row) {
+  document.removeEventListener('touchmove', _dtTouchMoveEarly);
+  // vibrate feedback
+  if (navigator.vibrate) navigator.vibrate(40);
+
+  _dtGroupEl = row.closest('.dir-group-tasks');
+  if (!_dtGroupEl) return;
+
+  // Snapshot rects of all sibling rows
+  const rows = Array.from(_dtGroupEl.querySelectorAll('.dir-task-row'));
+  _dtRects = rows.map(r => ({ el: r, rect: r.getBoundingClientRect() }));
+
+  // Create ghost clone
+  const srcRect = row.getBoundingClientRect();
+  _dtClone = row.cloneNode(true);
+  _dtClone.style.cssText = `
+    position:fixed;left:${srcRect.left}px;top:${srcRect.top}px;
+    width:${srcRect.width}px;z-index:999;pointer-events:none;
+    background:#fff;box-shadow:0 8px 24px rgba(0,0,0,0.25);
+    border-radius:8px;opacity:0.95;transition:none;
+  `;
+  document.body.appendChild(_dtClone);
+  row.style.opacity = '0.3';
+
+  document.addEventListener('touchmove', _dtTouchMove, { passive: false });
+  document.addEventListener('touchend', _dtTouchEnd, { once: true });
+  document.addEventListener('touchcancel', _dtTouchEnd, { once: true });
+}
+
+function _dtTouchMove(e) {
+  if (!_dtDragging) return;
+  e.preventDefault();
+  const y = e.touches[0].clientY;
+  const srcRect = _dtSrcRow.getBoundingClientRect();
+  _dtClone.style.top = (y - srcRect.height / 2) + 'px';
+
+  // Highlight target slot
+  _dtRects.forEach(({ el, rect }) => {
+    const mid = rect.top + rect.height / 2;
+    el.style.borderTop = (y < mid && el !== _dtSrcRow) ? '2px solid var(--blue)' : '';
+    el.style.borderBottom = '';
+  });
+
+  // Auto-scroll
+  const scrollArea = document.getElementById('dir-scroll-area');
+  clearInterval(_dtScrollInterval);
+  if (scrollArea) {
+    const saRect = scrollArea.getBoundingClientRect();
+    if (y < saRect.top + 60) _dtScrollInterval = setInterval(() => { scrollArea.scrollTop -= 6; }, 16);
+    else if (y > saRect.bottom - 60) _dtScrollInterval = setInterval(() => { scrollArea.scrollTop += 6; }, 16);
+  }
+}
+
+function _dtTouchEnd(e) {
+  clearInterval(_dtScrollInterval);
+  document.removeEventListener('touchmove', _dtTouchMove);
+  if (!_dtDragging || !_dtGroupEl) { _dtCleanup(); return; }
+
+  const y = e.changedTouches[0].clientY;
+  const rows = Array.from(_dtGroupEl.querySelectorAll('.dir-task-row'));
+
+  // Find insert position
+  let insertBefore = null;
+  for (const { el, rect } of _dtRects) {
+    if (el === _dtSrcRow) continue;
+    if (y < rect.top + rect.height / 2) { insertBefore = el; break; }
+  }
+
+  // Reorder DOM
+  if (insertBefore) {
+    _dtGroupEl.insertBefore(_dtSrcRow, insertBefore);
+  } else {
+    _dtGroupEl.appendChild(_dtSrcRow);
+  }
+
+  // Save new order
+  const orderKey = decodeURIComponent(_dtGroupEl.dataset.orderkey);
+  const newOrder = Array.from(_dtGroupEl.querySelectorAll('.dir-task-row')).map(r => r.dataset.task);
+  const taskOrder = JSON.parse(localStorage.getItem('kr_task_order') || '{}');
+  taskOrder[orderKey] = newOrder;
+  localStorage.setItem('kr_task_order', JSON.stringify(taskOrder));
+
+  // Also reorder DIRECTORY entries to match
+  const [freq, grp] = orderKey.split('||');
+  const groupEntries = DIRECTORY.filter(r => r.frequency === freq && r.group === grp);
+  const otherEntries = DIRECTORY.filter(r => !(r.frequency === freq && r.group === grp));
+  const reordered = [];
+  newOrder.forEach(task => groupEntries.filter(r => r.task === task).forEach(r => reordered.push(r)));
+  DIRECTORY = [...otherEntries, ...reordered];
+  localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
+
+  _dtCleanup();
+  showToast('Order saved');
+}
+
+function _dtCleanup() {
+  _dtDragging = false;
+  if (_dtClone) { _dtClone.remove(); _dtClone = null; }
+  if (_dtSrcRow) { _dtSrcRow.style.opacity = ''; _dtSrcRow = null; }
+  if (_dtGroupEl) {
+    _dtGroupEl.querySelectorAll('.dir-task-row').forEach(r => { r.style.borderTop = ''; r.style.borderBottom = ''; });
+    _dtGroupEl = null;
+  }
+  _dtRects = [];
+}
 </script>
 </body>
 </html>
