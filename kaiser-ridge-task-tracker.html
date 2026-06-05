@@ -824,6 +824,7 @@
   </div>
   <!-- Period filter -->
   <div style="display:flex;gap:8px;padding:10px 16px 8px;background:var(--card);border-bottom:1px solid var(--border);">
+    <button onclick="setChartPeriod('day',this)"   class="chart-period-btn" style="flex:1;">Day</button>
     <button onclick="setChartPeriod('week',this)"  class="chart-period-btn active" style="flex:1;">Week</button>
     <button onclick="setChartPeriod('month',this)" class="chart-period-btn" style="flex:1;">Month</button>
     <button onclick="setChartPeriod('year',this)"  class="chart-period-btn" style="flex:1;">Year</button>
@@ -2435,7 +2436,9 @@ function getChartEntries() {
   if (_chartPeriod === 'all') return entries;
   const now = new Date();
   let start;
-  if (_chartPeriod === 'week') {
+  if (_chartPeriod === 'day') {
+    start = new Date(now); start.setHours(0,0,0,0);
+  } else if (_chartPeriod === 'week') {
     start = new Date(now);
     start.setDate(now.getDate() - ((now.getDay() + 6) % 7));
     start.setHours(0,0,0,0);
