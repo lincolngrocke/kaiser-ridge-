@@ -831,12 +831,6 @@
         <span class="form-label">Location</span>
         <select class="form-select" id="f-location" onchange="onLocationChange()">
           <option value="">Select…</option>
-          <option>Property</option>
-          <option>Heritage</option>
-          <option>Serene</option>
-          <option>Kaiser</option>
-          <option>Shed</option>
-          <option>BESS#2</option>
         </select>
         <span class="form-chevron">›</span>
       </div>
@@ -1291,6 +1285,7 @@ window.addEventListener('load', () => {
   });
 
   updateHeaderDate();
+  populateLocationDropdown();
   renderClockState();
   renderTimesheets();
   updateStats();
@@ -2341,6 +2336,19 @@ function selectFrequency(name, isNew) {
 }
 
 const LOCATIONS = ['Property','Heritage','Serene','Kaiser','Shed','BESS#2'];
+
+function getAllLocations() {
+  const extras = JSON.parse(localStorage.getItem('kr_extra_locations') || '[]');
+  return [...new Set([...LOCATIONS, ...extras])];
+}
+
+function populateLocationDropdown(selectedVal) {
+  const sel = document.getElementById('f-location');
+  if (!sel) return;
+  const current = selectedVal !== undefined ? selectedVal : sel.value;
+  const locs = getAllLocations();
+  sel.innerHTML = '<option value="">Select…</option>' + locs.map(l => `<option${l === current ? ' selected' : ''}>${l}</option>`).join('');
+}
 let _selectedLocation = '';
 
 function setLocationDisplay(val) {
@@ -2390,6 +2398,7 @@ function selectLocation(name) {
     if (!extras.includes(name)) { extras.push(name); localStorage.setItem('kr_extra_locations', JSON.stringify(extras)); }
   }
   setLocationDisplay(name);
+  populateLocationDropdown(); // keep clock dropdown in sync
   closeModal('modal-location-picker');
 }
 
