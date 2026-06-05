@@ -840,6 +840,8 @@
     <button onclick="setChartDimension('location',this)"  class="chart-period-btn" style="flex:1;">Location</button>
     <button onclick="setChartDimension('equipment',this)" class="chart-period-btn" style="flex:1;">Equipment</button>
   </div>
+  <!-- Task filter chips -->
+  <div id="dash-task-chips" style="display:flex;gap:8px;padding:8px 12px;overflow-x:auto;background:var(--bg);border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch;scrollbar-width:none;"></div>
   <!-- Chart fills remaining space -->
   <div style="flex:1;display:flex;flex-direction:column;padding:16px;overflow:hidden;">
     <canvas id="dash-chart" style="width:100%;flex:1;display:block;min-height:0;"></canvas>
@@ -2416,12 +2418,40 @@ function updateStats() {
 // ════════════════════════════════
 let _chartPeriod = 'week';
 let _chartDimension = 'group';
+let _chartTaskFilter = null;
 const _chartColors = ['#007AFF','#34C759','#FF9500','#FF3B30','#AF52DE','#00C7BE','#FF6B6B','#5AC8FA','#FFCC00','#FF2D55'];
 
 function setChartPeriod(period, btn) {
   _chartPeriod = period;
+  _chartTaskFilter = null;
   btn.parentElement.querySelectorAll('.chart-period-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
+  renderTaskChips();
+  renderDashboardChart();
+  const total = getChartEntries().reduce((s,e) => s + e.durationHours, 0);
+  const th = document.getElementById('dash-total-hours');
+  if (th) th.textContent = total.toFixed(2) + 'h';
+}
+
+function renderTaskChips() {
+  const row = document.getElementById('dash-task-chips');
+  if (!row) return;
+  const periodEntries = getChartEntries();
+  const tasks = [...new Set(periodEntries.map(e => e.task).filter(Boolean))].sort();
+  if (tasks.length === 0) { row.innerHTML = '<span style="font-size:12px;color:var(--subtext);padding:4px 0;">No tasks in this period</span>'; return; }
+  row.innerHTML = ['All', ...tasks].map(t => {
+    const isAll = t === 'All';
+    const active = isAll ? !_chartTaskFilter : _chartTaskFilter === t;
+    return `<button onclick="toggleTaskFilter('${t.replace(/'/g,"\\'")}',this)"
+      style="flex-shrink:0;padding:5px 12px;border-radius:20px;border:1.5px solid ${active ? 'var(--blue)' : 'var(--border)'};
+      background:${active ? 'var(--blue)' : 'transparent'};color:${active ? '#fff' : 'var(--text)'};
+      font-size:12px;font-weight:500;white-space:nowrap;cursor:pointer;">${t}</button>`;
+  }).join('');
+}
+
+function toggleTaskFilter(task) {
+  _chartTaskFilter = (task === 'All' || _chartTaskFilter === task) ? null : task;
+  renderTaskChips();
   renderDashboardChart();
   const total = getChartEntries().reduce((s,e) => s + e.durationHours, 0);
   const th = document.getElementById('dash-total-hours');
@@ -2439,7 +2469,7 @@ function setChartDimension(dim, btn) {
 }
 
 function getChartEntries() {
-  if (_chartPeriod === 'all') return entries;
+  if (_chartPeriod === 'all') return _chartTaskFilter ? entries.filter(e => e.task === _chartTaskFilter) : entries;
   const now = new Date();
   let start;
   if (_chartPeriod === 'day') {
@@ -2455,7 +2485,9 @@ function getChartEntries() {
   }
   return entries.filter(e => {
     const d = new Date(e.date.split('/').reverse().join('-'));
-    return d >= start;
+    if (d < start) return false;
+    if (_chartTaskFilter && e.task !== _chartTaskFilter) return false;
+    return true;
   });
 }
 
@@ -2576,6 +2608,8 @@ function renderDashboard() {
   const now = new Date();
   const el = document.getElementById('dash-date');
   if (el) el.textContent = now.toLocaleDateString('en-AU', { weekday:'long', day:'numeric', month:'long' });
+  _chartTaskFilter = null;
+  renderTaskChips();
   renderDashboardChart();
   const total = getChartEntries().reduce((s,e) => s + e.durationHours, 0);
   const th = document.getElementById('dash-total-hours');
