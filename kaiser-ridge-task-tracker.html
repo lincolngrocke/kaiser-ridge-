@@ -1268,16 +1268,31 @@ async function loadDirectory() {
     const json = await res.json();
     if (json.success && json.directory && json.directory.length > 0) {
       // Merge: keep remote entries + any locally-added entries not in remote
+      // Preserve locally-set location and equipment on remote entries (sheet doesn't store these)
+      const localMap = {};
+      DIRECTORY.forEach(r => {
+        const k = `${r.frequency}||${r.group}||${r.task}||${r.equipment||''}`;
+        localMap[k] = r;
+      });
+      const merged = json.directory.map(r => {
+        const k = `${r.frequency}||${r.group}||${r.task}||${r.equipment||''}`;
+        const local = localMap[k];
+        return {
+          ...r,
+          location: (local && local.location) ? local.location : (r.location || ''),
+          equipment: (local && local.equipment) ? local.equipment : (r.equipment || '')
+        };
+      });
       const remoteKeys = new Set(json.directory.map(r => `${r.frequency}||${r.group}||${r.task}`));
       const localOnly = DIRECTORY.filter(r => !remoteKeys.has(`${r.frequency}||${r.group}||${r.task}`));
-      DIRECTORY = [...json.directory, ...localOnly];
+      DIRECTORY = [...merged, ...localOnly];
       localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
     }
     if (json.success && json.subtasks) {
-      // Merge subtasks: remote base + any locally-added keys
+      // Merge subtasks: prefer local if it exists (local edits take priority over sheet)
       const merged = { ...json.subtasks };
       Object.keys(SUBTASKS).forEach(k => {
-        if (!merged[k]) merged[k] = SUBTASKS[k];
+        merged[k] = SUBTASKS[k]; // local always wins
       });
       SUBTASKS = merged;
       localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
