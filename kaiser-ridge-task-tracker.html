@@ -819,15 +819,22 @@
 <!-- ══════════════ DASHBOARD SCREEN ══════════════ -->
 <div class="screen" id="screen-dashboard">
   <div class="header">
-    <div class="header-title">Hours by Group</div>
+    <div id="dash-header-title" class="header-title">Hours by Group</div>
     <div id="dash-date" style="font-size:13px;color:var(--subtext);"></div>
   </div>
   <!-- Period filter -->
-  <div style="display:flex;gap:8px;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--border);">
+  <div style="display:flex;gap:8px;padding:10px 16px 8px;background:var(--card);border-bottom:1px solid var(--border);">
     <button onclick="setChartPeriod('week',this)"  class="chart-period-btn active" style="flex:1;">Week</button>
     <button onclick="setChartPeriod('month',this)" class="chart-period-btn" style="flex:1;">Month</button>
     <button onclick="setChartPeriod('year',this)"  class="chart-period-btn" style="flex:1;">Year</button>
     <button onclick="setChartPeriod('all',this)"   class="chart-period-btn" style="flex:1;">All</button>
+  </div>
+  <!-- Dimension filter -->
+  <div style="display:flex;gap:8px;padding:8px 16px 10px;background:var(--card);border-bottom:1px solid var(--border);">
+    <button onclick="setChartDimension('group',this)"     class="chart-period-btn active" style="flex:1;">Group</button>
+    <button onclick="setChartDimension('frequency',this)" class="chart-period-btn" style="flex:1;">Frequency</button>
+    <button onclick="setChartDimension('location',this)"  class="chart-period-btn" style="flex:1;">Location</button>
+    <button onclick="setChartDimension('equipment',this)" class="chart-period-btn" style="flex:1;">Equipment</button>
   </div>
   <!-- Chart fills remaining space -->
   <div style="flex:1;display:flex;flex-direction:column;padding:16px;overflow:hidden;">
@@ -2404,12 +2411,23 @@ function updateStats() {
 //  DASHBOARD CHART
 // ════════════════════════════════
 let _chartPeriod = 'week';
+let _chartDimension = 'group';
 const _chartColors = ['#007AFF','#34C759','#FF9500','#FF3B30','#AF52DE','#00C7BE','#FF6B6B','#5AC8FA','#FFCC00','#FF2D55'];
 
 function setChartPeriod(period, btn) {
   _chartPeriod = period;
-  document.querySelectorAll('.chart-period-btn').forEach(b => b.classList.remove('active'));
+  btn.parentElement.querySelectorAll('.chart-period-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
+  renderDashboardChart();
+}
+
+function setChartDimension(dim, btn) {
+  _chartDimension = dim;
+  btn.parentElement.querySelectorAll('.chart-period-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const titles = { group: 'Hours by Group', frequency: 'Hours by Frequency', location: 'Hours by Location', equipment: 'Hours by Equipment' };
+  const t = document.getElementById('dash-header-title');
+  if (t) t.textContent = titles[dim];
   renderDashboardChart();
 }
 
@@ -2451,11 +2469,15 @@ function renderDashboardChart() {
 
   const periodEntries = getChartEntries();
 
-  // Tally hours by group
+  // Tally hours by selected dimension
   const groupHours = {};
   periodEntries.forEach(e => {
-    const g = e.group || 'Other';
-    groupHours[g] = (groupHours[g] || 0) + e.durationHours;
+    let key;
+    if (_chartDimension === 'frequency')  key = e.frequency || 'Other';
+    else if (_chartDimension === 'location') key = e.location || 'No location';
+    else if (_chartDimension === 'equipment') key = e.tool || 'No equipment';
+    else key = e.group || 'Other';
+    groupHours[key] = (groupHours[key] || 0) + e.durationHours;
   });
 
   const groups = Object.keys(groupHours).sort((a,b) => groupHours[b] - groupHours[a]);
