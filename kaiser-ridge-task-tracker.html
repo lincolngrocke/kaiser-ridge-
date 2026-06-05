@@ -21,6 +21,20 @@
     --nav-height: 72px;
   }
 
+  body.dark {
+    --bg: #000000;
+    --card: #1C1C1E;
+    --text: #FFFFFF;
+    --subtext: #8E8E93;
+    --border: #38383A;
+  }
+  body.dark .bottom-nav { background: rgba(28,28,30,0.95); }
+  body.dark .modal-sheet { background: #1C1C1E; }
+  body.dark .modal-backdrop { background: rgba(0,0,0,0.7); }
+  body.dark input, body.dark textarea { background: #2C2C2E; color: #fff; border-color: #38383A; }
+  body.dark .ts-entry { background: var(--card); }
+  body.dark mark { background: #FFD60A; color: #000; }
+
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     background: var(--bg);
@@ -702,6 +716,18 @@
   </div>
   <div class="scroll-area">
     <div class="settings-section">
+      <div class="settings-row" style="justify-content:space-between;align-items:center;">
+        <div class="settings-label">Dark Mode</div>
+        <label style="position:relative;display:inline-block;width:51px;height:31px;flex-shrink:0;">
+          <input type="checkbox" id="dark-mode-toggle" onchange="toggleDarkMode(this.checked)" style="opacity:0;width:0;height:0;">
+          <span id="dark-mode-track" style="position:absolute;cursor:pointer;inset:0;background:#E5E5EA;border-radius:31px;transition:.3s;">
+            <span id="dark-mode-thumb" style="position:absolute;height:27px;width:27px;left:2px;bottom:2px;background:#fff;border-radius:50%;transition:.3s;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></span>
+          </span>
+        </label>
+      </div>
+    </div>
+
+    <div class="settings-section" style="margin-top:16px;">
       <div class="settings-row">
         <div class="settings-label">Your Name</div>
       </div>
@@ -1354,6 +1380,25 @@ let _tsFilterType = null;
 let timerInterval = null;
 
 // ════════════════════════════════
+//  DARK MODE
+// ════════════════════════════════
+function toggleDarkMode(on) {
+  document.body.classList.toggle('dark', on);
+  localStorage.setItem('kr_dark_mode', on ? '1' : '0');
+  const track = document.getElementById('dark-mode-track');
+  const thumb = document.getElementById('dark-mode-thumb');
+  if (track) track.style.background = on ? '#007AFF' : '#E5E5EA';
+  if (thumb) thumb.style.transform = on ? 'translateX(20px)' : 'translateX(0)';
+}
+
+function initDarkMode() {
+  const on = localStorage.getItem('kr_dark_mode') === '1';
+  const toggle = document.getElementById('dark-mode-toggle');
+  if (toggle) toggle.checked = on;
+  toggleDarkMode(on);
+}
+
+// ════════════════════════════════
 //  INIT
 // ════════════════════════════════
 function getUserName() {
@@ -1377,6 +1422,7 @@ window.addEventListener('load', () => {
     localStorage.setItem('kr_sheet_url', e.target.value);
   });
 
+  initDarkMode();
   updateHeaderDate();
   populateLocationDropdown();
   populateTsLocationChips();
