@@ -2779,14 +2779,86 @@ let _subtaskItems = [];
 function renderDirSubtaskList(items) {
   _subtaskItems = items ? [...items] : _subtaskItems;
   document.getElementById('dir-subtask-list').innerHTML = _subtaskItems.map((s, i) => `
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">
-      <span style="font-size:15px;color:var(--text);">${s}</span>
+    <div id="strow-${i}" style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);">
+      <div style="color:var(--subtext);font-size:22px;padding:0 4px;user-select:none;-webkit-user-select:none;cursor:grab;"
+        ontouchstart="stTouchStart(event,${i})">≡</div>
+      <span style="flex:1;font-size:15px;color:var(--text);">${s}</span>
       <button onclick="removeSubtaskItem(${i})" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:4px;">✕</button>
     </div>`).join('');
 }
 
 function removeSubtaskItem(i) {
   _subtaskItems.splice(i, 1);
+  renderDirSubtaskList();
+}
+
+// Subtask drag-to-reorder
+let _stSrcIdx = null, _stClone = null, _stStartY = 0, _stDragging = false, _stRects = [];
+
+function stTouchStart(event, idx) {
+  _stSrcIdx = idx; _stStartY = event.touches[0].clientY;
+  _stDragging = false; _stClone = null; _stRects = [];
+  document.addEventListener('touchmove', stTouchMove, { passive: false });
+  document.addEventListener('touchend', stTouchEnd, { once: true });
+  document.addEventListener('touchcancel', stTouchCancel, { once: true });
+}
+
+function stTouchMove(event) {
+  if (_stSrcIdx === null) return;
+  const fingerY = event.touches[0].clientY;
+  const dy = fingerY - _stStartY;
+  if (!_stDragging) {
+    if (Math.abs(dy) < 6) return;
+    _stDragging = true;
+    _stRects = _subtaskItems.map((_, i) => {
+      const r = document.getElementById('strow-' + i);
+      return r ? r.getBoundingClientRect() : null;
+    });
+    const row = document.getElementById('strow-' + _stSrcIdx);
+    if (!row) return;
+    row.style.opacity = '0.3';
+    _stClone = document.createElement('div');
+    _stClone.textContent = _subtaskItems[_stSrcIdx] || '';
+    _stClone.style.cssText = `position:fixed;left:20px;right:20px;background:var(--card);padding:12px 16px;border-radius:12px;font-size:15px;color:var(--text);box-shadow:0 6px 24px rgba(0,0,0,0.18);z-index:999;pointer-events:none;`;
+    _stClone.style.top = (fingerY - 24) + 'px';
+    document.body.appendChild(_stClone);
+    if (navigator.vibrate) navigator.vibrate(30);
+  }
+  event.preventDefault();
+  if (_stClone) _stClone.style.top = (fingerY - 24) + 'px';
+}
+
+function stTouchCancel() {
+  document.removeEventListener('touchmove', stTouchMove);
+  if (_stClone) { _stClone.remove(); _stClone = null; }
+  const row = _stSrcIdx !== null ? document.getElementById('strow-' + _stSrcIdx) : null;
+  if (row) row.style.opacity = '';
+  _stSrcIdx = null; _stDragging = false; _stRects = [];
+}
+
+function stTouchEnd(event) {
+  document.removeEventListener('touchmove', stTouchMove);
+  if (!_stDragging || _stSrcIdx === null) { _stSrcIdx = null; _stDragging = false; return; }
+  const fingerY = event.changedTouches[0].clientY;
+  if (_stClone) { _stClone.remove(); _stClone = null; }
+  const row = document.getElementById('strow-' + _stSrcIdx);
+  if (row) row.style.opacity = '';
+  let targetIdx = _stSrcIdx;
+  for (let i = 0; i < _stRects.length; i++) {
+    const rect = _stRects[i];
+    if (!rect) continue;
+    if (fingerY >= rect.top && fingerY <= rect.bottom) { targetIdx = i; break; }
+  }
+  if (_stRects.length > 0) {
+    if (fingerY < _stRects[0].top) targetIdx = 0;
+    const last = _stRects[_stRects.length - 1];
+    if (last && fingerY > last.bottom) targetIdx = _stRects.length - 1;
+  }
+  if (targetIdx !== _stSrcIdx) {
+    const [moved] = _subtaskItems.splice(_stSrcIdx, 1);
+    _subtaskItems.splice(targetIdx, 0, moved);
+  }
+  _stSrcIdx = null; _stDragging = false; _stRects = [];
   renderDirSubtaskList();
 }
 
