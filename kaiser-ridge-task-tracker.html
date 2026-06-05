@@ -641,8 +641,12 @@
       </div>
     </div>
 
-    <div class="ts-filter-row" id="ts-location-chips">
-      <div class="filter-chip active" onclick="setFilter('all',this)">All</div>
+    <!-- Timesheet filter chips -->
+    <div id="ts-filter-bar" style="display:flex;gap:8px;padding:8px 12px;overflow-x:auto;background:var(--card);border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch;scrollbar-width:none;">
+      <button id="ts-chip-freq"     onclick="openTsFilter('freq')"     class="dir-chip">Frequency ▾</button>
+      <button id="ts-chip-group"    onclick="openTsFilter('group')"    class="dir-chip">Group ▾</button>
+      <button id="ts-chip-location" onclick="openTsFilter('location')" class="dir-chip">Location ▾</button>
+      <button id="ts-chip-equip"    onclick="openTsFilter('equip')"    class="dir-chip">Equipment ▾</button>
     </div>
 
     <div style="padding:0 16px 10px;">
@@ -1344,7 +1348,9 @@ async function loadDirectory() {
 let entries = JSON.parse(localStorage.getItem('kr_entries') || '[]');
 let clockState = JSON.parse(localStorage.getItem('kr_clock') || 'null');
 let editingId = null;
-let filterLocation = 'all';
+let filterLocation = 'all'; // legacy — kept for compatibility
+const _tsFilters = { freq: null, group: null, location: null, equip: null };
+let _tsFilterType = null;
 let timerInterval = null;
 
 // ════════════════════════════════
@@ -1599,26 +1605,81 @@ function updateSummary() {
 // ════════════════════════════════
 //  TIMESHEETS
 // ════════════════════════════════
-function populateTsLocationChips() {
-  const row = document.getElementById('ts-location-chips');
-  if (!row) return;
-  const locs = getAllLocations();
-  const allChip = `<div class="filter-chip${filterLocation === 'all' ? ' active' : ''}" onclick="setFilter('all',this)">All</div>`;
-  const locChips = locs.map(l => `<div class="filter-chip${filterLocation === l ? ' active' : ''}" onclick="setFilter('${l.replace(/'/g,"\\'")}',this)">${l}</div>`).join('');
-  row.innerHTML = allChip + locChips;
+function populateTsLocationChips() { /* legacy no-op */ }
+function setFilter(loc, el) { /* legacy no-op */ }
+
+function openTsFilter(type) {
+  _tsFilterType = type;
+  const titles = { freq: 'Frequency', group: 'Group', location: 'Location', equip: 'Equipment' };
+  document.getElementById('dir-filter-title').textContent = titles[type];
+
+  let options = [];
+  if (type === 'freq') {
+    const freqOrder = ['Daily','Weekly','Fortnightly','Monthly','Quarterly','Bi-annually','Annually'];
+    const all = [...new Set(entries.map(e => e.frequency).filter(Boolean))];
+    options = [...freqOrder.filter(f => all.includes(f)), ...all.filter(f => !freqOrder.includes(f))];
+  } else if (type === 'group') {
+    options = [...new Set(entries.map(e => e.group).filter(Boolean))].sort();
+  } else if (type === 'location') {
+    options = getAllLocations();
+  } else if (type === 'equip') {
+    const master = getEquipmentMaster().filter(e => !e.archived).map(e => e.name);
+    const inUse = new Set(entries.map(e => e.tool).filter(Boolean));
+    options = master.filter(n => inUse.has(n));
+    if (options.length === 0) options = [...inUse].sort();
+  }
+
+  const current = _tsFilters[type];
+  document.getElementById('dir-filter-list').innerHTML = options.map(o => `
+    <div onclick="selectTsFilter('${o.replace(/'/g,"\\'")}')"
+      style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;font-size:15px;">
+      <span>${o}</span>
+      ${o === current ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}
+    </div>`).join('');
+
+  // Override clear button to use TS clear
+  document.querySelector('#modal-dir-filter button[onclick="clearDirFilter()"]').setAttribute('onclick', 'clearTsFilter()');
+  openModal('modal-dir-filter');
 }
 
-function setFilter(loc, el) {
-  document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
-  el.classList.add('active');
-  filterLocation = loc;
+function selectTsFilter(value) {
+  _tsFilters[_tsFilterType] = value;
+  updateTsChips();
+  closeModal('modal-dir-filter');
+  // Restore clear button for dir filter
+  document.querySelector('#modal-dir-filter button').setAttribute('onclick', 'clearDirFilter()');
   renderTimesheets();
+}
+
+function clearTsFilter() {
+  _tsFilters[_tsFilterType] = null;
+  updateTsChips();
+  closeModal('modal-dir-filter');
+  document.querySelector('#modal-dir-filter button').setAttribute('onclick', 'clearDirFilter()');
+  renderTimesheets();
+}
+
+function updateTsChips() {
+  const labels = { freq: 'Frequency', group: 'Group', location: 'Location', equip: 'Equipment' };
+  Object.keys(_tsFilters).forEach(type => {
+    const chip = document.getElementById('ts-chip-' + type);
+    if (!chip) return;
+    const val = _tsFilters[type];
+    chip.textContent = val ? val + ' ✕' : labels[type] + ' ▾';
+    chip.classList.toggle('active', !!val);
+  });
 }
 
 function renderTimesheets() {
   const list = document.getElementById('ts-list');
   const searchTerm = (document.getElementById('ts-search')?.value || '').toLowerCase().trim();
-  let filtered = filterLocation === 'all' ? entries : entries.filter(e => e.location === filterLocation);
+  let filtered = entries.filter(e => {
+    if (_tsFilters.freq     && e.frequency !== _tsFilters.freq)     return false;
+    if (_tsFilters.group    && e.group     !== _tsFilters.group)    return false;
+    if (_tsFilters.location && e.location  !== _tsFilters.location) return false;
+    if (_tsFilters.equip    && e.tool      !== _tsFilters.equip)    return false;
+    return true;
+  });
   if (searchTerm) {
     filtered = filtered.filter(e =>
       [e.task, e.group, e.notes, e.tool, e.location, e.frequency, e.sheetId].some(f => f && f.toLowerCase().includes(searchTerm))
