@@ -1199,7 +1199,8 @@ const DIRECTORY_FALLBACK = [
   {frequency:"Annually",    group:"Routines",             task:"Change the codes in the McGrath TTLock",   equipment:"Hands only"},
 ];
 
-let DIRECTORY = [...DIRECTORY_FALLBACK];
+// Load from localStorage first so local additions survive app restarts
+let DIRECTORY = JSON.parse(localStorage.getItem('kr_directory') || 'null') || [...DIRECTORY_FALLBACK];
 
 async function forceAppUpdate() {
   if ('serviceWorker' in navigator) {
@@ -1216,12 +1217,17 @@ async function forceAppUpdate() {
 }
 
 async function reloadDirectory() {
+  // Keep locally-added entries before wiping
+  const localOnly = DIRECTORY.filter(r => {
+    const isFromFallback = DIRECTORY_FALLBACK.some(f => f.frequency === r.frequency && f.group === r.group && f.task === r.task);
+    return !isFromFallback;
+  });
   localStorage.removeItem('kr_directory');
   localStorage.removeItem('kr_subtasks');
-  DIRECTORY = [...DIRECTORY_FALLBACK];
+  DIRECTORY = [...DIRECTORY_FALLBACK, ...localOnly];
   SUBTASKS = {};
   await loadDirectory();
-  alert('Task directory reloaded (' + DIRECTORY.length + ' entries)');
+  showToast('Task directory reloaded (' + DIRECTORY.length + ' entries)');
 }
 
 async function loadDirectory() {
@@ -1231,18 +1237,23 @@ async function loadDirectory() {
     const res = await fetch(url, { mode: 'cors' });
     const json = await res.json();
     if (json.success && json.directory && json.directory.length > 0) {
-      DIRECTORY = json.directory;
+      // Merge: keep remote entries + any locally-added entries not in remote
+      const remoteKeys = new Set(json.directory.map(r => `${r.frequency}||${r.group}||${r.task}`));
+      const localOnly = DIRECTORY.filter(r => !remoteKeys.has(`${r.frequency}||${r.group}||${r.task}`));
+      DIRECTORY = [...json.directory, ...localOnly];
       localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
     }
     if (json.success && json.subtasks) {
-      SUBTASKS = json.subtasks;
+      // Merge subtasks: remote base + any locally-added keys
+      const merged = { ...json.subtasks };
+      Object.keys(SUBTASKS).forEach(k => {
+        if (!merged[k]) merged[k] = SUBTASKS[k];
+      });
+      SUBTASKS = merged;
       localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
     }
   } catch (e) {
-    const cached = localStorage.getItem('kr_directory');
-    if (cached) DIRECTORY = JSON.parse(cached);
-    const cachedSt = localStorage.getItem('kr_subtasks');
-    SUBTASKS = cachedSt ? JSON.parse(cachedSt) : SUBTASKS_FALLBACK;
+    // Network failed — already loaded from localStorage at startup, nothing to do
   }
 }
 
