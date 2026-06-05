@@ -641,13 +641,8 @@
       </div>
     </div>
 
-    <div class="ts-filter-row">
+    <div class="ts-filter-row" id="ts-location-chips">
       <div class="filter-chip active" onclick="setFilter('all',this)">All</div>
-      <div class="filter-chip" onclick="setFilter('Property',this)">Property</div>
-      <div class="filter-chip" onclick="setFilter('Kaiser',this)">Kaiser</div>
-      <div class="filter-chip" onclick="setFilter('Heritage',this)">Heritage</div>
-      <div class="filter-chip" onclick="setFilter('Serene',this)">Serene</div>
-      <div class="filter-chip" onclick="setFilter('Shed',this)">Shed</div>
     </div>
 
     <div style="padding:0 16px 10px;">
@@ -1378,6 +1373,7 @@ window.addEventListener('load', () => {
 
   updateHeaderDate();
   populateLocationDropdown();
+  populateTsLocationChips();
   renderClockState();
   renderTimesheets();
   updateStats();
@@ -1603,6 +1599,15 @@ function updateSummary() {
 // ════════════════════════════════
 //  TIMESHEETS
 // ════════════════════════════════
+function populateTsLocationChips() {
+  const row = document.getElementById('ts-location-chips');
+  if (!row) return;
+  const locs = getAllLocations();
+  const allChip = `<div class="filter-chip${filterLocation === 'all' ? ' active' : ''}" onclick="setFilter('all',this)">All</div>`;
+  const locChips = locs.map(l => `<div class="filter-chip${filterLocation === l ? ' active' : ''}" onclick="setFilter('${l.replace(/'/g,"\\'")}',this)">${l}</div>`).join('');
+  row.innerHTML = allChip + locChips;
+}
+
 function setFilter(loc, el) {
   document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
   el.classList.add('active');
@@ -2605,6 +2610,7 @@ function selectLocation(name) {
   }
   setLocationDisplay(name);
   populateLocationDropdown(); // keep clock dropdown in sync
+  populateTsLocationChips();  // keep timesheets filter in sync
   closeModal('modal-location-picker');
 }
 
