@@ -2581,14 +2581,33 @@ function renderDashboardChart() {
   ).join('');
 
   // Attach long-press listener (replace previous)
-  canvas.ontouchstart = null;
   canvas.ontouchstart = (e) => {
     const touch = e.touches[0];
     const rect = canvas.getBoundingClientRect();
     const tx = touch.clientX - rect.left;
     const ty = touch.clientY - rect.top;
+    const startX = touch.clientX;
+    const startY = touch.clientY;
     clearTimeout(_chartLongTimer);
+
+    function onMove(ev) {
+      const dx = Math.abs(ev.touches[0].clientX - startX);
+      const dy = Math.abs(ev.touches[0].clientY - startY);
+      if (dx > 8 || dy > 8) { clearTimeout(_chartLongTimer); cleanup(); }
+    }
+    function onEnd() { clearTimeout(_chartLongTimer); cleanup(); }
+    function cleanup() {
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onEnd);
+      document.removeEventListener('touchcancel', onEnd);
+    }
+
+    document.addEventListener('touchmove', onMove, { passive: true });
+    document.addEventListener('touchend', onEnd, { once: true });
+    document.addEventListener('touchcancel', onEnd, { once: true });
+
     _chartLongTimer = setTimeout(() => {
+      cleanup();
       const hit = _chartBarRegions.find(b => tx >= b.x && tx <= b.x + b.w && ty >= b.y && ty <= b.y + b.h + 20);
       if (hit) {
         if (navigator.vibrate) navigator.vibrate(40);
