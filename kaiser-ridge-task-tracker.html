@@ -102,6 +102,23 @@
   }
   .clock-big-timer.running { color: #ffffff; }
 
+  /* ── CHART PERIOD BUTTONS ── */
+  .chart-period-btn {
+    padding: 4px 10px;
+    border-radius: 12px;
+    border: 1.5px solid var(--border);
+    background: transparent;
+    color: var(--subtext);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .chart-period-btn.active {
+    background: var(--blue);
+    border-color: var(--blue);
+    color: #fff;
+  }
+
   /* ── FILTER CHIPS ── */
   .dir-chip {
     flex-shrink: 0;
@@ -825,6 +842,22 @@
       <div style="display:flex;justify-content:space-between;margin-top:4px;">
         <div id="dash-hours-label" style="font-size:12px;color:var(--subtext);">0h of 40h target</div>
         <div id="dash-hours-pct" style="font-size:12px;color:var(--subtext);">0%</div>
+      </div>
+    </div>
+
+    <!-- Hours by Group chart -->
+    <div style="background:var(--card);border-radius:16px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,0.07);overflow:hidden;">
+      <div style="padding:14px 16px 8px;display:flex;align-items:center;justify-content:space-between;">
+        <div style="font-size:13px;font-weight:700;color:var(--text);">Hours by Group</div>
+        <div style="display:flex;gap:4px;">
+          <button onclick="setChartPeriod('week',this)"  class="chart-period-btn active">Week</button>
+          <button onclick="setChartPeriod('month',this)" class="chart-period-btn">Month</button>
+          <button onclick="setChartPeriod('year',this)"  class="chart-period-btn">Year</button>
+        </div>
+      </div>
+      <div style="padding:0 16px 16px;">
+        <canvas id="dash-chart" style="width:100%;display:block;"></canvas>
+        <div id="dash-chart-legend" style="display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:10px;"></div>
       </div>
     </div>
 
@@ -2407,6 +2440,133 @@ function updateStats() {
   document.getElementById('stat-hours').textContent = formatHours(total);
 }
 
+// ════════════════════════════════
+//  DASHBOARD CHART
+// ════════════════════════════════
+let _chartPeriod = 'week';
+const _chartColors = ['#007AFF','#34C759','#FF9500','#FF3B30','#AF52DE','#00C7BE','#FF6B6B','#5AC8FA','#FFCC00','#FF2D55'];
+
+function setChartPeriod(period, btn) {
+  _chartPeriod = period;
+  document.querySelectorAll('.chart-period-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderDashboardChart();
+}
+
+function getChartEntries() {
+  const now = new Date();
+  let start;
+  if (_chartPeriod === 'week') {
+    start = new Date(now);
+    start.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+    start.setHours(0,0,0,0);
+  } else if (_chartPeriod === 'month') {
+    start = new Date(now.getFullYear(), now.getMonth(), 1);
+  } else {
+    start = new Date(now.getFullYear(), 0, 1);
+  }
+  return entries.filter(e => {
+    const d = new Date(e.date.split('/').reverse().join('-'));
+    return d >= start;
+  });
+}
+
+function renderDashboardChart() {
+  const canvas = document.getElementById('dash-chart');
+  if (!canvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.parentElement.clientWidth - 0;
+  const H = 200;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const periodEntries = getChartEntries();
+
+  // Tally hours by group
+  const groupHours = {};
+  periodEntries.forEach(e => {
+    const g = e.group || 'Other';
+    groupHours[g] = (groupHours[g] || 0) + e.durationHours;
+  });
+
+  const groups = Object.keys(groupHours).sort((a,b) => groupHours[b] - groupHours[a]);
+  const isDark = document.body.classList.contains('dark');
+  const textColor = isDark ? '#8E8E93' : '#8E8E93';
+  const gridColor = isDark ? '#38383A' : '#E5E5EA';
+
+  if (groups.length === 0) {
+    ctx.fillStyle = textColor;
+    ctx.font = '14px -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('No entries for this period', W/2, H/2);
+    document.getElementById('dash-chart-legend').innerHTML = '';
+    return;
+  }
+
+  const maxH = Math.max(...Object.values(groupHours));
+  const padL = 36, padR = 8, padT = 10, padB = 28;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+  const barW = Math.min(40, (chartW / groups.length) * 0.6);
+  const gap = chartW / groups.length;
+
+  // Grid lines
+  const steps = 4;
+  ctx.strokeStyle = gridColor;
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= steps; i++) {
+    const y = padT + chartH - (i / steps) * chartH;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+    ctx.fillStyle = textColor;
+    ctx.font = `10px -apple-system, sans-serif`;
+    ctx.textAlign = 'right';
+    ctx.fillText(((maxH * i / steps)).toFixed(1), padL - 4, y + 3);
+  }
+
+  // Bars
+  groups.forEach((g, i) => {
+    const h = (groupHours[g] / maxH) * chartH;
+    const x = padL + gap * i + gap / 2 - barW / 2;
+    const y = padT + chartH - h;
+    ctx.fillStyle = _chartColors[i % _chartColors.length];
+    // Rounded top
+    const r = 4;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + barW - r, y);
+    ctx.quadraticCurveTo(x + barW, y, x + barW, y + r);
+    ctx.lineTo(x + barW, y + h);
+    ctx.lineTo(x, y + h);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.fill();
+
+    // Value label above bar
+    ctx.fillStyle = isDark ? '#fff' : '#1C1C1E';
+    ctx.font = `bold 10px -apple-system, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText(groupHours[g].toFixed(1), x + barW/2, y - 3);
+
+    // X label
+    ctx.fillStyle = textColor;
+    ctx.font = `10px -apple-system, sans-serif`;
+    const label = g.length > 6 ? g.slice(0,6) + '…' : g;
+    ctx.fillText(label, x + barW/2, H - padB + 14);
+  });
+
+  // Legend
+  document.getElementById('dash-chart-legend').innerHTML = groups.map((g, i) =>
+    `<div style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text);">
+      <div style="width:10px;height:10px;border-radius:2px;background:${_chartColors[i % _chartColors.length]};flex-shrink:0;"></div>
+      ${g} <span style="color:var(--subtext);">${groupHours[g].toFixed(1)}h</span>
+    </div>`
+  ).join('');
+}
+
 function saveWeeklyTarget() {
   const val = document.getElementById('weekly-target').value;
   localStorage.setItem('kr_weekly_target', val || '40');
@@ -2422,6 +2582,9 @@ function renderDashboard() {
   // ── Date header ──
   const el = document.getElementById('dash-date');
   if (el) el.textContent = now.toLocaleDateString('en-AU', { weekday:'long', day:'numeric', month:'long' });
+
+  // ── Chart ──
+  renderDashboardChart();
 
   // ── Hours ──
   const weekStart = new Date(now);
