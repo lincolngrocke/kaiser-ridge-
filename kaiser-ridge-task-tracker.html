@@ -88,6 +88,25 @@
   }
   .clock-big-timer.running { color: #ffffff; }
 
+  /* ── FILTER CHIPS ── */
+  .dir-chip {
+    flex-shrink: 0;
+    padding: 6px 12px;
+    border-radius: 20px;
+    border: 1.5px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .dir-chip.active {
+    background: var(--blue);
+    border-color: var(--blue);
+    color: #fff;
+  }
+
   /* ── RUNNING STATE (dark overlay) ── */
   .clock-running-overlay {
     display: none;
@@ -653,8 +672,27 @@
     </div>
     <button onclick="openDirAddTask()" style="background:var(--blue);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:14px;font-weight:600;cursor:pointer;">+ Add</button>
   </div>
+  <!-- Filter chips -->
+  <div id="dir-filter-bar" style="display:flex;gap:8px;padding:8px 12px;overflow-x:auto;background:var(--card);border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch;scrollbar-width:none;">
+    <button id="chip-freq"     onclick="openDirFilter('freq')"     class="dir-chip">Frequency ▾</button>
+    <button id="chip-group"    onclick="openDirFilter('group')"    class="dir-chip">Group ▾</button>
+    <button id="chip-location" onclick="openDirFilter('location')" class="dir-chip">Location ▾</button>
+    <button id="chip-equip"    onclick="openDirFilter('equip')"    class="dir-chip">Equipment ▾</button>
+  </div>
   <div class="scroll-area" id="dir-scroll-area">
     <div id="dir-list"></div>
+  </div>
+</div>
+
+<!-- ══════════════ DIR FILTER PICKER ══════════════ -->
+<div class="modal-backdrop" id="modal-dir-filter" style="z-index:300;">
+  <div class="modal-sheet" style="padding:16px 0 24px;">
+    <div class="modal-handle"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:0 20px 12px;">
+      <span id="dir-filter-title" style="font-size:17px;font-weight:600;"></span>
+      <button onclick="clearDirFilter()" style="background:none;border:none;color:var(--red);font-size:14px;cursor:pointer;">Clear</button>
+    </div>
+    <div id="dir-filter-list" style="max-height:55vh;overflow-y:auto;"></div>
   </div>
 </div>
 
@@ -2287,14 +2325,82 @@ function undoClockIn() {
 
 let _dirEditingKey = null; // "frequency|group|task" key for editing
 
+// ── Directory filters ──
+const _dirFilters = { freq: null, group: null, location: null, equip: null };
+let _dirFilterType = null;
+
+function openDirFilter(type) {
+  _dirFilterType = type;
+  const titles = { freq: 'Frequency', group: 'Group', location: 'Location', equip: 'Equipment' };
+  document.getElementById('dir-filter-title').textContent = titles[type];
+
+  // Build option list from current DIRECTORY
+  let options = [];
+  if (type === 'freq') {
+    const freqOrder = ['Daily','Weekly','Fortnightly','Monthly','Quarterly','Bi-annually','Annually'];
+    const all = [...new Set(DIRECTORY.map(r => r.frequency).filter(Boolean))];
+    options = [...freqOrder.filter(f => all.includes(f)), ...all.filter(f => !freqOrder.includes(f))];
+  } else if (type === 'group') {
+    options = [...new Set(DIRECTORY.map(r => r.group).filter(Boolean))].sort();
+  } else if (type === 'location') {
+    options = [...new Set(DIRECTORY.map(r => r.location).filter(Boolean))].sort();
+  } else if (type === 'equip') {
+    options = [...new Set(DIRECTORY.map(r => r.equipment).filter(Boolean))].sort();
+  }
+
+  const current = _dirFilters[type];
+  document.getElementById('dir-filter-list').innerHTML = options.map(o => `
+    <div onclick="selectDirFilter('${o.replace(/'/g,"\\'")}',this)"
+      style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;font-size:15px;">
+      <span>${o}</span>
+      ${o === current ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}
+    </div>`).join('');
+
+  openModal('modal-dir-filter');
+}
+
+function selectDirFilter(value) {
+  _dirFilters[_dirFilterType] = value;
+  updateDirChips();
+  closeModal('modal-dir-filter');
+  renderDirectory();
+}
+
+function clearDirFilter() {
+  _dirFilters[_dirFilterType] = null;
+  updateDirChips();
+  closeModal('modal-dir-filter');
+  renderDirectory();
+}
+
+function updateDirChips() {
+  const labels = { freq: 'Frequency', group: 'Group', location: 'Location', equip: 'Equipment' };
+  Object.keys(_dirFilters).forEach(type => {
+    const chip = document.getElementById('chip-' + type);
+    if (!chip) return;
+    const val = _dirFilters[type];
+    chip.textContent = val ? val + ' ✕' : labels[type] + ' ▾';
+    chip.classList.toggle('active', !!val);
+  });
+}
+
 function renderDirectory() {
   const list = document.getElementById('dir-list');
   if (!list) return;
 
+  // Apply active filters
+  const visibleDir = DIRECTORY.filter(r => {
+    if (_dirFilters.freq     && r.frequency !== _dirFilters.freq)     return false;
+    if (_dirFilters.group    && r.group     !== _dirFilters.group)    return false;
+    if (_dirFilters.location && r.location  !== _dirFilters.location) return false;
+    if (_dirFilters.equip    && r.equipment !== _dirFilters.equip)    return false;
+    return true;
+  });
+
   // Group DIRECTORY by frequency then group
   const grouped = {};
   const taskMeta = {}; // store location per task key
-  DIRECTORY.forEach(r => {
+  visibleDir.forEach(r => {
     const freq = r.frequency || 'Other';
     const grp  = r.group || 'Other';
     const task = r.task || '';
@@ -2308,6 +2414,11 @@ function renderDirectory() {
 
   const freqOrder = ['Daily','Weekly','Fortnightly','Monthly','Quarterly','Annually'];
   const freqs = [...new Set([...freqOrder.filter(f => grouped[f]), ...Object.keys(grouped).filter(f => !freqOrder.includes(f))])];
+
+  if (freqs.length === 0) {
+    list.innerHTML = '<div style="padding:40px 20px;text-align:center;color:var(--subtext);font-size:15px;">No tasks match the selected filters.</div>';
+    return;
+  }
 
   const taskOrder = JSON.parse(localStorage.getItem('kr_task_order') || '{}');
 
