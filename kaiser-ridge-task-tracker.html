@@ -820,7 +820,10 @@
 <div class="screen" id="screen-dashboard">
   <div class="header">
     <div id="dash-header-title" class="header-title">Hours by Group</div>
-    <div id="dash-date" style="font-size:13px;color:var(--subtext);"></div>
+    <div style="text-align:right;">
+      <div id="dash-total-hours" style="font-size:17px;font-weight:600;color:var(--blue);"></div>
+      <div id="dash-date" style="font-size:12px;color:var(--subtext);"></div>
+    </div>
   </div>
   <!-- Period filter -->
   <div style="display:flex;gap:8px;padding:10px 16px 8px;background:var(--card);border-bottom:1px solid var(--border);">
@@ -2420,6 +2423,9 @@ function setChartPeriod(period, btn) {
   btn.parentElement.querySelectorAll('.chart-period-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   renderDashboardChart();
+  const total = getChartEntries().reduce((s,e) => s + e.durationHours, 0);
+  const th = document.getElementById('dash-total-hours');
+  if (th) th.textContent = total.toFixed(2) + 'h';
 }
 
 function setChartDimension(dim, btn) {
@@ -2571,6 +2577,9 @@ function renderDashboard() {
   const el = document.getElementById('dash-date');
   if (el) el.textContent = now.toLocaleDateString('en-AU', { weekday:'long', day:'numeric', month:'long' });
   renderDashboardChart();
+  const total = getChartEntries().reduce((s,e) => s + e.durationHours, 0);
+  const th = document.getElementById('dash-total-hours');
+  if (th) th.textContent = total.toFixed(2) + 'h';
 }
 
 function saveEntries() {
