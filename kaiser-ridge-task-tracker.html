@@ -2343,7 +2343,7 @@ function openDirFilter(type) {
   } else if (type === 'group') {
     options = [...new Set(DIRECTORY.map(r => r.group).filter(Boolean))].sort();
   } else if (type === 'location') {
-    options = [...new Set(DIRECTORY.map(r => r.location).filter(Boolean))].sort();
+    options = getAllLocations();
   } else if (type === 'equip') {
     const master = getEquipmentMaster().filter(e => !e.archived).map(e => e.name);
     const inUse = new Set(DIRECTORY.map(r => r.equipment).filter(Boolean));
