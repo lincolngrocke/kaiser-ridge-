@@ -3265,13 +3265,24 @@ function _dtTouchMove(e) {
   const y = e.touches[0].clientY;
   const srcRect = _dtSrcRow.getBoundingClientRect();
   _dtClone.style.top = (y - srcRect.height / 2) + 'px';
+  // Refresh rects each move so scroll doesn't stale them
+  const rows = Array.from(_dtGroupEl.querySelectorAll('.dir-task-row'));
+  _dtRects = rows.map(r => ({ el: r, rect: r.getBoundingClientRect() }));
 
-  // Highlight target slot
-  _dtRects.forEach(({ el, rect }) => {
-    const mid = rect.top + rect.height / 2;
-    el.style.borderTop = (y < mid && el !== _dtSrcRow) ? '2px solid var(--blue)' : '';
-    el.style.borderBottom = '';
-  });
+  // Highlight target slot — only one indicator at a time
+  _dtRects.forEach(({ el }) => { el.style.borderTop = ''; el.style.borderBottom = ''; });
+  let target = null;
+  for (const { el, rect } of _dtRects) {
+    if (el === _dtSrcRow) continue;
+    if (y < rect.top + rect.height / 2) { target = el; break; }
+  }
+  if (target) {
+    target.style.borderTop = '2px solid var(--blue)';
+  } else {
+    // After last row
+    const last = _dtRects[_dtRects.length - 1];
+    if (last && last.el !== _dtSrcRow) last.el.style.borderBottom = '2px solid var(--blue)';
+  }
 
   // Auto-scroll
   const scrollArea = document.getElementById('dir-scroll-area');
