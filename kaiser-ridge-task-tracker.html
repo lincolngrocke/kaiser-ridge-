@@ -95,12 +95,18 @@
     top: 0;
     left: 0;
     right: 0;
-    bottom: calc(var(--nav-height) + env(safe-area-inset-bottom));
+    bottom: 0;
     background: #000;
     z-index: 40;
     flex-direction: column;
+    pointer-events: none;
   }
   .clock-running-overlay.active { display: flex; }
+  .clock-running-overlay > * { pointer-events: auto; }
+  /* Push content above the nav so nothing is hidden behind it */
+  .clock-running-overlay .running-buttons {
+    padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom));
+  }
 
   .running-top-bar {
     padding: 16px 20px 12px;
