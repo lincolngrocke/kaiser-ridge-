@@ -1345,6 +1345,15 @@ function showScreen(id, tab) {
   if (tab) tab.classList.add('active');
   if (id === 'timesheets') renderTimesheets();
   if (id === 'settings') updateStats();
+  // Hide running overlay when not on clock screen; restore it if clock is running
+  const overlay = document.getElementById('running-overlay');
+  if (overlay) {
+    if (id === 'clock' && clockState && clockState.running) {
+      overlay.classList.add('active');
+    } else {
+      overlay.classList.remove('active');
+    }
+  }
 }
 
 // ════════════════════════════════
