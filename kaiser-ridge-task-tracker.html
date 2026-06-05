@@ -848,8 +848,8 @@
 </div>
 
 <!-- ══════════════ CHART DRILL-DOWN MODAL ══════════════ -->
-<div class="modal-backdrop" id="modal-chart-drill" style="z-index:300;">
-  <div class="modal-sheet" style="padding:16px 0 24px;">
+<div class="modal-backdrop" id="modal-chart-drill" style="z-index:300;" onclick="closeModal('modal-chart-drill')">
+  <div class="modal-sheet" style="padding:16px 0 24px;" onclick="event.stopPropagation()">
     <div class="modal-handle"></div>
     <div style="padding:0 20px 12px;display:flex;align-items:center;justify-content:space-between;">
       <span id="drill-title" style="font-size:17px;font-weight:600;"></span>
@@ -2611,6 +2611,8 @@ function renderDashboardChart() {
       const hit = _chartBarRegions.find(b => tx >= b.x && tx <= b.x + b.w && ty >= b.y && ty <= b.y + b.h + 20);
       if (hit) {
         if (navigator.vibrate) navigator.vibrate(40);
+        // Absorb the upcoming touchend so it doesn't bleed into the modal
+        document.addEventListener('touchend', e => e.stopPropagation(), { once: true, capture: true });
         openChartDrill(hit.key, hit.color);
       }
     }, 400);
