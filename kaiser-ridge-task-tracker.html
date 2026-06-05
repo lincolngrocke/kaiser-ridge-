@@ -647,10 +647,13 @@
 <!-- ══════════════ DIRECTORY SCREEN ══════════════ -->
 <div class="screen" id="screen-directory">
   <div class="header">
-    <div class="header-title">Task Directory</div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div class="header-title">Task Directory</div>
+      <div id="dir-freq-badge" style="display:none;background:var(--blue);color:#fff;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;letter-spacing:0.3px;text-transform:uppercase;"></div>
+    </div>
     <button onclick="openDirAddTask()" style="background:var(--blue);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:14px;font-weight:600;cursor:pointer;">+ Add</button>
   </div>
-  <div class="scroll-area">
+  <div class="scroll-area" id="dir-scroll-area">
     <div id="dir-list"></div>
   </div>
 </div>
@@ -2307,7 +2310,7 @@ function renderDirectory() {
   const freqs = [...new Set([...freqOrder.filter(f => grouped[f]), ...Object.keys(grouped).filter(f => !freqOrder.includes(f))])];
 
   list.innerHTML = freqs.map(freq => `
-    <div style="margin-bottom:8px;">
+    <div style="margin-bottom:8px;" data-freq="${freq}">
       <div style="padding:8px 16px 4px;font-size:11px;font-weight:700;color:var(--subtext);letter-spacing:0.5px;text-transform:uppercase;">${freq}</div>
       ${Object.keys(grouped[freq]).map(grp => `
         <div style="margin:0 12px 8px;background:var(--card);border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
@@ -2331,6 +2334,23 @@ function renderDirectory() {
       `).join('')}
     </div>
   `).join('');
+
+  // Sticky frequency badge — updates as sections scroll into view
+  const badge = document.getElementById('dir-freq-badge');
+  const scrollArea = document.getElementById('dir-scroll-area');
+  if (badge && scrollArea) {
+    if (window._dirFreqObserver) window._dirFreqObserver.disconnect();
+    const sections = list.querySelectorAll('[data-freq]');
+    if (sections.length === 0) { badge.style.display = 'none'; return; }
+    badge.textContent = sections[0].dataset.freq;
+    badge.style.display = 'inline-block';
+    window._dirFreqObserver = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) badge.textContent = entry.target.dataset.freq;
+      });
+    }, { root: scrollArea, threshold: 0, rootMargin: '0px 0px -85% 0px' });
+    sections.forEach(s => window._dirFreqObserver.observe(s));
+  }
 }
 
 let _selectedGroup = '';
