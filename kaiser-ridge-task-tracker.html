@@ -1127,6 +1127,34 @@
   </div>
 </div>
 
+<!-- ══════════════ EQUIPMENT GUIDE MODAL ══════════════ -->
+<div class="modal-backdrop" id="modal-equipment-guide" style="z-index:500;">
+  <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:92vh;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;padding:16px 20px 8px;border-bottom:1px solid var(--border);">
+      <button onclick="closeModal('modal-equipment-guide')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:0;margin-right:12px;">‹ Back</button>
+      <span id="equip-guide-modal-title" style="font-size:17px;font-weight:600;flex:1;text-align:center;">Guide</span>
+      <button onclick="saveEquipmentGuide()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;padding:0;width:60px;text-align:right;">Save</button>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:20px;">
+      <input type="hidden" id="equip-guide-name">
+      <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">INSTRUCTIONS</div>
+      <textarea id="equip-guide-instructions" placeholder="Add operating instructions, maintenance notes, safety info…"
+        style="width:100%;min-height:200px;padding:14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);font-family:inherit;resize:vertical;outline:none;line-height:1.5;"></textarea>
+      <div style="font-size:13px;font-weight:600;color:var(--subtext);margin:20px 0 8px;">VIDEO / LINK</div>
+      <input id="equip-guide-url" type="url" placeholder="https://youtube.com/…"
+        autocomplete="off" autocorrect="off" spellcheck="false"
+        style="width:100%;padding:14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;">
+      <div id="equip-guide-url-preview" style="margin-top:12px;display:none;">
+        <a id="equip-guide-url-link" href="#" target="_blank"
+          style="display:flex;align-items:center;gap:8px;padding:12px 16px;background:var(--bg);border-radius:12px;color:var(--blue);font-size:15px;text-decoration:none;">
+          <span style="font-size:20px;">▶️</span>
+          <span id="equip-guide-url-label">Open video / link</span>
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 
@@ -2552,12 +2580,18 @@ function renderEquipmentPickerList() {
     </div>`;
   }
 
+  const equipGuides = getEquipmentGuides();
   filtered.forEach(e => {
     const isSelected = _equipmentItems.includes(e);
-    html += `<div onclick="selectEquipment('${e.replace(/'/g,"\\'")}')"
-      style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;">
-      <span style="font-size:16px;color:var(--text);">${e}</span>
-      ${isSelected ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}
+    const enc = e.replace(/'/g,"\\'");
+    const hasGuide = equipGuides[e] && (equipGuides[e].instructions || equipGuides[e].url);
+    html += `<div style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">
+      <div onclick="selectEquipment('${enc}')" style="flex:1;display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <span style="font-size:16px;color:var(--text);">${e}</span>
+        ${hasGuide ? '<span style="font-size:13px;color:var(--blue);background:#e8f0fe;padding:2px 6px;border-radius:6px;">Guide</span>' : ''}
+        ${isSelected ? '<span style="color:var(--blue);font-size:18px;margin-left:auto;">✓</span>' : '<span style="margin-left:auto;"></span>'}
+      </div>
+      <button onclick="openEquipmentGuide('${enc}')" style="background:none;border:none;color:var(--subtext);font-size:18px;cursor:pointer;padding:4px 6px;flex-shrink:0;">✎</button>
     </div>`;
   });
 
@@ -2878,6 +2912,56 @@ function saveSubtaskGuide() {
 function viewSubtaskGuide(name) {
   openSubtaskGuide(name);
   document.getElementById('guide-rename-section').style.display = 'none';
+}
+
+// ── Equipment Guides ──
+function getEquipmentGuides() {
+  return JSON.parse(localStorage.getItem('kr_equipment_guides') || '{}');
+}
+function saveEquipmentGuides(guides) {
+  localStorage.setItem('kr_equipment_guides', JSON.stringify(guides));
+}
+
+function openEquipmentGuide(name) {
+  const guides = getEquipmentGuides();
+  const guide = guides[name] || { instructions: '', url: '' };
+  document.getElementById('equip-guide-name').value = name;
+  document.getElementById('equip-guide-modal-title').textContent = name.length > 28 ? name.slice(0,28)+'…' : name;
+  document.getElementById('equip-guide-instructions').value = guide.instructions || '';
+  document.getElementById('equip-guide-url').value = guide.url || '';
+  updateEquipGuideUrlPreview(guide.url || '');
+  document.getElementById('equip-guide-url').oninput = () => updateEquipGuideUrlPreview(document.getElementById('equip-guide-url').value);
+  openModal('modal-equipment-guide');
+}
+
+function updateEquipGuideUrlPreview(url) {
+  const preview = document.getElementById('equip-guide-url-preview');
+  const link = document.getElementById('equip-guide-url-link');
+  const label = document.getElementById('equip-guide-url-label');
+  if (url && url.startsWith('http')) {
+    preview.style.display = 'block';
+    link.href = url;
+    try { label.textContent = 'Open ' + new URL(url).hostname.replace('www.',''); }
+    catch(e) { label.textContent = 'Open link'; }
+  } else {
+    preview.style.display = 'none';
+  }
+}
+
+function saveEquipmentGuide() {
+  const name = document.getElementById('equip-guide-name').value;
+  const instructions = document.getElementById('equip-guide-instructions').value.trim();
+  const url = document.getElementById('equip-guide-url').value.trim();
+  const guides = getEquipmentGuides();
+  if (instructions || url) {
+    guides[name] = { instructions, url };
+  } else {
+    delete guides[name];
+  }
+  saveEquipmentGuides(guides);
+  showToast('Guide saved');
+  closeModal('modal-equipment-guide');
+  renderEquipmentPickerList();
 }
 
 function renameSubtaskGlobally(oldName, newName) {
