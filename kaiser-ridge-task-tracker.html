@@ -2345,7 +2345,10 @@ function openDirFilter(type) {
   } else if (type === 'location') {
     options = [...new Set(DIRECTORY.map(r => r.location).filter(Boolean))].sort();
   } else if (type === 'equip') {
-    options = [...new Set(DIRECTORY.map(r => r.equipment).filter(Boolean))].sort();
+    const master = getEquipmentMaster().filter(e => !e.archived).map(e => e.name);
+    const inUse = new Set(DIRECTORY.map(r => r.equipment).filter(Boolean));
+    options = master.filter(n => inUse.has(n));
+    if (options.length === 0) options = [...inUse].sort();
   }
 
   const current = _dirFilters[type];
