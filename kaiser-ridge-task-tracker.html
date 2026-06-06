@@ -1120,6 +1120,10 @@
         <button onclick="openSubtaskPicker()" style="margin-top:8px;background:none;border:1px dashed var(--border);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">+ Add Subtask</button>
       </div>
 
+      <div style="padding:16px 20px 0;" id="dir-duplicate-wrap">
+        <button onclick="duplicateDirTask()" style="width:100%;padding:14px;background:none;border:1px solid var(--blue);border-radius:12px;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">⎘ Duplicate Task</button>
+      </div>
+
       <div style="padding:16px 20px 0;" id="dir-delete-wrap">
         <button onclick="deleteDirTask()" style="width:100%;padding:14px;background:none;border:1px solid var(--red);border-radius:12px;color:var(--red);font-size:16px;font-weight:600;cursor:pointer;">Delete Task</button>
       </div>
@@ -3233,8 +3237,11 @@ function openDirAddTask() {
   document.getElementById('dir-modal-title').textContent = 'Add Task';
   setLocationDisplay('');
   setFrequencyDisplay('');
-  document.getElementById('dir-task').value = '';
+  const addNameField = document.getElementById('dir-task');
+  addNameField.value = '';
+  addNameField.placeholder = 'e.g. Change over tiny house';
   document.getElementById('dir-delete-wrap').style.display = 'none';
+  document.getElementById('dir-duplicate-wrap').style.display = 'none';
   populateDirGroupDropdown('');
   renderDirEquipmentList([]);
   renderDirSubtaskList([]);
@@ -3249,13 +3256,45 @@ function openDirEditTask(encodedKey) {
   const entry = DIRECTORY.find(r => r.frequency === freq && r.group === grp && r.task === task);
   setLocationDisplay(entry && entry.location ? entry.location : '');
   setFrequencyDisplay(freq);
-  document.getElementById('dir-task').value = task;
+  const editNameField = document.getElementById('dir-task');
+  editNameField.value = task;
+  editNameField.placeholder = 'e.g. Change over tiny house';
   document.getElementById('dir-delete-wrap').style.display = 'block';
+  document.getElementById('dir-duplicate-wrap').style.display = 'block';
   populateDirGroupDropdown(grp);
   const equip = DIRECTORY.filter(r => r.frequency === freq && r.group === grp && r.task === task).map(r => r.equipment).filter(Boolean);
   renderDirEquipmentList(equip);
   renderDirSubtaskList(SUBTASKS[task] || []);
   openModal('modal-dir-task');
+}
+
+// Clone the currently-open task into a new "Add Task" form — everything
+// carries over (location, frequency, group, equipment, subtasks) except the
+// task name, which is cleared so Lincoln can type the new one and tweak fields.
+function duplicateDirTask() {
+  if (!_dirEditingKey) return;
+  const [freq, grp, task] = _dirEditingKey.split('||');
+  const entry = DIRECTORY.find(r => r.frequency === freq && r.group === grp && r.task === task);
+  const equip = DIRECTORY.filter(r => r.frequency === freq && r.group === grp && r.task === task).map(r => r.equipment).filter(Boolean);
+  const subtasks = SUBTASKS[task] || [];
+
+  _dirEditingKey = null; // Saving will create a new entry, not overwrite the source
+  document.getElementById('dir-modal-title').textContent = 'Duplicate Task';
+  document.getElementById('dir-delete-wrap').style.display = 'none';
+  document.getElementById('dir-duplicate-wrap').style.display = 'none';
+
+  setLocationDisplay(entry && entry.location ? entry.location : '');
+  setFrequencyDisplay(freq);
+  populateDirGroupDropdown(grp);
+  renderDirEquipmentList(equip);
+  renderDirSubtaskList([...subtasks]);
+
+  const nameField = document.getElementById('dir-task');
+  nameField.value = '';
+  nameField.placeholder = `e.g. ${task} (copy)`;
+  nameField.focus();
+
+  showToast('Copied — give it a new name and tweak as needed');
 }
 
 // ── Equipment Master List ──
