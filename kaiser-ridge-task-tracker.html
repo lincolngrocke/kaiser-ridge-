@@ -973,6 +973,20 @@
       <button class="modal-save" onclick="saveEntry()">Save</button>
     </div>
 
+    <div id="task-search-wrap" style="padding:14px 16px 0;position:relative;">
+      <div style="position:relative;">
+        <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--subtext);">🔍</span>
+        <input id="task-search-input" type="search" placeholder="Search for a task…"
+          autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+          oninput="onTaskSearchInput()" onfocus="onTaskSearchInput()"
+          style="width:100%;padding:11px 36px 11px 36px;border-radius:12px;border:1px solid var(--border);background:var(--card);font-size:15px;color:var(--text);outline:none;-webkit-appearance:none;">
+        <button id="task-search-clear" onclick="clearTaskSearch()" type="button"
+          style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);width:26px;height:26px;border:none;border-radius:50%;background:var(--border);color:var(--subtext);font-size:14px;line-height:1;cursor:pointer;">✕</button>
+      </div>
+      <div id="task-search-results" style="display:none;position:absolute;left:16px;right:16px;top:calc(100% - 4px);background:var(--card);border:1px solid var(--border);border-radius:12px;max-height:260px;overflow-y:auto;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,0.18);"></div>
+      <div style="text-align:center;font-size:12px;color:var(--subtext);padding:10px 0 2px;">— or choose manually below —</div>
+    </div>
+
     <div class="form-section">
       <div class="form-row">
         <span class="form-label">Location</span>
@@ -1874,6 +1888,8 @@ function openCreate() {
   document.getElementById('f-date').value = todayStr('-');
   document.getElementById('f-clockin').value = '';
   document.getElementById('f-clockout').value = '';
+  clearTaskSearch();
+  document.getElementById('task-search-wrap').style.display = '';
 
   openModal('modal-task');
 }
@@ -1885,6 +1901,8 @@ function openEdit(id) {
   document.getElementById('modal-task-title').textContent = 'Edit Entry';
   document.getElementById('f-delete-wrap').style.display = 'block';
   document.getElementById('f-time-row').style.display = 'block';
+  clearTaskSearch();
+  document.getElementById('task-search-wrap').style.display = 'none';
 
   document.getElementById('f-location').value = e.location || '';
   document.getElementById('f-frequency').value = e.frequency || '';
@@ -1921,6 +1939,8 @@ function openEditActive() {
   document.getElementById('modal-task-title').textContent = 'Edit Active Entry';
   document.getElementById('f-delete-wrap').style.display = 'none';
   document.getElementById('f-time-row').style.display = 'none';
+  clearTaskSearch();
+  document.getElementById('task-search-wrap').style.display = 'none';
 
   document.getElementById('f-location').value = clockState.location || '';
   document.getElementById('f-frequency').value = clockState.frequency || '';
@@ -2073,6 +2093,114 @@ function setOptions(selId, values, placeholder) {
     sel.appendChild(o);
   });
 }
+
+// ── Task search & autofill ──
+function clearTaskSearch() {
+  const input = document.getElementById('task-search-input');
+  input.value = '';
+  document.getElementById('task-search-clear').style.display = 'none';
+  document.getElementById('task-search-results').style.display = 'none';
+  document.getElementById('task-search-results').innerHTML = '';
+  input.focus();
+}
+
+function onTaskSearchInput() {
+  const q = document.getElementById('task-search-input').value.trim().toLowerCase();
+  const clearBtn = document.getElementById('task-search-clear');
+  const results = document.getElementById('task-search-results');
+  clearBtn.style.display = q ? 'flex' : 'none';
+  clearBtn.style.alignItems = 'center';
+  clearBtn.style.justifyContent = 'center';
+
+  if (!q) { results.style.display = 'none'; results.innerHTML = ''; return; }
+
+  // Group matching DIRECTORY rows by task name (a task can map to multiple equipment/freq/group combos)
+  const seen = {};
+  const matches = [];
+  DIRECTORY.forEach(r => {
+    if (!r.task) return;
+    if (!r.task.toLowerCase().includes(q)) return;
+    const key = `${r.frequency}||${r.group}||${r.task}`;
+    if (seen[key]) return;
+    seen[key] = true;
+    matches.push(r);
+  });
+
+  if (matches.length === 0) {
+    results.style.display = 'block';
+    results.innerHTML = `<div style="padding:14px 16px;font-size:14px;color:var(--subtext);text-align:center;">No matching tasks</div>`;
+    return;
+  }
+
+  results.style.display = 'block';
+  results.innerHTML = matches.slice(0, 30).map((r, i) => {
+    const sub = [r.frequency, r.group].filter(Boolean).join(' · ');
+    const enc = JSON.stringify({ frequency: r.frequency, group: r.group, task: r.task }).replace(/"/g, '&quot;');
+    return `<div onclick='selectSearchedTask(${JSON.stringify({frequency:r.frequency,group:r.group,task:r.task})})'
+        style="padding:12px 16px;cursor:pointer;${i < matches.length - 1 ? 'border-bottom:1px solid var(--border);' : ''}">
+      <div style="font-size:15px;font-weight:500;">${highlightMatch(r.task, q)}</div>
+      ${sub ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">${sub}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function highlightMatch(text, q) {
+  if (!q) return text;
+  const idx = text.toLowerCase().indexOf(q);
+  if (idx === -1) return text;
+  return text.slice(0, idx) + '<mark>' + text.slice(idx, idx + q.length) + '</mark>' + text.slice(idx + q.length);
+}
+
+function selectSearchedTask(sel) {
+  const { frequency, group, task } = sel;
+
+  // Find the directory row(s) for this exact frequency+group+task to source location/equipment
+  const rows = DIRECTORY.filter(r => r.frequency === frequency && r.group === group && r.task === task);
+  const row = rows[0] || {};
+
+  // 1. Frequency — populate dependent Group options, then set value
+  document.getElementById('f-frequency').value = frequency || '';
+  const groups = [...new Set(DIRECTORY.filter(r => r.frequency === frequency).map(r => r.group))];
+  setOptions('f-group', groups, 'Select…');
+  document.getElementById('f-group').value = group || '';
+
+  // 2. Group — populate dependent Task options, then set value
+  const tasks = [...new Set(DIRECTORY.filter(r => r.frequency === frequency && r.group === group).map(r => r.task))];
+  setOptions('f-task', tasks, 'Select…');
+  document.getElementById('f-task').value = task || '';
+
+  // 3. Task — populate dependent Equipment options, then set value
+  const equip = rows.map(r => r.equipment).filter(Boolean);
+  setOptions('f-tool', equip, 'Select…');
+  if (equip.length === 1) document.getElementById('f-tool').value = equip[0];
+
+  // 4. Location — only fill if the directory row has one and the field is currently empty
+  const locField = document.getElementById('f-location');
+  if (row.location && !locField.value) {
+    locField.value = row.location;
+    onLocationChange();
+  }
+
+  // Collapse the search UI
+  document.getElementById('task-search-input').value = task;
+  document.getElementById('task-search-clear').style.display = 'flex';
+  document.getElementById('task-search-results').style.display = 'none';
+  document.getElementById('task-search-results').innerHTML = '';
+
+  if (SUBTASKS[task] && SUBTASKS[task].length > 0) openSubtaskModal();
+
+  showToast(`"${task}" loaded`);
+}
+
+// Close search results when tapping elsewhere in the modal
+document.addEventListener('click', (e) => {
+  const wrap = document.getElementById('task-search-wrap');
+  if (!wrap) return;
+  if (!wrap.contains(e.target)) {
+    const results = document.getElementById('task-search-results');
+    if (results) { results.style.display = 'none'; }
+  }
+});
 
 function onFrequencyChange() {
   const freq = document.getElementById('f-frequency').value;
