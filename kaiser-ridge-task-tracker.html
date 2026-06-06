@@ -1279,8 +1279,13 @@
           style="width:100%;padding:14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;margin-bottom:20px;">
       </div>
       <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">INSTRUCTIONS</div>
-      <textarea id="guide-instructions" placeholder="Add step-by-step instructions or notes for this subtask…"
-        style="width:100%;min-height:200px;padding:14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);font-family:inherit;resize:vertical;outline:none;line-height:1.5;"></textarea>
+      <div id="guide-step-list"></div>
+      <div id="guide-step-add-wrap" style="display:flex;gap:8px;margin-top:8px;">
+        <input id="guide-step-input" type="text" placeholder="Add a step…" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false"
+          style="flex:1;padding:12px 14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();addGuideStep();}">
+        <button onclick="addGuideStep()" style="background:var(--blue);border:none;border-radius:12px;color:#fff;font-size:15px;font-weight:600;padding:0 18px;cursor:pointer;">Add</button>
+      </div>
       <div style="font-size:13px;font-weight:600;color:var(--subtext);margin:20px 0 8px;">VIDEO / LINK</div>
       <input id="guide-url" type="url" placeholder="https://youtube.com/…"
         autocomplete="off" autocorrect="off" spellcheck="false"
@@ -2284,7 +2289,7 @@ function openSubtaskModal() {
   const guides = getSubtaskGuides();
   const list = document.getElementById('subtask-list');
   list.innerHTML = remaining.map((s, i) => {
-    const hasGuide = guides[s] && (guides[s].instructions || guides[s].url);
+    const hasGuide = guides[s] && (_guideInstructionsToSteps(guides[s].instructions).length > 0 || guides[s].url);
     const enc = s.replace(/'/g,"\\'");
     return `<div style="display:flex;align-items:center;gap:8px;padding:12px 4px;border-bottom:1px solid var(--border);">
       <label style="display:flex;align-items:center;gap:12px;flex:1;cursor:pointer;">
@@ -3740,7 +3745,7 @@ function renderSubtaskPickerList() {
   list.innerHTML = addRow + (filtered.map(s => {
     const isSelected = _subtaskItems.includes(s);
     const enc = s.replace(/'/g,"\\'");
-    const hasGuide = guides[s] && (guides[s].instructions || guides[s].url);
+    const hasGuide = guides[s] && (_guideInstructionsToSteps(guides[s].instructions).length > 0 || guides[s].url);
     return `<div style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">
       <div onclick="selectSubtask('${enc}',false)" style="flex:1;display:flex;align-items:center;gap:8px;cursor:pointer;">
         <span style="font-size:16px;color:var(--text);">${s}</span>
@@ -3777,18 +3782,135 @@ function saveSubtaskGuides(guides) {
   localStorage.setItem('kr_subtask_guides', JSON.stringify(guides));
 }
 
+// Guide instructions are stored as an ordered array of step strings.
+// Older guides saved a single block of free text — treat each non-empty
+// line of that text as its own step so nothing is lost on first open.
+function _guideInstructionsToSteps(instructions) {
+  if (Array.isArray(instructions)) return [...instructions];
+  if (typeof instructions === 'string' && instructions.trim()) {
+    return instructions.split('\n').map(s => s.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+let _guideSteps = [];
+
 function openSubtaskGuide(name) {
   const guides = getSubtaskGuides();
-  const guide = guides[name] || { instructions: '', url: '' };
+  const guide = guides[name] || { instructions: [], url: '' };
   document.getElementById('guide-subtask-name').value = name;
   document.getElementById('guide-modal-title').textContent = name.length > 28 ? name.slice(0,28)+'…' : name;
   document.getElementById('guide-rename').value = name;
-  document.getElementById('guide-instructions').value = guide.instructions || '';
+  _guideSteps = _guideInstructionsToSteps(guide.instructions);
+  renderGuideStepList();
+  document.getElementById('guide-step-input').value = '';
   document.getElementById('guide-url').value = guide.url || '';
   updateGuideUrlPreview(guide.url || '');
   document.getElementById('guide-url').oninput = () => updateGuideUrlPreview(document.getElementById('guide-url').value);
   document.getElementById('guide-rename-section').style.display = 'block';
+  document.getElementById('guide-step-add-wrap').style.display = 'flex';
   openModal('modal-subtask-guide');
+}
+
+function renderGuideStepList(readOnly) {
+  const wrap = document.getElementById('guide-step-list');
+  if (_guideSteps.length === 0) {
+    wrap.innerHTML = `<div style="color:var(--subtext);font-size:14px;padding:8px 4px;">No steps added yet.</div>`;
+    return;
+  }
+  wrap.innerHTML = _guideSteps.map((s, i) => `
+    <div id="gsrow-${i}" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">
+      ${readOnly ? '' : `<div style="color:var(--subtext);font-size:22px;padding:0 2px;user-select:none;-webkit-user-select:none;cursor:grab;"
+        ontouchstart="gsTouchStart(event,${i})">≡</div>`}
+      <div style="width:26px;height:26px;border-radius:50%;background:var(--blue);color:#fff;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${i + 1}</div>
+      <span style="flex:1;font-size:15px;color:var(--text);line-height:1.4;">${s}</span>
+      ${readOnly ? '' : `<button onclick="removeGuideStep(${i})" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:4px;">✕</button>`}
+    </div>`).join('');
+}
+
+function addGuideStep() {
+  const input = document.getElementById('guide-step-input');
+  const val = input.value.trim();
+  if (!val) return;
+  _guideSteps.push(val);
+  input.value = '';
+  input.focus();
+  renderGuideStepList();
+}
+
+function removeGuideStep(i) {
+  _guideSteps.splice(i, 1);
+  renderGuideStepList();
+}
+
+// Guide step drag-to-reorder (mirrors subtask reorder pattern)
+let _gsSrcIdx = null, _gsClone = null, _gsStartY = 0, _gsDragging = false, _gsRects = [];
+
+function gsTouchStart(event, idx) {
+  _gsSrcIdx = idx; _gsStartY = event.touches[0].clientY;
+  _gsDragging = false; _gsClone = null; _gsRects = [];
+  document.addEventListener('touchmove', gsTouchMove, { passive: false });
+  document.addEventListener('touchend', gsTouchEnd, { once: true });
+  document.addEventListener('touchcancel', gsTouchCancel, { once: true });
+}
+
+function gsTouchMove(event) {
+  if (_gsSrcIdx === null) return;
+  const fingerY = event.touches[0].clientY;
+  const dy = fingerY - _gsStartY;
+  if (!_gsDragging) {
+    if (Math.abs(dy) < 6) return;
+    _gsDragging = true;
+    _gsRects = _guideSteps.map((_, i) => {
+      const r = document.getElementById('gsrow-' + i);
+      return r ? r.getBoundingClientRect() : null;
+    });
+    const row = document.getElementById('gsrow-' + _gsSrcIdx);
+    if (!row) return;
+    row.style.opacity = '0.3';
+    _gsClone = document.createElement('div');
+    _gsClone.textContent = _guideSteps[_gsSrcIdx] || '';
+    _gsClone.style.cssText = `position:fixed;left:20px;right:20px;background:var(--card);padding:12px 16px;border-radius:12px;font-size:15px;color:var(--text);box-shadow:0 6px 24px rgba(0,0,0,0.18);z-index:999;pointer-events:none;`;
+    _gsClone.style.top = (fingerY - 24) + 'px';
+    document.body.appendChild(_gsClone);
+    if (navigator.vibrate) navigator.vibrate(30);
+  }
+  event.preventDefault();
+  if (_gsClone) _gsClone.style.top = (fingerY - 24) + 'px';
+}
+
+function gsTouchCancel() {
+  document.removeEventListener('touchmove', gsTouchMove);
+  if (_gsClone) { _gsClone.remove(); _gsClone = null; }
+  const row = _gsSrcIdx !== null ? document.getElementById('gsrow-' + _gsSrcIdx) : null;
+  if (row) row.style.opacity = '';
+  _gsSrcIdx = null; _gsDragging = false; _gsRects = [];
+}
+
+function gsTouchEnd(event) {
+  document.removeEventListener('touchmove', gsTouchMove);
+  if (!_gsDragging || _gsSrcIdx === null) { _gsSrcIdx = null; _gsDragging = false; return; }
+  const fingerY = event.changedTouches[0].clientY;
+  if (_gsClone) { _gsClone.remove(); _gsClone = null; }
+  const row = document.getElementById('gsrow-' + _gsSrcIdx);
+  if (row) row.style.opacity = '';
+  let targetIdx = _gsSrcIdx;
+  for (let i = 0; i < _gsRects.length; i++) {
+    const rect = _gsRects[i];
+    if (!rect) continue;
+    if (fingerY >= rect.top && fingerY <= rect.bottom) { targetIdx = i; break; }
+  }
+  if (_gsRects.length > 0) {
+    if (fingerY < _gsRects[0].top) targetIdx = 0;
+    const last = _gsRects[_gsRects.length - 1];
+    if (last && fingerY > last.bottom) targetIdx = _gsRects.length - 1;
+  }
+  if (targetIdx !== _gsSrcIdx) {
+    const [moved] = _guideSteps.splice(_gsSrcIdx, 1);
+    _guideSteps.splice(targetIdx, 0, moved);
+  }
+  _gsSrcIdx = null; _gsDragging = false; _gsRects = [];
+  renderGuideStepList();
 }
 
 function updateGuideUrlPreview(url) {
@@ -3810,7 +3932,10 @@ function updateGuideUrlPreview(url) {
 function saveSubtaskGuide() {
   const oldName = document.getElementById('guide-subtask-name').value;
   const newName = document.getElementById('guide-rename').value.trim();
-  const instructions = document.getElementById('guide-instructions').value.trim();
+  // Catch a step left typed in the input box but not yet tapped "Add"
+  const pendingStep = document.getElementById('guide-step-input').value.trim();
+  if (pendingStep) { _guideSteps.push(pendingStep); document.getElementById('guide-step-input').value = ''; }
+  const instructions = [..._guideSteps];
   const url = document.getElementById('guide-url').value.trim();
   // Handle rename first
   if (newName && newName !== oldName) {
@@ -3818,7 +3943,7 @@ function saveSubtaskGuide() {
   }
   const finalName = (newName && newName !== oldName) ? newName : oldName;
   const guides = getSubtaskGuides();
-  if (instructions || url) {
+  if (instructions.length > 0 || url) {
     guides[finalName] = { instructions, url };
   } else {
     delete guides[finalName];
@@ -3832,6 +3957,8 @@ function saveSubtaskGuide() {
 function viewSubtaskGuide(name) {
   openSubtaskGuide(name);
   document.getElementById('guide-rename-section').style.display = 'none';
+  document.getElementById('guide-step-add-wrap').style.display = 'none';
+  renderGuideStepList(true);
 }
 
 // ── Equipment Guides ──
