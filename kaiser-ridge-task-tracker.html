@@ -1105,7 +1105,9 @@
       </div>
 
       <div class="form-row"><div class="form-label">Task Name</div>
-        <input class="form-select" id="dir-task" type="text" placeholder="e.g. Change over tiny house" style="font-size:16px;border:none;width:100%;text-align:right;background:transparent;color:var(--text);">
+        <input class="form-select" id="dir-task" type="text" placeholder="e.g. Change over tiny house"
+          oninput="updateRestoreSubtasksBtn(this.value.trim())"
+          style="font-size:16px;border:none;width:100%;text-align:right;background:transparent;color:var(--text);">
       </div>
 
       <div style="padding:16px 20px 8px;">
@@ -1118,6 +1120,7 @@
         <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">SUBTASKS</div>
         <div id="dir-subtask-list"></div>
         <button onclick="openSubtaskPicker()" style="margin-top:8px;background:none;border:1px dashed var(--border);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">+ Add Subtask</button>
+        <button id="dir-restore-subtasks-btn" onclick="restoreDefaultSubtasks()" style="display:none;margin-top:8px;background:none;border:1px dashed var(--blue);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">↺ Restore Default Subtasks</button>
       </div>
 
       <div style="padding:16px 20px 0;" id="dir-duplicate-wrap">
@@ -3256,6 +3259,7 @@ function openDirAddTask() {
   populateDirGroupDropdown('');
   renderDirEquipmentList([]);
   renderDirSubtaskList([]);
+  updateRestoreSubtasksBtn('');
   openModal('modal-dir-task');
 }
 
@@ -3282,7 +3286,40 @@ function openDirEditTask(encodedKey) {
   const equip = matches.map(r => r.equipment).filter(Boolean);
   renderDirEquipmentList(equip);
   renderDirSubtaskList(SUBTASKS[task] || []);
+  updateRestoreSubtasksBtn(task);
   openModal('modal-dir-task');
+}
+
+// Show the "Restore Default Subtasks" button only for tasks that have a known
+// built-in fallback list (e.g. "Change over tiny house") — lets Lincoln bring
+// back the original subtasks with one tap if they ever go missing.
+function updateRestoreSubtasksBtn(task) {
+  const btn = document.getElementById('dir-restore-subtasks-btn');
+  if (!btn) return;
+  btn.style.display = (SUBTASKS_FALLBACK[task] && SUBTASKS_FALLBACK[task].length > 0) ? 'block' : 'none';
+}
+
+function restoreDefaultSubtasks() {
+  const task = document.getElementById('dir-task').value.trim();
+  const defaults = SUBTASKS_FALLBACK[task];
+  if (!defaults || defaults.length === 0) {
+    showToast('No default subtasks found for this task');
+    return;
+  }
+  // Merge — keep anything already there, add back any missing defaults, no duplicates
+  const existing = getDirSubtasks();
+  const existingLower = new Set(existing.map(s => s.trim().toLowerCase()));
+  const restored = [...existing];
+  let addedCount = 0;
+  defaults.forEach(s => {
+    if (!existingLower.has(s.trim().toLowerCase())) {
+      restored.push(s);
+      addedCount++;
+    }
+  });
+  renderDirSubtaskList(restored);
+  if (addedCount > 0) showToast(`Restored ${addedCount} subtask${addedCount > 1 ? 's' : ''}`);
+  else showToast('All default subtasks are already here');
 }
 
 // Clone the currently-open task into a new "Add Task" form — everything
@@ -3313,6 +3350,7 @@ function duplicateDirTask() {
   nameField.value = '';
   nameField.placeholder = `e.g. ${task} (copy)`;
   nameField.focus();
+  updateRestoreSubtasksBtn('');
 
   showToast('Copied — give it a new name and tweak as needed');
 }
