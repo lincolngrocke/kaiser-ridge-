@@ -3924,6 +3924,20 @@ function saveDirTask() {
   const equip    = getDirEquipment();
   const subtasks = getDirSubtasks();
 
+  // Guard against duplicate task names within the same Frequency+Group.
+  // Tasks are uniquely identified by frequency+group+task (location is just
+  // metadata on top) — saving a second task with an identical name here would
+  // silently collide with the existing one and become unreachable/invisible
+  // in the Directory view, even though both rows technically exist.
+  const isSameAsEditing = _dirEditingKey === (freq + '||' + grp + '||' + task);
+  if (!isSameAsEditing) {
+    const collision = DIRECTORY.some(r => _dirKeyMatches(r, freq, grp, task));
+    if (collision) {
+      alert(`A task named "${task}" already exists under ${freq} → ${grp}.\n\nTasks are matched by name within their Frequency and Group, so two with the same name will collide and one becomes invisible — even with different locations.\n\nGive this one a distinct name, e.g. "${task} — ${location || 'Location'}", then save again.`);
+      return;
+    }
+  }
+
   // Remove old entries for this task if editing
   if (_dirEditingKey) {
     const [oldFreq, oldGrp, oldTask] = _dirEditingKey.split('||');
