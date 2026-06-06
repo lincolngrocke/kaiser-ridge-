@@ -3482,9 +3482,10 @@ function duplicateDirTask() {
   renderDirSubtaskList([...subtasks]);
 
   const nameField = document.getElementById('dir-task');
-  nameField.value = '';
+  nameField.value = task;
   nameField.placeholder = `e.g. ${task} (copy)`;
   nameField.focus();
+  nameField.select();
   updateRestoreSubtasksBtn('');
 
   showToast('Copied — give it a new name and tweak as needed');
