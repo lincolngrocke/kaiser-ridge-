@@ -2962,6 +2962,17 @@ function updateDirChips() {
   });
 }
 
+// Tasks with a blank frequency/group are displayed under the "Other" bucket
+// (see grouping below). When matching a row back from an encoded key, treat
+// "Other" as equivalent to blank so lookups, edits, and deletes hit the right row.
+function _dirKeyMatches(row, freq, grp, task) {
+  const rFreq = row.frequency || '';
+  const rGrp  = row.group || '';
+  const fMatches = (rFreq === freq) || (rFreq === '' && freq === 'Other');
+  const gMatches = (rGrp === grp) || (rGrp === '' && grp === 'Other');
+  return fMatches && gMatches && row.task === task;
+}
+
 function renderDirectory() {
   const list = document.getElementById('dir-list');
   if (!list) return;
@@ -3250,19 +3261,25 @@ function openDirAddTask() {
 
 function openDirEditTask(encodedKey) {
   const key = decodeURIComponent(encodedKey);
-  const [freq, grp, task] = key.split('||');
+  const [keyFreq, keyGrp, task] = key.split('||');
   _dirEditingKey = key;
   document.getElementById('dir-modal-title').textContent = 'Edit Task';
-  const entry = DIRECTORY.find(r => r.frequency === freq && r.group === grp && r.task === task);
+
+  const matches = DIRECTORY.filter(r => _dirKeyMatches(r, keyFreq, keyGrp, task));
+  const entry = matches[0];
+  // Show the row's real values (which may be blank) rather than the "Other" display label
+  const realFreq = entry ? (entry.frequency || '') : (keyFreq === 'Other' ? '' : keyFreq);
+  const realGrp  = entry ? (entry.group || '')     : (keyGrp  === 'Other' ? '' : keyGrp);
+
   setLocationDisplay(entry && entry.location ? entry.location : '');
-  setFrequencyDisplay(freq);
+  setFrequencyDisplay(realFreq);
   const editNameField = document.getElementById('dir-task');
   editNameField.value = task;
   editNameField.placeholder = 'e.g. Change over tiny house';
   document.getElementById('dir-delete-wrap').style.display = 'block';
   document.getElementById('dir-duplicate-wrap').style.display = 'block';
-  populateDirGroupDropdown(grp);
-  const equip = DIRECTORY.filter(r => r.frequency === freq && r.group === grp && r.task === task).map(r => r.equipment).filter(Boolean);
+  populateDirGroupDropdown(realGrp);
+  const equip = matches.map(r => r.equipment).filter(Boolean);
   renderDirEquipmentList(equip);
   renderDirSubtaskList(SUBTASKS[task] || []);
   openModal('modal-dir-task');
@@ -3273,9 +3290,12 @@ function openDirEditTask(encodedKey) {
 // task name, which is cleared so Lincoln can type the new one and tweak fields.
 function duplicateDirTask() {
   if (!_dirEditingKey) return;
-  const [freq, grp, task] = _dirEditingKey.split('||');
-  const entry = DIRECTORY.find(r => r.frequency === freq && r.group === grp && r.task === task);
-  const equip = DIRECTORY.filter(r => r.frequency === freq && r.group === grp && r.task === task).map(r => r.equipment).filter(Boolean);
+  const [keyFreq, keyGrp, task] = _dirEditingKey.split('||');
+  const matches = DIRECTORY.filter(r => _dirKeyMatches(r, keyFreq, keyGrp, task));
+  const entry = matches[0];
+  const realFreq = entry ? (entry.frequency || '') : (keyFreq === 'Other' ? '' : keyFreq);
+  const realGrp  = entry ? (entry.group || '')     : (keyGrp  === 'Other' ? '' : keyGrp);
+  const equip = matches.map(r => r.equipment).filter(Boolean);
   const subtasks = SUBTASKS[task] || [];
 
   _dirEditingKey = null; // Saving will create a new entry, not overwrite the source
@@ -3284,8 +3304,8 @@ function duplicateDirTask() {
   document.getElementById('dir-duplicate-wrap').style.display = 'none';
 
   setLocationDisplay(entry && entry.location ? entry.location : '');
-  setFrequencyDisplay(freq);
-  populateDirGroupDropdown(grp);
+  setFrequencyDisplay(realFreq);
+  populateDirGroupDropdown(realGrp);
   renderDirEquipmentList(equip);
   renderDirSubtaskList([...subtasks]);
 
@@ -3868,7 +3888,7 @@ function saveDirTask() {
   // Remove old entries for this task if editing
   if (_dirEditingKey) {
     const [oldFreq, oldGrp, oldTask] = _dirEditingKey.split('||');
-    DIRECTORY = DIRECTORY.filter(r => !(r.frequency === oldFreq && r.group === oldGrp && r.task === oldTask));
+    DIRECTORY = DIRECTORY.filter(r => !_dirKeyMatches(r, oldFreq, oldGrp, oldTask));
     if (SUBTASKS[oldTask] && oldTask !== task) delete SUBTASKS[oldTask];
   }
 
@@ -3897,7 +3917,7 @@ function deleteDirTask() {
   if (!_dirEditingKey) return;
   if (!confirm('Delete this task?')) return;
   const [freq, grp, task] = _dirEditingKey.split('||');
-  DIRECTORY = DIRECTORY.filter(r => !(r.frequency === freq && r.group === grp && r.task === task));
+  DIRECTORY = DIRECTORY.filter(r => !_dirKeyMatches(r, freq, grp, task));
   delete SUBTASKS[task];
   localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
   localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
