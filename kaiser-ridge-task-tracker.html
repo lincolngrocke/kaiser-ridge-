@@ -784,6 +784,23 @@
     <button class="btn-sync" style="background:#34C759; margin-top:8px;" onclick="forceAppUpdate()">⟳ Force Update App</button>
 
     <div class="settings-section" style="margin-top:16px">
+      <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
+        <div class="settings-label" style="font-weight:600;">Backup &amp; Restore</div>
+        <div style="font-size:13px; color:var(--subtext); line-height:1.6;">
+          Your directory, subtasks, guides, settings, and entries are saved only on this device.
+          The app keeps a fresh backup snapshot automatically every time you save a task or clock out —
+          export it regularly (especially before reinstalling the app or switching phones) and store it
+          somewhere safe like Google Drive, Files, or email it to yourself.
+        </div>
+        <div id="last-backup-label" style="font-size:13px; color:var(--subtext);">No backup yet — tap "Export Backup" below to create one.</div>
+      </div>
+    </div>
+    <button class="btn-sync" style="background:var(--blue); margin-top:8px;" onclick="exportBackup()">⬇ Export Backup</button>
+    <button class="btn-sync" style="background:var(--subtext); margin-top:8px;" onclick="triggerRestoreBackup()">⟲ Restore from Backup File</button>
+    <input type="file" id="restore-file-input" accept="application/json,.json" style="display:none;" onchange="restoreBackupFromFile(event)">
+
+
+    <div class="settings-section" style="margin-top:16px">
       <div class="settings-row">
         <div class="settings-label">Total entries</div>
         <div class="settings-value" id="stat-entries">0</div>
@@ -1525,6 +1542,7 @@ window.addEventListener('load', () => {
   initDarkMode();
   const wtEl = document.getElementById('weekly-target');
   if (wtEl) wtEl.value = localStorage.getItem('kr_weekly_target') || '40';
+  updateLastBackupLabel();
   updateHeaderDate();
   populateLocationDropdown();
   populateTsLocationChips();
@@ -1550,7 +1568,7 @@ function showScreen(id, tab) {
   document.getElementById('screen-' + id).classList.add('active');
   if (tab) tab.classList.add('active');
   if (id === 'timesheets') renderTimesheets();
-  if (id === 'settings') updateStats();
+  if (id === 'settings') { updateStats(); updateLastBackupLabel(); }
   // Hide running overlay when not on clock screen; restore it if clock is running
   const overlay = document.getElementById('running-overlay');
   if (overlay) {
@@ -1663,6 +1681,7 @@ function clockOut(overrideTime) {
   clockState = null;
   localStorage.removeItem('kr_clock');
   renderClockState();
+  autoBackup();
   const breakStr = entry.break > 0 ? ` (${(entry.break * 60).toFixed(0)}min break)` : '';
   showToast('Clocked out — ' + entry.durationHours + 'h logged' + breakStr);
 }
@@ -2829,6 +2848,116 @@ function saveEntries() {
   updateSummary();
 }
 
+// ════════════════════════════════
+//  BACKUP & RESTORE
+// ════════════════════════════════
+// Bundles everything that only lives in this device's local storage —
+// directory, subtasks, guides, settings, and clock entries — into one
+// snapshot. This is refreshed automatically after every save and clock-out
+// (see autoBackup calls), and can be exported/shared as a file at any time
+// from Settings so a reinstall or device change never wipes your data again.
+const KR_BACKUP_KEYS = [
+  'kr_directory', 'kr_subtasks', 'kr_subtask_guides', 'kr_equipment_guides',
+  'kr_equipment_master', 'kr_extra_frequencies', 'kr_extra_locations',
+  'kr_task_order', 'kr_entries', 'kr_user_name', 'kr_weekly_target',
+  'kr_sheet_url', 'kr_dark_mode'
+];
+
+function buildBackupSnapshot() {
+  const data = {};
+  KR_BACKUP_KEYS.forEach(key => {
+    const raw = localStorage.getItem(key);
+    if (raw !== null) data[key] = raw;
+  });
+  return {
+    app: 'kaiser-ridge-task-tracker',
+    version: 1,
+    createdAt: new Date().toISOString(),
+    data,
+  };
+}
+
+// Silently refreshes the in-storage backup snapshot. Called after every
+// directory save, guide save, and clock-out — cheap, so safe to call often.
+function autoBackup() {
+  try {
+    const snapshot = buildBackupSnapshot();
+    localStorage.setItem('kr_last_backup', JSON.stringify(snapshot));
+    localStorage.setItem('kr_last_backup_at', snapshot.createdAt);
+    updateLastBackupLabel();
+  } catch (err) {
+    console.error('Auto-backup failed:', err);
+  }
+}
+
+function updateLastBackupLabel() {
+  const el = document.getElementById('last-backup-label');
+  if (!el) return;
+  const at = localStorage.getItem('kr_last_backup_at');
+  if (!at) { el.textContent = 'No backup yet — tap "Export Backup" below to create one.'; return; }
+  try {
+    const d = new Date(at);
+    el.textContent = 'Last backup: ' + d.toLocaleDateString(undefined, { day:'numeric', month:'short', year:'numeric' }) +
+      ' at ' + d.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' });
+  } catch(e) { el.textContent = 'Last backup: ' + at; }
+}
+
+function exportBackup() {
+  // Make sure the snapshot is bang up to date before exporting
+  autoBackup();
+  const snapshot = JSON.parse(localStorage.getItem('kr_last_backup'));
+  const json = JSON.stringify(snapshot, null, 2);
+  const stamp = new Date().toISOString().slice(0,10);
+  const filename = `kaiser-ridge-backup-${stamp}.json`;
+  const file = new File([json], filename, { type: 'application/json' });
+
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    navigator.share({ files: [file], title: 'Kaiser Ridge Backup', text: 'Kaiser Ridge task tracker backup — ' + stamp })
+      .catch(err => { if (err.name !== 'AbortError') showToast('Could not share — try Save instead'); });
+  } else {
+    // Fallback: trigger a download
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+  showToast('Backup ready — save it somewhere safe (Drive, Files, email)');
+}
+
+function triggerRestoreBackup() {
+  document.getElementById('restore-file-input').click();
+}
+
+function restoreBackupFromFile(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const snapshot = JSON.parse(reader.result);
+      if (!snapshot || !snapshot.data || snapshot.app !== 'kaiser-ridge-task-tracker') {
+        alert('This doesn\'t look like a Kaiser Ridge backup file.');
+        return;
+      }
+      const count = Object.keys(snapshot.data).length;
+      if (!confirm(`Restore from this backup (made ${new Date(snapshot.createdAt).toLocaleString()})?\n\nThis will overwrite your current directory, subtasks, guides, settings, and entries (${count} items) with what's in the backup.`)) return;
+
+      Object.entries(snapshot.data).forEach(([key, raw]) => {
+        localStorage.setItem(key, raw);
+      });
+      showToast('Backup restored — reloading…');
+      setTimeout(() => location.reload(), 900);
+    } catch (err) {
+      console.error('Restore failed:', err);
+      alert('Could not read that file — make sure it\'s a Kaiser Ridge backup JSON file.');
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = ''; // allow re-selecting the same file later
+}
+
 function confirmClear() {
   if (!confirm('Clear all local data? This cannot be undone.')) return;
   entries = [];
@@ -3949,6 +4078,7 @@ function saveSubtaskGuide() {
     delete guides[finalName];
   }
   saveSubtaskGuides(guides);
+  autoBackup();
   showToast('Guide saved');
   closeModal('modal-subtask-guide');
   renderSubtaskPickerList();
@@ -4006,6 +4136,7 @@ function saveEquipmentGuide() {
     delete guides[name];
   }
   saveEquipmentGuides(guides);
+  autoBackup();
   showToast('Guide saved');
   closeModal('modal-equipment-guide');
   renderEquipmentPickerList();
@@ -4090,6 +4221,7 @@ function saveDirTask() {
   localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
   closeModal('modal-dir-task');
   renderDirectory();
+  autoBackup();
   showToast('Task saved');
 }
 
