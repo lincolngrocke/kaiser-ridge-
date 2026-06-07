@@ -1933,7 +1933,11 @@ function openEditActive() {
   const csEquip = DIRECTORY.filter(r => r.frequency === clockState.frequency && r.group === clockState.group && r.task === clockState.task).map(r => r.equipment);
   setOptions('f-tool', csEquip, 'Select…');
   document.getElementById('f-tool').value = clockState.tool || '';
-  document.getElementById('f-break').value = '0';
+  // Show current accumulated break time rounded to nearest option
+  const currentBreakH = (clockState.breakTotal || 0) / 3600000;
+  const breakOptions = [0, 0.25, 0.5, 0.75, 1];
+  const nearest = breakOptions.reduce((a, b) => Math.abs(b - currentBreakH) < Math.abs(a - currentBreakH) ? b : a);
+  document.getElementById('f-break').value = nearest.toString();
   document.getElementById('f-notes').value = clockState.notes || '';
   document.getElementById('f-date').value = todayStr('-');
   document.getElementById('f-clockin').value = clockState.startTime || '';
@@ -1974,6 +1978,8 @@ function saveEntry() {
     clockState.notes     = notes;
     if (currentPin) clockState.pin = currentPin;
     if (clockIn) clockState.startTime = clockIn;
+    // Save manual break selection — convert hours to ms and store in breakTotal
+    if (breakH > 0) clockState.breakTotal = breakH * 3600000;
     localStorage.setItem('kr_clock', JSON.stringify(clockState));
     renderClockState();
     closeModal('modal-task');
