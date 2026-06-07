@@ -3249,52 +3249,7 @@ function _pickerSaveOrder(type, items) {
   localStorage.setItem(_pickerOrderKey(type), JSON.stringify(items));
 }
 
-// Shared drag state for picker lists
-let _pkDragType = null, _pkDragItems = [], _pkDragIdx = null, _pkDragClone = null, _pkDragRects = [];
-function _pkTouchStart(e, type, idx, items) {
-  if (e.touches.length !== 1) return;
-  _pkDragType = type; _pkDragItems = [...items]; _pkDragIdx = idx;
-  // e.currentTarget is the ≡ handle span — walk up to the row div
-  const handle = e.currentTarget;
-  const row = handle.closest('[data-pk-idx]') || handle.parentElement;
-  const rect = row.getBoundingClientRect();
-  _pkDragClone = row.cloneNode(true);
-  Object.assign(_pkDragClone.style, {
-    position:'fixed', left:rect.left+'px', top:rect.top+'px', width:rect.width+'px',
-    zIndex:9999, opacity:'0.92', pointerEvents:'none', boxShadow:'0 4px 16px rgba(0,0,0,0.18)',
-    background:'var(--card)', borderRadius:'8px'
-  });
-  document.body.appendChild(_pkDragClone);
-  row.style.opacity = '0.3';
-  e.preventDefault();
-}
-function _pkTouchMove(e) {
-  if (_pkDragClone === null) return;
-  const t = e.touches[0];
-  _pkDragClone.style.top = (t.clientY - 28) + 'px';
-  e.preventDefault(); // safe — only fires when drag is active (touch started on ≡ handle)
-}
-function _pkTouchEnd(e, type, renderFn) {
-  if (_pkDragClone === null) return;
-  const t = e.changedTouches[0];
-  _pkDragClone.remove(); _pkDragClone = null;
-  // Find drop target
-  const list = document.getElementById(type + '-picker-list');
-  const rows = [...list.querySelectorAll('[data-pk-idx]')];
-  let targetIdx = _pkDragIdx;
-  rows.forEach(row => {
-    const r = row.getBoundingClientRect();
-    if (t.clientY >= r.top && t.clientY <= r.bottom) targetIdx = parseInt(row.dataset.pkIdx);
-  });
-  rows.forEach(r => r.style.opacity = '');
-  if (targetIdx !== _pkDragIdx) {
-    const moved = _pkDragItems.splice(_pkDragIdx, 1)[0];
-    _pkDragItems.splice(targetIdx, 0, moved);
-    _pickerSaveOrder(type, _pkDragItems);
-    renderFn();
-  }
-  _pkDragType = null; _pkDragIdx = null;
-}
+// (Picker drag-to-reorder removed — order is managed via the Manage screen)
 
 function _pickerRenamePrompt(type, oldName, renderFn, propagateFn) {
   const newName = prompt(`Rename "${oldName}" to:`, oldName);
@@ -3313,11 +3268,6 @@ function _pickerRowHtml(type, name, idx, isSelected, extraRight, selFn) {
   const enc = name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
   return `<div data-pk-idx="${idx}"
     style="padding:12px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">
-    <span
-      ontouchstart="_pkTouchStart(event,'${type}',${idx},_pkItems_${type})"
-      ontouchmove="_pkTouchMove(event)"
-      ontouchend="_pkTouchEnd(event,'${type}',render${_cap(type)}PickerList)"
-      style="font-size:20px;color:var(--subtext);padding:0 8px;cursor:grab;touch-action:none;flex-shrink:0;">≡</span>
     <span onclick="${selFn}('${enc}',false)" style="flex:1;font-size:16px;color:var(--text);cursor:pointer;">${name}</span>
     ${isSelected ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}
     ${extraRight || ''}
@@ -3699,11 +3649,6 @@ function renderEquipmentPickerList() {
     const hasGuide = equipGuides[e] && (equipGuides[e].instructions || equipGuides[e].url);
     html += `<div data-pk-idx="${realIdx}"
       style="padding:12px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">
-      <span
-        ontouchstart="_pkTouchStart(event,'equipment',${realIdx},_pkItems_equipment)"
-        ontouchmove="_pkTouchMove(event)"
-        ontouchend="_pkTouchEnd(event,'equipment',renderEquipmentPickerList)"
-        style="font-size:20px;color:var(--subtext);padding:0 8px;cursor:grab;touch-action:none;flex-shrink:0;">≡</span>
       <div onclick="selectEquipment('${enc}')" style="flex:1;display:flex;align-items:center;gap:8px;cursor:pointer;">
         <span style="font-size:16px;color:var(--text);">${e}</span>
         ${hasGuide ? '<span style="font-size:13px;color:var(--blue);background:#e8f0fe;padding:2px 6px;border-radius:6px;">Guide</span>' : ''}
