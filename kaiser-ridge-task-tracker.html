@@ -787,7 +787,7 @@
       <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
         <div class="settings-label" style="font-weight:600;">Backup &amp; Restore</div>
         <div style="font-size:13px; color:var(--subtext); line-height:1.6;">
-          Your directory, subtasks, guides, settings, and entries are saved only on this device.
+          Your directory, checklists, guides, settings, and entries are saved only on this device.
           The app keeps a fresh backup snapshot automatically every time you save a task or clock out —
           export it regularly (especially before reinstalling the app or switching phones) and store it
           somewhere safe like Google Drive, Files, or email it to yourself.
@@ -884,7 +884,7 @@
   </div>
   <div class="running-meta">
     <button class="running-add-note" onclick="openNoteModal()">📋 Add Note</button>
-    <button class="running-tag-btn" id="btn-subtasks" onclick="openSubtaskModal()" style="display:none">☑️ Subtasks</button>
+    <button class="running-tag-btn" id="btn-subtasks" onclick="openSubtaskModal()" style="display:none">☑️ Checklist</button>
     <button class="running-tag-btn" onclick="openEditActive()">🏷 Edit Entry</button>
   </div>
   <div class="running-timer-area">
@@ -961,7 +961,7 @@
   <div class="modal-sheet" style="padding:16px 20px 24px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
       <button onclick="closeModal('modal-subtask')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;">Skip</button>
-      <span style="font-size:17px;font-weight:600;">Subtasks</span>
+      <span style="font-size:17px;font-weight:600;">Checklist</span>
       <button onclick="confirmSubtasks()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Add</button>
     </div>
     <div id="subtask-list" style="display:flex;flex-direction:column;gap:2px;max-height:60vh;overflow-y:auto;"></div>
@@ -1135,10 +1135,10 @@
       </div>
 
       <div style="padding:16px 20px 8px;">
-        <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">SUBTASKS</div>
+        <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">CHECKLIST</div>
         <div id="dir-subtask-list"></div>
-        <button onclick="openSubtaskPicker()" style="margin-top:8px;background:none;border:1px dashed var(--border);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">+ Add Subtask</button>
-        <button id="dir-restore-subtasks-btn" onclick="restoreDefaultSubtasks()" style="display:none;margin-top:8px;background:none;border:1px dashed var(--blue);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">↺ Restore Default Subtasks</button>
+        <button onclick="openSubtaskPicker()" style="margin-top:8px;background:none;border:1px dashed var(--border);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">+ Add Checklist Item</button>
+        <button id="dir-restore-subtasks-btn" onclick="restoreDefaultSubtasks()" style="display:none;margin-top:8px;background:none;border:1px dashed var(--blue);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">↺ Restore Default Checklist</button>
       </div>
 
       <div style="padding:16px 20px 0;" id="dir-duplicate-wrap">
@@ -1264,13 +1264,13 @@
   <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:85vh;display:flex;flex-direction:column;">
     <div style="display:flex;align-items:center;padding:16px 20px 8px;">
       <button onclick="closeModal('modal-subtask-picker')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:0;margin-right:12px;">‹ Back</button>
-      <span style="font-size:17px;font-weight:600;flex:1;text-align:center;">Subtask</span>
+      <span style="font-size:17px;font-weight:600;flex:1;text-align:center;">Checklist Item</span>
       <span style="width:60px;"></span>
     </div>
     <div style="padding:8px 16px 12px;">
       <div style="display:flex;align-items:center;background:var(--bg);border-radius:12px;padding:0 12px;">
         <span style="font-size:16px;color:var(--subtext);margin-right:8px;">🔍</span>
-        <input id="subtask-picker-search" type="search" placeholder="Find or add subtask"
+        <input id="subtask-picker-search" type="search" placeholder="Find or add checklist item"
           autocomplete="off" autocorrect="off" spellcheck="false"
           oninput="renderSubtaskPickerList()"
           style="flex:1;padding:10px 0;border:none;background:transparent;font-size:16px;color:var(--text);outline:none;">
@@ -2297,11 +2297,11 @@ function openSubtaskModal() {
   const remaining = taskSubtasks.filter(s => !existingNotes.includes(s));
 
   if (taskSubtasks.length === 0) {
-    showToast('No subtasks found — tap Reload Task Directory in Settings');
+    showToast('No checklist items found — tap Reload Task Directory in Settings');
     return;
   }
   if (remaining.length === 0) {
-    showToast('All subtasks have been completed!');
+    showToast('All checklist items completed!');
     return;
   }
 
@@ -2337,7 +2337,7 @@ function confirmSubtasks() {
     clockState.notes = clockState.notes ? clockState.notes + '\n' + note : note;
     localStorage.setItem('kr_clock', JSON.stringify(clockState));
     renderClockState();
-    showToast('Subtasks added');
+    showToast('Checklist added');
   } else {
     // Called from new entry form — write to textarea then save
     const textarea = document.getElementById('f-notes');
@@ -2942,7 +2942,7 @@ function restoreBackupFromFile(event) {
         return;
       }
       const count = Object.keys(snapshot.data).length;
-      if (!confirm(`Restore from this backup (made ${new Date(snapshot.createdAt).toLocaleString()})?\n\nThis will overwrite your current directory, subtasks, guides, settings, and entries (${count} items) with what's in the backup.`)) return;
+      if (!confirm(`Restore from this backup (made ${new Date(snapshot.createdAt).toLocaleString()})?\n\nThis will overwrite your current directory, checklists, guides, settings, and entries (${count} items) with what's in the backup.`)) return;
 
       Object.entries(snapshot.data).forEach(([key, raw]) => {
         localStorage.setItem(key, raw);
@@ -3174,7 +3174,7 @@ function renderDirectory() {
                 <div style="font-size:15px;font-weight:500;color:var(--text);">${task}</div>
                 ${meta.location ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">📍 ${meta.location}</div>` : ''}
                 ${equip.length ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${equip.join(', ')}</div>` : ''}
-                ${subtaskList.length ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☑️ ${subtaskList.length} subtask${subtaskList.length > 1 ? 's' : ''}</div>` : ''}
+                ${subtaskList.length ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☑️ ${subtaskList.length} checklist item${subtaskList.length > 1 ? 's' : ''}</div>` : ''}
               </div>
               <div style="color:var(--subtext);font-size:18px;padding-left:8px;">›</div>
             </div>`;
@@ -3438,7 +3438,7 @@ function restoreDefaultSubtasks() {
   const task = document.getElementById('dir-task').value.trim();
   const defaults = SUBTASKS_FALLBACK[task];
   if (!defaults || defaults.length === 0) {
-    showToast('No default subtasks found for this task');
+    showToast('No default checklist items found for this task');
     return;
   }
   // Merge — keep anything already there, add back any missing defaults, no duplicates
@@ -3453,8 +3453,8 @@ function restoreDefaultSubtasks() {
     }
   });
   renderDirSubtaskList(restored);
-  if (addedCount > 0) showToast(`Restored ${addedCount} subtask${addedCount > 1 ? 's' : ''}`);
-  else showToast('All default subtasks are already here');
+  if (addedCount > 0) showToast(`Restored ${addedCount} checklist item${addedCount > 1 ? 's' : ''}`);
+  else showToast('All default checklist items are already here');
 }
 
 // Clone the currently-open task into a new "Add Task" form — everything
@@ -4159,7 +4159,7 @@ function renameSubtaskGlobally(oldName, newName) {
   // Update picker list
   const idx = _subtaskItems.indexOf(oldName);
   if (idx !== -1) { _subtaskItems[idx] = newName; renderDirSubtaskList(); }
-  if (changed) showToast('Subtask renamed everywhere');
+  if (changed) showToast('Checklist item renamed everywhere');
   renderSubtaskPickerList();
 }
 
