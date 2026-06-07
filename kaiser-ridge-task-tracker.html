@@ -1041,7 +1041,7 @@
 </nav>
 
 <!-- ══════════════ PLANNER ADD TASK MODAL ══════════════ -->
-<div class="modal-backdrop" id="modal-planner-add" style="z-index:300;">
+<div class="modal-backdrop" id="modal-planner-add" style="z-index:300;" onclick="if(event.target===this)closeModal('modal-planner-add')">
   <div class="modal-sheet" style="max-height:85vh;overflow-y:auto;">
     <div class="modal-handle"></div>
     <div class="modal-header">
@@ -1071,7 +1071,7 @@
 </div>
 
 <!-- ══════════════ PLANNER BLOCK DETAIL MODAL ══════════════ -->
-<div class="modal-backdrop" id="modal-planner-detail" style="z-index:300;">
+<div class="modal-backdrop" id="modal-planner-detail" style="z-index:300;" onclick="if(event.target===this)closeModal('modal-planner-detail')">
   <div class="modal-sheet" style="max-height:60vh;">
     <div class="modal-handle"></div>
     <div class="modal-header">
@@ -4722,20 +4722,41 @@ function renderPlannerBlock(plan, grid) {
   block.dataset.planId = plan.id;
   block.style.cssText = `top:${topPx}px;height:${heightPx}px;left:56px;right:4px;background:${plannerColorFor(plan.task)};`;
 
-  const endMins = topMins + plan.durationHours * 60;
-  const endH = Math.floor(endMins / 60);
-  const endM = Math.round(endMins % 60);
+  // End time: add duration to actual start hour (not grid-relative)
+  const endTotalMins = h * 60 + m + plan.durationHours * 60;
+  const endH = Math.floor(endTotalMins / 60) % 24;
+  const endM = Math.round(endTotalMins % 60);
   const endStr = formatTimeAmPm(`${String(endH).padStart(2,'0')}:${String(endM).padStart(2,'0')}`);
   const startStr = formatTimeAmPm(plan.startTime);
 
   block.innerHTML = `<div class="planner-block-title">${plan.task}</div>
     <div class="planner-block-meta">${startStr} – ${endStr} · ${plan.durationHours}h</div>`;
 
-  // Tap to open detail
-  block.addEventListener('click', e => { if (!_plannerDragId) openPlannerDetail(plan.id); });
+  // Tap vs drag: track touch duration; < 200ms = tap
+  let _touchStartTime = 0;
+  let _touchStartY = 0;
+  let _didDrag = false;
 
-  // Drag to reposition
-  block.addEventListener('touchstart', e => plannerDragStart(e, plan.id, topPx), { passive: false });
+  block.addEventListener('touchstart', e => {
+    _touchStartTime = Date.now();
+    _touchStartY = e.touches[0].clientY;
+    _didDrag = false;
+    plannerDragStart(e, plan.id, topPx);
+  }, { passive: false });
+
+  block.addEventListener('touchmove', e => {
+    if (Math.abs(e.touches[0].clientY - _touchStartY) > 8) _didDrag = true;
+  }, { passive: true });
+
+  block.addEventListener('touchend', e => {
+    const elapsed = Date.now() - _touchStartTime;
+    if (!_didDrag && elapsed < 300) {
+      // It's a tap — cancel drag and open detail
+      _plannerDragId = null;
+      plannerDragEnd(e); // cleanup listeners
+      openPlannerDetail(plan.id);
+    }
+  });
 
   grid.appendChild(block);
 }
@@ -4881,10 +4902,7 @@ function plannerDragStart(e, planId, origTop) {
   if (e.touches.length !== 1) return;
   _plannerDragId = planId;
   _plannerDragOffsetY = e.touches[0].clientY - origTop;
-  e.preventDefault();
-
-  const block = document.querySelector(`[data-plan-id="${planId}"]`);
-  if (block) block.style.opacity = '0.7';
+  // Don't preventDefault here — let touchend decide if it was a tap
 
   const grid = document.getElementById('planner-grid');
   grid.addEventListener('touchmove', plannerDragMove, { passive: false });
@@ -4893,10 +4911,11 @@ function plannerDragStart(e, planId, origTop) {
 
 function plannerDragMove(e) {
   if (!_plannerDragId) return;
-  e.preventDefault();
+  e.preventDefault(); // now safe — confirmed it's a drag
   const t = e.touches[0];
   const block = document.querySelector(`[data-plan-id="${_plannerDragId}"]`);
-  if (!block) return;
+  if (!block) { return; }
+  block.style.opacity = '0.7'; // show drag state on first move
   const grid = document.getElementById('planner-grid');
   const gridRect = grid.getBoundingClientRect();
   const scroll = document.getElementById('planner-scroll').scrollTop;
@@ -4905,10 +4924,15 @@ function plannerDragMove(e) {
 }
 
 function plannerDragEnd(e) {
-  if (!_plannerDragId) return;
+  const grid = document.getElementById('planner-grid');
+  grid.removeEventListener('touchmove', plannerDragMove);
+  grid.removeEventListener('touchend', plannerDragEnd);
+
+  if (!_plannerDragId) return; // was a tap, already handled
   const block = document.querySelector(`[data-plan-id="${_plannerDragId}"]`);
   const plan = _plannerPlans.find(p => p.id === _plannerDragId);
-  if (block && plan) {
+  if (block && plan && block.style.opacity === '0.7') {
+    // Only update position if block was actually moved (opacity was set during drag)
     block.style.opacity = '';
     const topPx = parseFloat(block.style.top) || 0;
     const totalMins = Math.round((topPx / PLANNER_HOUR_PX) * 60 / 15) * 15; // snap to 15min
@@ -4917,12 +4941,11 @@ function plannerDragEnd(e) {
     const clamped = Math.min(Math.max(absH, PLANNER_START_HOUR), PLANNER_END_HOUR - 1);
     plan.startTime = `${String(clamped).padStart(2,'0')}:${String(absM).padStart(2,'0')}`;
     savePlanner();
+    renderPlannerScreen();
+  } else if (block) {
+    block.style.opacity = '';
   }
-  const grid = document.getElementById('planner-grid');
-  grid.removeEventListener('touchmove', plannerDragMove);
-  grid.removeEventListener('touchend', plannerDragEnd);
   _plannerDragId = null;
-  renderPlannerScreen();
 }
 
 // Planner renders when showScreen('planner') is called — hooked via showScreen's existing id check
