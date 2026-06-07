@@ -683,7 +683,7 @@
     <div style="padding:0 16px 10px;">
       <div style="position:relative;">
         <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--subtext);">🔍</span>
-        <input id="ts-search" type="search" placeholder="Search tasks, notes, equipment…"
+        <input id="ts-search" type="search" placeholder="Search tasks, notes, equipment…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
           oninput="renderTimesheets()"
           style="width:100%;padding:9px 12px 9px 36px;border-radius:10px;border:1px solid var(--border);background:var(--card);font-size:14px;color:var(--text);outline:none;-webkit-appearance:none;">
       </div>
@@ -749,7 +749,7 @@
         <div class="settings-label">Your Name</div>
       </div>
       <div class="settings-row">
-        <input class="settings-input" id="user-name" type="text" placeholder="e.g. Lincoln" oninput="saveName()" />
+        <input class="settings-input" id="user-name" type="text" placeholder="e.g. Lincoln" oninput="saveName()" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
       </div>
     </div>
     <div class="settings-note" style="margin-top:0">
@@ -780,7 +780,6 @@
     </div>
 
     <button class="btn-sync" onclick="syncToSheet()">⬆ Sync Unsynced Entries to Sheet</button>
-    <button class="btn-sync" style="background:var(--subtext); margin-top:8px;" onclick="reloadDirectory()">↺ Reload Task Directory</button>
     <button class="btn-sync" style="background:#34C759; margin-top:8px;" onclick="forceAppUpdate()">⟳ Force Update App</button>
 
     <div class="settings-section" style="margin-top:16px">
@@ -976,7 +975,7 @@
       <span style="font-size:17px;font-weight:600;">Add Note</span>
       <button onclick="saveNote()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Save</button>
     </div>
-    <textarea id="note-input" placeholder="Type your note…" style="width:100%;min-height:160px;border:1px solid var(--border);border-radius:12px;padding:12px;font-size:16px;font-family:inherit;resize:none;outline:none;"></textarea>
+    <textarea id="note-input" placeholder="Type your note…" style="width:100%;min-height:160px;border:1px solid var(--border);border-radius:12px;padding:12px;font-size:16px;font-family:inherit;resize:none;outline:none;" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false"></textarea>
   </div>
 </div>
 
@@ -993,7 +992,7 @@
     <div id="task-search-wrap" style="padding:14px 16px 0;position:relative;">
       <div style="position:relative;">
         <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--subtext);">🔍</span>
-        <input id="task-search-input" type="search" placeholder="Search for a task…"
+        <input id="task-search-input" type="search" placeholder="Search for a task…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
           autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
           oninput="onTaskSearchInput()" onfocus="onTaskSearchInput()"
           style="width:100%;padding:11px 36px 11px 36px;border-radius:12px;border:1px solid var(--border);background:var(--card);font-size:15px;color:var(--text);outline:none;-webkit-appearance:none;">
@@ -1083,7 +1082,7 @@
     </div>
 
     <div class="form-section">
-      <textarea class="form-textarea" id="f-notes" placeholder="Add notes…"></textarea>
+      <textarea class="form-textarea" id="f-notes" placeholder="Add notes…" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false"></textarea>
     </div>
 
     <div id="f-delete-wrap" style="display:none">
@@ -1122,7 +1121,7 @@
       </div>
 
       <div class="form-row"><div class="form-label">Task Name</div>
-        <input class="form-select" id="dir-task" type="text" placeholder="e.g. Change over tiny house"
+        <input class="form-select" id="dir-task" type="text" placeholder="e.g. Change over tiny house" autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false"
           autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false" name="kr-label-text" data-lpignore="true" data-1p-ignore
           oninput="updateRestoreSubtasksBtn(this.value.trim())"
           style="font-size:16px;border:none;width:100%;text-align:right;background:transparent;color:var(--text);">
@@ -1163,7 +1162,7 @@
     <div style="padding:8px 16px 12px;">
       <div style="display:flex;align-items:center;background:var(--bg);border-radius:12px;padding:0 12px;">
         <span style="font-size:16px;color:var(--subtext);margin-right:8px;">🔍</span>
-        <input id="group-picker-search" type="search" placeholder="Find or add a group"
+        <input id="group-picker-search" type="search" placeholder="Find or add a group" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
           autocomplete="off" autocorrect="off" spellcheck="false"
           oninput="renderGroupPickerList()"
           style="flex:1;padding:10px 0;border:none;background:transparent;font-size:16px;color:var(--text);outline:none;">
@@ -1184,7 +1183,7 @@
     <div style="padding:8px 16px 12px;">
       <div style="display:flex;align-items:center;background:var(--bg);border-radius:12px;padding:0 12px;">
         <span style="font-size:16px;color:var(--subtext);margin-right:8px;">🔍</span>
-        <input id="frequency-picker-search" type="search" placeholder="Find or add frequency"
+        <input id="frequency-picker-search" type="search" placeholder="Find or add frequency" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
           autocomplete="off" autocorrect="off" spellcheck="false"
           oninput="renderFrequencyPickerList()"
           style="flex:1;padding:10px 0;border:none;background:transparent;font-size:16px;color:var(--text);outline:none;">
@@ -1205,7 +1204,7 @@
     <div style="padding:8px 16px 12px;">
       <div style="display:flex;align-items:center;background:var(--bg);border-radius:12px;padding:0 12px;">
         <span style="font-size:16px;color:var(--subtext);margin-right:8px;">🔍</span>
-        <input id="location-picker-search" type="search" placeholder="Find or add a location"
+        <input id="location-picker-search" type="search" placeholder="Find or add a location" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
           autocomplete="off" autocorrect="off" spellcheck="false"
           oninput="renderLocationPickerList()"
           style="flex:1;padding:10px 0;border:none;background:transparent;font-size:16px;color:var(--text);outline:none;">
@@ -1226,7 +1225,7 @@
     <div style="padding:8px 16px 12px;">
       <div style="display:flex;align-items:center;background:var(--bg);border-radius:12px;padding:0 12px;">
         <span style="font-size:16px;color:var(--subtext);margin-right:8px;">🔍</span>
-        <input id="equip-picker-search" type="search" placeholder="Find or add equipment"
+        <input id="equip-picker-search" type="search" placeholder="Find or add equipment" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
           autocomplete="off" autocorrect="off" spellcheck="false"
           oninput="renderEquipmentPickerList()"
           style="flex:1;padding:10px 0;border:none;background:transparent;font-size:16px;color:var(--text);outline:none;">
@@ -1270,7 +1269,7 @@
     <div style="padding:8px 16px 12px;">
       <div style="display:flex;align-items:center;background:var(--bg);border-radius:12px;padding:0 12px;">
         <span style="font-size:16px;color:var(--subtext);margin-right:8px;">🔍</span>
-        <input id="subtask-picker-search" type="search" placeholder="Find or add checklist item"
+        <input id="subtask-picker-search" type="search" placeholder="Find or add checklist item" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
           autocomplete="off" autocorrect="off" spellcheck="false"
           oninput="renderSubtaskPickerList()"
           style="flex:1;padding:10px 0;border:none;background:transparent;font-size:16px;color:var(--text);outline:none;">
@@ -1429,61 +1428,7 @@ async function forceAppUpdate() {
   setTimeout(() => location.reload(true), 800);
 }
 
-async function reloadDirectory() {
-  // Keep locally-added entries before wiping
-  const localOnly = DIRECTORY.filter(r => {
-    const isFromFallback = DIRECTORY_FALLBACK.some(f => f.frequency === r.frequency && f.group === r.group && f.task === r.task);
-    return !isFromFallback;
-  });
-  localStorage.removeItem('kr_directory');
-  localStorage.removeItem('kr_subtasks');
-  DIRECTORY = [...DIRECTORY_FALLBACK, ...localOnly];
-  SUBTASKS = {};
-  await loadDirectory();
-  showToast('Task directory reloaded (' + DIRECTORY.length + ' entries)');
-}
-
-async function loadDirectory() {
-  const url = localStorage.getItem('kr_sheet_url');
-  if (!url) return;
-  try {
-    const res = await fetch(url, { mode: 'cors' });
-    const json = await res.json();
-    if (json.success && json.directory && json.directory.length > 0) {
-      // Merge: keep remote entries + any locally-added entries not in remote
-      // Preserve locally-set location and equipment on remote entries (sheet doesn't store these)
-      const localMap = {};
-      DIRECTORY.forEach(r => {
-        const k = `${r.frequency}||${r.group}||${r.task}||${r.equipment||''}`;
-        localMap[k] = r;
-      });
-      const merged = json.directory.map(r => {
-        const k = `${r.frequency}||${r.group}||${r.task}||${r.equipment||''}`;
-        const local = localMap[k];
-        return {
-          ...r,
-          location: (local && local.location) ? local.location : (r.location || ''),
-          equipment: (local && local.equipment) ? local.equipment : (r.equipment || '')
-        };
-      });
-      const remoteKeys = new Set(json.directory.map(r => `${r.frequency}||${r.group}||${r.task}`));
-      const localOnly = DIRECTORY.filter(r => !remoteKeys.has(`${r.frequency}||${r.group}||${r.task}`));
-      DIRECTORY = [...merged, ...localOnly];
-      localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
-    }
-    if (json.success && json.subtasks) {
-      // Merge subtasks: prefer local if it exists (local edits take priority over sheet)
-      const merged = { ...json.subtasks };
-      Object.keys(SUBTASKS).forEach(k => {
-        merged[k] = SUBTASKS[k]; // local always wins
-      });
-      SUBTASKS = merged;
-      localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
-    }
-  } catch (e) {
-    // Network failed — already loaded from localStorage at startup, nothing to do
-  }
-}
+// Directory is fully app-managed — no sheet sync for tasks
 
 // ════════════════════════════════
 //  STATE
@@ -1550,7 +1495,7 @@ window.addEventListener('load', () => {
   renderTimesheets();
   updateStats();
   startTimerTick();
-  loadDirectory();
+  // Directory is app-managed — no longer loaded from Google Sheet
 });
 
 function updateHeaderDate() {
@@ -2297,7 +2242,7 @@ function openSubtaskModal() {
   const remaining = taskSubtasks.filter(s => !existingNotes.includes(s));
 
   if (taskSubtasks.length === 0) {
-    showToast('No checklist items found — tap Reload Task Directory in Settings');
+    showToast('No checklist items found — add them in the Task Directory');
     return;
   }
   if (remaining.length === 0) {
