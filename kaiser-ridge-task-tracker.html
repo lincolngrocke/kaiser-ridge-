@@ -2860,7 +2860,8 @@ const KR_BACKUP_KEYS = [
   'kr_directory', 'kr_subtasks', 'kr_subtask_guides', 'kr_equipment_guides',
   'kr_equipment_master', 'kr_extra_frequencies', 'kr_extra_locations',
   'kr_task_order', 'kr_entries', 'kr_user_name', 'kr_weekly_target',
-  'kr_sheet_url', 'kr_dark_mode'
+  'kr_sheet_url', 'kr_dark_mode',
+  'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order'
 ];
 
 function buildBackupSnapshot() {
@@ -3235,25 +3236,154 @@ function openFrequencyPicker() {
   openModal('modal-frequency-picker');
 }
 
+// ── Generic picker drag-reorder + rename helpers ──────────────────────────
+
+function _pickerOrderKey(type) {
+  return 'kr_' + type + '_order';
+}
+function _pickerGetOrder(type, allItems) {
+  const saved = JSON.parse(localStorage.getItem(_pickerOrderKey(type)) || '[]');
+  return [...saved.filter(x => allItems.includes(x)), ...allItems.filter(x => !saved.includes(x))];
+}
+function _pickerSaveOrder(type, items) {
+  localStorage.setItem(_pickerOrderKey(type), JSON.stringify(items));
+}
+
+// Shared drag state for picker lists
+let _pkDragType = null, _pkDragItems = [], _pkDragIdx = null, _pkDragClone = null, _pkDragRects = [];
+function _pkTouchStart(e, type, idx, items) {
+  if (e.touches.length !== 1) return;
+  _pkDragType = type; _pkDragItems = [...items]; _pkDragIdx = idx;
+  const row = e.currentTarget;
+  const rect = row.getBoundingClientRect();
+  _pkDragClone = row.cloneNode(true);
+  Object.assign(_pkDragClone.style, {
+    position:'fixed', left:rect.left+'px', top:rect.top+'px', width:rect.width+'px',
+    zIndex:9999, opacity:'0.92', pointerEvents:'none', boxShadow:'0 4px 16px rgba(0,0,0,0.18)',
+    background:'var(--card)', borderRadius:'8px'
+  });
+  document.body.appendChild(_pkDragClone);
+  row.style.opacity = '0.3';
+  e.preventDefault();
+}
+function _pkTouchMove(e) {
+  if (_pkDragClone === null) return;
+  const t = e.touches[0];
+  _pkDragClone.style.top = (t.clientY - 28) + 'px';
+  e.preventDefault();
+}
+function _pkTouchEnd(e, type, renderFn) {
+  if (_pkDragClone === null) return;
+  const t = e.changedTouches[0];
+  _pkDragClone.remove(); _pkDragClone = null;
+  // Find drop target
+  const list = document.getElementById(type + '-picker-list');
+  const rows = [...list.querySelectorAll('[data-pk-idx]')];
+  let targetIdx = _pkDragIdx;
+  rows.forEach(row => {
+    const r = row.getBoundingClientRect();
+    if (t.clientY >= r.top && t.clientY <= r.bottom) targetIdx = parseInt(row.dataset.pkIdx);
+  });
+  rows.forEach(r => r.style.opacity = '');
+  if (targetIdx !== _pkDragIdx) {
+    const moved = _pkDragItems.splice(_pkDragIdx, 1)[0];
+    _pkDragItems.splice(targetIdx, 0, moved);
+    _pickerSaveOrder(type, _pkDragItems);
+    renderFn();
+  }
+  _pkDragType = null; _pkDragIdx = null;
+}
+
+function _pickerRenamePrompt(type, oldName, renderFn, propagateFn) {
+  const newName = prompt(`Rename "${oldName}" to:`, oldName);
+  if (!newName || newName.trim() === oldName) return;
+  const trimmed = newName.trim();
+  propagateFn(oldName, trimmed);
+  // Update saved order
+  const order = JSON.parse(localStorage.getItem(_pickerOrderKey(type)) || '[]');
+  const oi = order.indexOf(oldName);
+  if (oi >= 0) { order[oi] = trimmed; localStorage.setItem(_pickerOrderKey(type), JSON.stringify(order)); }
+  renderFn();
+  showToast(`Renamed to "${trimmed}"`);
+}
+
+function _pickerRowHtml(type, name, idx, isSelected, extraRight, selFn) {
+  const enc = name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+  return `<div data-pk-idx="${idx}"
+    style="padding:12px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;"
+    ontouchstart="_pkTouchStart(event,'${type}',${idx},_pkItems_${type})"
+    ontouchmove="_pkTouchMove(event)"
+    ontouchend="_pkTouchEnd(event,'${type}',render${_cap(type)}PickerList)">
+    <span style="font-size:20px;color:var(--subtext);padding:0 4px;cursor:grab;touch-action:none;">≡</span>
+    <span onclick="${selFn}('${enc}',false)" style="flex:1;font-size:16px;color:var(--text);cursor:pointer;">${name}</span>
+    ${isSelected ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}
+    ${extraRight || ''}
+    <button onclick="_pickerRenamePrompt('${type}','${enc}',render${_cap(type)}PickerList,_rename${_cap(type)})" style="background:none;border:none;color:var(--subtext);font-size:17px;cursor:pointer;padding:4px 6px;flex-shrink:0;">✎</button>
+  </div>`;
+}
+function _cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+// Per-type item arrays (needed by drag handler closures)
+let _pkItems_frequency = [], _pkItems_group = [], _pkItems_location = [], _pkItems_equipment = [];
+
+// ── Rename propagators ─────────────────────────────────────────────────────
+function _renameFrequency(oldName, newName) {
+  DIRECTORY.forEach(r => { if (r.frequency === oldName) r.frequency = newName; });
+  localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
+  // Update extras list
+  const extras = JSON.parse(localStorage.getItem('kr_extra_frequencies') || '[]');
+  const i = extras.indexOf(oldName);
+  if (i >= 0) { extras[i] = newName; localStorage.setItem('kr_extra_frequencies', JSON.stringify(extras)); }
+  if (_selectedFrequency === oldName) setFrequencyDisplay(newName);
+  renderDirectory();
+}
+function _renameGroup(oldName, newName) {
+  DIRECTORY.forEach(r => { if (r.group === oldName) r.group = newName; });
+  localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
+  if (_selectedGroup === oldName) { _selectedGroup = newName; document.getElementById('dir-group-display').textContent = newName; }
+  renderDirectory();
+}
+function _renameLocation(oldName, newName) {
+  DIRECTORY.forEach(r => { if (r.location === oldName) r.location = newName; });
+  localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
+  const extras = JSON.parse(localStorage.getItem('kr_extra_locations') || '[]');
+  const i = extras.indexOf(oldName);
+  if (i >= 0) { extras[i] = newName; localStorage.setItem('kr_extra_locations', JSON.stringify(extras)); }
+  if (_selectedLocation === oldName) setLocationDisplay(newName);
+  populateLocationDropdown();
+  populateTsLocationChips();
+  renderDirectory();
+}
+function _renameEquipment(oldName, newName) {
+  DIRECTORY.forEach(r => { if (r.equipment === oldName) r.equipment = newName; });
+  localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
+  const master = getEquipmentMaster();
+  const m = master.find(e => e.name === oldName);
+  if (m) { m.name = newName; saveEquipmentMaster(master); }
+  _equipmentItems = _equipmentItems.map(e => e === oldName ? newName : e);
+  renderDirEquipmentList();
+  renderDirectory();
+}
+
+// ── Frequency picker ───────────────────────────────────────────────────────
 function renderFrequencyPickerList() {
   const query = document.getElementById('frequency-picker-search').value.trim();
   const all = getAllFrequencies();
-  const filtered = query ? all.filter(f => f.toLowerCase().includes(query.toLowerCase())) : all;
+  const ordered = _pickerGetOrder('frequency', all);
+  _pkItems_frequency = [...ordered];
+  const filtered = query ? ordered.filter(f => f.toLowerCase().includes(query.toLowerCase())) : ordered;
   const list = document.getElementById('frequency-picker-list');
   const addRow = query && !all.some(f => f.toLowerCase() === query.toLowerCase())
     ? `<div onclick="selectFrequency('${query.replace(/'/g,"\\'")}',true)"
-        style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;cursor:pointer;">
+        style="padding:12px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;cursor:pointer;">
         <span style="font-size:20px;color:var(--blue);">＋</span>
         <span style="font-size:16px;color:var(--blue);">Add "${query}"</span>
       </div>` : '';
-  list.innerHTML = addRow + (filtered.map(f => {
-    const isSelected = f === _selectedFrequency;
-    return `<div onclick="selectFrequency('${f.replace(/'/g,"\\'")}',false)"
-      style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;">
-      <span style="font-size:16px;color:var(--text);">${f}</span>
-      ${isSelected ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}
-    </div>`;
-  }).join('') || (!addRow ? '<div style="padding:24px;text-align:center;color:var(--subtext);">No matches</div>' : ''));
+  const rows = filtered.map((f, i) => {
+    const realIdx = ordered.indexOf(f);
+    return _pickerRowHtml('frequency', f, realIdx, f === _selectedFrequency, '', 'selectFrequency');
+  }).join('');
+  list.innerHTML = addRow + (rows || (!addRow ? '<div style="padding:24px;text-align:center;color:var(--subtext);">No matches</div>' : ''));
 }
 
 function selectFrequency(name, isNew) {
@@ -3299,25 +3429,23 @@ function openLocationPicker() {
 function renderLocationPickerList() {
   const query = document.getElementById('location-picker-search').value.trim();
   const queryLower = query.toLowerCase();
-  const allLocs = [...new Set([...LOCATIONS, ...(JSON.parse(localStorage.getItem('kr_extra_locations') || '[]'))])];
-  const filtered = queryLower ? allLocs.filter(l => l.toLowerCase().includes(queryLower)) : allLocs;
+  const allLocs = getAllLocations();
+  const ordered = _pickerGetOrder('location', allLocs);
+  _pkItems_location = [...ordered];
+  const filtered = queryLower ? ordered.filter(l => l.toLowerCase().includes(queryLower)) : ordered;
   const list = document.getElementById('location-picker-list');
   let html = '';
   const exactMatch = allLocs.some(l => l.toLowerCase() === queryLower);
   if (query && !exactMatch) {
     html += `<div onclick="selectLocation('${query.replace(/'/g,"\\'")}')"
-      style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:pointer;">
+      style="padding:12px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:pointer;">
       <span style="font-size:20px;color:var(--blue);">＋</span>
       <span style="font-size:16px;color:var(--blue);">Add "<strong>${query}</strong>"</span>
     </div>`;
   }
   html += filtered.map(l => {
-    const isSelected = l === _selectedLocation;
-    return `<div onclick="selectLocation('${l.replace(/'/g,"\\'")}')"
-      style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;">
-      <span style="font-size:16px;color:var(--text);">${l}</span>
-      ${isSelected ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}
-    </div>`;
+    const realIdx = ordered.indexOf(l);
+    return _pickerRowHtml('location', l, realIdx, l === _selectedLocation, '', 'selectLocation');
   }).join('');
   list.innerHTML = html || '<div style="padding:24px;text-align:center;color:var(--subtext);">No matches</div>';
 }
@@ -3341,30 +3469,25 @@ function openGroupPicker() {
 
 function renderGroupPickerList() {
   const query = document.getElementById('group-picker-search').value.trim().toLowerCase();
-  const groups = [...new Set(DIRECTORY.map(r => r.group).filter(Boolean))].sort();
-  const filtered = query ? groups.filter(g => g.toLowerCase().includes(query)) : groups;
+  const groups = [...new Set(DIRECTORY.map(r => r.group).filter(Boolean))];
+  const ordered = _pickerGetOrder('group', groups);
+  _pkItems_group = [...ordered];
+  const filtered = query ? ordered.filter(g => g.toLowerCase().includes(query)) : ordered;
   const list = document.getElementById('group-picker-list');
 
   let html = '';
-
-  // "Add new" row if search has text not matching an existing group exactly
   const exactMatch = groups.some(g => g.toLowerCase() === query);
   if (query && !exactMatch) {
     html += `<div onclick="selectGroup('${query.replace(/'/g,"\\'")}')"
-      style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:pointer;">
+      style="padding:12px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:pointer;">
       <span style="font-size:20px;color:var(--blue);">＋</span>
       <span style="font-size:16px;color:var(--blue);">Add "<strong>${query}</strong>"</span>
     </div>`;
   }
 
-  // Existing groups
   filtered.forEach(g => {
-    const isSelected = g === _selectedGroup;
-    html += `<div onclick="selectGroup('${g.replace(/'/g,"\\'")}')"
-      style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;">
-      <span style="font-size:16px;color:var(--text);">${g}</span>
-      ${isSelected ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}
-    </div>`;
+    const realIdx = ordered.indexOf(g);
+    html += _pickerRowHtml('group', g, realIdx, g === _selectedGroup, '', 'selectGroup');
   });
 
   if (!html) html = '<div style="padding:24px;text-align:center;color:var(--subtext);font-size:15px;">No groups yet — type a name above to create one</div>';
@@ -3550,14 +3673,16 @@ function openEquipmentPicker() {
 function renderEquipmentPickerList() {
   const query = document.getElementById('equip-picker-search').value.trim().toLowerCase();
   const allEquip = getAllEquipment();
-  const filtered = query ? allEquip.filter(e => e.toLowerCase().includes(query)) : allEquip;
+  const ordered = _pickerGetOrder('equipment', allEquip);
+  _pkItems_equipment = [...ordered];
+  const filtered = query ? ordered.filter(e => e.toLowerCase().includes(query)) : ordered;
   const list = document.getElementById('equip-picker-list');
 
   let html = '';
   const exactMatch = allEquip.some(e => e.toLowerCase() === query);
   if (query && !exactMatch) {
     html += `<div onclick="selectEquipment('${query.replace(/'/g,"\\'")}')"
-      style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:pointer;">
+      style="padding:12px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:pointer;">
       <span style="font-size:20px;color:var(--blue);">＋</span>
       <span style="font-size:16px;color:var(--blue);">Add "<strong>${query}</strong>"</span>
     </div>`;
@@ -3566,15 +3691,22 @@ function renderEquipmentPickerList() {
   const equipGuides = getEquipmentGuides();
   filtered.forEach(e => {
     const isSelected = _equipmentItems.includes(e);
-    const enc = e.replace(/'/g,"\\'");
+    const enc = e.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    const realIdx = ordered.indexOf(e);
     const hasGuide = equipGuides[e] && (equipGuides[e].instructions || equipGuides[e].url);
-    html += `<div style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">
+    html += `<div data-pk-idx="${realIdx}"
+      style="padding:12px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;"
+      ontouchstart="_pkTouchStart(event,'equipment',${realIdx},_pkItems_equipment)"
+      ontouchmove="_pkTouchMove(event)"
+      ontouchend="_pkTouchEnd(event,'equipment',renderEquipmentPickerList)">
+      <span style="font-size:20px;color:var(--subtext);padding:0 4px;cursor:grab;touch-action:none;">≡</span>
       <div onclick="selectEquipment('${enc}')" style="flex:1;display:flex;align-items:center;gap:8px;cursor:pointer;">
         <span style="font-size:16px;color:var(--text);">${e}</span>
         ${hasGuide ? '<span style="font-size:13px;color:var(--blue);background:#e8f0fe;padding:2px 6px;border-radius:6px;">Guide</span>' : ''}
         ${isSelected ? '<span style="color:var(--blue);font-size:18px;margin-left:auto;">✓</span>' : '<span style="margin-left:auto;"></span>'}
       </div>
-      <button onclick="openEquipmentGuide('${enc}')" style="background:none;border:none;color:var(--subtext);font-size:18px;cursor:pointer;padding:4px 6px;flex-shrink:0;">✎</button>
+      <button onclick="openEquipmentGuide('${enc}')" style="background:none;border:none;color:var(--subtext);font-size:18px;cursor:pointer;padding:4px 6px;flex-shrink:0;" title="Guide">📋</button>
+      <button onclick="_pickerRenamePrompt('equipment','${enc}',renderEquipmentPickerList,_renameEquipment)" style="background:none;border:none;color:var(--subtext);font-size:17px;cursor:pointer;padding:4px 6px;flex-shrink:0;">✎</button>
     </div>`;
   });
 
