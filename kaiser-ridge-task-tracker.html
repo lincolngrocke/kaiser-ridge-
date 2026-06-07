@@ -594,6 +594,68 @@
   .hours-bar-fill { height: 100%; background: var(--blue); border-radius: 2px; transition: width 0.3s; }
 
   .scroll-area { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+
+  /* ── DAY PLANNER ── */
+  .planner-hour-row {
+    display: flex;
+    align-items: flex-start;
+    min-height: 60px;
+    border-top: 1px solid var(--border);
+    position: relative;
+  }
+  .planner-hour-label {
+    width: 48px;
+    flex-shrink: 0;
+    font-size: 11px;
+    color: var(--subtext);
+    padding-top: 4px;
+    text-align: right;
+    padding-right: 8px;
+  }
+  .planner-hour-slot {
+    flex: 1;
+    min-height: 60px;
+    position: relative;
+    border-left: 1px solid var(--border);
+  }
+  .planner-block {
+    position: absolute;
+    left: 4px;
+    right: 4px;
+    border-radius: 8px;
+    padding: 4px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #fff;
+    cursor: pointer;
+    overflow: hidden;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    z-index: 2;
+  }
+  .planner-block-title { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .planner-block-meta { font-size: 10px; opacity: 0.85; margin-top: 2px; }
+  .planner-now-line {
+    position: absolute;
+    left: 48px;
+    right: 0;
+    height: 2px;
+    background: var(--red);
+    z-index: 3;
+    pointer-events: none;
+  }
+  .planner-now-line::before {
+    content: '';
+    position: absolute;
+    left: -5px;
+    top: -4px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--red);
+  }
 </style>
 </head>
 <body>
@@ -723,6 +785,25 @@
       <button onclick="clearDirFilter()" style="background:none;border:none;color:var(--red);font-size:14px;cursor:pointer;">Clear</button>
     </div>
     <div id="dir-filter-list" style="max-height:55vh;overflow-y:auto;"></div>
+  </div>
+</div>
+
+<!-- ══════════════ DAY PLANNER SCREEN ══════════════ -->
+<div class="screen" id="screen-planner">
+  <div class="header" style="flex-direction:row;align-items:center;justify-content:space-between;padding:12px 16px;">
+    <button id="planner-prev" onclick="plannerChangeDay(-1)" style="background:none;border:none;color:var(--blue);font-size:22px;padding:4px 8px;cursor:pointer;">‹</button>
+    <div style="text-align:center;">
+      <div class="header-title" id="planner-date-label">Today</div>
+      <div style="font-size:12px;color:var(--subtext);" id="planner-date-sub"></div>
+    </div>
+    <button id="planner-next" onclick="plannerChangeDay(1)" style="background:none;border:none;color:var(--blue);font-size:22px;padding:4px 8px;cursor:pointer;">›</button>
+  </div>
+  <div style="padding:0 16px 8px;display:flex;gap:8px;align-items:center;">
+    <button onclick="openPlannerAddTask()" style="flex:1;background:var(--blue);color:#fff;border:none;border-radius:12px;padding:10px;font-size:15px;font-weight:600;cursor:pointer;">+ Add Task</button>
+    <button onclick="plannerGoToday()" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-size:13px;color:var(--blue);cursor:pointer;">Today</button>
+  </div>
+  <div class="scroll-area" id="planner-scroll" style="position:relative;overflow-y:auto;flex:1;">
+    <div id="planner-grid" style="position:relative;margin:0 16px;"></div>
   </div>
 </div>
 
@@ -951,10 +1032,59 @@
   <button class="nav-tab" onclick="showScreen('directory',this)">
     <span class="nav-icon">📁</span>Directory
   </button>
+  <button class="nav-tab" onclick="showScreen('planner',this)">
+    <span class="nav-icon">🗓</span>Planner
+  </button>
   <button class="nav-tab" onclick="showScreen('settings',this)">
     <span class="nav-icon">⚙️</span>Settings
   </button>
 </nav>
+
+<!-- ══════════════ PLANNER ADD TASK MODAL ══════════════ -->
+<div class="modal-backdrop" id="modal-planner-add" style="z-index:300;">
+  <div class="modal-sheet" style="max-height:85vh;overflow-y:auto;">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <button onclick="closeModal('modal-planner-add')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;">Cancel</button>
+      <span class="modal-title">Add to Planner</span>
+      <button onclick="confirmPlannerAdd()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Add</button>
+    </div>
+    <div style="padding:16px;">
+      <div style="margin-bottom:12px;">
+        <div style="font-size:12px;color:var(--subtext);margin-bottom:4px;">Start Time</div>
+        <input type="time" id="planner-add-time" class="form-input" style="width:100%;" />
+      </div>
+      <div style="margin-bottom:12px;">
+        <div style="font-size:12px;color:var(--subtext);margin-bottom:4px;">Duration (hours) — auto-filled from your history</div>
+        <input type="number" id="planner-add-duration" step="0.25" min="0.25" max="12" class="form-input" style="width:100%;" placeholder="e.g. 1.5" autocomplete="off" />
+        <div id="planner-add-avg-note" style="font-size:11px;color:var(--subtext);margin-top:4px;"></div>
+      </div>
+      <div style="margin-bottom:8px;">
+        <div style="font-size:12px;color:var(--subtext);margin-bottom:6px;">Task</div>
+        <input type="search" id="planner-task-search" placeholder="Search tasks…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+          style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:15px;background:var(--bg);color:var(--text);outline:none;margin-bottom:8px;"
+          oninput="renderPlannerTaskList()" />
+        <div id="planner-task-list" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ PLANNER BLOCK DETAIL MODAL ══════════════ -->
+<div class="modal-backdrop" id="modal-planner-detail" style="z-index:300;">
+  <div class="modal-sheet" style="max-height:60vh;">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <button onclick="closeModal('modal-planner-detail')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;">Close</button>
+      <span class="modal-title" id="planner-detail-title">Task</span>
+      <button onclick="deletePlannerBlock()" style="background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;">Delete</button>
+    </div>
+    <div style="padding:20px;">
+      <div id="planner-detail-info" style="font-size:14px;color:var(--subtext);margin-bottom:20px;"></div>
+      <button onclick="plannerClockIn()" style="width:100%;background:var(--green);color:#fff;border:none;border-radius:14px;padding:14px;font-size:17px;font-weight:700;cursor:pointer;">▶ Clock In Now</button>
+    </div>
+  </div>
+</div>
 
 <!-- ══════════════ SUBTASK MODAL ══════════════ -->
 <div class="modal-backdrop" id="modal-subtask" style="z-index:200;">
@@ -1515,6 +1645,7 @@ function showScreen(id, tab) {
   if (tab) tab.classList.add('active');
   if (id === 'timesheets') renderTimesheets();
   if (id === 'settings') { updateStats(); updateLastBackupLabel(); }
+  if (id === 'planner') renderPlannerScreen();
   // Hide running overlay when not on clock screen; restore it if clock is running
   const overlay = document.getElementById('running-overlay');
   if (overlay) {
@@ -2822,7 +2953,8 @@ const KR_BACKUP_KEYS = [
   'kr_equipment_master', 'kr_extra_frequencies', 'kr_extra_locations',
   'kr_task_order', 'kr_entries', 'kr_user_name', 'kr_weekly_target',
   'kr_sheet_url', 'kr_dark_mode',
-  'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order'
+  'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
+  'kr_planner'
 ];
 
 function buildBackupSnapshot() {
@@ -4447,6 +4579,353 @@ function _dtCleanup() {
   }
   _dtRects = [];
 }
+
+// ════════════════════════════════
+//  DAY PLANNER
+// ════════════════════════════════
+// Plans stored as: { id, date, task, group, frequency, location, tool, startTime, durationHours }
+// date format: DD/MM/YYYY, startTime: 'HH:MM'
+
+let _plannerDate = new Date(); // current day being viewed
+let _plannerPlans = JSON.parse(localStorage.getItem('kr_planner') || '[]');
+let _plannerAddTask = null; // task object selected in add modal
+let _plannerDetailId = null; // plan id in detail modal
+let _plannerDragId = null, _plannerDragOffsetY = 0;
+let _plannerNowTimer = null;
+
+const PLANNER_HOUR_PX = 60; // pixels per hour
+const PLANNER_START_HOUR = 5; // 5am
+const PLANNER_END_HOUR = 22; // 10pm
+
+const PLANNER_COLORS = [
+  '#007AFF','#34C759','#FF9500','#AF52DE','#FF2D55','#5AC8FA','#FFCC00','#FF6B35'
+];
+
+function plannerColorFor(task) {
+  let hash = 0;
+  for (let i = 0; i < task.length; i++) hash = task.charCodeAt(i) + ((hash << 5) - hash);
+  return PLANNER_COLORS[Math.abs(hash) % PLANNER_COLORS.length];
+}
+
+function savePlanner() {
+  localStorage.setItem('kr_planner', JSON.stringify(_plannerPlans));
+}
+
+function plannerDateStr(d) {
+  // DD/MM/YYYY
+  return [String(d.getDate()).padStart(2,'0'), String(d.getMonth()+1).padStart(2,'0'), d.getFullYear()].join('/');
+}
+
+function plannerChangeDay(delta) {
+  _plannerDate = new Date(_plannerDate);
+  _plannerDate.setDate(_plannerDate.getDate() + delta);
+  renderPlannerScreen();
+}
+
+function plannerGoToday() {
+  _plannerDate = new Date();
+  renderPlannerScreen();
+}
+
+function getTaskAvgDuration(taskName) {
+  const relevant = entries.filter(e => e.task === taskName && e.durationHours > 0);
+  if (!relevant.length) return null;
+  const avg = relevant.reduce((s, e) => s + e.durationHours, 0) / relevant.length;
+  return parseFloat(avg.toFixed(2));
+}
+
+function renderPlannerScreen() {
+  // Update header
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const viewing = new Date(_plannerDate);
+  viewing.setHours(0,0,0,0);
+  const diff = Math.round((viewing - today) / 86400000);
+  const label = diff === 0 ? 'Today' : diff === 1 ? 'Tomorrow' : diff === -1 ? 'Yesterday' :
+    _plannerDate.toLocaleDateString('en-AU', { weekday: 'long' });
+  document.getElementById('planner-date-label').textContent = label;
+  document.getElementById('planner-date-sub').textContent = _plannerDate.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  // Build grid
+  const grid = document.getElementById('planner-grid');
+  grid.innerHTML = '';
+  const totalHours = PLANNER_END_HOUR - PLANNER_START_HOUR;
+  grid.style.height = (totalHours * PLANNER_HOUR_PX + 40) + 'px';
+
+  // Hour rows
+  for (let h = PLANNER_START_HOUR; h <= PLANNER_END_HOUR; h++) {
+    const row = document.createElement('div');
+    row.className = 'planner-hour-row';
+    row.style.cssText = `position:absolute;left:0;right:0;top:${(h - PLANNER_START_HOUR) * PLANNER_HOUR_PX}px;height:${PLANNER_HOUR_PX}px;`;
+    const label = document.createElement('div');
+    label.className = 'planner-hour-label';
+    const ampm = h < 12 ? 'am' : 'pm';
+    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    label.textContent = h12 + ampm;
+    const slot = document.createElement('div');
+    slot.className = 'planner-hour-slot';
+    row.appendChild(label);
+    row.appendChild(slot);
+    grid.appendChild(row);
+  }
+
+  // Now line
+  const now = new Date();
+  if (diff === 0) {
+    const nowMins = (now.getHours() - PLANNER_START_HOUR) * 60 + now.getMinutes();
+    if (nowMins >= 0 && nowMins <= totalHours * 60) {
+      const nowLine = document.createElement('div');
+      nowLine.className = 'planner-now-line';
+      nowLine.style.top = (nowMins / 60 * PLANNER_HOUR_PX) + 'px';
+      grid.appendChild(nowLine);
+    }
+  }
+
+  // Render plan blocks for this day
+  const dateStr = plannerDateStr(_plannerDate);
+  const dayPlans = _plannerPlans.filter(p => p.date === dateStr);
+  dayPlans.forEach(p => renderPlannerBlock(p, grid));
+
+  // Scroll to current time or first task
+  const scroll = document.getElementById('planner-scroll');
+  if (diff === 0) {
+    const nowMins = (now.getHours() - PLANNER_START_HOUR) * 60 + now.getMinutes();
+    scroll.scrollTop = Math.max(0, nowMins / 60 * PLANNER_HOUR_PX - 100);
+  } else {
+    scroll.scrollTop = 3 * PLANNER_HOUR_PX; // scroll to 8am
+  }
+
+  // Refresh now line every minute
+  clearInterval(_plannerNowTimer);
+  if (diff === 0) {
+    _plannerNowTimer = setInterval(() => {
+      const line = grid.querySelector('.planner-now-line');
+      if (line) {
+        const n = new Date();
+        const nm = (n.getHours() - PLANNER_START_HOUR) * 60 + n.getMinutes();
+        line.style.top = (nm / 60 * PLANNER_HOUR_PX) + 'px';
+      }
+    }, 60000);
+  }
+}
+
+function renderPlannerBlock(plan, grid) {
+  const [h, m] = plan.startTime.split(':').map(Number);
+  const topMins = (h - PLANNER_START_HOUR) * 60 + m;
+  if (topMins < 0 || topMins > (PLANNER_END_HOUR - PLANNER_START_HOUR) * 60) return;
+
+  const topPx = topMins / 60 * PLANNER_HOUR_PX;
+  const heightPx = Math.max(28, plan.durationHours * PLANNER_HOUR_PX);
+
+  const block = document.createElement('div');
+  block.className = 'planner-block';
+  block.dataset.planId = plan.id;
+  block.style.cssText = `top:${topPx}px;height:${heightPx}px;left:56px;right:4px;background:${plannerColorFor(plan.task)};`;
+
+  const endMins = topMins + plan.durationHours * 60;
+  const endH = Math.floor(endMins / 60);
+  const endM = Math.round(endMins % 60);
+  const endStr = formatTimeAmPm(`${String(endH).padStart(2,'0')}:${String(endM).padStart(2,'0')}`);
+  const startStr = formatTimeAmPm(plan.startTime);
+
+  block.innerHTML = `<div class="planner-block-title">${plan.task}</div>
+    <div class="planner-block-meta">${startStr} – ${endStr} · ${plan.durationHours}h</div>`;
+
+  // Tap to open detail
+  block.addEventListener('click', e => { if (!_plannerDragId) openPlannerDetail(plan.id); });
+
+  // Drag to reposition
+  block.addEventListener('touchstart', e => plannerDragStart(e, plan.id, topPx), { passive: false });
+
+  grid.appendChild(block);
+}
+
+// ── Add task modal ──
+
+function openPlannerAddTask() {
+  _plannerAddTask = null;
+  // Default start time: now rounded to nearest 15min, or 8am
+  const now = new Date();
+  const mins = Math.ceil((now.getHours() * 60 + now.getMinutes()) / 15) * 15;
+  const hh = String(Math.floor(mins / 60) % 24).padStart(2, '0');
+  const mm = String(mins % 60).padStart(2, '0');
+  document.getElementById('planner-add-time').value = `${hh}:${mm}`;
+  document.getElementById('planner-add-duration').value = '';
+  document.getElementById('planner-add-avg-note').textContent = '';
+  document.getElementById('planner-task-search').value = '';
+  renderPlannerTaskList();
+  openModal('modal-planner-add');
+}
+
+function renderPlannerTaskList() {
+  const query = document.getElementById('planner-task-search').value.toLowerCase();
+  const tasks = [...new Map(DIRECTORY.map(r => [r.task, r])).values()];
+  const filtered = query ? tasks.filter(r => r.task.toLowerCase().includes(query)) : tasks;
+  const list = document.getElementById('planner-task-list');
+  if (!filtered.length) {
+    list.innerHTML = '<div style="padding:16px;color:var(--subtext);text-align:center;font-size:14px;">No tasks found</div>';
+    return;
+  }
+  list.innerHTML = filtered.map(r => {
+    const avg = getTaskAvgDuration(r.task);
+    const avgStr = avg ? ` · avg ${avg}h` : '';
+    const isSelected = _plannerAddTask && _plannerAddTask.task === r.task;
+    return `<div onclick="selectPlannerTask('${r.task.replace(/'/g,"\\'")}')"
+      style="padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;background:${isSelected ? 'rgba(0,122,255,0.08)' : 'transparent'};">
+      <div>
+        <div style="font-size:15px;color:var(--text);">${r.task}</div>
+        <div style="font-size:12px;color:var(--subtext);">${r.group || ''}${avgStr}</div>
+      </div>
+      ${isSelected ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}
+    </div>`;
+  }).join('');
+}
+
+function selectPlannerTask(taskName) {
+  const row = DIRECTORY.find(r => r.task === taskName);
+  _plannerAddTask = row || { task: taskName };
+  // Auto-fill duration from average
+  const avg = getTaskAvgDuration(taskName);
+  const durInput = document.getElementById('planner-add-duration');
+  const note = document.getElementById('planner-add-avg-note');
+  if (avg) {
+    durInput.value = avg;
+    note.textContent = `Based on average of past entries`;
+  } else {
+    durInput.value = '1';
+    note.textContent = 'No history yet — defaulting to 1h';
+  }
+  renderPlannerTaskList();
+}
+
+function confirmPlannerAdd() {
+  if (!_plannerAddTask) { showToast('Select a task first'); return; }
+  const time = document.getElementById('planner-add-time').value;
+  const dur = parseFloat(document.getElementById('planner-add-duration').value);
+  if (!time) { showToast('Set a start time'); return; }
+  if (!dur || dur <= 0) { showToast('Set a duration'); return; }
+
+  const plan = {
+    id: Date.now().toString(),
+    date: plannerDateStr(_plannerDate),
+    task: _plannerAddTask.task,
+    group: _plannerAddTask.group || '',
+    frequency: _plannerAddTask.frequency || '',
+    location: _plannerAddTask.location || '',
+    tool: _plannerAddTask.equipment || '',
+    startTime: time,
+    durationHours: dur,
+  };
+  _plannerPlans.push(plan);
+  savePlanner();
+  closeModal('modal-planner-add');
+  renderPlannerScreen();
+  showToast('Added to planner');
+}
+
+// ── Detail / Clock In ──
+
+function openPlannerDetail(planId) {
+  const plan = _plannerPlans.find(p => p.id === planId);
+  if (!plan) return;
+  _plannerDetailId = planId;
+  document.getElementById('planner-detail-title').textContent = plan.task;
+  const startStr = formatTimeAmPm(plan.startTime);
+  const endMins = (parseInt(plan.startTime.split(':')[0]) * 60 + parseInt(plan.startTime.split(':')[1])) + plan.durationHours * 60;
+  const endH = String(Math.floor(endMins / 60) % 24).padStart(2,'0');
+  const endM = String(Math.round(endMins % 60)).padStart(2,'0');
+  const endStr = formatTimeAmPm(`${endH}:${endM}`);
+  document.getElementById('planner-detail-info').innerHTML =
+    `<div style="margin-bottom:6px;">⏰ ${startStr} – ${endStr}</div>
+     <div style="margin-bottom:6px;">⏱ ${plan.durationHours}h planned</div>
+     ${plan.group ? `<div style="margin-bottom:6px;">📂 ${plan.group}</div>` : ''}
+     ${plan.location ? `<div>📍 ${plan.location}</div>` : ''}`;
+  openModal('modal-planner-detail');
+}
+
+function deletePlannerBlock() {
+  if (!_plannerDetailId) return;
+  if (!confirm('Remove this planned task?')) return;
+  _plannerPlans = _plannerPlans.filter(p => p.id !== _plannerDetailId);
+  savePlanner();
+  closeModal('modal-planner-detail');
+  renderPlannerScreen();
+  showToast('Removed');
+}
+
+function plannerClockIn() {
+  const plan = _plannerPlans.find(p => p.id === _plannerDetailId);
+  if (!plan) return;
+  closeModal('modal-planner-detail');
+  // Build taskInfo and start clock
+  const taskInfo = {
+    task: plan.task,
+    group: plan.group,
+    frequency: plan.frequency,
+    location: plan.location,
+    tool: plan.tool,
+    notes: '',
+    subtask: '',
+    pin: null,
+  };
+  startClock(taskInfo);
+  showScreen('clock', document.querySelector('.nav-tab'));
+  // Highlight the correct nav tab
+  document.querySelectorAll('.nav-tab').forEach((t, i) => t.classList.toggle('active', i === 0));
+  showToast('Clocked in — ' + plan.task);
+}
+
+// ── Drag to reposition ──
+
+function plannerDragStart(e, planId, origTop) {
+  if (e.touches.length !== 1) return;
+  _plannerDragId = planId;
+  _plannerDragOffsetY = e.touches[0].clientY - origTop;
+  e.preventDefault();
+
+  const block = document.querySelector(`[data-plan-id="${planId}"]`);
+  if (block) block.style.opacity = '0.7';
+
+  const grid = document.getElementById('planner-grid');
+  grid.addEventListener('touchmove', plannerDragMove, { passive: false });
+  grid.addEventListener('touchend', plannerDragEnd);
+}
+
+function plannerDragMove(e) {
+  if (!_plannerDragId) return;
+  e.preventDefault();
+  const t = e.touches[0];
+  const block = document.querySelector(`[data-plan-id="${_plannerDragId}"]`);
+  if (!block) return;
+  const grid = document.getElementById('planner-grid');
+  const gridRect = grid.getBoundingClientRect();
+  const scroll = document.getElementById('planner-scroll').scrollTop;
+  const relY = t.clientY - gridRect.top + scroll - 56; // 56 = header offset approx
+  block.style.top = Math.max(0, relY) + 'px';
+}
+
+function plannerDragEnd(e) {
+  if (!_plannerDragId) return;
+  const block = document.querySelector(`[data-plan-id="${_plannerDragId}"]`);
+  const plan = _plannerPlans.find(p => p.id === _plannerDragId);
+  if (block && plan) {
+    block.style.opacity = '';
+    const topPx = parseFloat(block.style.top) || 0;
+    const totalMins = Math.round((topPx / PLANNER_HOUR_PX) * 60 / 15) * 15; // snap to 15min
+    const absH = PLANNER_START_HOUR + Math.floor(totalMins / 60);
+    const absM = totalMins % 60;
+    const clamped = Math.min(Math.max(absH, PLANNER_START_HOUR), PLANNER_END_HOUR - 1);
+    plan.startTime = `${String(clamped).padStart(2,'0')}:${String(absM).padStart(2,'0')}`;
+    savePlanner();
+  }
+  const grid = document.getElementById('planner-grid');
+  grid.removeEventListener('touchmove', plannerDragMove);
+  grid.removeEventListener('touchend', plannerDragEnd);
+  _plannerDragId = null;
+  renderPlannerScreen();
+}
+
+// Planner renders when showScreen('planner') is called — hooked via showScreen's existing id check
 </script>
 </body>
 </html>
