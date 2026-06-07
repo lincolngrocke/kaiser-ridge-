@@ -1532,8 +1532,10 @@ function startTimerTick() {
   clearInterval(timerInterval);
   timerInterval = setInterval(() => {
     if (clockState && clockState.running) {
-      const elapsed = (Date.now() - clockState.startMs) / 1000;
-      const fmt = formatSeconds(elapsed);
+      const totalElapsed = (Date.now() - clockState.startMs) / 1000;
+      const breakSecs = ((clockState.breakTotal || 0) + (clockState.onBreak && clockState.breakStartMs ? Date.now() - clockState.breakStartMs : 0)) / 1000;
+      const netElapsed = Math.max(0, totalElapsed - breakSecs);
+      const fmt = formatSeconds(netElapsed);
       document.getElementById('big-timer').textContent = fmt;
       document.getElementById('big-timer').classList.add('running');
       document.getElementById('run-timer').textContent = fmt;
@@ -1687,9 +1689,12 @@ function formatTimeAmPm(t) {
 
 function updateAtTimes() {
   if (!clockState) return;
-  const elapsed = (Date.now() - clockState.startMs) / 1000;
+  const totalElapsed = (Date.now() - clockState.startMs) / 1000;
+  const breakSecs = ((clockState.breakTotal || 0) + (clockState.onBreak && clockState.breakStartMs ? Date.now() - clockState.breakStartMs : 0)) / 1000;
+  const netElapsed = Math.max(0, totalElapsed - breakSecs);
+  const breakStr = breakSecs > 0 ? ` · ☕ ${Math.round(breakSecs / 60)}min break` : '';
   document.getElementById('at-times').textContent =
-    clockState.startTime + ' – now · ' + formatHours(elapsed / 3600);
+    clockState.startTime + ' – now · ' + formatHours(netElapsed / 3600) + breakStr;
 }
 
 function updateSummary() {
