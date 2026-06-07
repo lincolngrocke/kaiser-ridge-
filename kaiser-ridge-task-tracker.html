@@ -893,6 +893,7 @@
       <span onclick="undoClockIn()">Undo</span>
     </div>
     <div class="running-task-info" id="run-task-info"></div>
+    <div id="run-break-info" style="font-size:13px;color:var(--subtext);margin-top:4px;"></div>
   </div>
   <div class="running-buttons">
 <button class="btn-clock-out" style="flex:1.4" onclick="openTimeModal('out')">Clock Out</button>
@@ -1533,12 +1534,16 @@ function startTimerTick() {
   timerInterval = setInterval(() => {
     if (clockState && clockState.running) {
       const totalElapsed = (Date.now() - clockState.startMs) / 1000;
-      const breakSecs = ((clockState.breakTotal || 0) + (clockState.onBreak && clockState.breakStartMs ? Date.now() - clockState.breakStartMs : 0)) / 1000;
+      const breakMs = (clockState.breakTotal || 0) + (clockState.onBreak && clockState.breakStartMs ? Date.now() - clockState.breakStartMs : 0);
+      const breakSecs = breakMs / 1000;
       const netElapsed = Math.max(0, totalElapsed - breakSecs);
       const fmt = formatSeconds(netElapsed);
       document.getElementById('big-timer').textContent = fmt;
       document.getElementById('big-timer').classList.add('running');
       document.getElementById('run-timer').textContent = fmt;
+      // Update break display
+      const breakEl = document.getElementById('run-break-info');
+      if (breakEl) breakEl.textContent = breakSecs > 0 ? '☕ ' + Math.round(breakSecs / 60) + 'min break deducted' : '';
       updateAtTimes();
     }
   }, 1000);
