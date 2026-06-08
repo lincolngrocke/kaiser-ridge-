@@ -4863,11 +4863,22 @@ function openPlannerDetail(planId) {
   const endH = String(Math.floor(endMins / 60) % 24).padStart(2,'0');
   const endM = String(Math.round(endMins % 60)).padStart(2,'0');
   const endStr = formatTimeAmPm(`${endH}:${endM}`);
+  const subtasks = SUBTASKS[plan.task] || [];
+  const subtaskHtml = subtasks.length > 0
+    ? `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">
+        <div style="font-size:12px;color:var(--subtext);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Checklist</div>
+        ${subtasks.map(s => `<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:7px;">
+          <span style="color:var(--subtext);font-size:14px;margin-top:1px;">☐</span>
+          <span style="font-size:14px;color:var(--text);">${s}</span>
+        </div>`).join('')}
+      </div>`
+    : '';
   document.getElementById('planner-detail-info').innerHTML =
     `<div style="margin-bottom:6px;">⏰ ${startStr} – ${endStr}</div>
      <div style="margin-bottom:6px;">⏱ ${plan.durationHours}h planned</div>
      ${plan.group ? `<div style="margin-bottom:6px;">📂 ${plan.group}</div>` : ''}
-     ${plan.location ? `<div>📍 ${plan.location}</div>` : ''}`;
+     ${plan.location ? `<div style="margin-bottom:6px;">📍 ${plan.location}</div>` : ''}
+     ${subtaskHtml}`;
   openModal('modal-planner-detail');
 }
 
