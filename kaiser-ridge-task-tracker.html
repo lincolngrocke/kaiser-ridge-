@@ -4693,6 +4693,10 @@ function getTaskAvgDuration(taskName) {
 }
 
 function renderPlannerScreen() {
+  // Ensure no stuck modal backdrops
+  document.getElementById('modal-planner-add').classList.remove('open');
+  document.getElementById('modal-planner-detail').classList.remove('open');
+
   // Update header
   const today = new Date();
   today.setHours(0,0,0,0);
@@ -4802,7 +4806,7 @@ function renderPlannerBlock(plan, grid) {
   const block = document.createElement('div');
   block.className = 'planner-block';
   block.dataset.planId = plan.id;
-  block.style.cssText = `top:${topPx}px;height:${heightPx}px;left:56px;right:4px;background:${plannerColorFor(plan.task)};`;
+  block.style.cssText = `top:${topPx}px;height:${heightPx}px;left:56px;right:4px;background:${plannerColorFor(plan.task)};z-index:3;`;
 
   // End time: add duration to actual start hour (not grid-relative)
   const endTotalMins = h * 60 + m + plan.durationHours * 60;
