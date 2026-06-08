@@ -1561,7 +1561,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-09.3';
+const APP_VERSION = '2026-06-09.4';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -1645,21 +1645,12 @@ async function forceAppUpdate() {
       for (const key of keys) await caches.delete(key);
     }
   } catch (e) { /* ignore */ }
-  // Fetch the freshest copy bypassing all caches, then swap it straight in.
-  // This avoids relying on the browser/PWA HTTP cache — the usual cause of
-  // stale reloads. localStorage data persists across the swap.
-  try {
-    const res = await fetch(appUrlNoCache(), { cache: 'no-store' });
-    if (res.ok) {
-      const text = await res.text();
-      document.open();
-      document.write(text);
-      document.close();
-      return;
-    }
-  } catch (e) { /* fall through to reload */ }
-  // Fallback: hard reload with a cache-busting query
-  location.replace(location.pathname + '?u=' + Date.now());
+  // Reload from the network with a cache-busting query. A real navigation is
+  // used (not document.write) so the page fully re-initialises — the load
+  // event fires, restoring dark mode, settings, the version check, etc.
+  // localStorage data persists. The '?v=' forces a fresh fetch of the HTML.
+  const base = location.href.split('#')[0].split('?')[0];
+  location.replace(base + '?v=' + Date.now());
 }
 
 // ── Update checker ──────────────────────────────────────────────────────
