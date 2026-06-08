@@ -4937,8 +4937,8 @@ function plannerDragMove(e) {
   block.style.opacity = '0.7';
   const grid = document.getElementById('planner-grid');
   const gridRect = grid.getBoundingClientRect();
-  const scroll = document.getElementById('planner-scroll').scrollTop;
-  const newTop = t.clientY - gridRect.top + scroll - _plannerDragOffsetY;
+  // gridRect.top is already viewport-relative (moves as user scrolls), so no need to add scrollTop
+  const newTop = t.clientY - gridRect.top - _plannerDragOffsetY;
   block.style.top = Math.max(0, newTop) + 'px';
 }
 
