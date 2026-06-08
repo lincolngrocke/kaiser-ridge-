@@ -4705,6 +4705,11 @@ function renderPlannerScreen() {
   const dayEntries = entries.filter(e => e.date === dateStr && e.clockIn && e.clockOut);
   dayEntries.forEach(e => renderPlannerDoneBlock(e, grid));
 
+  // Render live "in progress" block if clocked in today
+  if (clockState && clockState.running && dateStr === plannerDateStr(new Date())) {
+    renderPlannerLiveBlock(clockState, grid);
+  }
+
   // Scroll to current time or first task
   const scroll = document.getElementById('planner-scroll');
   if (diff === 0) {
@@ -4714,15 +4719,27 @@ function renderPlannerScreen() {
     scroll.scrollTop = 3 * PLANNER_HOUR_PX; // scroll to 8am
   }
 
-  // Refresh now line every minute
+  // Refresh now line + live block every minute
   clearInterval(_plannerNowTimer);
   if (diff === 0) {
     _plannerNowTimer = setInterval(() => {
+      const n = new Date();
+      const nm = (n.getHours() - PLANNER_START_HOUR) * 60 + n.getMinutes();
       const line = grid.querySelector('.planner-now-line');
-      if (line) {
-        const n = new Date();
-        const nm = (n.getHours() - PLANNER_START_HOUR) * 60 + n.getMinutes();
-        line.style.top = (nm / 60 * PLANNER_HOUR_PX) + 'px';
+      if (line) line.style.top = (nm / 60 * PLANNER_HOUR_PX) + 'px';
+      // Update live block height and time label
+      if (clockState && clockState.running) {
+        const live = document.getElementById('planner-live-block');
+        if (live && clockState.startTime) {
+          const [sh, sm] = clockState.startTime.split(':').map(Number);
+          const startMins = (sh - PLANNER_START_HOUR) * 60 + sm;
+          const durationMins = Math.max(5, nm - startMins);
+          live.style.height = (durationMins / 60 * PLANNER_HOUR_PX) + 'px';
+          const nowStr = formatTimeAmPm(`${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`);
+          const startStr = formatTimeAmPm(clockState.startTime);
+          const meta = live.querySelector('div:last-child');
+          if (meta) meta.textContent = `${startStr} – now (${nowStr})`;
+        }
       }
     }, 60000);
   }
@@ -4797,6 +4814,38 @@ function renderPlannerDoneBlock(entry, grid) {
       ✓ ${entry.task}
     </div>
     <div style="font-size:10px;opacity:0.9;margin-top:2px;">${startStr} – ${endStr} · ${entry.durationHours}h</div>`;
+
+  grid.appendChild(block);
+}
+
+// ── Live in-progress block ──
+
+function renderPlannerLiveBlock(cs, grid) {
+  const [sh, sm] = cs.startTime.split(':').map(Number);
+  const startMins = (sh - PLANNER_START_HOUR) * 60 + sm;
+  if (startMins < 0) return;
+
+  const now = new Date();
+  const nowMins = (now.getHours() - PLANNER_START_HOUR) * 60 + now.getMinutes();
+  const durationMins = Math.max(5, nowMins - startMins); // at least 5min tall
+
+  const topPx    = startMins / 60 * PLANNER_HOUR_PX;
+  const heightPx = durationMins / 60 * PLANNER_HOUR_PX;
+  const color    = plannerColorFor(cs.task);
+
+  const nowStr   = formatTimeAmPm(`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`);
+  const startStr = formatTimeAmPm(cs.startTime);
+
+  const block = document.createElement('div');
+  block.id = 'planner-live-block';
+  block.style.cssText = `position:absolute;top:${topPx}px;height:${heightPx}px;left:56px;right:4px;
+    border-radius:8px;padding:4px 8px;font-size:12px;color:#fff;overflow:hidden;z-index:2;
+    background:${color};border:2px solid #fff;`;
+  block.innerHTML = `
+    <div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+      ⏱ ${cs.task}
+    </div>
+    <div style="font-size:10px;opacity:0.9;margin-top:2px;">${startStr} – now (${nowStr})</div>`;
 
   grid.appendChild(block);
 }
@@ -4929,7 +4978,10 @@ function plannerClockIn() {
   const plan = _plannerPlans.find(p => p.id === _plannerDetailId);
   if (!plan) return;
   closeModal('modal-planner-detail');
-  // Build taskInfo and start clock
+  // Remove the planned block — the live/done block takes its place
+  _plannerPlans = _plannerPlans.filter(p => p.id !== _plannerDetailId);
+  savePlanner();
+  // Build taskInfo and start clock, store plannerOrigin so we can track it
   const taskInfo = {
     task: plan.task,
     group: plan.group,
@@ -4939,10 +4991,10 @@ function plannerClockIn() {
     notes: '',
     subtask: '',
     pin: null,
+    plannerOrigin: true,
   };
   startClock(taskInfo);
   showScreen('clock', document.querySelector('.nav-tab'));
-  // Highlight the correct nav tab
   document.querySelectorAll('.nav-tab').forEach((t, i) => t.classList.toggle('active', i === 0));
   showToast('Clocked in — ' + plan.task);
 }
