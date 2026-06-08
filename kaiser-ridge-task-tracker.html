@@ -882,6 +882,7 @@
           somewhere safe like Google Drive, Files, or email it to yourself.
         </div>
         <div id="last-backup-label" style="font-size:13px; color:var(--subtext);">No backup yet — tap "Export Backup" below to create one.</div>
+        <div id="backup-reminder" style="font-size:13px; line-height:1.5; padding:8px 10px; border-radius:8px; width:100%; box-sizing:border-box;"></div>
       </div>
     </div>
     <button class="btn-sync" style="background:var(--blue); margin-top:8px;" onclick="exportBackup()">⬇ Export Backup</button>
@@ -1628,6 +1629,7 @@ window.addEventListener('load', () => {
   const wtEl = document.getElementById('weekly-target');
   if (wtEl) wtEl.value = localStorage.getItem('kr_weekly_target') || '40';
   updateLastBackupLabel();
+  updateBackupReminder();
   updateHeaderDate();
   populateLocationDropdown();
   populateTsLocationChips();
@@ -1653,7 +1655,7 @@ function showScreen(id, tab) {
   document.getElementById('screen-' + id).classList.add('active');
   if (tab) tab.classList.add('active');
   if (id === 'timesheets') renderTimesheets();
-  if (id === 'settings') { updateStats(); updateLastBackupLabel(); }
+  if (id === 'settings') { updateStats(); updateLastBackupLabel(); updateBackupReminder(); }
   if (id === 'planner') { _plannerDate = new Date(); renderPlannerScreen(); }
   // Hide running overlay when not on clock screen; restore it if clock is running
   const overlay = document.getElementById('running-overlay');
@@ -3005,6 +3007,34 @@ function updateLastBackupLabel() {
   } catch(e) { el.textContent = 'Last backup: ' + at; }
 }
 
+// Daily export reminder — tracks the last time a backup file was actually
+// exported (kr_last_export_at), separate from the silent auto-snapshot.
+function updateBackupReminder() {
+  const el = document.getElementById('backup-reminder');
+  if (!el) return;
+  const today = new Date();
+  const todayStr = today.toLocaleDateString(undefined, { weekday:'short', day:'numeric', month:'short', year:'numeric' });
+  const at = localStorage.getItem('kr_last_export_at');
+  let lastStr = 'never', backedUpToday = false;
+  if (at) {
+    const d = new Date(at);
+    backedUpToday = d.toDateString() === today.toDateString();
+    lastStr = d.toLocaleDateString(undefined, { day:'numeric', month:'short', year:'numeric' }) +
+      ' at ' + d.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' });
+  }
+  if (backedUpToday) {
+    el.style.background = 'rgba(52,199,89,0.12)';
+    el.style.border = '1px solid rgba(52,199,89,0.35)';
+    el.style.color = 'var(--green)';
+    el.innerHTML = '✓ Backed up today (' + todayStr + ') — last export ' + lastStr + '.';
+  } else {
+    el.style.background = 'rgba(255,149,0,0.12)';
+    el.style.border = '1px solid rgba(255,149,0,0.4)';
+    el.style.color = '#FF9500';
+    el.innerHTML = '⚠ No backup exported today.<br>Today: ' + todayStr + ' · Last export: ' + lastStr + '. Tap “Export Backup” below.';
+  }
+}
+
 function exportBackup() {
   // Make sure the snapshot is bang up to date before exporting
   autoBackup();
@@ -3026,6 +3056,8 @@ function exportBackup() {
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
   }
+  localStorage.setItem('kr_last_export_at', new Date().toISOString());
+  updateBackupReminder();
   showToast('Backup ready — save it somewhere safe (Drive, Files, email)');
 }
 
