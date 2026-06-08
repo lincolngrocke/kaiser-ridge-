@@ -595,6 +595,29 @@
 
   .scroll-area { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 
+  /* ── DAILY BACKUP BANNER ── */
+  .backup-banner {
+    margin: 8px 16px 0;
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 13px;
+    line-height: 1.4;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .backup-banner.warn {
+    background: rgba(255,149,0,0.14);
+    border: 1px solid rgba(255,149,0,0.45);
+    color: #FF9500;
+    font-weight: 600;
+  }
+  .backup-banner.ok {
+    background: transparent;
+    border: none;
+    color: var(--subtext);
+    padding: 6px 14px;
+  }
+
   /* ── DAY PLANNER ── */
   .planner-hour-row {
     display: flex;
@@ -669,6 +692,8 @@
     </div>
     <div class="header-right" id="header-week-hours">0.00h this week</div>
   </div>
+
+  <div class="backup-banner" id="backup-banner-clock" onclick="exportBackup()" style="display:none;"></div>
 
   <div class="scroll-area">
     <!-- Summary bar -->
@@ -972,6 +997,7 @@
     <div class="running-period" id="run-period"></div>
     <div class="running-hours" id="run-week-hours"></div>
   </div>
+  <div class="backup-banner" id="backup-banner-running" onclick="exportBackup()" style="display:none;"></div>
   <div class="running-meta">
     <button class="running-add-note" onclick="openNoteModal()">📋 Add Note</button>
     <button class="running-tag-btn" id="btn-subtasks" onclick="openSubtaskModal()" style="display:none">☑️ Checklist</button>
@@ -1630,6 +1656,8 @@ window.addEventListener('load', () => {
   if (wtEl) wtEl.value = localStorage.getItem('kr_weekly_target') || '40';
   updateLastBackupLabel();
   updateBackupReminder();
+  updateBackupBanner();
+  setInterval(updateBackupBanner, 60000);
   updateHeaderDate();
   populateLocationDropdown();
   populateTsLocationChips();
@@ -1657,6 +1685,7 @@ function showScreen(id, tab) {
   if (id === 'timesheets') renderTimesheets();
   if (id === 'settings') { updateStats(); updateLastBackupLabel(); updateBackupReminder(); }
   if (id === 'planner') { _plannerDate = new Date(); renderPlannerScreen(); }
+  if (id === 'clock') updateBackupBanner();
   // Hide running overlay when not on clock screen; restore it if clock is running
   const overlay = document.getElementById('running-overlay');
   if (overlay) {
@@ -3035,6 +3064,47 @@ function updateBackupReminder() {
   }
 }
 
+// Clock-screen daily backup banner. Warns from 9:00am if no export today;
+// once backed up it collapses to a subtle "last backup" reference line.
+const BACKUP_DUE_HOUR = 9; // 9:00am
+function updateBackupBanner() {
+  const els = [document.getElementById('backup-banner-clock'),
+               document.getElementById('backup-banner-running')];
+  if (!els[0] && !els[1]) return;
+  const now = new Date();
+  const at = localStorage.getItem('kr_last_export_at');
+  let backedToday = false, ref = '';
+  if (at) {
+    const d = new Date(at);
+    backedToday = d.toDateString() === now.toDateString();
+    const t = d.toLocaleTimeString(undefined, { hour:'numeric', minute:'2-digit' });
+    ref = backedToday ? ('today at ' + t)
+      : (d.toLocaleDateString(undefined, { day:'numeric', month:'short' }) + ' at ' + t);
+  }
+  const due = now.getHours() >= BACKUP_DUE_HOUR;
+
+  let cls, html, show = true;
+  if (backedToday) {
+    cls = 'ok';  html = '✓ Backed up ' + ref;
+  } else if (due) {
+    cls = 'warn';
+    html = at ? ('⚠ Daily backup due — tap to export. Last backup ' + ref + '.')
+              : '⚠ No backup yet — tap to export your data.';
+  } else if (at) {
+    cls = 'ok';  html = 'Last backup ' + ref;
+  } else {
+    show = false; // before 9am and never backed up — stay quiet
+  }
+
+  els.forEach(el => {
+    if (!el) return;
+    if (!show) { el.style.display = 'none'; return; }
+    el.className = 'backup-banner ' + cls;
+    el.innerHTML = html;
+    el.style.display = 'block';
+  });
+}
+
 function exportBackup() {
   // Make sure the snapshot is bang up to date before exporting
   autoBackup();
@@ -3058,6 +3128,7 @@ function exportBackup() {
   }
   localStorage.setItem('kr_last_export_at', new Date().toISOString());
   updateBackupReminder();
+  updateBackupBanner();
   showToast('Backup ready — save it somewhere safe (Drive, Files, email)');
 }
 
