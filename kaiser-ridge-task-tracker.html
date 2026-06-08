@@ -1561,7 +1561,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-09.4';
+const APP_VERSION = '2026-06-09.5';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -1634,6 +1634,9 @@ function appUrlNoCache() {
 
 async function forceAppUpdate() {
   showToast('Updating app…');
+  // Remember the current screen so we can return to it after the reload
+  const cur = document.querySelector('.screen.active');
+  if (cur) sessionStorage.setItem('kr_resume_screen', cur.id.replace('screen-', ''));
   // Unregister any old service workers and clear caches
   try {
     if ('serviceWorker' in navigator) {
@@ -1765,6 +1768,16 @@ window.addEventListener('load', () => {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && Date.now() - _lastUpdateCheck > 60000) checkForUpdate();
   });
+
+  // After a Force-Update reload, return to the screen the user was on.
+  // sessionStorage survives the reload but is cleared when the app is fully
+  // closed, so a normal cold launch still opens on the Clock screen.
+  const resumeScreen = sessionStorage.getItem('kr_resume_screen');
+  if (resumeScreen) {
+    sessionStorage.removeItem('kr_resume_screen');
+    const tab = document.querySelector(`.nav-tab[onclick*="'${resumeScreen}'"]`);
+    showScreen(resumeScreen, tab);
+  }
   // Directory is app-managed — no longer loaded from Google Sheet
 });
 
