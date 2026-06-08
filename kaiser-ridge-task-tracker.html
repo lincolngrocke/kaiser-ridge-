@@ -639,6 +639,20 @@
     padding: 6px 14px;
   }
 
+  /* ── UPDATE AVAILABLE BANNER ── */
+  .update-banner {
+    margin: 8px 16px 0;
+    padding: 11px 14px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    text-align: center;
+    color: #fff;
+    background: var(--blue);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
   /* ── DAY PLANNER ── */
   .planner-hour-row {
     display: flex;
@@ -714,6 +728,7 @@
     <div class="header-right" id="header-week-hours">0.00h this week</div>
   </div>
 
+  <div class="update-banner" id="update-banner" onclick="forceAppUpdate()" style="display:none;">🔄 New version available — tap to update</div>
   <div class="backup-banner" id="backup-banner-clock" onclick="exportBackup()" style="display:none;"></div>
 
   <div class="scroll-area">
@@ -917,6 +932,7 @@
 
     <button class="btn-sync" onclick="syncToSheet()">⬆ Sync Unsynced Entries to Sheet</button>
     <button class="btn-sync" style="background:#34C759; margin-top:8px;" onclick="forceAppUpdate()">⟳ Force Update App</button>
+    <div id="version-status" style="font-size:13px; color:var(--subtext); margin-top:8px; text-align:center; cursor:pointer;" onclick="checkForUpdate(true)">Checking version…</div>
 
     <div class="settings-section" style="margin-top:16px">
       <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
@@ -1018,6 +1034,7 @@
     <div class="running-period" id="run-period"></div>
     <div class="running-hours" id="run-week-hours"></div>
   </div>
+  <div class="update-banner" id="update-banner-running" onclick="forceAppUpdate()" style="display:none;">🔄 New version available — tap to update</div>
   <div class="backup-banner" id="backup-banner-running" onclick="exportBackup()" style="display:none;"></div>
   <div class="running-meta">
     <button class="running-add-note" onclick="openNoteModal()">📋 Add Note</button>
@@ -1535,6 +1552,11 @@
 
 <script>
 // ════════════════════════════════
+//  APP VERSION  (bump on every deploy — drives the update checker)
+// ════════════════════════════════
+const APP_VERSION = '2026-06-09.1';
+
+// ════════════════════════════════
 //  DIRECTORY
 // ════════════════════════════════
 const DIRECTORY_FALLBACK = [
@@ -1599,18 +1621,75 @@ const DIRECTORY_FALLBACK = [
 // Load from localStorage first so local additions survive app restarts
 let DIRECTORY = JSON.parse(localStorage.getItem('kr_directory') || 'null') || [...DIRECTORY_FALLBACK];
 
+function appUrlNoCache() {
+  return location.href.split('#')[0].split('?')[0] + '?_=' + Date.now();
+}
+
 async function forceAppUpdate() {
-  if ('serviceWorker' in navigator) {
-    const registrations = await navigator.serviceWorker.getRegistrations();
-    for (const reg of registrations) await reg.unregister();
-  }
-  // Clear all caches
-  if ('caches' in window) {
-    const keys = await caches.keys();
-    for (const key of keys) await caches.delete(key);
-  }
   showToast('Updating app…');
-  setTimeout(() => location.reload(true), 800);
+  // Unregister any old service workers and clear caches
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for (const reg of regs) await reg.unregister();
+    }
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      for (const key of keys) await caches.delete(key);
+    }
+  } catch (e) { /* ignore */ }
+  // Fetch the freshest copy bypassing all caches, then swap it straight in.
+  // This avoids relying on the browser/PWA HTTP cache — the usual cause of
+  // stale reloads. localStorage data persists across the swap.
+  try {
+    const res = await fetch(appUrlNoCache(), { cache: 'no-store' });
+    if (res.ok) {
+      const text = await res.text();
+      document.open();
+      document.write(text);
+      document.close();
+      return;
+    }
+  } catch (e) { /* fall through to reload */ }
+  // Fallback: hard reload with a cache-busting query
+  location.replace(location.pathname + '?u=' + Date.now());
+}
+
+// ── Update checker ──────────────────────────────────────────────────────
+// Fetches the live file (no-store) and compares its APP_VERSION to the one
+// running, so the user can SEE when a deployed update is ready.
+let _updateAvailable = false;
+let _lastUpdateCheck = 0;
+
+function showUpdateBanner(show) {
+  ['update-banner', 'update-banner-running'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = show ? 'block' : 'none';
+  });
+}
+
+async function checkForUpdate(manual) {
+  const statusEl = document.getElementById('version-status');
+  if (manual && statusEl) statusEl.textContent = 'Checking…';
+  try {
+    const res = await fetch(appUrlNoCache(), { cache: 'no-store' });
+    if (!res.ok) throw new Error('http ' + res.status);
+    const text = await res.text();
+    const m = text.match(/APP_VERSION\s*=\s*['"]([^'"]+)['"]/);
+    const liveVer = m ? m[1] : null;
+    _lastUpdateCheck = Date.now();
+    if (liveVer && liveVer !== APP_VERSION) {
+      _updateAvailable = true;
+      showUpdateBanner(true);
+      if (statusEl) statusEl.innerHTML = '🔄 Update available (v' + liveVer + ') — tap “Force Update App” above. You’re on v' + APP_VERSION + '.';
+    } else {
+      _updateAvailable = false;
+      showUpdateBanner(false);
+      if (statusEl) statusEl.textContent = '✓ Up to date — v' + APP_VERSION;
+    }
+  } catch (e) {
+    if (statusEl) statusEl.textContent = 'Offline — running v' + APP_VERSION;
+  }
 }
 
 // Directory is fully app-managed — no sheet sync for tasks
@@ -1683,6 +1762,11 @@ window.addEventListener('load', () => {
   renderTimesheets();
   updateStats();
   startTimerTick();
+  checkForUpdate();
+  // Re-check when the app is brought back to the foreground (throttled to 60s)
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && Date.now() - _lastUpdateCheck > 60000) checkForUpdate();
+  });
   // Directory is app-managed — no longer loaded from Google Sheet
 });
 
