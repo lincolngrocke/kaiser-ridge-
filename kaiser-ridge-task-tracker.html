@@ -1577,7 +1577,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-09.6';
+const APP_VERSION = '2026-06-09.7';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4916,7 +4916,7 @@ let _plannerPlans = JSON.parse(localStorage.getItem('kr_planner') || '[]');
 let _plannerAddTask = null; // task object selected in add modal
 let _plannerDetailId = null; // plan id in detail modal
 let _plannerDragId = null, _plannerDragOffsetY = 0, _plannerIsDragging = false, _plannerTouchStartY = 0;
-let _plannerLastSnapMins = null, _plannerDragLabel = null;
+let _plannerDragLabel = null;
 let _plannerNowTimer = null;
 
 const PLANNER_HOUR_PX = 60; // pixels per hour
@@ -5395,7 +5395,6 @@ function plannerDragStart(e, planId, origTop) {
     _plannerDragOffsetY = 0;
   }
   // Don't preventDefault here — let touchend decide if it was a tap
-  _plannerLastSnapMins = null;
 
   const grid = document.getElementById('planner-grid');
   grid.addEventListener('touchmove', plannerDragMove, { passive: false });
@@ -5436,12 +5435,6 @@ function plannerDragMove(e) {
   const absM = snapMins % 60;
   _plannerDragLabel.textContent = formatTimeAmPm(`${String(absH).padStart(2,'0')}:${String(absM).padStart(2,'0')}`);
   _plannerDragLabel.style.top = snapTop + 'px';
-
-  // Haptic tick each time we cross a 15-min boundary
-  if (snapMins !== _plannerLastSnapMins) {
-    _plannerLastSnapMins = snapMins;
-    if (navigator.vibrate) navigator.vibrate(8);
-  }
 }
 
 function plannerDragEnd(e) {
@@ -5451,7 +5444,6 @@ function plannerDragEnd(e) {
 
   // Remove the floating time bubble
   if (_plannerDragLabel) { _plannerDragLabel.remove(); _plannerDragLabel = null; }
-  _plannerLastSnapMins = null;
 
   if (!_plannerDragId) return; // was a tap, already handled
   const block = document.querySelector(`[data-plan-id="${_plannerDragId}"]`);
