@@ -4696,13 +4696,18 @@ function renderPlannerScreen() {
     }
   }
 
-  // Render plan blocks for this day
   const dateStr = plannerDateStr(_plannerDate);
-  const dayPlans = _plannerPlans.filter(p => p.date === dateStr);
+
+  // Completed entries for this day
+  const dayEntries = entries.filter(e => e.date === dateStr && e.clockIn && e.clockOut);
+  // Completed task names (to suppress orphaned planned blocks)
+  const completedTasks = new Set(dayEntries.map(e => e.task));
+
+  // Render planned blocks — skip any that already have a completed entry
+  const dayPlans = _plannerPlans.filter(p => p.date === dateStr && !completedTasks.has(p.task));
   dayPlans.forEach(p => renderPlannerBlock(p, grid));
 
-  // Render completed timesheet entries for this day
-  const dayEntries = entries.filter(e => e.date === dateStr && e.clockIn && e.clockOut);
+  // Render completed timesheet entries
   dayEntries.forEach(e => renderPlannerDoneBlock(e, grid));
 
   // Render live "in progress" block if clocked in today
@@ -4808,7 +4813,7 @@ function renderPlannerDoneBlock(entry, grid) {
   const block = document.createElement('div');
   block.style.cssText = `position:absolute;top:${topPx}px;height:${heightPx}px;left:56px;right:4px;
     border-radius:8px;padding:4px 8px;font-size:12px;color:#fff;overflow:hidden;z-index:1;
-    background:${color};opacity:0.45;border:2px solid ${color};`;
+    background:${color};`;
   block.innerHTML = `
     <div style="font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
       ✓ ${entry.task}
