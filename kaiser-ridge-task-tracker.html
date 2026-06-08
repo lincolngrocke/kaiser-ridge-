@@ -1270,6 +1270,8 @@
         <span class="form-label">Break</span>
         <select class="form-select" id="f-break">
           <option value="0">None</option>
+          <option value="0.0833333333">5 min</option>
+          <option value="0.1666666667">10 min</option>
           <option value="0.25">15 min</option>
           <option value="0.5">30 min</option>
           <option value="0.75">45 min</option>
@@ -1554,7 +1556,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-09.1';
+const APP_VERSION = '2026-06-09.2';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2220,7 +2222,7 @@ function openEditActive() {
   setEquipOptions([...csEquip, ...csSelected], csSelected);
   // Show current accumulated break time rounded to nearest option
   const currentBreakH = (clockState.breakTotal || 0) / 3600000;
-  const breakOptions = [0, 0.25, 0.5, 0.75, 1];
+  const breakOptions = [0, 0.0833333333, 0.1666666667, 0.25, 0.5, 0.75, 1];
   const nearest = breakOptions.reduce((a, b) => Math.abs(b - currentBreakH) < Math.abs(a - currentBreakH) ? b : a);
   document.getElementById('f-break').value = nearest.toString();
   document.getElementById('f-notes').value = clockState.notes || '';
