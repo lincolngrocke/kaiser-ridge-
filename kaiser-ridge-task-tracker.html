@@ -3951,12 +3951,27 @@ let _subtaskItems = [];
 function renderDirSubtaskList(items) {
   _subtaskItems = items ? [...items] : _subtaskItems;
   document.getElementById('dir-subtask-list').innerHTML = _subtaskItems.map((s, i) => `
-    <div id="strow-${i}" style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);">
+    <div id="strow-${i}" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
       <div style="color:var(--subtext);font-size:22px;padding:0 4px;user-select:none;-webkit-user-select:none;cursor:grab;"
         ontouchstart="stTouchStart(event,${i})">≡</div>
-      <span style="flex:1;font-size:15px;color:var(--text);">${s}</span>
-      <button onclick="removeSubtaskItem(${i})" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:4px;">✕</button>
+      <input type="text" value="${s.replace(/"/g,'&quot;')}"
+        autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+        onblur="updateSubtaskItem(${i}, this.value)"
+        onkeydown="if(event.key==='Enter'){this.blur();}"
+        style="flex:1;font-size:15px;color:var(--text);background:transparent;border:none;outline:none;padding:4px 0;min-width:0;">
+      <button onclick="removeSubtaskItem(${i})" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:4px;flex-shrink:0;">✕</button>
     </div>`).join('');
+}
+
+function updateSubtaskItem(i, val) {
+  const trimmed = val.trim();
+  if (trimmed && trimmed !== _subtaskItems[i]) {
+    _subtaskItems[i] = trimmed;
+  } else if (!trimmed) {
+    // Empty — remove the item
+    _subtaskItems.splice(i, 1);
+    renderDirSubtaskList();
+  }
 }
 
 function removeSubtaskItem(i) {
