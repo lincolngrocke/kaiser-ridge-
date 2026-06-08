@@ -438,6 +438,27 @@
   .form-select option { text-align: left; }
   .form-chevron { font-size: 12px; color: var(--subtext); }
 
+  /* ── EQUIPMENT MULTI-SELECT ── */
+  .equip-row { flex-direction: column; align-items: stretch; gap: 10px; }
+  .equip-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .equip-empty { font-size: 14px; color: var(--subtext); }
+  .equip-chip {
+    font-size: 14px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .equip-chip.on {
+    background: var(--blue);
+    border-color: var(--blue);
+    color: #fff;
+    font-weight: 600;
+  }
+
   .form-textarea {
     width: 100%;
     padding: 13px 16px;
@@ -1209,12 +1230,9 @@
         </select>
         <span class="form-chevron">›</span>
       </div>
-      <div class="form-row">
+      <div class="form-row equip-row">
         <span class="form-label">Equipment</span>
-        <select class="form-select" id="f-tool">
-          <option value="">Select…</option>
-        </select>
-        <span class="form-chevron">›</span>
+        <div id="f-tool-list" class="equip-chips"></div>
       </div>
     </div>
 
@@ -2040,7 +2058,7 @@ function openCreate() {
   document.getElementById('f-group').value = '';
   setOptions('f-group', [], 'Select…');
   setOptions('f-task', [], 'Select…');
-  setOptions('f-tool', [], 'Select…');
+  setEquipOptions([], []);
   document.getElementById('f-break').value = '0';
   document.getElementById('f-notes').value = '';
   document.getElementById('f-date').value = todayStr('-');
@@ -2076,9 +2094,11 @@ function openEdit(id) {
   document.getElementById('f-task').value = e.task || '';
 
   // Populate equipment options for this frequency+group+task, then set value
+  // Offer all the task's directory equipment, plus any already on the entry,
+  // and preselect what the entry currently has.
   const equip = DIRECTORY.filter(r => r.frequency === e.frequency && r.group === e.group && r.task === e.task).map(r => r.equipment);
-  setOptions('f-tool', equip, 'Select…');
-  document.getElementById('f-tool').value = e.tool || '';
+  const selected = splitEquip(e.tool);
+  setEquipOptions([...equip, ...selected], selected);
 
   document.getElementById('f-break').value = e.break || '0';
   document.getElementById('f-notes').value = e.notes || '';
@@ -2112,8 +2132,8 @@ function openEditActive() {
   document.getElementById('f-task').value = clockState.task || '';
 
   const csEquip = DIRECTORY.filter(r => r.frequency === clockState.frequency && r.group === clockState.group && r.task === clockState.task).map(r => r.equipment);
-  setOptions('f-tool', csEquip, 'Select…');
-  document.getElementById('f-tool').value = clockState.tool || '';
+  const csSelected = splitEquip(clockState.tool);
+  setEquipOptions([...csEquip, ...csSelected], csSelected);
   // Show current accumulated break time rounded to nearest option
   const currentBreakH = (clockState.breakTotal || 0) / 3600000;
   const breakOptions = [0, 0.25, 0.5, 0.75, 1];
@@ -2132,7 +2152,7 @@ function saveEntry() {
   const frequency = document.getElementById('f-frequency').value;
   const group     = document.getElementById('f-group').value;
   const task      = document.getElementById('f-task').value;
-  const tool      = document.getElementById('f-tool').value;
+  const tool      = getEquipValue();
   const notes     = document.getElementById('f-notes').value.trim();
   const clockIn = document.getElementById('f-clockin').value;
   const clockOut = document.getElementById('f-clockout').value;
@@ -2248,6 +2268,41 @@ function dropPin() {
 }
 
 // ── Cascade helpers ──
+// Equipment multi-select chips. Stores selection as a comma-joined string in
+// entry.tool so all downstream consumers (timesheets, filters, charts, sync)
+// keep working unchanged. Built via DOM nodes so equipment names containing
+// quotes (e.g. 52") don't need HTML escaping.
+function setEquipOptions(values, selected) {
+  const wrap = document.getElementById('f-tool-list');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  const sel = new Set(selected || []);
+  const opts = [...new Set((values || []).filter(Boolean))];
+  if (!opts.length) {
+    const span = document.createElement('span');
+    span.className = 'equip-empty';
+    span.textContent = 'Select a task to load its equipment';
+    wrap.appendChild(span);
+    return;
+  }
+  opts.forEach(v => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'equip-chip' + (sel.has(v) ? ' on' : '');
+    b.textContent = v;
+    b.dataset.val = v;
+    b.onclick = () => b.classList.toggle('on');
+    wrap.appendChild(b);
+  });
+}
+function getEquipValue() {
+  return Array.from(document.querySelectorAll('#f-tool-list .equip-chip.on'))
+    .map(b => b.dataset.val).join(', ');
+}
+function splitEquip(s) {
+  return (s || '').split(',').map(x => x.trim()).filter(Boolean);
+}
+
 function setOptions(selId, values, placeholder) {
   const sel = document.getElementById(selId);
   sel.innerHTML = `<option value="">${placeholder}</option>`;
@@ -2334,9 +2389,8 @@ function selectSearchedTask(sel) {
   document.getElementById('f-task').value = task || '';
 
   // 3. Task — populate dependent Equipment options, then set value
-  const equip = rows.map(r => r.equipment).filter(Boolean);
-  setOptions('f-tool', equip, 'Select…');
-  if (equip.length === 1) document.getElementById('f-tool').value = equip[0];
+  const equip = [...new Set(rows.map(r => r.equipment).filter(Boolean))];
+  setEquipOptions(equip, equip.length === 1 ? equip : []);
 
   // 4. Location — only fill if the directory row has one and the field is currently empty
   const locField = document.getElementById('f-location');
@@ -2371,7 +2425,7 @@ function onFrequencyChange() {
   const groups = DIRECTORY.filter(r => r.frequency === freq).map(r => r.group);
   setOptions('f-group', groups, 'Select…');
   setOptions('f-task', [], 'Select…');
-  setOptions('f-tool', [], 'Select…');
+  setEquipOptions([], []);
 }
 
 function onGroupChange() {
@@ -2379,7 +2433,7 @@ function onGroupChange() {
   const group = document.getElementById('f-group').value;
   const tasks = DIRECTORY.filter(r => r.frequency === freq && r.group === group).map(r => r.task);
   setOptions('f-task', tasks, 'Select…');
-  setOptions('f-tool', [], 'Select…');
+  setEquipOptions([], []);
 }
 
 // Subtasks loaded dynamically from sheet; falls back to empty
@@ -2409,11 +2463,10 @@ function onTaskChange() {
   const freq  = document.getElementById('f-frequency').value;
   const group = document.getElementById('f-group').value;
   const task  = document.getElementById('f-task').value;
-  const equip = DIRECTORY
+  const equip = [...new Set(DIRECTORY
     .filter(r => r.frequency === freq && r.group === group && r.task === task)
-    .map(r => r.equipment);
-  setOptions('f-tool', equip, 'Select…');
-  if (equip.length === 1) document.getElementById('f-tool').value = equip[0];
+    .map(r => r.equipment).filter(Boolean))];
+  setEquipOptions(equip, equip.length === 1 ? equip : []);
 
   if (SUBTASKS[task] && SUBTASKS[task].length > 0) openSubtaskModal();
 }
