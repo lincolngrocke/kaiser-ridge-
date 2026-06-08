@@ -4820,7 +4820,66 @@ function renderPlannerDoneBlock(entry, grid) {
     </div>
     <div style="font-size:10px;opacity:0.9;margin-top:2px;">${startStr} – ${endStr} · ${entry.durationHours}h</div>`;
 
+  block.addEventListener('click', () => openPlannerDoneDetail(entry));
+
   grid.appendChild(block);
+}
+
+function openPlannerDoneDetail(entry) {
+  const startStr = formatTimeAmPm(entry.clockIn);
+  const endStr   = formatTimeAmPm(entry.clockOut);
+
+  // Parse ticked checklist items from notes — lines matching [time] pattern
+  const tickedItems = [];
+  if (entry.notes) {
+    entry.notes.split('\n').forEach(line => {
+      const match = line.match(/^\[.+?\]\s+(.+)$/);
+      if (match) {
+        // Items are comma-separated within that line
+        match[1].split(',').forEach(item => {
+          const trimmed = item.trim();
+          if (trimmed) tickedItems.push(trimmed);
+        });
+      }
+    });
+  }
+
+  const checklistHtml = tickedItems.length > 0
+    ? `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">
+        <div style="font-size:12px;color:var(--subtext);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Completed checklist</div>
+        ${tickedItems.map(s => `<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:7px;">
+          <span style="color:var(--green);font-size:14px;">✓</span>
+          <span style="font-size:14px;color:var(--text);">${s}</span>
+        </div>`).join('')}
+      </div>`
+    : '';
+
+  // Also show any free-text notes (non-checklist lines)
+  const freeNotes = entry.notes
+    ? entry.notes.split('\n').filter(l => !l.match(/^\[.+?\]/)).join('\n').trim()
+    : '';
+  const notesHtml = freeNotes
+    ? `<div style="margin-top:10px;font-size:13px;color:var(--subtext);white-space:pre-wrap;">${freeNotes}</div>`
+    : '';
+
+  document.getElementById('planner-detail-title').textContent = '✓ ' + entry.task;
+  document.getElementById('planner-detail-info').innerHTML =
+    `<div style="margin-bottom:6px;">⏰ ${startStr} – ${endStr}</div>
+     <div style="margin-bottom:6px;">⏱ ${entry.durationHours}h logged${entry.break > 0 ? ` · ☕ ${Math.round(entry.break * 60)}min break` : ''}</div>
+     ${entry.group   ? `<div style="margin-bottom:6px;">📂 ${entry.group}</div>`    : ''}
+     ${entry.location? `<div style="margin-bottom:6px;">📍 ${entry.location}</div>` : ''}
+     ${entry.tool    ? `<div style="margin-bottom:6px;">🔧 ${entry.tool}</div>`     : ''}
+     ${notesHtml}
+     ${checklistHtml}`;
+
+  // Hide the Clock In button — task is already done
+  const clockInBtn = document.querySelector('#modal-planner-detail button[onclick="plannerClockIn()"]');
+  if (clockInBtn) clockInBtn.style.display = 'none';
+  // Hide delete for done entries
+  const deleteBtn = document.querySelector('#modal-planner-detail button[onclick="deletePlannerBlock()"]');
+  if (deleteBtn) deleteBtn.style.display = 'none';
+
+  openModal('modal-planner-detail');
 }
 
 // ── Live in-progress block ──
@@ -4944,6 +5003,11 @@ function openPlannerDetail(planId) {
   const plan = _plannerPlans.find(p => p.id === planId);
   if (!plan) return;
   _plannerDetailId = planId;
+  // Restore buttons (may have been hidden by done-detail)
+  const clockInBtn = document.querySelector('#modal-planner-detail button[onclick="plannerClockIn()"]');
+  const deleteBtn  = document.querySelector('#modal-planner-detail button[onclick="deletePlannerBlock()"]');
+  if (clockInBtn) clockInBtn.style.display = '';
+  if (deleteBtn)  deleteBtn.style.display  = '';
   document.getElementById('planner-detail-title').textContent = plan.task;
   const startStr = formatTimeAmPm(plan.startTime);
   const endMins = (parseInt(plan.startTime.split(':')[0]) * 60 + parseInt(plan.startTime.split(':')[1])) + plan.durationHours * 60;
