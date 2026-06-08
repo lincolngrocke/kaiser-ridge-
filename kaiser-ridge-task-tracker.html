@@ -3964,6 +3964,7 @@ function renderDirSubtaskList(items) {
 }
 
 function updateSubtaskItem(i, val) {
+  if (_stDragging) return; // don't interfere with active drag
   const trimmed = val.trim();
   if (trimmed && trimmed !== _subtaskItems[i]) {
     _subtaskItems[i] = trimmed;
@@ -3983,6 +3984,7 @@ function removeSubtaskItem(i) {
 let _stSrcIdx = null, _stClone = null, _stStartY = 0, _stDragging = false, _stRects = [];
 
 function stTouchStart(event, idx) {
+  event.preventDefault(); // prevent scroll and blur-on-input from firing
   _stSrcIdx = idx; _stStartY = event.touches[0].clientY;
   _stDragging = false; _stClone = null; _stRects = [];
   document.addEventListener('touchmove', stTouchMove, { passive: false });
