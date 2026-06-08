@@ -4743,11 +4743,9 @@ function renderPlannerScreen() {
 
   // Completed entries for this day
   const dayEntries = entries.filter(e => e.date === dateStr && e.clockIn && e.clockOut);
-  // Completed task names (to suppress orphaned planned blocks)
-  const completedTasks = new Set(dayEntries.map(e => e.task));
 
-  // Render planned blocks — skip any that already have a completed entry
-  const dayPlans = _plannerPlans.filter(p => p.date === dateStr && !completedTasks.has(p.task));
+  // Render all planned blocks for this day
+  const dayPlans = _plannerPlans.filter(p => p.date === dateStr);
   dayPlans.forEach(p => renderPlannerBlock(p, grid));
 
   // Render completed timesheet entries
