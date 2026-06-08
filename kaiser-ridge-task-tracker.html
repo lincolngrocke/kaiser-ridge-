@@ -4155,12 +4155,19 @@ function renderGuideStepList(readOnly) {
     return;
   }
   wrap.innerHTML = _guideSteps.map((s, i) => `
-    <div id="gsrow-${i}" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">
+    <div id="gsrow-${i}" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
       ${readOnly ? '' : `<div style="color:var(--subtext);font-size:22px;padding:0 2px;user-select:none;-webkit-user-select:none;cursor:grab;"
         ontouchstart="gsTouchStart(event,${i})">≡</div>`}
       <div style="width:26px;height:26px;border-radius:50%;background:var(--blue);color:#fff;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${i + 1}</div>
-      <span style="flex:1;font-size:15px;color:var(--text);line-height:1.4;">${s}</span>
-      ${readOnly ? '' : `<button onclick="removeGuideStep(${i})" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:4px;">✕</button>`}
+      ${readOnly
+        ? `<span style="flex:1;font-size:15px;color:var(--text);line-height:1.4;">${s}</span>`
+        : `<input type="text" value="${s.replace(/"/g,'&quot;')}"
+            autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false"
+            onblur="updateGuideStep(${i}, this.value)"
+            onkeydown="if(event.key==='Enter'){this.blur();}"
+            style="flex:1;font-size:15px;color:var(--text);background:transparent;border:none;outline:none;padding:4px 0;min-width:0;line-height:1.4;">`
+      }
+      ${readOnly ? '' : `<button onclick="removeGuideStep(${i})" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:4px;flex-shrink:0;">✕</button>`}
     </div>`).join('');
 }
 
@@ -4174,6 +4181,17 @@ function addGuideStep() {
   renderGuideStepList();
 }
 
+function updateGuideStep(i, val) {
+  if (_gsDragging) return;
+  const trimmed = val.trim();
+  if (trimmed && trimmed !== _guideSteps[i]) {
+    _guideSteps[i] = trimmed;
+  } else if (!trimmed) {
+    _guideSteps.splice(i, 1);
+    renderGuideStepList();
+  }
+}
+
 function removeGuideStep(i) {
   _guideSteps.splice(i, 1);
   renderGuideStepList();
@@ -4183,6 +4201,7 @@ function removeGuideStep(i) {
 let _gsSrcIdx = null, _gsClone = null, _gsStartY = 0, _gsDragging = false, _gsRects = [];
 
 function gsTouchStart(event, idx) {
+  event.preventDefault();
   _gsSrcIdx = idx; _gsStartY = event.touches[0].clientY;
   _gsDragging = false; _gsClone = null; _gsRects = [];
   document.addEventListener('touchmove', gsTouchMove, { passive: false });
