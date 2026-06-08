@@ -4605,7 +4605,7 @@ let _plannerDate = new Date(); // current day being viewed
 let _plannerPlans = JSON.parse(localStorage.getItem('kr_planner') || '[]');
 let _plannerAddTask = null; // task object selected in add modal
 let _plannerDetailId = null; // plan id in detail modal
-let _plannerDragId = null, _plannerDragOffsetY = 0;
+let _plannerDragId = null, _plannerDragOffsetY = 0, _plannerIsDragging = false, _plannerTouchStartY = 0;
 let _plannerNowTimer = null;
 
 const PLANNER_HOUR_PX = 60; // pixels per hour
@@ -4747,28 +4747,20 @@ function renderPlannerBlock(plan, grid) {
   block.innerHTML = `<div class="planner-block-title">${plan.task}</div>
     <div class="planner-block-meta">${startStr} – ${endStr} · ${plan.durationHours}h</div>`;
 
-  // Tap vs drag: track touch duration; < 200ms = tap
-  let _touchStartTime = 0;
-  let _touchStartY = 0;
-  let _didDrag = false;
+  let _blockTouchStartTime = 0;
 
   block.addEventListener('touchstart', e => {
-    _touchStartTime = Date.now();
-    _touchStartY = e.touches[0].clientY;
-    _didDrag = false;
+    _blockTouchStartTime = Date.now();
+    _plannerTouchStartY = e.touches[0].clientY;
+    _plannerIsDragging = false;
     plannerDragStart(e, plan.id, topPx);
   }, { passive: false });
 
-  block.addEventListener('touchmove', e => {
-    if (Math.abs(e.touches[0].clientY - _touchStartY) > 8) _didDrag = true;
-  }, { passive: true });
-
   block.addEventListener('touchend', e => {
-    const elapsed = Date.now() - _touchStartTime;
-    if (!_didDrag && elapsed < 300) {
-      // It's a tap — cancel drag and open detail
+    if (!_plannerIsDragging) {
+      // No movement — it's a tap, cancel drag and open detail
       _plannerDragId = null;
-      plannerDragEnd(e); // cleanup listeners
+      plannerDragEnd(e); // cleanup grid listeners
       openPlannerDetail(plan.id);
     }
   });
@@ -4933,15 +4925,19 @@ function plannerDragStart(e, planId, origTop) {
 
 function plannerDragMove(e) {
   if (!_plannerDragId) return;
-  e.preventDefault(); // now safe — confirmed it's a drag
   const t = e.touches[0];
+  // Only start moving after finger travels >8px — prevents tap from repositioning block
+  if (!_plannerIsDragging) {
+    if (Math.abs(t.clientY - _plannerTouchStartY) < 8) return;
+    _plannerIsDragging = true;
+  }
+  e.preventDefault();
   const block = document.querySelector(`[data-plan-id="${_plannerDragId}"]`);
   if (!block) return;
-  block.style.opacity = '0.7'; // show drag state on first move
+  block.style.opacity = '0.7';
   const grid = document.getElementById('planner-grid');
   const gridRect = grid.getBoundingClientRect();
   const scroll = document.getElementById('planner-scroll').scrollTop;
-  // Position = finger position relative to grid top, minus touch-within-block offset, plus scroll
   const newTop = t.clientY - gridRect.top + scroll - _plannerDragOffsetY;
   block.style.top = Math.max(0, newTop) + 'px';
 }
@@ -4969,6 +4965,7 @@ function plannerDragEnd(e) {
     block.style.opacity = '';
   }
   _plannerDragId = null;
+  _plannerIsDragging = false;
 }
 
 // Planner renders when showScreen('planner') is called — hooked via showScreen's existing id check
