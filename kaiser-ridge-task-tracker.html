@@ -764,6 +764,15 @@
     </div>
     <button onclick="openDirAddTask()" style="background:var(--blue);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:14px;font-weight:600;cursor:pointer;">+ Add</button>
   </div>
+  <!-- Search bar -->
+  <div style="padding:8px 12px 0;background:var(--card);">
+    <div style="position:relative;">
+      <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--subtext);">🔍</span>
+      <input id="dir-search" type="search" placeholder="Search tasks, groups, equipment…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+        oninput="renderDirectory()"
+        style="width:100%;padding:9px 12px 9px 36px;border-radius:10px;border:1px solid var(--border);background:var(--bg);font-size:14px;color:var(--text);outline:none;-webkit-appearance:none;">
+    </div>
+  </div>
   <!-- Filter chips -->
   <div id="dir-filter-bar" style="display:flex;gap:8px;padding:8px 12px;overflow-x:auto;background:var(--card);border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch;scrollbar-width:none;">
     <button id="chip-freq"     onclick="openDirFilter('freq')"     class="dir-chip">Frequency ▾</button>
@@ -3209,12 +3218,18 @@ function renderDirectory() {
   const list = document.getElementById('dir-list');
   if (!list) return;
 
-  // Apply active filters
+  const searchTerm = (document.getElementById('dir-search')?.value || '').toLowerCase().trim();
+
+  // Apply active filters + search
   const visibleDir = DIRECTORY.filter(r => {
     if (_dirFilters.freq     && r.frequency !== _dirFilters.freq)     return false;
     if (_dirFilters.group    && r.group     !== _dirFilters.group)    return false;
     if (_dirFilters.location && r.location  !== _dirFilters.location) return false;
     if (_dirFilters.equip    && r.equipment !== _dirFilters.equip)    return false;
+    if (searchTerm) {
+      const haystack = [r.task, r.group, r.frequency, r.location, r.equipment].join(' ').toLowerCase();
+      if (!haystack.includes(searchTerm)) return false;
+    }
     return true;
   });
 
@@ -3237,7 +3252,7 @@ function renderDirectory() {
   const freqs = [...new Set([...freqOrder.filter(f => grouped[f]), ...Object.keys(grouped).filter(f => !freqOrder.includes(f))])];
 
   if (freqs.length === 0) {
-    list.innerHTML = '<div style="padding:40px 20px;text-align:center;color:var(--subtext);font-size:15px;">No tasks match the selected filters.</div>';
+    list.innerHTML = '<div style="padding:40px 20px;text-align:center;color:var(--subtext);font-size:15px;">No tasks match your search or filters.</div>';
     return;
   }
 
@@ -4901,7 +4916,14 @@ function plannerClockIn() {
 function plannerDragStart(e, planId, origTop) {
   if (e.touches.length !== 1) return;
   _plannerDragId = planId;
-  _plannerDragOffsetY = e.touches[0].clientY - origTop;
+  // Store how far within the block the finger touched (so block doesn't jump)
+  const block = document.querySelector(`[data-plan-id="${planId}"]`);
+  if (block) {
+    const blockRect = block.getBoundingClientRect();
+    _plannerDragOffsetY = e.touches[0].clientY - blockRect.top;
+  } else {
+    _plannerDragOffsetY = 0;
+  }
   // Don't preventDefault here — let touchend decide if it was a tap
 
   const grid = document.getElementById('planner-grid');
@@ -4914,13 +4936,14 @@ function plannerDragMove(e) {
   e.preventDefault(); // now safe — confirmed it's a drag
   const t = e.touches[0];
   const block = document.querySelector(`[data-plan-id="${_plannerDragId}"]`);
-  if (!block) { return; }
+  if (!block) return;
   block.style.opacity = '0.7'; // show drag state on first move
   const grid = document.getElementById('planner-grid');
   const gridRect = grid.getBoundingClientRect();
   const scroll = document.getElementById('planner-scroll').scrollTop;
-  const relY = t.clientY - gridRect.top + scroll - 56; // 56 = header offset approx
-  block.style.top = Math.max(0, relY) + 'px';
+  // Position = finger position relative to grid top, minus touch-within-block offset, plus scroll
+  const newTop = t.clientY - gridRect.top + scroll - _plannerDragOffsetY;
+  block.style.top = Math.max(0, newTop) + 'px';
 }
 
 function plannerDragEnd(e) {
