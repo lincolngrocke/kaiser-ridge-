@@ -719,6 +719,22 @@
     border-radius: 50%;
     background: var(--red);
   }
+  /* Live time bubble shown while dragging a planner block (Google-Calendar style) */
+  .planner-drag-time {
+    position: absolute;
+    left: 4px;
+    z-index: 11;
+    transform: translateY(-50%);
+    background: var(--blue);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 9px;
+    white-space: nowrap;
+    pointer-events: none;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  }
 </style>
 </head>
 <body>
@@ -1561,7 +1577,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-09.5';
+const APP_VERSION = '2026-06-09.6';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4900,6 +4916,7 @@ let _plannerPlans = JSON.parse(localStorage.getItem('kr_planner') || '[]');
 let _plannerAddTask = null; // task object selected in add modal
 let _plannerDetailId = null; // plan id in detail modal
 let _plannerDragId = null, _plannerDragOffsetY = 0, _plannerIsDragging = false, _plannerTouchStartY = 0;
+let _plannerLastSnapMins = null, _plannerDragLabel = null;
 let _plannerNowTimer = null;
 
 const PLANNER_HOUR_PX = 60; // pixels per hour
@@ -5378,6 +5395,7 @@ function plannerDragStart(e, planId, origTop) {
     _plannerDragOffsetY = 0;
   }
   // Don't preventDefault here — let touchend decide if it was a tap
+  _plannerLastSnapMins = null;
 
   const grid = document.getElementById('planner-grid');
   grid.addEventListener('touchmove', plannerDragMove, { passive: false });
@@ -5399,14 +5417,41 @@ function plannerDragMove(e) {
   const grid = document.getElementById('planner-grid');
   const gridRect = grid.getBoundingClientRect();
   // gridRect.top is already viewport-relative (moves as user scrolls), so no need to add scrollTop
-  const newTop = t.clientY - gridRect.top - _plannerDragOffsetY;
-  block.style.top = Math.max(0, newTop) + 'px';
+  const rawTop = t.clientY - gridRect.top - _plannerDragOffsetY;
+
+  // Snap to 15-minute increments live, like Google Calendar
+  const maxMins = (PLANNER_END_HOUR - PLANNER_START_HOUR) * 60;
+  let snapMins = Math.round((rawTop / PLANNER_HOUR_PX) * 60 / 15) * 15;
+  snapMins = Math.max(0, Math.min(snapMins, maxMins - 15));
+  const snapTop = snapMins / 60 * PLANNER_HOUR_PX;
+  block.style.top = snapTop + 'px';
+
+  // Floating time bubble in the left column
+  if (!_plannerDragLabel) {
+    _plannerDragLabel = document.createElement('div');
+    _plannerDragLabel.className = 'planner-drag-time';
+    grid.appendChild(_plannerDragLabel);
+  }
+  const absH = PLANNER_START_HOUR + Math.floor(snapMins / 60);
+  const absM = snapMins % 60;
+  _plannerDragLabel.textContent = formatTimeAmPm(`${String(absH).padStart(2,'0')}:${String(absM).padStart(2,'0')}`);
+  _plannerDragLabel.style.top = snapTop + 'px';
+
+  // Haptic tick each time we cross a 15-min boundary
+  if (snapMins !== _plannerLastSnapMins) {
+    _plannerLastSnapMins = snapMins;
+    if (navigator.vibrate) navigator.vibrate(8);
+  }
 }
 
 function plannerDragEnd(e) {
   const grid = document.getElementById('planner-grid');
   grid.removeEventListener('touchmove', plannerDragMove);
   grid.removeEventListener('touchend', plannerDragEnd);
+
+  // Remove the floating time bubble
+  if (_plannerDragLabel) { _plannerDragLabel.remove(); _plannerDragLabel = null; }
+  _plannerLastSnapMins = null;
 
   if (!_plannerDragId) return; // was a tap, already handled
   const block = document.querySelector(`[data-plan-id="${_plannerDragId}"]`);
