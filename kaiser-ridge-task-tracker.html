@@ -1703,7 +1703,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-10.6';
+const APP_VERSION = '2026-06-10.7';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3266,8 +3266,10 @@ function renderDashboardChart() {
     const label = g.length > 6 ? g.slice(0,6) + '…' : g;
     ctx.fillText(label, x + barW/2, H - padB + 14);
 
-    // Store hit region for long-press
-    _chartBarRegions.push({ key: g, x, y, w: barW, h, color: _chartColors[i % _chartColors.length] });
+    // Store hit region = the FULL column slot (full chart height), so short
+    // bars are just as easy to tap as tall ones — tapping anywhere in the
+    // column opens it, not only the colored sliver.
+    _chartBarRegions.push({ key: g, x: padL + gap * i, y: padT, w: gap, h: chartH, color: _chartColors[i % _chartColors.length] });
   });
 
   // Legend
