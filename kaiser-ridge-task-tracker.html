@@ -1578,7 +1578,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-09.10';
+const APP_VERSION = '2026-06-09.11';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -5368,7 +5368,7 @@ function deletePlannerCalendarEvent(plan) {
   fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify({ action: 'calendarDelete', date: plan.date, planId: plan.id, eventId: plan.calEventId || '' }),
+    body: JSON.stringify({ action: 'calendarDelete', date: plan.date, planId: 'plan:' + plan.id, eventId: plan.calEventId || '' }),
   }).catch(() => {});
 }
 
@@ -5485,41 +5485,71 @@ function plannerDragEnd(e) {
 // ── Push the viewed day's planner blocks to Google Calendar ──
 // Sends them to the same Apps Script Web App used for Sheet sync; the script
 // creates/updates events in the default calendar (no OAuth needed in the app).
+// Hours between two HH:MM times (handles a clock-out after midnight)
+function hoursBetweenTimes(a, b) {
+  const [ah, am] = String(a).split(':').map(Number);
+  const [bh, bm] = String(b).split(':').map(Number);
+  let mins = (bh * 60 + bm) - (ah * 60 + am);
+  if (mins < 0) mins += 24 * 60;
+  return Math.max(0.25, mins / 60);
+}
+
 async function pushPlannerToCalendar() {
   const url = localStorage.getItem('kr_sheet_url');
   if (!url) { showToast('Add your Apps Script URL in Settings first'); return; }
 
   const dateStr = plannerDateStr(_plannerDate);
-  const dayPlans = _plannerPlans
-    .filter(p => p.date === dateStr)
-    .map(p => ({
-      id: p.id,
-      task: p.task,
-      group: p.group || '',
-      frequency: p.frequency || '',
-      location: p.location || '',
-      tool: p.tool || '',
-      startTime: p.startTime,
-      durationHours: p.durationHours,
-    }));
+  const items = [];
 
-  if (!dayPlans.length) { showToast('No planned tasks on this day to push'); return; }
+  // 1. Planned blocks (id prefixed so completed/live can coexist)
+  _plannerPlans.filter(p => p.date === dateStr).forEach(p => {
+    items.push({
+      id: 'plan:' + p.id, task: p.task,
+      group: p.group || '', frequency: p.frequency || '',
+      location: p.location || '', tool: p.tool || '',
+      startTime: p.startTime, durationHours: p.durationHours,
+    });
+  });
 
-  showToast('Pushing ' + dayPlans.length + ' task' + (dayPlans.length === 1 ? '' : 's') + ' to Google Calendar…');
+  // 2. Completed timesheet entries for this day (✓ prefix)
+  entries.filter(e => e.date === dateStr && e.clockIn && e.clockOut).forEach(e => {
+    items.push({
+      id: 'entry:' + e.id, task: '✓ ' + e.task,
+      group: e.group || '', frequency: e.frequency || '',
+      location: e.location || '', tool: e.tool || '',
+      startTime: e.clockIn, durationHours: hoursBetweenTimes(e.clockIn, e.clockOut),
+    });
+  });
+
+  // 3. The currently running task (▶ prefix) — only when viewing today
+  if (clockState && clockState.running && clockState.startTime && dateStr === plannerDateStr(new Date())) {
+    const durSoFar = clockState.startMs ? (Date.now() - clockState.startMs) / 3600000 : 0.5;
+    items.push({
+      id: 'live:current', task: '▶ ' + clockState.task,
+      group: clockState.group || '', frequency: clockState.frequency || '',
+      location: clockState.location || '', tool: clockState.tool || '',
+      startTime: clockState.startTime, durationHours: Math.max(0.25, durSoFar),
+    });
+  }
+
+  if (!items.length) { showToast('Nothing on this day to push'); return; }
+
+  showToast('Pushing ' + items.length + ' item' + (items.length === 1 ? '' : 's') + ' to Google Calendar…');
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'calendar', date: dateStr, plans: dayPlans }),
+      body: JSON.stringify({ action: 'calendar', date: dateStr, plans: items }),
     });
     const json = await res.json();
     if (json && json.success) {
-      // Store each event's calendar ID so deletes can target it directly
+      // Store each planned event's calendar ID so deletes target it directly
       // (avoids Google Calendar search-index lag leaving stragglers).
       if (json.events) {
         let changed = false;
         _plannerPlans.forEach(p => {
-          if (json.events[p.id]) { p.calEventId = json.events[p.id]; changed = true; }
+          const eid = json.events['plan:' + p.id];
+          if (eid) { p.calEventId = eid; changed = true; }
         });
         if (changed) savePlanner();
       }
