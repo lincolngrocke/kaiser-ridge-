@@ -49,10 +49,16 @@ function doGet(e) {
   }
 }
 
-// ── Receive a new timesheet entry ──
+// ── Receive a new timesheet entry, OR a planner→calendar sync ──
 function doPost(e) {
   try {
     const data  = JSON.parse(e.postData.contents);
+
+    // Planner → Google Calendar sync
+    if (data.action === 'calendar') {
+      return handleCalendarSync(data);
+    }
+
     const ss    = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = ss.getSheetByName(SHEET_NAME);
 
@@ -96,6 +102,71 @@ function doPost(e) {
   } catch (err) {
     return jsonResponse({ success: false, error: err.toString() });
   }
+}
+
+// ── Sync one day's planner blocks into the default Google Calendar ──
+// Events created by the app are tagged so re-pushing the same day UPDATES
+// existing events and DELETES ones whose blocks were removed in the app —
+// no duplicates. Payload: { action:'calendar', date:'DD/MM/YYYY', plans:[...] }
+function handleCalendarSync(data) {
+  const cal = CalendarApp.getDefaultCalendar();
+  const plans = data.plans || [];
+
+  const parts = String(data.date).split('/'); // DD/MM/YYYY
+  const dd = parseInt(parts[0], 10);
+  const mm = parseInt(parts[1], 10);
+  const yyyy = parseInt(parts[2], 10);
+  if (!dd || !mm || !yyyy) return jsonResponse({ success: false, error: 'Bad date: ' + data.date });
+
+  const dayStart = new Date(yyyy, mm - 1, dd, 0, 0, 0);
+  const dayEnd   = new Date(yyyy, mm - 1, dd, 23, 59, 59);
+
+  // Index this app's existing events for the day by their planId tag
+  const existing = {};
+  cal.getEvents(dayStart, dayEnd).forEach(ev => {
+    if (ev.getTag('krApp') === '1') {
+      const pid = ev.getTag('krPlanId');
+      if (pid) existing[pid] = ev;
+    }
+  });
+
+  const result = {};
+  const incoming = {};
+  plans.forEach(p => {
+    incoming[p.id] = true;
+    const tp = String(p.startTime).split(':');
+    const sh = parseInt(tp[0], 10) || 0;
+    const sm = parseInt(tp[1], 10) || 0;
+    const start = new Date(yyyy, mm - 1, dd, sh, sm, 0);
+    const end   = new Date(start.getTime() + (Number(p.durationHours) || 1) * 3600000);
+
+    const descLines = [];
+    if (p.group) descLines.push('Group: ' + p.group);
+    if (p.frequency) descLines.push('Frequency: ' + p.frequency);
+    if (p.tool) descLines.push('Equipment: ' + p.tool);
+    descLines.push('— Kaiser Ridge Task Tracker');
+    const desc = descLines.join('\n');
+
+    let ev = existing[p.id];
+    if (ev) {
+      ev.setTitle(p.task);
+      ev.setTime(start, end);
+      ev.setDescription(desc);
+      ev.setLocation(p.location || '');
+    } else {
+      ev = cal.createEvent(p.task, start, end, { description: desc, location: p.location || '' });
+      ev.setTag('krApp', '1');
+      ev.setTag('krPlanId', p.id);
+    }
+    result[p.id] = ev.getId();
+  });
+
+  // Remove app events whose blocks were deleted in the app
+  Object.keys(existing).forEach(pid => {
+    if (!incoming[pid]) existing[pid].deleteEvent();
+  });
+
+  return jsonResponse({ success: true, count: plans.length, events: result });
 }
 
 function jsonResponse(obj) {

@@ -891,6 +891,7 @@
   </div>
   <div style="padding:0 16px 8px;display:flex;gap:8px;align-items:center;">
     <button onclick="openPlannerAddTask()" style="flex:1;background:var(--blue);color:#fff;border:none;border-radius:12px;padding:10px;font-size:15px;font-weight:600;cursor:pointer;">+ Add Task</button>
+    <button onclick="pushPlannerToCalendar()" title="Push this day to Google Calendar" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;font-size:15px;cursor:pointer;">📆</button>
     <button onclick="plannerGoToday()" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-size:13px;color:var(--blue);cursor:pointer;">Today</button>
   </div>
   <div class="scroll-area" id="planner-scroll" style="position:relative;overflow-y:auto;flex:1;">
@@ -1577,7 +1578,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-09.7';
+const APP_VERSION = '2026-06-09.8';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -5464,6 +5465,47 @@ function plannerDragEnd(e) {
   }
   _plannerDragId = null;
   _plannerIsDragging = false;
+}
+
+// ── Push the viewed day's planner blocks to Google Calendar ──
+// Sends them to the same Apps Script Web App used for Sheet sync; the script
+// creates/updates events in the default calendar (no OAuth needed in the app).
+async function pushPlannerToCalendar() {
+  const url = localStorage.getItem('kr_sheet_url');
+  if (!url) { showToast('Add your Apps Script URL in Settings first'); return; }
+
+  const dateStr = plannerDateStr(_plannerDate);
+  const dayPlans = _plannerPlans
+    .filter(p => p.date === dateStr)
+    .map(p => ({
+      id: p.id,
+      task: p.task,
+      group: p.group || '',
+      frequency: p.frequency || '',
+      location: p.location || '',
+      tool: p.tool || '',
+      startTime: p.startTime,
+      durationHours: p.durationHours,
+    }));
+
+  if (!dayPlans.length) { showToast('No planned tasks on this day to push'); return; }
+
+  showToast('Pushing ' + dayPlans.length + ' task' + (dayPlans.length === 1 ? '' : 's') + ' to Google Calendar…');
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'calendar', date: dateStr, plans: dayPlans }),
+    });
+    const json = await res.json();
+    if (json && json.success) {
+      showToast('Synced to Google Calendar ✓');
+    } else {
+      showToast('Calendar sync failed' + (json && json.error ? ': ' + json.error : ''));
+    }
+  } catch (err) {
+    showToast('Calendar sync failed — check connection & URL');
+  }
 }
 
 // Planner renders when showScreen('planner') is called — hooked via showScreen's existing id check
