@@ -856,6 +856,7 @@
   </div>
 
   <div class="scroll-area">
+    <div class="update-banner" id="restore-entry-banner" onclick="restoreDeletedEntry()" style="display:none;background:var(--green);margin:8px 12px 0;"></div>
     <div class="ts-summary">
       <div class="ts-period" id="ts-period-label">This pay period</div>
       <div class="ts-summary-top">
@@ -1702,7 +1703,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-10.4';
+const APP_VERSION = '2026-06-10.5';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2250,6 +2251,7 @@ function updateTsChips() {
 }
 
 function renderTimesheets() {
+  updateRestoreEntryBanner();
   const list = document.getElementById('ts-list');
   const searchTerm = (document.getElementById('ts-search')?.value || '').toLowerCase().trim();
   let filtered = entries.filter(e => {
@@ -2531,12 +2533,49 @@ function saveEntry() {
 function deleteEntry() {
   if (!editingId || editingId === 'active') return;
   if (!confirm('Delete this entry?')) return;
+  const removed = entries.find(e => e.id === editingId);
   entries = entries.filter(e => e.id !== editingId);
   saveEntries();
+  // Stash so an accidental delete can be undone from the Timesheet
+  if (removed) {
+    const trash = JSON.parse(localStorage.getItem('kr_entry_trash') || '[]');
+    trash.unshift({ ...removed, deletedAt: new Date().toISOString() });
+    localStorage.setItem('kr_entry_trash', JSON.stringify(trash.slice(0, 20)));
+  }
   closeModal('modal-task');
   renderTimesheets();
   updateSummary();
-  showToast('Entry deleted');
+  showToast('Entry deleted — restore it from the top of Timesheets');
+}
+
+// Bring back the most recently deleted timesheet entry (kept 48h, last 20)
+function restoreDeletedEntry() {
+  let trash = JSON.parse(localStorage.getItem('kr_entry_trash') || '[]');
+  if (!trash.length) return;
+  const item = trash.shift();
+  delete item.deletedAt;
+  entries.unshift(item);
+  entries.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  saveEntries();
+  localStorage.setItem('kr_entry_trash', JSON.stringify(trash));
+  renderTimesheets();
+  updateSummary();
+  showToast('Entry restored');
+}
+
+// Show/hide the "restore deleted entry" banner on the Timesheets page
+function updateRestoreEntryBanner() {
+  const el = document.getElementById('restore-entry-banner');
+  if (!el) return;
+  let trash = JSON.parse(localStorage.getItem('kr_entry_trash') || '[]');
+  // Drop anything older than 48h
+  const fresh = trash.filter(t => (Date.now() - new Date(t.deletedAt).getTime()) / 3600000 <= 48);
+  if (fresh.length !== trash.length) localStorage.setItem('kr_entry_trash', JSON.stringify(fresh));
+  if (!fresh.length) { el.style.display = 'none'; return; }
+  const newest = fresh[0];
+  const more = fresh.length > 1 ? ` (+${fresh.length - 1} more)` : '';
+  el.textContent = '↩ Restore deleted entry — ' + (newest.durationHours || 0).toFixed(2) + 'h on ' + (newest.task || 'a task') + more + ' — tap';
+  el.style.display = 'block';
 }
 
 // ════════════════════════════════
