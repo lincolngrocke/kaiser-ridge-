@@ -1698,7 +1698,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-09.19';
+const APP_VERSION = '2026-06-10.1';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4389,6 +4389,8 @@ function renderEquipmentManager() {
       <span style="flex:1;font-size:16px;color:var(--text);">${e.name}</span>
       <button onclick="archiveEquipment('${e.name.replace(/'/g,"\\'")}');"
         style="background:none;border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:13px;color:var(--subtext);cursor:pointer;">Archive</button>
+      <button onclick="deleteEquipment('${e.name.replace(/'/g,"\\'")}');"
+        style="background:none;border:1px solid var(--red);border-radius:8px;padding:6px 12px;font-size:13px;color:var(--red);cursor:pointer;">Delete</button>
     </div>`).join('')
     : '<div style="padding:16px 0;color:var(--subtext);font-size:15px;">No active equipment</div>';
 
@@ -4399,6 +4401,8 @@ function renderEquipmentManager() {
       <span style="flex:1;font-size:16px;color:var(--subtext);text-decoration:line-through;">${e.name}</span>
       <button onclick="restoreEquipment('${e.name.replace(/'/g,"\\'")}');"
         style="background:none;border:1px solid var(--blue);border-radius:8px;padding:6px 12px;font-size:13px;color:var(--blue);cursor:pointer;">Restore</button>
+      <button onclick="deleteEquipment('${e.name.replace(/'/g,"\\'")}');"
+        style="background:none;border:1px solid var(--red);border-radius:8px;padding:6px 12px;font-size:13px;color:var(--red);cursor:pointer;">Delete</button>
     </div>`).join('')
     : '<div style="padding:16px 0;color:var(--subtext);font-size:15px;">Nothing archived yet</div>';
 }
@@ -4413,6 +4417,14 @@ function restoreEquipment(name) {
   const master = getEquipmentMaster();
   const item = master.find(e => e.name === name);
   if (item) { item.archived = false; saveEquipmentMaster(master); renderEquipmentManager(); showToast('Restored'); }
+}
+
+function deleteEquipment(name) {
+  if (!confirm('Permanently delete "' + name + '" from your equipment list?\n\nAny tasks or past entries that already use it keep their label — it just won\'t appear here or be offered for new tasks anymore.')) return;
+  const master = getEquipmentMaster().filter(e => e.name !== name);
+  saveEquipmentMaster(master);
+  renderEquipmentManager();
+  showToast('Equipment deleted');
 }
 
 // Drag-to-reorder (desktop)
