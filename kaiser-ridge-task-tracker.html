@@ -795,6 +795,7 @@
   </div>
 
   <div class="update-banner" id="update-banner" onclick="forceAppUpdate()" style="display:none;">🔄 New version available — tap to update</div>
+  <div class="update-banner" id="library-banner" onclick="pullLibrary()" style="display:none;background:var(--green);">📋 New task list available — tap to update</div>
   <div class="backup-banner" id="backup-banner-clock" onclick="exportBackup()" style="display:none;"></div>
 
   <div class="scroll-area">
@@ -1043,14 +1044,15 @@
       <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
         <div class="settings-label" style="font-weight:600;">Share Task Library</div>
         <div style="font-size:13px; color:var(--subtext); line-height:1.6;">
-          Send your full task list (tasks, checklists, guides, equipment, locations) to another phone — e.g. Ethan's.
-          Importing <strong>replaces</strong> that device's task library to match yours, but leaves its own timesheets,
-          projects and settings untouched. Re-share whenever you change the list.
+          Publish your task list to the Sheet so other phones (e.g. Ethan's) auto-update — they'll see
+          “New task list available” and pull it with one tap. Or pass a file manually with Export/Import below.
+          Either way, the other device's timesheets, projects-in-progress and settings stay untouched.
         </div>
       </div>
     </div>
-    <button class="btn-sync" style="background:var(--blue); margin-top:8px;" onclick="exportTaskLibrary()">📤 Export Task Library</button>
-    <button class="btn-sync" style="background:var(--subtext); margin-top:8px;" onclick="triggerImportTaskLibrary()">📥 Import Task Library</button>
+    <button id="lib-publish-btn" class="btn-sync" style="background:#34C759; margin-top:8px;" onclick="publishLibraryToSheet()">☁️ Publish Task Library to Sheet</button>
+    <button class="btn-sync" style="background:var(--blue); margin-top:8px;" onclick="exportTaskLibrary()">📤 Export Task Library (file)</button>
+    <button class="btn-sync" style="background:var(--subtext); margin-top:8px;" onclick="triggerImportTaskLibrary()">📥 Import Task Library (file)</button>
     <input type="file" id="library-file-input" accept="application/json,.json" style="display:none;" onchange="importTaskLibraryFromFile(event)">
 
 
@@ -1137,6 +1139,7 @@
     <div class="running-hours" id="run-week-hours"></div>
   </div>
   <div class="update-banner" id="update-banner-running" onclick="forceAppUpdate()" style="display:none;">🔄 New version available — tap to update</div>
+  <div class="update-banner" id="library-banner-running" onclick="pullLibrary()" style="display:none;background:var(--green);">📋 New task list available — tap to update</div>
   <div class="backup-banner" id="backup-banner-running" onclick="exportBackup()" style="display:none;"></div>
   <div class="running-meta">
     <button class="running-add-note" onclick="openNoteModal()">📋 Add Note</button>
@@ -1695,7 +1698,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-09.18';
+const APP_VERSION = '2026-06-09.19';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -1920,9 +1923,11 @@ window.addEventListener('load', () => {
   startTimerTick();
   applyRoleUI();
   checkForUpdate();
+  checkLibraryUpdate();
   // Re-check when the app is brought back to the foreground (throttled to 60s)
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && Date.now() - _lastUpdateCheck > 60000) checkForUpdate();
+    if (!document.hidden) checkLibraryUpdate();
   });
 
   // After a Force-Update reload, return to the screen the user was on.
@@ -3508,10 +3513,7 @@ function importTaskLibraryFromFile(event) {
       }
       if (!confirm(`Import this task library (made ${new Date(payload.createdAt).toLocaleString()})?\n\nThis REPLACES this phone's tasks, checklists, guides, equipment and locations with the shared list.\n\nYour timesheets, projects and settings are NOT affected.`)) return;
 
-      KR_LIBRARY_KEYS.forEach(key => {
-        if (Object.prototype.hasOwnProperty.call(payload.data, key)) localStorage.setItem(key, payload.data[key]);
-        else localStorage.removeItem(key); // full replace — clears stale local-only keys
-      });
+      applyLibraryPayload(payload);
       showToast('Task library imported — reloading…');
       setTimeout(() => location.reload(), 900);
     } catch (err) {
@@ -3521,6 +3523,87 @@ function importTaskLibraryFromFile(event) {
   };
   reader.readAsText(file);
   event.target.value = '';
+}
+
+// ── Live task-library sync via the Apps Script Web App ──
+// Build the shared bundle from the library keys
+function buildLibraryPayload() {
+  const data = {};
+  KR_LIBRARY_KEYS.forEach(key => { const raw = localStorage.getItem(key); if (raw !== null) data[key] = raw; });
+  return { app: 'kaiser-ridge-task-tracker', kind: 'task-library', version: Date.now().toString(), createdAt: new Date().toISOString(), data };
+}
+
+// Write the library keys from a bundle (full replace; never touches personal data)
+function applyLibraryPayload(payload) {
+  KR_LIBRARY_KEYS.forEach(key => {
+    if (Object.prototype.hasOwnProperty.call(payload.data, key)) localStorage.setItem(key, payload.data[key]);
+    else localStorage.removeItem(key);
+  });
+}
+
+function showLibraryBanner(show) {
+  ['library-banner', 'library-banner-running'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.style.display = show ? 'block' : 'none';
+  });
+}
+
+// Manager: publish the current task library to the Sheet
+async function publishLibraryToSheet() {
+  if (isWorker()) return;
+  const url = localStorage.getItem('kr_sheet_url');
+  if (!url) { showToast('Add your Apps Script URL in Settings first'); return; }
+  const payload = buildLibraryPayload();
+  showToast('Publishing task list…');
+  try {
+    const res = await fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'publishLibrary', version: payload.version, library: JSON.stringify(payload) }),
+    });
+    const json = await res.json();
+    if (json && json.success) {
+      localStorage.setItem('kr_lib_applied_version', payload.version); // don't prompt myself
+      showLibraryBanner(false);
+      showToast('Task list published ✓ — other phones will see the update');
+    } else {
+      showToast('Publish failed' + (json && json.error ? ': ' + json.error : ''));
+    }
+  } catch (err) {
+    showToast('Publish failed — check connection & URL');
+  }
+}
+
+// Any device: check whether a newer task library has been published
+async function checkLibraryUpdate() {
+  const url = localStorage.getItem('kr_sheet_url');
+  if (!url) return;
+  try {
+    const res = await fetch(url + (url.includes('?') ? '&' : '?') + 'libcheck=1', { cache: 'no-store' });
+    const json = await res.json();
+    const remote = json && json.libraryVersion;
+    const applied = localStorage.getItem('kr_lib_applied_version') || '';
+    showLibraryBanner(!!remote && remote !== applied);
+  } catch (e) { /* offline — ignore */ }
+}
+
+// Pull and apply the latest published task library
+async function pullLibrary() {
+  const url = localStorage.getItem('kr_sheet_url');
+  if (!url) { showToast('No Sheet URL set'); return; }
+  showToast('Updating task list…');
+  try {
+    const res = await fetch(url + (url.includes('?') ? '&' : '?') + 'library=1', { cache: 'no-store' });
+    const json = await res.json();
+    if (!json || !json.success || !json.library) { showToast('Could not fetch task list'); return; }
+    let payload;
+    try { payload = JSON.parse(json.library); } catch (e) { showToast('Task list data was invalid'); return; }
+    if (!payload || payload.kind !== 'task-library' || !payload.data) { showToast('Task list data was invalid'); return; }
+    applyLibraryPayload(payload);
+    localStorage.setItem('kr_lib_applied_version', json.version || payload.version || '');
+    showToast('Task list updated — reloading…');
+    setTimeout(() => location.reload(), 900);
+  } catch (e) {
+    showToast('Update failed — check connection');
+  }
 }
 
 function triggerRestoreBackup() {
@@ -5002,7 +5085,7 @@ function setRole(role) {
 function applyRoleUI() {
   const isW = isWorker();
   document.body.classList.toggle('worker-mode', isW);
-  ['dir-add-btn', 'planner-add-btn', 'planner-cal-btn'].forEach(id => {
+  ['dir-add-btn', 'planner-add-btn', 'planner-cal-btn', 'lib-publish-btn'].forEach(id => {
     const el = document.getElementById(id); if (el) el.style.display = isW ? 'none' : '';
   });
   const m = document.getElementById('role-seg-manager'), w = document.getElementById('role-seg-worker');

@@ -13,9 +13,24 @@ const SHEET_NAME      = 'KR Task Tracker';
 const DIRECTORY_NAME  = 'App Directory';
 const SUBTASKS_NAME   = 'Subtasks';
 
-// ── Serve directory and subtask data to the app ──
+// ── Serve directory/subtasks, OR the shared task-library blob/version ──
 function doGet(e) {
   try {
+    const p = (e && e.parameter) || {};
+    const props = PropertiesService.getScriptProperties();
+
+    // Lightweight version check — Ethan's app polls this on launch
+    if (p.libcheck === '1') {
+      return jsonResponse({ success: true, libraryVersion: props.getProperty('kr_lib_version') || '' });
+    }
+    // Full library blob (reassembled from chunks)
+    if (p.library === '1') {
+      const count = parseInt(props.getProperty('kr_lib_count') || '0', 10);
+      let lib = '';
+      for (let i = 0; i < count; i++) lib += (props.getProperty('kr_lib_' + i) || '');
+      return jsonResponse({ success: true, version: props.getProperty('kr_lib_version') || '', library: lib });
+    }
+
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
     // App Directory
@@ -61,6 +76,10 @@ function doPost(e) {
     // Remove a single planner block's calendar event
     if (data.action === 'calendarDelete') {
       return handleCalendarDelete(data);
+    }
+    // Manager publishes the shared task library for other devices to pull
+    if (data.action === 'publishLibrary') {
+      return handlePublishLibrary(data);
     }
 
     const ss    = SpreadsheetApp.getActiveSpreadsheet();
@@ -209,6 +228,29 @@ function handleCalendarDelete(data) {
   }
 
   return jsonResponse({ success: true, deleted });
+}
+
+// ── Store the shared task library (chunked into Script Properties) ──
+// Payload: { action:'publishLibrary', version:'...', library:'<json string>' }
+// Property values cap at ~9KB each, so the blob is split into 8000-char chunks.
+function handlePublishLibrary(data) {
+  const props = PropertiesService.getScriptProperties();
+  const lib = String(data.library || '');
+  const version = String(data.version || new Date().toISOString());
+  const CHUNK = 8000;
+
+  // Clear any previous chunks first
+  const oldCount = parseInt(props.getProperty('kr_lib_count') || '0', 10);
+  for (let i = 0; i < oldCount; i++) props.deleteProperty('kr_lib_' + i);
+
+  const count = Math.ceil(lib.length / CHUNK);
+  for (let i = 0; i < count; i++) {
+    props.setProperty('kr_lib_' + i, lib.substring(i * CHUNK, (i + 1) * CHUNK));
+  }
+  props.setProperty('kr_lib_count', String(count));
+  props.setProperty('kr_lib_version', version);
+
+  return jsonResponse({ success: true, version: version, chunks: count, bytes: lib.length });
 }
 
 function jsonResponse(obj) {
