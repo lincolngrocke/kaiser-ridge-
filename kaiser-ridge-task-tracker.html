@@ -1703,7 +1703,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-10.7';
+const APP_VERSION = '2026-06-10.8';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2564,18 +2564,25 @@ function restoreDeletedEntry() {
 }
 
 // Show/hide the "restore deleted entry" banner on the Timesheets page
+let _restoreBannerTimer = null;
+const RESTORE_WINDOW_MS = 5 * 60 * 1000; // recoverable for 5 minutes, then gone for good
 function updateRestoreEntryBanner() {
   const el = document.getElementById('restore-entry-banner');
   if (!el) return;
+  clearTimeout(_restoreBannerTimer);
+  const now = Date.now();
   let trash = JSON.parse(localStorage.getItem('kr_entry_trash') || '[]');
-  // Drop anything older than 48h
-  const fresh = trash.filter(t => (Date.now() - new Date(t.deletedAt).getTime()) / 3600000 <= 48);
+  const fresh = trash.filter(t => now - new Date(t.deletedAt).getTime() <= RESTORE_WINDOW_MS);
   if (fresh.length !== trash.length) localStorage.setItem('kr_entry_trash', JSON.stringify(fresh));
   if (!fresh.length) { el.style.display = 'none'; return; }
   const newest = fresh[0];
   const more = fresh.length > 1 ? ` (+${fresh.length - 1} more)` : '';
   el.textContent = '↩ Restore deleted entry — ' + (newest.durationHours || 0).toFixed(2) + 'h on ' + (newest.task || 'a task') + more + ' — tap';
   el.style.display = 'block';
+  // Auto-refresh/hide when the soonest-expiring stash drops off, even if the
+  // user stays on this page (the oldest item expires first).
+  const soonest = Math.min(...fresh.map(t => RESTORE_WINDOW_MS - (now - new Date(t.deletedAt).getTime())));
+  _restoreBannerTimer = setTimeout(updateRestoreEntryBanner, Math.max(1000, soonest + 500));
 }
 
 // ════════════════════════════════
