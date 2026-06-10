@@ -58,6 +58,10 @@ function doPost(e) {
     if (data.action === 'calendar') {
       return handleCalendarSync(data);
     }
+    // Remove a single planner block's calendar event
+    if (data.action === 'calendarDelete') {
+      return handleCalendarDelete(data);
+    }
 
     const ss    = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = ss.getSheetByName(SHEET_NAME);
@@ -167,6 +171,31 @@ function handleCalendarSync(data) {
   });
 
   return jsonResponse({ success: true, count: plans.length, events: result });
+}
+
+// ── Delete one planner block's calendar event (by its planId tag) ──
+// Payload: { action:'calendarDelete', date:'DD/MM/YYYY', planId:'...' }
+function handleCalendarDelete(data) {
+  const cal = CalendarApp.getDefaultCalendar();
+
+  const parts = String(data.date).split('/'); // DD/MM/YYYY
+  const dd = parseInt(parts[0], 10);
+  const mm = parseInt(parts[1], 10);
+  const yyyy = parseInt(parts[2], 10);
+  if (!dd || !mm || !yyyy) return jsonResponse({ success: false, error: 'Bad date: ' + data.date });
+
+  const dayStart = new Date(yyyy, mm - 1, dd, 0, 0, 0);
+  const dayEnd   = new Date(yyyy, mm - 1, dd, 23, 59, 59);
+
+  let deleted = 0;
+  cal.getEvents(dayStart, dayEnd).forEach(ev => {
+    if (ev.getTag('krApp') === '1' && ev.getTag('krPlanId') === String(data.planId)) {
+      ev.deleteEvent();
+      deleted++;
+    }
+  });
+
+  return jsonResponse({ success: true, deleted });
 }
 
 function jsonResponse(obj) {

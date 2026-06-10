@@ -1578,7 +1578,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-09.8';
+const APP_VERSION = '2026-06-09.9';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -5350,11 +5350,26 @@ function openPlannerDetail(planId) {
 function deletePlannerBlock() {
   if (!_plannerDetailId) return;
   if (!confirm('Remove this planned task?')) return;
+  const removed = _plannerPlans.find(p => p.id === _plannerDetailId);
   _plannerPlans = _plannerPlans.filter(p => p.id !== _plannerDetailId);
   savePlanner();
+  deletePlannerCalendarEvent(removed);
   closeModal('modal-planner-detail');
   renderPlannerScreen();
   showToast('Removed');
+}
+
+// Remove this block's Google Calendar event (if one was pushed). Fire-and-forget;
+// the script no-ops when no matching event exists, so it's safe to always call.
+function deletePlannerCalendarEvent(plan) {
+  if (!plan) return;
+  const url = localStorage.getItem('kr_sheet_url');
+  if (!url) return;
+  fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify({ action: 'calendarDelete', date: plan.date, planId: plan.id }),
+  }).catch(() => {});
 }
 
 function plannerClockIn() {
