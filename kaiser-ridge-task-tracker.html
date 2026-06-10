@@ -1666,7 +1666,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-09.15';
+const APP_VERSION = '2026-06-09.16';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -1732,6 +1732,21 @@ const DIRECTORY_FALLBACK = [
 
 // Load from localStorage first so local additions survive app restarts
 let DIRECTORY = JSON.parse(localStorage.getItem('kr_directory') || 'null') || [...DIRECTORY_FALLBACK];
+
+// Remove malformed directory rows — every real task has both a frequency and a
+// group (the editor requires them), so rows missing either are orphan/rogue
+// leftovers (they surface under a phantom "Other" group). Runs on load and is
+// idempotent, so such rows can't keep reappearing.
+function sanitizeDirectory() {
+  const before = DIRECTORY.length;
+  DIRECTORY = DIRECTORY.filter(r =>
+    r && String(r.frequency || '').trim() && String(r.group || '').trim()
+  );
+  if (DIRECTORY.length !== before) {
+    localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
+  }
+}
+sanitizeDirectory();
 
 // ── PROJECTS (one-off initiatives; a name + ordered checklist of steps) ──
 let PROJECTS = JSON.parse(localStorage.getItem('kr_projects') || '[]');
@@ -4847,7 +4862,8 @@ function deleteDirTask() {
   if (!confirm('Delete this task?')) return;
   const [freq, grp, task] = _dirEditingKey.split('||');
   DIRECTORY = DIRECTORY.filter(r => !_dirKeyMatches(r, freq, grp, task));
-  delete SUBTASKS[task];
+  // Only drop the checklist if no other task still uses this name
+  if (!DIRECTORY.some(r => r.task === task)) delete SUBTASKS[task];
   localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
   localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
   closeModal('modal-dir-task');
