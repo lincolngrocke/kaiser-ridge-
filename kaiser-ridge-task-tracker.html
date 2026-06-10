@@ -156,6 +156,8 @@
     cursor: pointer;
   }
   .dir-seg.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+  /* Use our own ✕ on the directory search, not the (sometimes hidden) native one */
+  #dir-search::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
 
   /* ── PROJECT CARDS ── */
   .project-card {
@@ -907,8 +909,10 @@
     <div style="position:relative;">
       <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--subtext);">🔍</span>
       <input id="dir-search" type="search" placeholder="Search tasks, groups, equipment…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
-        oninput="renderDirectory()"
-        style="width:100%;padding:9px 12px 9px 36px;border-radius:10px;border:1px solid var(--border);background:var(--bg);font-size:14px;color:var(--text);outline:none;-webkit-appearance:none;">
+        oninput="onDirSearchInput()"
+        style="width:100%;padding:9px 38px 9px 36px;border-radius:10px;border:1px solid var(--border);background:var(--bg);font-size:14px;color:var(--text);outline:none;-webkit-appearance:none;">
+      <button id="dir-search-clear" onclick="clearDirSearch()" type="button"
+        style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);width:24px;height:24px;border:none;border-radius:50%;background:var(--border);color:var(--subtext);font-size:13px;line-height:1;cursor:pointer;align-items:center;justify-content:center;">✕</button>
     </div>
   </div>
   <!-- Filter chips -->
@@ -1703,7 +1707,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-10.8';
+const APP_VERSION = '2026-06-10.9';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3920,6 +3924,22 @@ function _dirKeyMatches(row, freq, grp, task) {
   const fMatches = (rFreq === freq) || (rFreq === '' && freq === 'Other');
   const gMatches = (rGrp === grp) || (rGrp === '' && grp === 'Other');
   return fMatches && gMatches && row.task === task;
+}
+
+function onDirSearchInput() {
+  const inp = document.getElementById('dir-search');
+  const clr = document.getElementById('dir-search-clear');
+  if (clr) clr.style.display = inp.value ? 'flex' : 'none';
+  renderDirectory();
+}
+
+function clearDirSearch() {
+  const inp = document.getElementById('dir-search');
+  inp.value = '';
+  const clr = document.getElementById('dir-search-clear');
+  if (clr) clr.style.display = 'none';
+  renderDirectory();
+  inp.focus(); // back to a clean slate, cursor ready
 }
 
 function renderDirectory() {
