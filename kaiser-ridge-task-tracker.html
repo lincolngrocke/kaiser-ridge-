@@ -1578,7 +1578,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-09.11';
+const APP_VERSION = '2026-06-09.12';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -1935,6 +1935,12 @@ function clockOut(overrideTime) {
   localStorage.removeItem('kr_clock');
   renderClockState();
   autoBackup();
+  // If calendar sync is in use, silently refresh that day so the ▶ live
+  // event becomes the ✓ completed one (clockState is now null, so the live
+  // item drops out and the new entry is included).
+  if (localStorage.getItem('kr_cal_used') === '1' && localStorage.getItem('kr_sheet_url')) {
+    syncCalendarForDate(entry.date, { silent: true });
+  }
   const breakStr = entry.break > 0 ? ` (${(entry.break * 60).toFixed(0)}min break)` : '';
   showToast('Clocked out — ' + entry.durationHours + 'h logged' + breakStr);
 }
@@ -5494,11 +5500,14 @@ function hoursBetweenTimes(a, b) {
   return Math.max(0.25, mins / 60);
 }
 
-async function pushPlannerToCalendar() {
+// Build + push a day's blocks (planned, completed, live) to Google Calendar.
+// opts.silent       — suppress toasts (used by the auto clock-out refresh)
+// opts.requireItems — show "nothing to push" instead of sending an empty day
+async function syncCalendarForDate(dateStr, opts) {
+  opts = opts || {};
   const url = localStorage.getItem('kr_sheet_url');
-  if (!url) { showToast('Add your Apps Script URL in Settings first'); return; }
+  if (!url) { if (!opts.silent) showToast('Add your Apps Script URL in Settings first'); return; }
 
-  const dateStr = plannerDateStr(_plannerDate);
   const items = [];
 
   // 1. Planned blocks (id prefixed so completed/live can coexist)
@@ -5532,9 +5541,9 @@ async function pushPlannerToCalendar() {
     });
   }
 
-  if (!items.length) { showToast('Nothing on this day to push'); return; }
+  if (!items.length && opts.requireItems) { if (!opts.silent) showToast('Nothing on this day to push'); return; }
 
-  showToast('Pushing ' + items.length + ' item' + (items.length === 1 ? '' : 's') + ' to Google Calendar…');
+  if (!opts.silent) showToast('Pushing ' + items.length + ' item' + (items.length === 1 ? '' : 's') + ' to Google Calendar…');
   try {
     const res = await fetch(url, {
       method: 'POST',
@@ -5553,13 +5562,19 @@ async function pushPlannerToCalendar() {
         });
         if (changed) savePlanner();
       }
-      showToast('Synced to Google Calendar ✓');
+      localStorage.setItem('kr_cal_used', '1'); // opt-in flag for auto refresh
+      if (!opts.silent) showToast('Synced to Google Calendar ✓');
     } else {
-      showToast('Calendar sync failed' + (json && json.error ? ': ' + json.error : ''));
+      if (!opts.silent) showToast('Calendar sync failed' + (json && json.error ? ': ' + json.error : ''));
     }
   } catch (err) {
-    showToast('Calendar sync failed — check connection & URL');
+    if (!opts.silent) showToast('Calendar sync failed — check connection & URL');
   }
+}
+
+// 📆 button — pushes the day currently shown in the planner
+function pushPlannerToCalendar() {
+  return syncCalendarForDate(plannerDateStr(_plannerDate), { requireItems: true });
 }
 
 // Planner renders when showScreen('planner') is called — hooked via showScreen's existing id check
