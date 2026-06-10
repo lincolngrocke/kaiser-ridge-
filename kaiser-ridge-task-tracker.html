@@ -1126,7 +1126,7 @@
 </div>
 
 <!-- ══════════════ CHART DRILL-DOWN MODAL ══════════════ -->
-<div class="modal-backdrop" id="modal-chart-drill" style="z-index:300;" onclick="closeModal('modal-chart-drill')">
+<div class="modal-backdrop" id="modal-chart-drill" style="z-index:300;" onclick="closeChartDrill()">
   <div class="modal-sheet" style="padding:16px 0 24px;" onclick="event.stopPropagation()">
     <div class="modal-handle"></div>
     <div style="padding:0 20px 12px;display:flex;align-items:center;justify-content:space-between;">
@@ -1703,7 +1703,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-10.5';
+const APP_VERSION = '2026-06-10.6';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3128,7 +3128,6 @@ function updateStats() {
 let _chartPeriod = 'week';
 let _chartDimension = 'group';
 let _chartBarRegions = []; // [{key, x, y, w, h}]
-let _chartLongTimer = null;
 const _chartColors = ['#007AFF','#34C759','#FF9500','#FF3B30','#AF52DE','#00C7BE','#FF6B6B','#5AC8FA','#FFCC00','#FF2D55'];
 
 function setChartPeriod(period, btn) {
@@ -3280,6 +3279,7 @@ function renderDashboardChart() {
   ).join('');
 
   // Attach long-press listener (replace previous)
+  // Light tap on a bar opens its breakdown (a scroll/drag doesn't trigger it)
   canvas.ontouchstart = (e) => {
     const touch = e.touches[0];
     const rect = canvas.getBoundingClientRect();
@@ -3287,39 +3287,43 @@ function renderDashboardChart() {
     const ty = touch.clientY - rect.top;
     const startX = touch.clientX;
     const startY = touch.clientY;
-    clearTimeout(_chartLongTimer);
+    let moved = false;
 
     function onMove(ev) {
       const dx = Math.abs(ev.touches[0].clientX - startX);
       const dy = Math.abs(ev.touches[0].clientY - startY);
-      if (dx > 8 || dy > 8) { clearTimeout(_chartLongTimer); cleanup(); }
+      if (dx > 8 || dy > 8) moved = true;
     }
-    function onEnd() { clearTimeout(_chartLongTimer); cleanup(); }
+    function onEnd(ev) {
+      cleanup();
+      if (moved) return; // it was a scroll/drag, not a tap
+      const hit = _chartBarRegions.find(b => tx >= b.x && tx <= b.x + b.w && ty >= b.y && ty <= b.y + b.h + 20);
+      if (hit) {
+        if (ev && ev.cancelable) ev.preventDefault(); // suppress the ghost click that could close the modal
+        openChartDrill(hit.key, hit.color);
+      }
+    }
     function cleanup() {
       document.removeEventListener('touchmove', onMove);
       document.removeEventListener('touchend', onEnd);
-      document.removeEventListener('touchcancel', onEnd);
+      document.removeEventListener('touchcancel', cleanup);
     }
 
     document.addEventListener('touchmove', onMove, { passive: true });
     document.addEventListener('touchend', onEnd, { once: true });
-    document.addEventListener('touchcancel', onEnd, { once: true });
-
-    _chartLongTimer = setTimeout(() => {
-      cleanup();
-      const hit = _chartBarRegions.find(b => tx >= b.x && tx <= b.x + b.w && ty >= b.y && ty <= b.y + b.h + 20);
-      if (hit) {
-        if (navigator.vibrate) navigator.vibrate(40);
-        // Absorb the upcoming touchend so it doesn't bleed into the modal
-        document.addEventListener('touchend', e => e.stopPropagation(), { once: true, capture: true });
-        openChartDrill(hit.key, hit.color);
-      }
-    }, 400);
+    document.addEventListener('touchcancel', cleanup, { once: true });
   };
-  canvas.ontouchend = canvas.ontouchcancel = () => clearTimeout(_chartLongTimer);
+}
+
+let _chartDrillOpenedAt = 0;
+function closeChartDrill() {
+  // Ignore the tap-through click that immediately follows opening
+  if (Date.now() - _chartDrillOpenedAt < 400) return;
+  closeModal('modal-chart-drill');
 }
 
 function openChartDrill(key, color) {
+  _chartDrillOpenedAt = Date.now();
   const periodEntries = getChartEntries();
 
   // Filter entries matching the bar's key
