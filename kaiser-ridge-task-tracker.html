@@ -185,6 +185,7 @@
     color: var(--text); font-size: 15px; padding: 4px 0;
   }
   .pstep-input.done { text-decoration: line-through; color: var(--subtext); }
+  .pstep-hours { flex-shrink: 0; font-size: 12px; font-weight: 600; color: var(--blue); white-space: nowrap; }
   .pstep-del { background: none; border: none; color: var(--red); font-size: 18px; cursor: pointer; padding: 0 4px; }
 
   /* ── RUNNING STATE (dark overlay) ── */
@@ -1325,8 +1326,15 @@
       </div>
       <div class="form-row">
         <span class="form-label">Project</span>
-        <select class="form-select" id="f-project">
+        <select class="form-select" id="f-project" onchange="onProjectChange()">
           <option value="">None</option>
+        </select>
+        <span class="form-chevron">›</span>
+      </div>
+      <div class="form-row" id="f-step-row" style="display:none">
+        <span class="form-label">Step</span>
+        <select class="form-select" id="f-step">
+          <option value="">Whole project</option>
         </select>
         <span class="form-chevron">›</span>
       </div>
@@ -1658,7 +1666,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-09.14';
+const APP_VERSION = '2026-06-09.15';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -1973,6 +1981,7 @@ function startClock(taskInfo) {
     subtask: taskInfo.subtask,
     tool: taskInfo.tool,
     projectId: taskInfo.projectId || '',
+    projectStepId: taskInfo.projectStepId || '',
     notes: taskInfo.notes,
     tempId: Date.now().toString(),
   };
@@ -2008,6 +2017,7 @@ function clockOut(overrideTime) {
     subtask: clockState.subtask,
     tool: clockState.tool,
     projectId: clockState.projectId || '',
+    projectStepId: clockState.projectStepId || '',
     notes: clockState.notes,
     clockIn: clockState.startTime,
     clockOut: overrideTime || new Date().toTimeString().slice(0,5),
@@ -2266,6 +2276,7 @@ function openCreate() {
   setOptions('f-task', [], 'Select…');
   setEquipOptions([], []);
   populateProjectDropdown('');
+  populateStepDropdown('', '');
   document.getElementById('f-break').value = '0';
   document.getElementById('f-notes').value = '';
   document.getElementById('f-date').value = todayStr('-');
@@ -2309,6 +2320,7 @@ function openEdit(id) {
 
   document.getElementById('f-break').value = e.break || '0';
   populateProjectDropdown(e.projectId || '');
+  populateStepDropdown(e.projectId || '', e.projectStepId || '');
   document.getElementById('f-notes').value = e.notes || '';
 
   const parts = e.date.split('/');
@@ -2348,6 +2360,7 @@ function openEditActive() {
   const nearest = breakOptions.reduce((a, b) => Math.abs(b - currentBreakH) < Math.abs(a - currentBreakH) ? b : a);
   document.getElementById('f-break').value = nearest.toString();
   populateProjectDropdown(clockState.projectId || '');
+  populateStepDropdown(clockState.projectId || '', clockState.projectStepId || '');
   document.getElementById('f-notes').value = clockState.notes || '';
   document.getElementById('f-date').value = todayStr('-');
   document.getElementById('f-clockin').value = clockState.startTime || '';
@@ -2363,6 +2376,7 @@ function saveEntry() {
   const task      = document.getElementById('f-task').value;
   const tool      = getEquipValue();
   const projectId = document.getElementById('f-project').value;
+  const projectStepId = projectId ? document.getElementById('f-step').value : '';
   const notes     = document.getElementById('f-notes').value.trim();
   const clockIn = document.getElementById('f-clockin').value;
   const clockOut = document.getElementById('f-clockout').value;
@@ -2387,6 +2401,7 @@ function saveEntry() {
     clockState.task      = task;
     clockState.tool      = tool;
     clockState.projectId = projectId;
+    clockState.projectStepId = projectStepId;
     clockState.notes     = notes;
     if (currentPin) clockState.pin = currentPin;
     if (clockIn) clockState.startTime = clockIn;
@@ -2405,7 +2420,7 @@ function saveEntry() {
     if (idx >= 0) {
       entries[idx] = {
         ...entries[idx],
-        location, frequency, group, task, tool, projectId, notes,
+        location, frequency, group, task, tool, projectId, projectStepId, notes,
         clockIn, clockOut, break: breakH,
         date: dateFormatted,
         durationHours: parseFloat(duration.toFixed(2)),
@@ -2414,7 +2429,7 @@ function saveEntry() {
     }
   } else {
     // New entry — show Now/Earlier for clock-in
-    const taskInfo = { location, frequency, group, task, tool, projectId, notes, pin: currentPin || null };
+    const taskInfo = { location, frequency, group, task, tool, projectId, projectStepId, notes, pin: currentPin || null };
     closeModal('modal-task');
     openTimeModal('in', taskInfo);
     return;
@@ -2921,6 +2936,7 @@ function confirmTime(choice) {
       subtask:   taskInfo.subtask   || '',
       tool:      taskInfo.tool      || '',
       projectId: taskInfo.projectId || '',
+      projectStepId: taskInfo.projectStepId || '',
       notes:     taskInfo.notes     || '',
       pin: _pendingTaskInfo && _pendingTaskInfo.pin ? _pendingTaskInfo.pin : (currentPin || null),
       tempId: Date.now().toString(),
@@ -4893,9 +4909,38 @@ function populateProjectDropdown(selectedId) {
   sel.value = cur || '';
 }
 
+// Fill the Step dropdown for the chosen project (Whole project + each step).
+// Hides the row entirely when no project is selected.
+function populateStepDropdown(projectId, selectedStepId) {
+  const row = document.getElementById('f-step-row');
+  const sel = document.getElementById('f-step');
+  if (!row || !sel) return;
+  const project = PROJECTS.find(p => p.id === projectId);
+  if (!project) { row.style.display = 'none'; sel.innerHTML = '<option value="">Whole project</option>'; sel.value = ''; return; }
+  sel.innerHTML = '<option value="">Whole project</option>';
+  (project.steps || []).forEach(s => {
+    const o = document.createElement('option');
+    o.value = s.id;
+    o.textContent = (s.done ? '✓ ' : '') + (s.text || 'Untitled step');
+    sel.appendChild(o);
+  });
+  sel.value = selectedStepId || '';
+  row.style.display = '';
+}
+
+function onProjectChange() {
+  populateStepDropdown(document.getElementById('f-project').value, '');
+}
+
 // Total hours logged against a project
 function projectHours(projectId) {
   return entries.filter(e => e.projectId === projectId)
+    .reduce((s, e) => s + (e.durationHours || 0), 0);
+}
+
+// Hours logged against one specific step of a project
+function stepHours(projectId, stepId) {
+  return entries.filter(e => e.projectId === projectId && e.projectStepId === stepId)
     .reduce((s, e) => s + (e.durationHours || 0), 0);
 }
 
@@ -4954,13 +4999,18 @@ function renderProjectSteps() {
     wrap.innerHTML = '<div style="font-size:14px;color:var(--subtext);padding:8px 0;">No steps yet — add the one-off tasks for this project.</div>';
     return;
   }
-  wrap.innerHTML = steps.map((s, i) => `
+  wrap.innerHTML = steps.map((s, i) => {
+    const hrs = stepHours(_projDraft.id, s.id);
+    const hrsLabel = hrs > 0 ? `<span class="pstep-hours">${hrs.toFixed(2)}h</span>` : '';
+    return `
     <div class="pstep-row">
       <button type="button" class="pstep-check${s.done ? ' done' : ''}" onclick="toggleProjectStep(${i})">${s.done ? '✓' : ''}</button>
       <input class="pstep-input${s.done ? ' done' : ''}" value="${escapeHtmlProj(s.text || '')}" placeholder="Step description"
         oninput="_projDraft.steps[${i}].text = this.value">
+      ${hrsLabel}
       <button type="button" class="pstep-del" onclick="deleteProjectStep(${i})">✕</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function addProjectStep() {
