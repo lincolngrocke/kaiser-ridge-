@@ -1578,7 +1578,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-09.9';
+const APP_VERSION = '2026-06-09.10';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -5368,7 +5368,7 @@ function deletePlannerCalendarEvent(plan) {
   fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify({ action: 'calendarDelete', date: plan.date, planId: plan.id }),
+    body: JSON.stringify({ action: 'calendarDelete', date: plan.date, planId: plan.id, eventId: plan.calEventId || '' }),
   }).catch(() => {});
 }
 
@@ -5514,6 +5514,15 @@ async function pushPlannerToCalendar() {
     });
     const json = await res.json();
     if (json && json.success) {
+      // Store each event's calendar ID so deletes can target it directly
+      // (avoids Google Calendar search-index lag leaving stragglers).
+      if (json.events) {
+        let changed = false;
+        _plannerPlans.forEach(p => {
+          if (json.events[p.id]) { p.calEventId = json.events[p.id]; changed = true; }
+        });
+        if (changed) savePlanner();
+      }
       showToast('Synced to Google Calendar ✓');
     } else {
       showToast('Calendar sync failed' + (json && json.error ? ': ' + json.error : ''));

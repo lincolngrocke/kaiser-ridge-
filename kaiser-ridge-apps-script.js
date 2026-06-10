@@ -125,12 +125,13 @@ function handleCalendarSync(data) {
   const dayStart = new Date(yyyy, mm - 1, dd, 0, 0, 0);
   const dayEnd   = new Date(yyyy, mm - 1, dd, 23, 59, 59);
 
-  // Index this app's existing events for the day by their planId tag
+  // Index this app's existing events for the day, grouped by planId tag
+  // (arrays, so any accidental duplicates can be cleaned up too)
   const existing = {};
   cal.getEvents(dayStart, dayEnd).forEach(ev => {
     if (ev.getTag('krApp') === '1') {
       const pid = ev.getTag('krPlanId');
-      if (pid) existing[pid] = ev;
+      if (pid) (existing[pid] = existing[pid] || []).push(ev);
     }
   });
 
@@ -151,7 +152,9 @@ function handleCalendarSync(data) {
     descLines.push('— Kaiser Ridge Task Tracker');
     const desc = descLines.join('\n');
 
-    let ev = existing[p.id];
+    const matches = existing[p.id] || [];
+    let ev = matches.shift(); // reuse the first; delete any extra duplicates
+    matches.forEach(dup => dup.deleteEvent());
     if (ev) {
       ev.setTitle(p.task);
       ev.setTime(start, end);
@@ -165,35 +168,45 @@ function handleCalendarSync(data) {
     result[p.id] = ev.getId();
   });
 
-  // Remove app events whose blocks were deleted in the app
+  // Remove app events (all of them) whose blocks were deleted in the app
   Object.keys(existing).forEach(pid => {
-    if (!incoming[pid]) existing[pid].deleteEvent();
+    if (!incoming[pid]) existing[pid].forEach(ev => ev.deleteEvent());
   });
 
   return jsonResponse({ success: true, count: plans.length, events: result });
 }
 
-// ── Delete one planner block's calendar event (by its planId tag) ──
-// Payload: { action:'calendarDelete', date:'DD/MM/YYYY', planId:'...' }
+// ── Delete one planner block's calendar event ──
+// Payload: { action:'calendarDelete', date:'DD/MM/YYYY', planId:'...', eventId:'...' }
+// Deletes by exact event ID first (immediate, avoids Calendar's search-index
+// lag), then sweeps by tag as a fallback for older/untracked events.
 function handleCalendarDelete(data) {
   const cal = CalendarApp.getDefaultCalendar();
+  let deleted = 0;
 
+  // 1. Direct delete by event ID — reliable and not subject to search lag
+  if (data.eventId) {
+    try {
+      const ev = cal.getEventById(data.eventId);
+      if (ev) { ev.deleteEvent(); deleted++; }
+    } catch (e) { /* event already gone */ }
+  }
+
+  // 2. Fallback: sweep the day for any app event still tagged with this planId
   const parts = String(data.date).split('/'); // DD/MM/YYYY
   const dd = parseInt(parts[0], 10);
   const mm = parseInt(parts[1], 10);
   const yyyy = parseInt(parts[2], 10);
-  if (!dd || !mm || !yyyy) return jsonResponse({ success: false, error: 'Bad date: ' + data.date });
-
-  const dayStart = new Date(yyyy, mm - 1, dd, 0, 0, 0);
-  const dayEnd   = new Date(yyyy, mm - 1, dd, 23, 59, 59);
-
-  let deleted = 0;
-  cal.getEvents(dayStart, dayEnd).forEach(ev => {
-    if (ev.getTag('krApp') === '1' && ev.getTag('krPlanId') === String(data.planId)) {
-      ev.deleteEvent();
-      deleted++;
-    }
-  });
+  if (dd && mm && yyyy) {
+    const dayStart = new Date(yyyy, mm - 1, dd, 0, 0, 0);
+    const dayEnd   = new Date(yyyy, mm - 1, dd, 23, 59, 59);
+    cal.getEvents(dayStart, dayEnd).forEach(ev => {
+      if (ev.getTag('krApp') === '1' && ev.getTag('krPlanId') === String(data.planId)) {
+        ev.deleteEvent();
+        deleted++;
+      }
+    });
+  }
 
   return jsonResponse({ success: true, deleted });
 }
