@@ -143,6 +143,50 @@
     color: #fff;
   }
 
+  /* ── TASKS / PROJECTS TOGGLE ── */
+  .dir-seg {
+    flex: 1;
+    padding: 8px;
+    border-radius: 10px;
+    border: 1.5px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .dir-seg.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+
+  /* ── PROJECT CARDS ── */
+  .project-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    cursor: pointer;
+  }
+  .project-card-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+  .project-progress-track { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .project-progress-fill { height: 100%; background: var(--green); border-radius: 3px; transition: width .3s; }
+  .project-card-meta { font-size: 12px; color: var(--subtext); margin-top: 8px; display: flex; gap: 12px; }
+  .project-empty { text-align: center; color: var(--subtext); font-size: 14px; padding: 40px 20px; }
+
+  /* ── PROJECT STEP ROWS (in editor) ── */
+  .pstep-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .pstep-check {
+    width: 24px; height: 24px; flex-shrink: 0; border-radius: 6px;
+    border: 2px solid var(--border); background: transparent; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; font-size: 15px; color: #fff;
+  }
+  .pstep-check.done { background: var(--green); border-color: var(--green); }
+  .pstep-input {
+    flex: 1; border: none; outline: none; background: transparent;
+    color: var(--text); font-size: 15px; padding: 4px 0;
+  }
+  .pstep-input.done { text-decoration: line-through; color: var(--subtext); }
+  .pstep-del { background: none; border: none; color: var(--red); font-size: 18px; cursor: pointer; padding: 0 4px; }
+
   /* ── RUNNING STATE (dark overlay) ── */
   .clock-running-overlay {
     display: none;
@@ -841,13 +885,18 @@
 <div class="screen" id="screen-directory">
   <div class="header">
     <div style="display:flex;align-items:center;gap:8px;">
-      <div class="header-title">Task Directory</div>
+      <div class="header-title" id="dir-header-title">Task Directory</div>
       <div id="dir-freq-badge" style="display:none;background:var(--blue);color:#fff;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;letter-spacing:0.3px;text-transform:uppercase;"></div>
     </div>
-    <button onclick="openDirAddTask()" style="background:var(--blue);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:14px;font-weight:600;cursor:pointer;">+ Add</button>
+    <button onclick="dirAddButtonClick()" style="background:var(--blue);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:14px;font-weight:600;cursor:pointer;">+ Add</button>
+  </div>
+  <!-- Tasks / Projects toggle -->
+  <div style="display:flex;gap:6px;padding:8px 12px 0;background:var(--card);">
+    <button id="dir-seg-tasks" class="dir-seg active" onclick="setDirMode('tasks')">Tasks</button>
+    <button id="dir-seg-projects" class="dir-seg" onclick="setDirMode('projects')">Projects</button>
   </div>
   <!-- Search bar -->
-  <div style="padding:8px 12px 0;background:var(--card);">
+  <div id="dir-search-wrap" style="padding:8px 12px 0;background:var(--card);">
     <div style="position:relative;">
       <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--subtext);">🔍</span>
       <input id="dir-search" type="search" placeholder="Search tasks, groups, equipment…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
@@ -864,6 +913,7 @@
   </div>
   <div class="scroll-area" id="dir-scroll-area">
     <div id="dir-list"></div>
+    <div id="dir-projects-list" style="display:none;padding:8px 12px 24px;"></div>
   </div>
 </div>
 
@@ -1571,6 +1621,29 @@
   </div>
 </div>
 
+<!-- ══════════════ PROJECT EDITOR MODAL ══════════════ -->
+<div class="modal-backdrop" id="modal-project" style="z-index:320;" onclick="if(event.target===this)closeModal('modal-project')">
+  <div class="modal-sheet" style="max-height:90vh;overflow-y:auto;">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <button onclick="closeModal('modal-project')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;">Cancel</button>
+      <span class="modal-title" id="project-modal-title">Project</span>
+      <button onclick="saveProject()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Save</button>
+    </div>
+    <div style="padding:16px;">
+      <input id="project-name" placeholder="Project name" autocomplete="off"
+        style="width:100%;padding:12px;border:1px solid var(--border);border-radius:10px;font-size:17px;font-weight:600;background:var(--bg);color:var(--text);outline:none;margin-bottom:6px;-webkit-appearance:none;">
+      <div id="project-hours-note" style="font-size:12px;color:var(--subtext);margin-bottom:16px;"></div>
+
+      <div style="font-size:12px;color:var(--subtext);font-weight:600;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">Steps</div>
+      <div id="project-steps-list"></div>
+      <button onclick="addProjectStep()" style="margin-top:10px;background:none;border:1px dashed var(--border);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">+ Add Step</button>
+
+      <button id="project-delete-wrap" onclick="deleteProject()" style="display:none;margin-top:20px;background:none;border:1px solid var(--red);border-radius:10px;width:100%;padding:12px;color:var(--red);font-size:15px;font-weight:600;cursor:pointer;">Delete Project</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 
@@ -1578,7 +1651,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-09.12';
+const APP_VERSION = '2026-06-09.13';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -1644,6 +1717,12 @@ const DIRECTORY_FALLBACK = [
 
 // Load from localStorage first so local additions survive app restarts
 let DIRECTORY = JSON.parse(localStorage.getItem('kr_directory') || 'null') || [...DIRECTORY_FALLBACK];
+
+// ── PROJECTS (one-off initiatives; a name + ordered checklist of steps) ──
+let PROJECTS = JSON.parse(localStorage.getItem('kr_projects') || '[]');
+function saveProjects() { localStorage.setItem('kr_projects', JSON.stringify(PROJECTS)); }
+let _dirMode = 'tasks';   // 'tasks' | 'projects'
+let _projDraft = null;    // working copy while the editor modal is open
 
 function appUrlNoCache() {
   return location.href.split('#')[0].split('?')[0] + '?_=' + Date.now();
@@ -3165,7 +3244,7 @@ const KR_BACKUP_KEYS = [
   'kr_task_order', 'kr_entries', 'kr_user_name', 'kr_weekly_target',
   'kr_sheet_url', 'kr_dark_mode',
   'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
-  'kr_planner'
+  'kr_planner', 'kr_projects'
 ];
 
 function buildBackupSnapshot() {
@@ -4749,9 +4828,153 @@ function deleteDirTask() {
 const _origShowScreen = showScreen;
 showScreen = function(id, tab) {
   _origShowScreen(id, tab);
-  if (id === 'directory') renderDirectory();
+  if (id === 'directory') renderDirScreen();
   if (id === 'dashboard') renderDashboard();
 };
+
+// ════════════════════════════════
+//  PROJECTS
+// ════════════════════════════════
+function renderDirScreen() {
+  if (_dirMode === 'projects') renderProjects();
+  else renderDirectory();
+}
+
+function dirAddButtonClick() {
+  if (_dirMode === 'projects') openProjectEdit(null);
+  else openDirAddTask();
+}
+
+function setDirMode(mode) {
+  _dirMode = mode;
+  const isProjects = mode === 'projects';
+  document.getElementById('dir-seg-tasks').classList.toggle('active', !isProjects);
+  document.getElementById('dir-seg-projects').classList.toggle('active', isProjects);
+  document.getElementById('dir-header-title').textContent = isProjects ? 'Projects' : 'Task Directory';
+  // Tasks-only chrome
+  document.getElementById('dir-search-wrap').style.display = isProjects ? 'none' : '';
+  document.getElementById('dir-filter-bar').style.display = isProjects ? 'none' : '';
+  const badge = document.getElementById('dir-freq-badge');
+  if (isProjects && badge) badge.style.display = 'none';
+  // Lists
+  document.getElementById('dir-list').style.display = isProjects ? 'none' : '';
+  document.getElementById('dir-projects-list').style.display = isProjects ? 'block' : 'none';
+  document.getElementById('dir-scroll-area').scrollTop = 0;
+  renderDirScreen();
+}
+
+// Total hours logged against a project (filled once clock-in tagging lands)
+function projectHours(projectId) {
+  return entries.filter(e => e.projectId === projectId)
+    .reduce((s, e) => s + (e.durationHours || 0), 0);
+}
+
+function renderProjects() {
+  const list = document.getElementById('dir-projects-list');
+  if (!list) return;
+  if (!PROJECTS.length) {
+    list.innerHTML = '<div class="project-empty">No projects yet.<br>Tap “+ Add” to create one.</div>';
+    return;
+  }
+  list.innerHTML = PROJECTS.map(p => {
+    const steps = p.steps || [];
+    const done = steps.filter(s => s.done).length;
+    const pct = steps.length ? Math.round(done / steps.length * 100) : 0;
+    const hrs = projectHours(p.id);
+    return `<div class="project-card" onclick="openProjectEdit('${p.id}')">
+      <div class="project-card-title">${escapeHtmlProj(p.name || 'Untitled project')}</div>
+      <div class="project-progress-track"><div class="project-progress-fill" style="width:${pct}%;"></div></div>
+      <div class="project-card-meta">
+        <span>✓ ${done}/${steps.length} steps</span>
+        <span>⏱ ${hrs.toFixed(2)}h logged</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function escapeHtmlProj(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+function openProjectEdit(id) {
+  if (id) {
+    const p = PROJECTS.find(x => x.id === id);
+    if (!p) return;
+    _projDraft = JSON.parse(JSON.stringify(p)); // deep copy
+    document.getElementById('project-modal-title').textContent = 'Edit Project';
+    document.getElementById('project-delete-wrap').style.display = 'block';
+    const hrs = projectHours(p.id);
+    document.getElementById('project-hours-note').textContent = hrs > 0 ? (hrs.toFixed(2) + 'h logged against this project') : 'No time logged yet';
+  } else {
+    _projDraft = { id: Date.now().toString(), name: '', steps: [], createdAt: new Date().toISOString() };
+    document.getElementById('project-modal-title').textContent = 'New Project';
+    document.getElementById('project-delete-wrap').style.display = 'none';
+    document.getElementById('project-hours-note').textContent = '';
+  }
+  document.getElementById('project-name').value = _projDraft.name || '';
+  renderProjectSteps();
+  openModal('modal-project');
+}
+
+function renderProjectSteps() {
+  const wrap = document.getElementById('project-steps-list');
+  if (!wrap) return;
+  const steps = _projDraft.steps || [];
+  if (!steps.length) {
+    wrap.innerHTML = '<div style="font-size:14px;color:var(--subtext);padding:8px 0;">No steps yet — add the one-off tasks for this project.</div>';
+    return;
+  }
+  wrap.innerHTML = steps.map((s, i) => `
+    <div class="pstep-row">
+      <button type="button" class="pstep-check${s.done ? ' done' : ''}" onclick="toggleProjectStep(${i})">${s.done ? '✓' : ''}</button>
+      <input class="pstep-input${s.done ? ' done' : ''}" value="${escapeHtmlProj(s.text || '')}" placeholder="Step description"
+        oninput="_projDraft.steps[${i}].text = this.value">
+      <button type="button" class="pstep-del" onclick="deleteProjectStep(${i})">✕</button>
+    </div>`).join('');
+}
+
+function addProjectStep() {
+  _projDraft.steps = _projDraft.steps || [];
+  _projDraft.steps.push({ id: Date.now().toString() + Math.random().toString(36).slice(2,6), text: '', done: false });
+  renderProjectSteps();
+  // focus the newly added input
+  const inputs = document.querySelectorAll('#project-steps-list .pstep-input');
+  if (inputs.length) inputs[inputs.length - 1].focus();
+}
+
+function toggleProjectStep(i) {
+  _projDraft.steps[i].done = !_projDraft.steps[i].done;
+  renderProjectSteps();
+}
+
+function deleteProjectStep(i) {
+  _projDraft.steps.splice(i, 1);
+  renderProjectSteps();
+}
+
+function saveProject() {
+  _projDraft.name = document.getElementById('project-name').value.trim();
+  if (!_projDraft.name) { showToast('Give the project a name'); return; }
+  // Drop blank steps
+  _projDraft.steps = (_projDraft.steps || []).filter(s => (s.text || '').trim());
+  const idx = PROJECTS.findIndex(p => p.id === _projDraft.id);
+  if (idx >= 0) PROJECTS[idx] = _projDraft;
+  else PROJECTS.push(_projDraft);
+  saveProjects();
+  closeModal('modal-project');
+  renderProjects();
+  showToast('Project saved');
+}
+
+function deleteProject() {
+  if (!_projDraft) return;
+  if (!confirm('Delete this project? This cannot be undone.')) return;
+  PROJECTS = PROJECTS.filter(p => p.id !== _projDraft.id);
+  saveProjects();
+  closeModal('modal-project');
+  renderProjects();
+  showToast('Project deleted');
+}
 
 // ════════════════════════════════
 //  DIRECTORY TASK LONG-PRESS DRAG
