@@ -1,0 +1,9 @@
+# Reference spreadsheets & documents kept in the project folder — not part
+# of the app, so don't track them or show them as untracked noise.
+*.xlsx
+*.xlsm
+*.docx
+*.pdf
+
+# Editor / OS cruft
+.DS_Store
