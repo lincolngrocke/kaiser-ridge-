@@ -1323,6 +1323,13 @@
         <span class="form-label">Equipment</span>
         <div id="f-tool-list" class="equip-chips"></div>
       </div>
+      <div class="form-row">
+        <span class="form-label">Project</span>
+        <select class="form-select" id="f-project">
+          <option value="">None</option>
+        </select>
+        <span class="form-chevron">›</span>
+      </div>
     </div>
 
     <div class="form-section">
@@ -1651,7 +1658,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-09.13';
+const APP_VERSION = '2026-06-09.14';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -1965,6 +1972,7 @@ function startClock(taskInfo) {
     task: taskInfo.task,
     subtask: taskInfo.subtask,
     tool: taskInfo.tool,
+    projectId: taskInfo.projectId || '',
     notes: taskInfo.notes,
     tempId: Date.now().toString(),
   };
@@ -1999,6 +2007,7 @@ function clockOut(overrideTime) {
     task: clockState.task,
     subtask: clockState.subtask,
     tool: clockState.tool,
+    projectId: clockState.projectId || '',
     notes: clockState.notes,
     clockIn: clockState.startTime,
     clockOut: overrideTime || new Date().toTimeString().slice(0,5),
@@ -2256,6 +2265,7 @@ function openCreate() {
   setOptions('f-group', [], 'Select…');
   setOptions('f-task', [], 'Select…');
   setEquipOptions([], []);
+  populateProjectDropdown('');
   document.getElementById('f-break').value = '0';
   document.getElementById('f-notes').value = '';
   document.getElementById('f-date').value = todayStr('-');
@@ -2298,6 +2308,7 @@ function openEdit(id) {
   setEquipOptions([...equip, ...selected], selected);
 
   document.getElementById('f-break').value = e.break || '0';
+  populateProjectDropdown(e.projectId || '');
   document.getElementById('f-notes').value = e.notes || '';
 
   const parts = e.date.split('/');
@@ -2336,6 +2347,7 @@ function openEditActive() {
   const breakOptions = [0, 0.0833333333, 0.1666666667, 0.25, 0.5, 0.75, 1];
   const nearest = breakOptions.reduce((a, b) => Math.abs(b - currentBreakH) < Math.abs(a - currentBreakH) ? b : a);
   document.getElementById('f-break').value = nearest.toString();
+  populateProjectDropdown(clockState.projectId || '');
   document.getElementById('f-notes').value = clockState.notes || '';
   document.getElementById('f-date').value = todayStr('-');
   document.getElementById('f-clockin').value = clockState.startTime || '';
@@ -2350,6 +2362,7 @@ function saveEntry() {
   const group     = document.getElementById('f-group').value;
   const task      = document.getElementById('f-task').value;
   const tool      = getEquipValue();
+  const projectId = document.getElementById('f-project').value;
   const notes     = document.getElementById('f-notes').value.trim();
   const clockIn = document.getElementById('f-clockin').value;
   const clockOut = document.getElementById('f-clockout').value;
@@ -2373,6 +2386,7 @@ function saveEntry() {
     clockState.group     = group;
     clockState.task      = task;
     clockState.tool      = tool;
+    clockState.projectId = projectId;
     clockState.notes     = notes;
     if (currentPin) clockState.pin = currentPin;
     if (clockIn) clockState.startTime = clockIn;
@@ -2391,7 +2405,7 @@ function saveEntry() {
     if (idx >= 0) {
       entries[idx] = {
         ...entries[idx],
-        location, frequency, group, task, tool, notes,
+        location, frequency, group, task, tool, projectId, notes,
         clockIn, clockOut, break: breakH,
         date: dateFormatted,
         durationHours: parseFloat(duration.toFixed(2)),
@@ -2400,7 +2414,7 @@ function saveEntry() {
     }
   } else {
     // New entry — show Now/Earlier for clock-in
-    const taskInfo = { location, frequency, group, task, tool, notes, pin: currentPin || null };
+    const taskInfo = { location, frequency, group, task, tool, projectId, notes, pin: currentPin || null };
     closeModal('modal-task');
     openTimeModal('in', taskInfo);
     return;
@@ -2906,6 +2920,7 @@ function confirmTime(choice) {
       task:      taskInfo.task      || '',
       subtask:   taskInfo.subtask   || '',
       tool:      taskInfo.tool      || '',
+      projectId: taskInfo.projectId || '',
       notes:     taskInfo.notes     || '',
       pin: _pendingTaskInfo && _pendingTaskInfo.pin ? _pendingTaskInfo.pin : (currentPin || null),
       tempId: Date.now().toString(),
@@ -4863,7 +4878,22 @@ function setDirMode(mode) {
   renderDirScreen();
 }
 
-// Total hours logged against a project (filled once clock-in tagging lands)
+// Fill the clock-in/edit form's Project dropdown, preserving any current value
+function populateProjectDropdown(selectedId) {
+  const sel = document.getElementById('f-project');
+  if (!sel) return;
+  const cur = selectedId !== undefined ? selectedId : sel.value;
+  sel.innerHTML = '<option value="">None</option>';
+  PROJECTS.forEach(p => {
+    const o = document.createElement('option');
+    o.value = p.id;
+    o.textContent = p.name || 'Untitled project';
+    sel.appendChild(o);
+  });
+  sel.value = cur || '';
+}
+
+// Total hours logged against a project
 function projectHours(projectId) {
   return entries.filter(e => e.projectId === projectId)
     .reduce((s, e) => s + (e.durationHours || 0), 0);
