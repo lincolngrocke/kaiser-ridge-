@@ -796,6 +796,7 @@
 
   <div class="update-banner" id="update-banner" onclick="forceAppUpdate()" style="display:none;">🔄 New version available — tap to update</div>
   <div class="update-banner" id="library-banner" onclick="pullLibrary()" style="display:none;background:var(--green);">📋 New task list available — tap to update</div>
+  <div class="update-banner" id="restore-clock-banner" onclick="restoreDiscardedClock()" style="display:none;background:var(--green);"></div>
   <div class="backup-banner" id="backup-banner-clock" onclick="exportBackup()" style="display:none;"></div>
 
   <div class="scroll-area">
@@ -1698,7 +1699,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-10.2';
+const APP_VERSION = '2026-06-10.3';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2035,6 +2036,7 @@ function startClock(taskInfo) {
     notes: taskInfo.notes,
     tempId: Date.now().toString(),
   };
+  localStorage.removeItem('kr_clock_trash'); // fresh session supersedes any discarded one
   localStorage.setItem('kr_clock', JSON.stringify(clockState));
   renderClockState();
   startTimerTick();
@@ -2136,6 +2138,7 @@ function renderClockState() {
     document.getElementById('run-timer').textContent = '0:00';
     timer.classList.remove('running');
   }
+  updateRestoreClockBanner();
   updateSummary();
 }
 
@@ -2991,6 +2994,7 @@ function confirmTime(choice) {
       pin: _pendingTaskInfo && _pendingTaskInfo.pin ? _pendingTaskInfo.pin : (currentPin || null),
       tempId: Date.now().toString(),
     };
+    localStorage.removeItem('kr_clock_trash'); // fresh session supersedes any discarded one
     localStorage.setItem('kr_clock', JSON.stringify(clockState));
     renderClockState();
     startTimerTick();
@@ -3705,11 +3709,53 @@ function toggleBreak() {
 
 function undoClockIn() {
   if (!clockState) return;
-  if (!confirm('Discard this clock-in? No entry will be saved.')) return;
+  const elapsedH = (Date.now() - clockState.startMs) / 3600000;
+  if (!confirm('Discard this clock-in?\n\nYou\'ll lose ' + elapsedH.toFixed(2) + 'h tracked. You can restore it from the Clock screen afterwards.')) return;
+  // Stash so an accidental discard can be brought back
+  localStorage.setItem('kr_clock_trash', JSON.stringify({ ...clockState, discardedAt: new Date().toISOString() }));
   clockState = null;
   localStorage.removeItem('kr_clock');
   renderClockState();
-  showToast('Clock-in discarded');
+  showToast('Discarded — restore it from the Clock screen');
+}
+
+// Bring back an accidentally-discarded running session (kept for 48h)
+function restoreDiscardedClock() {
+  const raw = localStorage.getItem('kr_clock_trash');
+  if (!raw) return;
+  if (clockState && clockState.running) { showToast('A clock is already running'); return; }
+  try {
+    const t = JSON.parse(raw);
+    delete t.discardedAt;
+    clockState = t;
+    localStorage.setItem('kr_clock', JSON.stringify(clockState));
+    localStorage.removeItem('kr_clock_trash');
+    renderClockState();
+    startTimerTick();
+    showToast('Session restored — clock resumed');
+  } catch (e) { showToast('Could not restore session'); }
+}
+
+// Show/hide the restore banner (when a recent discard exists and nothing is running)
+function updateRestoreClockBanner() {
+  const el = document.getElementById('restore-clock-banner');
+  if (!el) return;
+  const raw = localStorage.getItem('kr_clock_trash');
+  let show = false;
+  if (raw && !(clockState && clockState.running)) {
+    try {
+      const t = JSON.parse(raw);
+      const ageH = (Date.now() - new Date(t.discardedAt).getTime()) / 3600000;
+      if (ageH <= 48) {
+        const elapsedH = (new Date(t.discardedAt).getTime() - t.startMs) / 3600000;
+        el.textContent = '↩ Restore discarded session — ' + elapsedH.toFixed(2) + 'h on ' + (t.task || 'a task') + ' — tap to resume';
+        show = true;
+      } else {
+        localStorage.removeItem('kr_clock_trash'); // expire stale stash
+      }
+    } catch (e) { /* ignore */ }
+  }
+  el.style.display = show ? 'block' : 'none';
 }
 
 // ════════════════════════════════
