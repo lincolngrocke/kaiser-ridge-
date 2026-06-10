@@ -1698,7 +1698,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-10.1';
+const APP_VERSION = '2026-06-10.2';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4540,7 +4540,11 @@ let _subtaskItems = [];
 
 function renderDirSubtaskList(items) {
   _subtaskItems = items ? [...items] : _subtaskItems;
-  document.getElementById('dir-subtask-list').innerHTML = _subtaskItems.map((s, i) => `
+  const guides = getSubtaskGuides();
+  document.getElementById('dir-subtask-list').innerHTML = _subtaskItems.map((s, i) => {
+    const enc = s.replace(/'/g,"\\'");
+    const hasGuide = guides[s] && (_guideInstructionsToSteps(guides[s].instructions).length > 0 || guides[s].url);
+    return `
     <div id="strow-${i}" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
       <div style="color:var(--subtext);font-size:22px;padding:0 4px;user-select:none;-webkit-user-select:none;cursor:grab;"
         ontouchstart="stTouchStart(event,${i})">≡</div>
@@ -4549,8 +4553,11 @@ function renderDirSubtaskList(items) {
         onblur="updateSubtaskItem(${i}, this.value)"
         onkeydown="if(event.key==='Enter'){this.blur();}"
         style="flex:1;font-size:15px;color:var(--text);background:transparent;border:none;outline:none;padding:4px 0;min-width:0;">
+      <button onclick="openSubtaskGuide('${enc}')" title="${hasGuide ? 'Edit guide' : 'Add guide'}"
+        style="background:none;border:none;color:${hasGuide ? 'var(--blue)' : 'var(--subtext)'};font-size:18px;cursor:pointer;padding:4px 6px;flex-shrink:0;">📋</button>
       <button onclick="removeSubtaskItem(${i})" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:4px;flex-shrink:0;">✕</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function updateSubtaskItem(i, val) {
@@ -4904,6 +4911,14 @@ function saveSubtaskGuide() {
   autoBackup();
   showToast('Guide saved');
   closeModal('modal-subtask-guide');
+  // Keep the task editor's checklist in sync (refresh 📋 badge, follow renames)
+  if (document.getElementById('modal-dir-task').classList.contains('open')) {
+    if (newName && newName !== oldName) {
+      const idx = _subtaskItems.indexOf(oldName);
+      if (idx >= 0) _subtaskItems[idx] = finalName;
+    }
+    renderDirSubtaskList();
+  }
   renderSubtaskPickerList();
 }
 
