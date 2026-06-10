@@ -1024,6 +1024,20 @@
     <button class="btn-sync" style="background:var(--subtext); margin-top:8px;" onclick="triggerRestoreBackup()">⟲ Restore from Backup File</button>
     <input type="file" id="restore-file-input" accept="application/json,.json" style="display:none;" onchange="restoreBackupFromFile(event)">
 
+    <div class="settings-section" style="margin-top:16px">
+      <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
+        <div class="settings-label" style="font-weight:600;">Share Task Library</div>
+        <div style="font-size:13px; color:var(--subtext); line-height:1.6;">
+          Send your full task list (tasks, checklists, guides, equipment, locations) to another phone — e.g. Ethan's.
+          Importing <strong>replaces</strong> that device's task library to match yours, but leaves its own timesheets,
+          projects and settings untouched. Re-share whenever you change the list.
+        </div>
+      </div>
+    </div>
+    <button class="btn-sync" style="background:var(--blue); margin-top:8px;" onclick="exportTaskLibrary()">📤 Export Task Library</button>
+    <button class="btn-sync" style="background:var(--subtext); margin-top:8px;" onclick="triggerImportTaskLibrary()">📥 Import Task Library</button>
+    <input type="file" id="library-file-input" accept="application/json,.json" style="display:none;" onchange="importTaskLibraryFromFile(event)">
+
 
     <div class="settings-section" style="margin-top:16px">
       <div class="settings-row">
@@ -1666,7 +1680,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-09.16';
+const APP_VERSION = '2026-06-09.17';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3426,6 +3440,70 @@ function exportBackup() {
   updateBackupReminder();
   updateBackupBanner();
   showToast('Backup ready — save it somewhere safe (Drive, Files, email)');
+}
+
+// ── Task Library sharing (multi-device) ──
+// The shared task DEFINITIONS only — never timesheets, projects, clock, or
+// device settings. Lets one person maintain the list and push it to others.
+const KR_LIBRARY_KEYS = [
+  'kr_directory', 'kr_subtasks', 'kr_subtask_guides', 'kr_equipment_guides',
+  'kr_equipment_master', 'kr_extra_frequencies', 'kr_extra_locations',
+  'kr_task_order', 'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order'
+];
+
+function exportTaskLibrary() {
+  const data = {};
+  KR_LIBRARY_KEYS.forEach(key => { const raw = localStorage.getItem(key); if (raw !== null) data[key] = raw; });
+  const payload = { app: 'kaiser-ridge-task-tracker', kind: 'task-library', version: 1, createdAt: new Date().toISOString(), data };
+  const json = JSON.stringify(payload, null, 2);
+  const stamp = new Date().toISOString().slice(0,10);
+  const filename = `kaiser-ridge-task-library-${stamp}.json`;
+  const file = new File([json], filename, { type: 'application/json' });
+
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    navigator.share({ files: [file], title: 'Kaiser Ridge Task Library', text: 'Kaiser Ridge task library — ' + stamp })
+      .catch(err => { if (err.name !== 'AbortError') showToast('Could not share — try Save instead'); });
+  } else {
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+  showToast('Task library ready — send it to the other phone');
+}
+
+function triggerImportTaskLibrary() {
+  document.getElementById('library-file-input').click();
+}
+
+function importTaskLibraryFromFile(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const payload = JSON.parse(reader.result);
+      if (!payload || payload.app !== 'kaiser-ridge-task-tracker' || payload.kind !== 'task-library' || !payload.data) {
+        alert('This doesn\'t look like a Kaiser Ridge Task Library file.');
+        return;
+      }
+      if (!confirm(`Import this task library (made ${new Date(payload.createdAt).toLocaleString()})?\n\nThis REPLACES this phone's tasks, checklists, guides, equipment and locations with the shared list.\n\nYour timesheets, projects and settings are NOT affected.`)) return;
+
+      KR_LIBRARY_KEYS.forEach(key => {
+        if (Object.prototype.hasOwnProperty.call(payload.data, key)) localStorage.setItem(key, payload.data[key]);
+        else localStorage.removeItem(key); // full replace — clears stale local-only keys
+      });
+      showToast('Task library imported — reloading…');
+      setTimeout(() => location.reload(), 900);
+    } catch (err) {
+      console.error('Library import failed:', err);
+      alert('Could not read that file — make sure it\'s a Kaiser Ridge Task Library JSON file.');
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
 }
 
 function triggerRestoreBackup() {
