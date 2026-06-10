@@ -250,7 +250,69 @@ function handlePublishLibrary(data) {
   props.setProperty('kr_lib_count', String(count));
   props.setProperty('kr_lib_version', version);
 
+  // Also write a human-readable mirror tab so the manager can SEE the list.
+  // This is one-way (app → sheet) and never read back — the app stays master.
+  try { writeLibraryViewTab(lib, version); } catch (e) { /* view tab is best-effort */ }
+
   return jsonResponse({ success: true, version: version, chunks: count, bytes: lib.length });
+}
+
+// ── Render the published library to a readable "Task Library" tab ──
+function writeLibraryViewTab(libStr, version) {
+  const payload = JSON.parse(libStr);
+  const d = (payload && payload.data) || {};
+  const directory = d.kr_directory ? JSON.parse(d.kr_directory) : [];
+  const subtasks  = d.kr_subtasks  ? JSON.parse(d.kr_subtasks)  : {};
+  const projects  = d.kr_projects  ? JSON.parse(d.kr_projects)  : [];
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const TAB = 'Task Library';
+  let sheet = ss.getSheetByName(TAB);
+  if (!sheet) sheet = ss.insertSheet(TAB);
+  sheet.clear();
+
+  const rows = [];
+  rows.push(['Kaiser Ridge — Task Library', 'Published: ' + formatVersion(version)]);
+  rows.push(['Read-only mirror — create or edit tasks in the app, not here.']);
+  rows.push([]);
+  rows.push(['Frequency', 'Group', 'Task', 'Equipment', 'Location', 'Checklist']);
+
+  // Consolidate directory rows (one row per equipment) into one row per task
+  const byKey = {}; const order = [];
+  directory.forEach(r => {
+    const key = (r.frequency || '') + '||' + (r.group || '') + '||' + (r.task || '');
+    if (!byKey[key]) { byKey[key] = { frequency: r.frequency || '', group: r.group || '', task: r.task || '', location: r.location || '', equip: [] }; order.push(key); }
+    if (r.equipment) byKey[key].equip.push(r.equipment);
+    if (r.location && !byKey[key].location) byKey[key].location = r.location;
+  });
+  order.forEach(key => {
+    const t = byKey[key];
+    const checklist = (subtasks[t.task] || []).join('  •  ');
+    rows.push([t.frequency, t.group, t.task, t.equip.join(', '), t.location, checklist]);
+  });
+
+  if (projects.length) {
+    rows.push([]);
+    rows.push(['PROJECTS']);
+    rows.push(['Project', 'Steps']);
+    projects.forEach(p => {
+      const steps = (p.steps || []).map(s => (s.done ? '✓ ' : '') + (s.text || '')).join('  •  ');
+      rows.push([p.name || 'Untitled project', steps]);
+    });
+  }
+
+  // Pad every row to 6 columns so setValues gets a rectangular range
+  const padded = rows.map(r => { const row = r.slice(); while (row.length < 6) row.push(''); return row; });
+  sheet.getRange(1, 1, padded.length, 6).setValues(padded);
+  sheet.getRange(1, 1, 1, 6).setFontWeight('bold');
+  sheet.getRange(4, 1, 1, 6).setFontWeight('bold');
+  sheet.setFrozenRows(4);
+}
+
+function formatVersion(v) {
+  const n = parseInt(v, 10);
+  if (!isNaN(n) && String(n) === String(v)) return new Date(n).toLocaleString();
+  return v;
 }
 
 function jsonResponse(obj) {
