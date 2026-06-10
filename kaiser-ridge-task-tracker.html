@@ -889,7 +889,7 @@
       <div class="header-title" id="dir-header-title">Task Directory</div>
       <div id="dir-freq-badge" style="display:none;background:var(--blue);color:#fff;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;letter-spacing:0.3px;text-transform:uppercase;"></div>
     </div>
-    <button onclick="dirAddButtonClick()" style="background:var(--blue);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:14px;font-weight:600;cursor:pointer;">+ Add</button>
+    <button id="dir-add-btn" onclick="dirAddButtonClick()" style="background:var(--blue);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:14px;font-weight:600;cursor:pointer;">+ Add</button>
   </div>
   <!-- Tasks / Projects toggle -->
   <div style="display:flex;gap:6px;padding:8px 12px 0;background:var(--card);">
@@ -941,8 +941,8 @@
     <button id="planner-next" onclick="plannerChangeDay(1)" style="background:none;border:none;color:var(--blue);font-size:22px;padding:4px 8px;cursor:pointer;">›</button>
   </div>
   <div style="padding:0 16px 8px;display:flex;gap:8px;align-items:center;">
-    <button onclick="openPlannerAddTask()" style="flex:1;background:var(--blue);color:#fff;border:none;border-radius:12px;padding:10px;font-size:15px;font-weight:600;cursor:pointer;">+ Add Task</button>
-    <button onclick="pushPlannerToCalendar()" title="Push this day to Google Calendar" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;font-size:15px;cursor:pointer;">📆</button>
+    <button id="planner-add-btn" onclick="openPlannerAddTask()" style="flex:1;background:var(--blue);color:#fff;border:none;border-radius:12px;padding:10px;font-size:15px;font-weight:600;cursor:pointer;">+ Add Task</button>
+    <button id="planner-cal-btn" onclick="pushPlannerToCalendar()" title="Push this day to Google Calendar" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;font-size:15px;cursor:pointer;">📆</button>
     <button onclick="plannerGoToday()" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-size:13px;color:var(--blue);cursor:pointer;">Today</button>
   </div>
   <div class="scroll-area" id="planner-scroll" style="position:relative;overflow-y:auto;flex:1;">
@@ -978,6 +978,21 @@
     </div>
     <div class="settings-note" style="margin-top:0">
       This name will be used as the default Personnel on every new entry.
+    </div>
+
+    <div class="settings-section" style="margin-top:16px;">
+      <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
+        <div class="settings-label" style="font-weight:600;">Device Role</div>
+        <div style="display:flex;gap:6px;width:100%;">
+          <button id="role-seg-manager" class="dir-seg active" onclick="setRole('manager')">Manager</button>
+          <button id="role-seg-worker" class="dir-seg" onclick="setRole('worker')">Worker</button>
+        </div>
+        <div style="font-size:13px; color:var(--subtext); line-height:1.6;">
+          <strong>Manager</strong> can edit everything. <strong>Worker</strong> (e.g. Ethan) can clock in/out, add notes,
+          tag time to a project step, and view the planner — but can't add or edit tasks, equipment, projects or
+          planner blocks. It's a tidiness guardrail, not a security lock.
+        </div>
+      </div>
     </div>
 
     <div class="settings-section" style="margin-top:16px">
@@ -1657,7 +1672,7 @@
     <div class="modal-header">
       <button onclick="closeModal('modal-project')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;">Cancel</button>
       <span class="modal-title" id="project-modal-title">Project</span>
-      <button onclick="saveProject()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Save</button>
+      <button id="project-save-btn" onclick="saveProject()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Save</button>
     </div>
     <div style="padding:16px;">
       <input id="project-name" placeholder="Project name" autocomplete="off"
@@ -1666,7 +1681,7 @@
 
       <div style="font-size:12px;color:var(--subtext);font-weight:600;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">Steps</div>
       <div id="project-steps-list"></div>
-      <button onclick="addProjectStep()" style="margin-top:10px;background:none;border:1px dashed var(--border);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">+ Add Step</button>
+      <button id="project-addstep-btn" onclick="addProjectStep()" style="margin-top:10px;background:none;border:1px dashed var(--border);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">+ Add Step</button>
 
       <button id="project-delete-wrap" onclick="deleteProject()" style="display:none;margin-top:20px;background:none;border:1px solid var(--red);border-radius:10px;width:100%;padding:12px;color:var(--red);font-size:15px;font-weight:600;cursor:pointer;">Delete Project</button>
     </div>
@@ -1680,7 +1695,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-09.17';
+const APP_VERSION = '2026-06-09.18';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -1903,6 +1918,7 @@ window.addEventListener('load', () => {
   renderTimesheets();
   updateStats();
   startTimerTick();
+  applyRoleUI();
   checkForUpdate();
   // Re-check when the app is brought back to the foreground (throttled to 60s)
   document.addEventListener('visibilitychange', () => {
@@ -3448,7 +3464,8 @@ function exportBackup() {
 const KR_LIBRARY_KEYS = [
   'kr_directory', 'kr_subtasks', 'kr_subtask_guides', 'kr_equipment_guides',
   'kr_equipment_master', 'kr_extra_frequencies', 'kr_extra_locations',
-  'kr_task_order', 'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order'
+  'kr_task_order', 'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
+  'kr_projects'
 ];
 
 function exportTaskLibrary() {
@@ -4060,6 +4077,7 @@ function openDirAddTask() {
 }
 
 function openDirEditTask(encodedKey) {
+  if (isWorker()) { showToast('Worker mode — tasks are managed on the manager device'); return; }
   const key = decodeURIComponent(encodedKey);
   const [keyFreq, keyGrp, task] = key.split('||');
   _dirEditingKey = key;
@@ -4966,8 +4984,29 @@ function renderDirScreen() {
 }
 
 function dirAddButtonClick() {
+  if (isWorker()) return;
   if (_dirMode === 'projects') openProjectEdit(null);
   else openDirAddTask();
+}
+
+// ── Device role (Manager / Worker) ──
+// Worker is a tidiness guardrail (not security): clock in/out, notes, project
+// tagging and read-only viewing only — no editing tasks/equipment/projects/planner.
+function getRole() { return localStorage.getItem('kr_role') || 'manager'; }
+function isWorker() { return getRole() === 'worker'; }
+function setRole(role) {
+  localStorage.setItem('kr_role', role);
+  applyRoleUI();
+  showToast(role === 'worker' ? 'Worker mode — editing locked' : 'Manager mode — full access');
+}
+function applyRoleUI() {
+  const isW = isWorker();
+  document.body.classList.toggle('worker-mode', isW);
+  ['dir-add-btn', 'planner-add-btn', 'planner-cal-btn'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.style.display = isW ? 'none' : '';
+  });
+  const m = document.getElementById('role-seg-manager'), w = document.getElementById('role-seg-worker');
+  if (m && w) { m.classList.toggle('active', !isW); w.classList.toggle('active', isW); }
 }
 
 function setDirMode(mode) {
@@ -5081,6 +5120,13 @@ function openProjectEdit(id) {
     document.getElementById('project-hours-note').textContent = '';
   }
   document.getElementById('project-name').value = _projDraft.name || '';
+  // Worker mode: read-only view (no editing, but can see steps + hours)
+  const ro = isWorker();
+  document.getElementById('project-name').readOnly = ro;
+  document.getElementById('project-save-btn').style.display = ro ? 'none' : '';
+  document.getElementById('project-addstep-btn').style.display = ro ? 'none' : '';
+  if (ro) document.getElementById('project-delete-wrap').style.display = 'none';
+  if (ro && id) document.getElementById('project-modal-title').textContent = 'Project';
   renderProjectSteps();
   openModal('modal-project');
 }
@@ -5093,16 +5139,16 @@ function renderProjectSteps() {
     wrap.innerHTML = '<div style="font-size:14px;color:var(--subtext);padding:8px 0;">No steps yet — add the one-off tasks for this project.</div>';
     return;
   }
+  const ro = isWorker();
   wrap.innerHTML = steps.map((s, i) => {
     const hrs = stepHours(_projDraft.id, s.id);
     const hrsLabel = hrs > 0 ? `<span class="pstep-hours">${hrs.toFixed(2)}h</span>` : '';
     return `
     <div class="pstep-row">
-      <button type="button" class="pstep-check${s.done ? ' done' : ''}" onclick="toggleProjectStep(${i})">${s.done ? '✓' : ''}</button>
-      <input class="pstep-input${s.done ? ' done' : ''}" value="${escapeHtmlProj(s.text || '')}" placeholder="Step description"
-        oninput="_projDraft.steps[${i}].text = this.value">
+      <button type="button" class="pstep-check${s.done ? ' done' : ''}"${ro ? ' disabled' : ` onclick="toggleProjectStep(${i})"`}>${s.done ? '✓' : ''}</button>
+      <input class="pstep-input${s.done ? ' done' : ''}" value="${escapeHtmlProj(s.text || '')}" placeholder="Step description"${ro ? ' readonly' : ` oninput="_projDraft.steps[${i}].text = this.value"`}>
       ${hrsLabel}
-      <button type="button" class="pstep-del" onclick="deleteProjectStep(${i})">✕</button>
+      ${ro ? '' : `<button type="button" class="pstep-del" onclick="deleteProjectStep(${i})">✕</button>`}
     </div>`;
   }).join('');
 }
@@ -5127,6 +5173,7 @@ function deleteProjectStep(i) {
 }
 
 function saveProject() {
+  if (isWorker()) return;
   _projDraft.name = document.getElementById('project-name').value.trim();
   if (!_projDraft.name) { showToast('Give the project a name'); return; }
   // Drop blank steps
@@ -5141,6 +5188,7 @@ function saveProject() {
 }
 
 function deleteProject() {
+  if (isWorker()) return;
   if (!_projDraft) return;
   if (!confirm('Delete this project? This cannot be undone.')) return;
   PROJECTS = PROJECTS.filter(p => p.id !== _projDraft.id);
@@ -5163,6 +5211,7 @@ let _dtStartY = 0;
 let _dtScrollInterval = null;
 
 function dirTaskTouchStart(e, row) {
+  if (isWorker()) return; // no drag-reorder in worker mode
   _dtDragging = false;
   _dtSrcRow = row;
   _dtStartY = e.touches[0].clientY;
@@ -5634,6 +5683,7 @@ function renderPlannerLiveBlock(cs, grid) {
 // ── Add task modal ──
 
 function openPlannerAddTask() {
+  if (isWorker()) return;
   _plannerAddTask = null;
   // Default start time: now rounded to nearest 15min, or 8am
   const now = new Date();
@@ -5724,7 +5774,7 @@ function openPlannerDetail(planId) {
   const clockInBtn = document.querySelector('#modal-planner-detail button[onclick="plannerClockIn()"]');
   const deleteBtn  = document.querySelector('#modal-planner-detail button[onclick="deletePlannerBlock()"]');
   if (clockInBtn) clockInBtn.style.display = '';
-  if (deleteBtn)  deleteBtn.style.display  = '';
+  if (deleteBtn)  deleteBtn.style.display  = isWorker() ? 'none' : '';
   document.getElementById('planner-detail-title').textContent = plan.task;
   const startStr = formatTimeAmPm(plan.startTime);
   const endMins = (parseInt(plan.startTime.split(':')[0]) * 60 + parseInt(plan.startTime.split(':')[1])) + plan.durationHours * 60;
@@ -5822,6 +5872,7 @@ function plannerDragStart(e, planId, origTop) {
 
 function plannerDragMove(e) {
   if (!_plannerDragId) return;
+  if (isWorker()) return; // workers can tap to view a block but not drag it
   const t = e.touches[0];
   // Only start moving after finger travels >8px — prevents tap from repositioning block
   if (!_plannerIsDragging) {
@@ -5971,6 +6022,7 @@ async function syncCalendarForDate(dateStr, opts) {
 
 // 📆 button — pushes the day currently shown in the planner
 function pushPlannerToCalendar() {
+  if (isWorker()) return;
   return syncCalendarForDate(plannerDateStr(_plannerDate), { requireItems: true });
 }
 
