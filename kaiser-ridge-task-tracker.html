@@ -1590,6 +1590,46 @@
   </div>
 </div>
 
+<!-- ══════════════ EQUIPMENT DETAIL · NOTES & FILES ══════════════ -->
+<div class="modal-backdrop" id="modal-equipment-detail" style="z-index:600;">
+  <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:92vh;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;padding:16px 20px 8px;border-bottom:1px solid var(--border);">
+      <button onclick="closeModal('modal-equipment-detail')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:0;margin-right:12px;">‹ Back</button>
+      <span id="equip-detail-title" style="font-size:17px;font-weight:600;flex:1;text-align:center;">Equipment</span>
+      <button onclick="closeModal('modal-equipment-detail')" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;padding:0;width:60px;text-align:right;">Done</button>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:20px;">
+      <input type="hidden" id="equip-detail-name">
+
+      <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">NOTES</div>
+      <div id="equip-detail-note-add" style="display:flex;gap:8px;margin-bottom:14px;">
+        <input id="equip-detail-note-input" type="text" placeholder="Add a quick note…"
+          autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false"
+          style="flex:1;padding:12px 14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();addEquipmentNote();}">
+        <button onclick="addEquipmentNote()" style="background:var(--blue);border:none;border-radius:12px;color:#fff;font-size:15px;font-weight:600;padding:0 18px;cursor:pointer;">Add</button>
+      </div>
+      <div id="equip-detail-notes-list"></div>
+
+      <div style="font-size:13px;font-weight:600;color:var(--subtext);margin:24px 0 4px;">FILES & LINKS</div>
+      <div style="font-size:12px;color:var(--subtext);margin-bottom:10px;">Paste a Google Drive / Dropbox link to a manual, photo or document.</div>
+      <div id="equip-detail-link-add">
+        <input id="equip-detail-link-label" type="text" placeholder="Label (e.g. Parts Manual)"
+          autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false"
+          style="width:100%;padding:12px 14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;margin-bottom:8px;">
+        <div style="display:flex;gap:8px;">
+          <input id="equip-detail-link-url" type="url" placeholder="https://drive.google.com/…"
+            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+            style="flex:1;padding:12px 14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();addEquipmentLink();}">
+          <button onclick="addEquipmentLink()" style="background:var(--blue);border:none;border-radius:12px;color:#fff;font-size:15px;font-weight:600;padding:0 16px;cursor:pointer;white-space:nowrap;">Add link</button>
+        </div>
+      </div>
+      <div id="equip-detail-links-list" style="margin-top:6px;"></div>
+    </div>
+  </div>
+</div>
+
 <!-- ══════════════ SUBTASK PICKER ══════════════ -->
 <div class="modal-backdrop" id="modal-subtask-picker" style="z-index:300;">
   <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:85vh;display:flex;flex-direction:column;">
@@ -1707,7 +1747,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-10.9';
+const APP_VERSION = '2026-06-11.1';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3414,6 +3454,7 @@ function saveEntries() {
 // from Settings so a reinstall or device change never wipes your data again.
 const KR_BACKUP_KEYS = [
   'kr_directory', 'kr_subtasks', 'kr_subtask_guides', 'kr_equipment_guides',
+  'kr_equipment_notes', 'kr_equipment_links',
   'kr_equipment_master', 'kr_extra_frequencies', 'kr_extra_locations',
   'kr_task_order', 'kr_entries', 'kr_user_name', 'kr_weekly_target',
   'kr_sheet_url', 'kr_dark_mode',
@@ -3561,6 +3602,7 @@ function exportBackup() {
 // device settings. Lets one person maintain the list and push it to others.
 const KR_LIBRARY_KEYS = [
   'kr_directory', 'kr_subtasks', 'kr_subtask_guides', 'kr_equipment_guides',
+  'kr_equipment_notes', 'kr_equipment_links',
   'kr_equipment_master', 'kr_extra_frequencies', 'kr_extra_locations',
   'kr_task_order', 'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
   'kr_projects'
@@ -4149,6 +4191,10 @@ function _renameEquipment(oldName, newName) {
   const master = getEquipmentMaster();
   const m = master.find(e => e.name === oldName);
   if (m) { m.name = newName; saveEquipmentMaster(master); }
+  ['kr_equipment_notes', 'kr_equipment_links', 'kr_equipment_guides'].forEach(k => {
+    const o = JSON.parse(localStorage.getItem(k) || '{}');
+    if (o[oldName] !== undefined) { o[newName] = o[oldName]; delete o[oldName]; localStorage.setItem(k, JSON.stringify(o)); }
+  });
   _equipmentItems = _equipmentItems.map(e => e === oldName ? newName : e);
   renderDirEquipmentList();
   renderDirectory();
@@ -4523,10 +4569,20 @@ function openEquipmentManager() {
   openModal('modal-equipment-manager');
 }
 
+function equipMetaLabel(nC, lC) {
+  if (!nC && !lC) return '＋ Notes &amp; files';
+  const parts = [];
+  if (nC) parts.push('📝 ' + nC + ' note' + (nC > 1 ? 's' : ''));
+  if (lC) parts.push('🔗 ' + lC + ' link' + (lC > 1 ? 's' : ''));
+  return parts.join('  ·  ');
+}
+
 function renderEquipmentManager() {
   const master = getEquipmentMaster();
   const active = master.filter(e => !e.archived);
   const archived = master.filter(e => e.archived);
+  const allNotes = getEquipmentNotes();
+  const allLinks = getEquipmentLinks();
 
   // Active list with drag handles
   const activeEl = document.getElementById('equip-manager-active');
@@ -4537,7 +4593,10 @@ function renderEquipmentManager() {
       <div draggable="true" ondragstart="emDragStart(event,${i})"
         style="cursor:grab;color:var(--subtext);font-size:22px;padding:0 8px;user-select:none;-webkit-user-select:none;"
         ontouchstart="emTouchStart(event,${i})" ontouchmove="emTouchMove(event)" ontouchend="emTouchEnd(event)">≡</div>
-      <span style="flex:1;font-size:16px;color:var(--text);">${e.name}</span>
+      <div onclick="openEquipmentDetailByIndex(${i})" style="flex:1;min-width:0;cursor:pointer;">
+        <span style="display:block;font-size:16px;color:var(--text);">${e.name}</span>
+        <span style="display:block;font-size:12px;color:var(--blue);margin-top:3px;">${equipMetaLabel((allNotes[e.name]||[]).length,(allLinks[e.name]||[]).length)}</span>
+      </div>
       <button onclick="archiveEquipment('${e.name.replace(/'/g,"\\'")}');"
         style="background:none;border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:13px;color:var(--subtext);cursor:pointer;">Archive</button>
       <button onclick="deleteEquipment('${e.name.replace(/'/g,"\\'")}');"
@@ -4574,6 +4633,10 @@ function deleteEquipment(name) {
   if (!confirm('Permanently delete "' + name + '" from your equipment list?\n\nAny tasks or past entries that already use it keep their label — it just won\'t appear here or be offered for new tasks anymore.')) return;
   const master = getEquipmentMaster().filter(e => e.name !== name);
   saveEquipmentMaster(master);
+  ['kr_equipment_notes', 'kr_equipment_links', 'kr_equipment_guides'].forEach(k => {
+    const o = JSON.parse(localStorage.getItem(k) || '{}');
+    if (o[name] !== undefined) { delete o[name]; localStorage.setItem(k, JSON.stringify(o)); }
+  });
   renderEquipmentManager();
   showToast('Equipment deleted');
 }
@@ -4684,6 +4747,138 @@ function emTouchEnd(event) {
     showToast('Order saved');
   }
   _touchSrcIdx = null; _touchDragging = false; _rowRects = [];
+  renderEquipmentManager();
+}
+
+// ── Per-equipment notes & links ──────────────────────────────────────────────
+// Both keyed by equipment name (like guides). Shared via the Task Library and
+// included in backups. Workers see them read-only.
+function getEquipmentNotes() { return JSON.parse(localStorage.getItem('kr_equipment_notes') || '{}'); }
+function saveEquipmentNotes(o) { localStorage.setItem('kr_equipment_notes', JSON.stringify(o)); }
+function getEquipmentLinks() { return JSON.parse(localStorage.getItem('kr_equipment_links') || '{}'); }
+function saveEquipmentLinks(o) { localStorage.setItem('kr_equipment_links', JSON.stringify(o)); }
+
+let _equipDetailName = '';
+
+function openEquipmentDetailByIndex(i) {
+  const active = getEquipmentMaster().filter(e => !e.archived);
+  if (active[i]) openEquipmentDetail(active[i].name);
+}
+
+function openEquipmentDetail(name) {
+  _equipDetailName = name;
+  document.getElementById('equip-detail-name').value = name;
+  document.getElementById('equip-detail-title').textContent = name.length > 26 ? name.slice(0, 26) + '…' : name;
+  const ro = isWorker();
+  document.getElementById('equip-detail-note-add').style.display = ro ? 'none' : 'flex';
+  document.getElementById('equip-detail-link-add').style.display = ro ? 'none' : 'block';
+  document.getElementById('equip-detail-note-input').value = '';
+  document.getElementById('equip-detail-link-label').value = '';
+  document.getElementById('equip-detail-link-url').value = '';
+  renderEquipmentNotes();
+  renderEquipmentLinks();
+  openModal('modal-equipment-detail');
+}
+
+function fmtNoteTime(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) + ', ' +
+    d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }).toLowerCase();
+}
+
+function renderEquipmentNotes() {
+  const notes = (getEquipmentNotes()[_equipDetailName] || []).slice()
+    .sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
+  const ro = isWorker();
+  document.getElementById('equip-detail-notes-list').innerHTML = notes.length ? notes.map(n => `
+    <div style="padding:12px 0;border-bottom:1px solid var(--border);">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+        <span style="font-size:12px;color:var(--subtext);">${fmtNoteTime(n.ts)}</span>
+        ${ro ? '' : `<button onclick="deleteEquipmentNote('${n.id}')" style="background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;padding:0 2px;flex-shrink:0;">✕</button>`}
+      </div>
+      <div style="font-size:15px;color:var(--text);line-height:1.45;white-space:pre-wrap;margin-top:3px;">${escapeHtmlProj(n.text)}</div>
+    </div>`).join('')
+    : '<div style="padding:6px 0 2px;color:var(--subtext);font-size:14px;">No notes yet.</div>';
+}
+
+function addEquipmentNote() {
+  if (isWorker()) return;
+  const input = document.getElementById('equip-detail-note-input');
+  const text = input.value.trim();
+  if (!text) return;
+  const all = getEquipmentNotes();
+  if (!all[_equipDetailName]) all[_equipDetailName] = [];
+  all[_equipDetailName].push({ id: 'n' + Date.now() + Math.random().toString(36).slice(2, 6), ts: new Date().toISOString(), text });
+  saveEquipmentNotes(all);
+  autoBackup();
+  input.value = '';
+  renderEquipmentNotes();
+  renderEquipmentManager();
+}
+
+function deleteEquipmentNote(id) {
+  if (isWorker()) return;
+  const all = getEquipmentNotes();
+  all[_equipDetailName] = (all[_equipDetailName] || []).filter(n => n.id !== id);
+  if (!all[_equipDetailName].length) delete all[_equipDetailName];
+  saveEquipmentNotes(all);
+  autoBackup();
+  renderEquipmentNotes();
+  renderEquipmentManager();
+}
+
+function _equipLinkIcon(label, url) {
+  const u = (url || '').toLowerCase();
+  const s = ((label || '') + ' ' + u);
+  if (/\.(jpg|jpeg|png|gif|heic|webp)(\?|$|#)/.test(u) || /photo|image|\bpic\b/.test(s)) return '🖼️';
+  if (/\.pdf(\?|$|#)/.test(u) || /manual|guide|\bdoc\b|pdf/.test(s)) return '📄';
+  return '🔗';
+}
+function _equipHostLabel(url) {
+  try { return new URL(url).hostname.replace('www.', ''); } catch (e) { return 'Open link'; }
+}
+
+function renderEquipmentLinks() {
+  const links = getEquipmentLinks()[_equipDetailName] || [];
+  const ro = isWorker();
+  document.getElementById('equip-detail-links-list').innerHTML = links.length ? links.map(l => `
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--border);">
+      <span style="font-size:20px;flex-shrink:0;">${_equipLinkIcon(l.label, l.url)}</span>
+      <a href="${escapeHtmlProj(l.url)}" target="_blank" rel="noopener" style="flex:1;min-width:0;text-decoration:none;">
+        <div style="font-size:15px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtmlProj(l.label || _equipHostLabel(l.url))}</div>
+        <div style="font-size:12px;color:var(--blue);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtmlProj(_equipHostLabel(l.url))} ↗</div>
+      </a>
+      ${ro ? '' : `<button onclick="deleteEquipmentLink('${l.id}')" style="background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;padding:0 2px;flex-shrink:0;">✕</button>`}
+    </div>`).join('')
+    : '<div style="padding:6px 0 2px;color:var(--subtext);font-size:14px;">No files or links yet.</div>';
+}
+
+function addEquipmentLink() {
+  if (isWorker()) return;
+  const labelEl = document.getElementById('equip-detail-link-label');
+  const urlEl = document.getElementById('equip-detail-link-url');
+  let url = urlEl.value.trim();
+  const label = labelEl.value.trim();
+  if (!url) { showToast('Paste a link first'); return; }
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  const all = getEquipmentLinks();
+  if (!all[_equipDetailName]) all[_equipDetailName] = [];
+  all[_equipDetailName].push({ id: 'l' + Date.now() + Math.random().toString(36).slice(2, 6), label, url, ts: new Date().toISOString() });
+  saveEquipmentLinks(all);
+  autoBackup();
+  labelEl.value = ''; urlEl.value = '';
+  renderEquipmentLinks();
+  renderEquipmentManager();
+}
+
+function deleteEquipmentLink(id) {
+  if (isWorker()) return;
+  const all = getEquipmentLinks();
+  all[_equipDetailName] = (all[_equipDetailName] || []).filter(l => l.id !== id);
+  if (!all[_equipDetailName].length) delete all[_equipDetailName];
+  saveEquipmentLinks(all);
+  autoBackup();
+  renderEquipmentLinks();
   renderEquipmentManager();
 }
 
