@@ -1789,7 +1789,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-11.3';
+const APP_VERSION = '2026-06-11.4';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2117,6 +2117,7 @@ function startClock(taskInfo) {
     startTime: new Date().toTimeString().slice(0,5),
     date: todayStr(),
     location: taskInfo.location,
+    frequency: taskInfo.frequency || '',
     group: taskInfo.group,
     task: taskInfo.task,
     subtask: taskInfo.subtask,
