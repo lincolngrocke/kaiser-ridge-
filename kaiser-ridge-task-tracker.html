@@ -1789,7 +1789,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-11.4';
+const APP_VERSION = '2026-06-11.5';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2337,6 +2337,19 @@ function updateTsChips() {
   });
 }
 
+// "Project · Step" label for a timesheet entry, or '' if not tagged to a project
+function entryProjectLabel(e) {
+  if (!e.projectId) return '';
+  const p = PROJECTS.find(x => x.id === e.projectId);
+  if (!p) return '';
+  let label = p.name || 'Untitled project';
+  if (e.projectStepId) {
+    const s = (p.steps || []).find(st => st.id === e.projectStepId);
+    if (s) label += ' · ' + (s.text || 'Untitled step');
+  }
+  return label;
+}
+
 function renderTimesheets() {
   updateRestoreEntryBanner();
   const list = document.getElementById('ts-list');
@@ -2350,7 +2363,7 @@ function renderTimesheets() {
   });
   if (searchTerm) {
     filtered = filtered.filter(e =>
-      [e.task, e.group, e.notes, e.tool, e.location, e.frequency, e.sheetId].some(f => f && f.toLowerCase().includes(searchTerm))
+      [e.task, e.group, e.notes, e.tool, e.location, e.frequency, e.sheetId, entryProjectLabel(e)].some(f => f && f.toLowerCase().includes(searchTerm))
     );
   }
 
@@ -2378,6 +2391,7 @@ function renderTimesheets() {
 
   list.innerHTML = filtered.map(e => {
     const tag = [e.group, e.task].filter(Boolean).join(' · ');
+    const projLabel = entryProjectLabel(e);
     const dateObj = new Date(e.date.split('/').reverse().join('-'));
     const dateStr = dateObj.toLocaleDateString('en-AU', {weekday:'short', day:'numeric', month:'long', year:'numeric'});
     const syncBadge = e.synced ? '' : ' 🔄';
@@ -2394,6 +2408,7 @@ function renderTimesheets() {
         </div>
       </div>
       <div class="ts-entry-tag" style="margin-top:4px">${hl(tag)}</div>
+      ${projLabel ? `<div style="font-size:12px;color:var(--blue);margin-top:2px;">📁 ${hl(projLabel)}</div>` : ''}
       ${e.tool ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${hl(e.tool)}</div>` : ''}
       ${e.break > 0 ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☕ ${(e.break * 60).toFixed(0)}min break</div>` : ''}
       ${e.notes ? `<div class="ts-entry-note">${hl(e.notes)}</div>` : ''}
