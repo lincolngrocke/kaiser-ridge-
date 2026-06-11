@@ -576,6 +576,13 @@
   }
   .nav-tab.active { color: var(--blue); }
   .nav-icon { font-size: 22px; line-height: 1; }
+  .more-row {
+    display: flex; align-items: center; gap: 14px; width: 100%;
+    padding: 15px 20px; background: none; border: none;
+    border-top: 1px solid var(--border);
+    font-size: 17px; color: var(--text); text-align: left; cursor: pointer;
+  }
+  .more-row:active { background: var(--bg); }
 
   /* ── SETTINGS / SYNC SCREEN ── */
   .settings-section {
@@ -1238,19 +1245,30 @@
   <button class="nav-tab" onclick="showScreen('dashboard',this)">
     <span class="nav-icon">📊</span>Dashboard
   </button>
-  <button class="nav-tab" onclick="showScreen('directory',this)">
-    <span class="nav-icon">📁</span>Directory
-  </button>
-  <button class="nav-tab" onclick="showScreen('equipment',this)">
-    <span class="nav-icon">🧰</span>Equipment
-  </button>
   <button class="nav-tab" onclick="showScreen('planner',this)">
     <span class="nav-icon">🗓</span>Planner
   </button>
-  <button class="nav-tab" onclick="showScreen('settings',this)">
-    <span class="nav-icon">⚙️</span>Settings
+  <button class="nav-tab" id="nav-more-tab" onclick="openMoreMenu()">
+    <span class="nav-icon">☰</span>More
   </button>
 </nav>
+
+<!-- ══════════════ MORE MENU ══════════════ -->
+<div class="modal-backdrop" id="modal-more-menu" style="z-index:300;" onclick="if(event.target===this)closeModal('modal-more-menu')">
+  <div class="modal-sheet" style="padding:8px 0 calc(24px + env(safe-area-inset-bottom));">
+    <div class="modal-handle"></div>
+    <div style="font-size:13px;font-weight:600;color:var(--subtext);padding:4px 20px 8px;">MORE</div>
+    <button onclick="moreMenuGo('directory')" class="more-row">
+      <span style="font-size:22px;width:30px;text-align:center;">📁</span><span>Task Directory</span>
+    </button>
+    <button onclick="moreMenuGo('equipment')" class="more-row">
+      <span style="font-size:22px;width:30px;text-align:center;">🧰</span><span>Equipment</span>
+    </button>
+    <button onclick="moreMenuGo('settings')" class="more-row">
+      <span style="font-size:22px;width:30px;text-align:center;">⚙️</span><span>Settings</span>
+    </button>
+  </div>
+</div>
 
 <!-- ══════════════ PLANNER ADD TASK MODAL ══════════════ -->
 <div class="modal-backdrop" id="modal-planner-add" style="z-index:300;" onclick="if(event.target===this)closeModal('modal-planner-add')">
@@ -1771,7 +1789,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-11.2';
+const APP_VERSION = '2026-06-11.3';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -5491,10 +5509,21 @@ function deleteDirTask() {
 const _origShowScreen = showScreen;
 showScreen = function(id, tab) {
   _origShowScreen(id, tab);
+  // Screens that live behind the ☰ More menu keep that tab highlighted
+  if (['directory', 'equipment', 'settings'].includes(id)) {
+    const more = document.getElementById('nav-more-tab');
+    if (more) more.classList.add('active');
+  }
   if (id === 'directory') renderDirScreen();
   if (id === 'dashboard') renderDashboard();
   if (id === 'equipment') renderEquipmentScreen();
 };
+
+function openMoreMenu() { openModal('modal-more-menu'); }
+function moreMenuGo(id) {
+  closeModal('modal-more-menu');
+  showScreen(id, null);
+}
 
 // ════════════════════════════════
 //  PROJECTS
