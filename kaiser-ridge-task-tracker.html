@@ -718,7 +718,7 @@
   .planner-hour-row {
     display: flex;
     align-items: flex-start;
-    min-height: 60px;
+    min-height: 0;
     border-top: 1px solid var(--border);
     position: relative;
   }
@@ -733,9 +733,13 @@
   }
   .planner-hour-slot {
     flex: 1;
-    min-height: 60px;
+    height: 100%;
     position: relative;
     border-left: 1px solid var(--border);
+    /* faint 15-minute guide lines (90px = 15min at 360px/hour) */
+    background-image: repeating-linear-gradient(to bottom,
+      rgba(128,128,128,0.13), rgba(128,128,128,0.13) 1px,
+      transparent 1px, transparent 90px);
   }
   .planner-block {
     position: absolute;
@@ -1789,7 +1793,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-11.6';
+const APP_VERSION = '2026-06-11.7';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -5938,9 +5942,9 @@ let _plannerDragId = null, _plannerDragOffsetY = 0, _plannerIsDragging = false, 
 let _plannerDragLabel = null;
 let _plannerNowTimer = null;
 
-const PLANNER_HOUR_PX = 60; // pixels per hour
-const PLANNER_START_HOUR = 5; // 5am
-const PLANNER_END_HOUR = 22; // 10pm
+const PLANNER_HOUR_PX = 360; // pixels per hour (6px/min → a 5-min task = 30px, lines up to its true time)
+const PLANNER_START_HOUR = 0; // midnight
+const PLANNER_END_HOUR = 24; // full 24-hour day
 
 const PLANNER_COLORS = [
   '#007AFF','#34C759','#FF9500','#AF52DE','#FF2D55','#5AC8FA','#FFCC00','#FF6B35'
@@ -6008,8 +6012,9 @@ function renderPlannerScreen() {
     row.style.cssText = `position:absolute;left:0;right:0;top:${(h - PLANNER_START_HOUR) * PLANNER_HOUR_PX}px;height:${PLANNER_HOUR_PX}px;`;
     const label = document.createElement('div');
     label.className = 'planner-hour-label';
-    const ampm = h < 12 ? 'am' : 'pm';
-    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    const hh = h % 24;
+    const ampm = hh < 12 ? 'am' : 'pm';
+    const h12 = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh;
     label.textContent = h12 + ampm;
     const slot = document.createElement('div');
     slot.className = 'planner-hour-slot';
@@ -6056,7 +6061,7 @@ function renderPlannerScreen() {
     const nowMins = (now.getHours() - PLANNER_START_HOUR) * 60 + now.getMinutes();
     scroll.scrollTop = Math.max(0, nowMins / 60 * PLANNER_HOUR_PX - 100);
   } else {
-    scroll.scrollTop = 3 * PLANNER_HOUR_PX; // scroll to 8am
+    scroll.scrollTop = 6 * PLANNER_HOUR_PX; // scroll to 6am
   }
 
   // Refresh now line + live block every minute
@@ -6286,7 +6291,7 @@ function openPlannerAddTask() {
   _plannerAddTask = null;
   // Default start time: now rounded to nearest 15min, or 8am
   const now = new Date();
-  const mins = Math.ceil((now.getHours() * 60 + now.getMinutes()) / 15) * 15;
+  const mins = Math.ceil((now.getHours() * 60 + now.getMinutes()) / 5) * 5;
   const hh = String(Math.floor(mins / 60) % 24).padStart(2, '0');
   const mm = String(mins % 60).padStart(2, '0');
   document.getElementById('planner-add-time').value = `${hh}:${mm}`;
@@ -6489,8 +6494,8 @@ function plannerDragMove(e) {
 
   // Snap to 15-minute increments live, like Google Calendar
   const maxMins = (PLANNER_END_HOUR - PLANNER_START_HOUR) * 60;
-  let snapMins = Math.round((rawTop / PLANNER_HOUR_PX) * 60 / 15) * 15;
-  snapMins = Math.max(0, Math.min(snapMins, maxMins - 15));
+  let snapMins = Math.round((rawTop / PLANNER_HOUR_PX) * 60 / 5) * 5;
+  snapMins = Math.max(0, Math.min(snapMins, maxMins - 5));
   const snapTop = snapMins / 60 * PLANNER_HOUR_PX;
   block.style.top = snapTop + 'px';
 
@@ -6521,7 +6526,7 @@ function plannerDragEnd(e) {
     // Only update position if block was actually moved (opacity was set during drag)
     block.style.opacity = '';
     const topPx = parseFloat(block.style.top) || 0;
-    const totalMins = Math.round((topPx / PLANNER_HOUR_PX) * 60 / 15) * 15; // snap to 15min
+    const totalMins = Math.round((topPx / PLANNER_HOUR_PX) * 60 / 5) * 5; // snap to 5min
     const absH = PLANNER_START_HOUR + Math.floor(totalMins / 60);
     const absM = totalMins % 60;
     const clamped = Math.min(Math.max(absH, PLANNER_START_HOUR), PLANNER_END_HOUR - 1);
