@@ -1789,7 +1789,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-11.5';
+const APP_VERSION = '2026-06-11.6';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6047,6 +6047,9 @@ function renderPlannerScreen() {
     renderPlannerLiveBlock(clockState, grid);
   }
 
+  // Cascade any overlapping blocks downward so short/back-to-back tasks stay readable
+  reflowPlannerBlocks(grid);
+
   // Scroll to current time or first task
   const scroll = document.getElementById('planner-scroll');
   if (diff === 0) {
@@ -6082,17 +6085,41 @@ function renderPlannerScreen() {
   }
 }
 
+// Keep every task readable: walk blocks top-to-bottom and, whenever one would
+// overlap the previous, push it down to just below it. Blocks that don't collide
+// stay at their true time position, so quiet parts of the day are unchanged.
+function reflowPlannerBlocks(grid) {
+  const GAP = 3;
+  const blocks = Array.from(grid.querySelectorAll('.pl-task-block'));
+  // Stable sort by natural (time-based) top; equal tops keep insertion order
+  blocks.sort((a, b) => (parseFloat(a.dataset.natTop) || 0) - (parseFloat(b.dataset.natTop) || 0));
+  let lastBottom = -Infinity, maxBottom = 0;
+  blocks.forEach(b => {
+    const natTop = parseFloat(b.dataset.natTop) || 0;
+    const h = parseFloat(b.dataset.h) || 30;
+    const top = natTop < lastBottom + GAP ? lastBottom + GAP : natTop;
+    b.style.top = top + 'px';
+    lastBottom = top + h;
+    if (lastBottom > maxBottom) maxBottom = lastBottom;
+  });
+  // Grow the grid if the cascade pushed past its original height
+  const needed = maxBottom + 40;
+  if (needed > (parseFloat(grid.style.height) || 0)) grid.style.height = needed + 'px';
+}
+
 function renderPlannerBlock(plan, grid) {
   const [h, m] = plan.startTime.split(':').map(Number);
   const topMins = (h - PLANNER_START_HOUR) * 60 + m;
   if (topMins < 0 || topMins > (PLANNER_END_HOUR - PLANNER_START_HOUR) * 60) return;
 
   const topPx = topMins / 60 * PLANNER_HOUR_PX;
-  const heightPx = Math.max(28, plan.durationHours * PLANNER_HOUR_PX);
+  const heightPx = Math.max(30, plan.durationHours * PLANNER_HOUR_PX);
 
   const block = document.createElement('div');
-  block.className = 'planner-block';
+  block.className = 'planner-block pl-task-block';
   block.dataset.planId = plan.id;
+  block.dataset.natTop = topPx;
+  block.dataset.h = heightPx;
   block.style.cssText = `top:${topPx}px;height:${heightPx}px;left:56px;right:4px;background:${plannerColorFor(plan.task)};z-index:3;`;
 
   // End time: add duration to actual start hour (not grid-relative)
@@ -6136,13 +6163,16 @@ function renderPlannerDoneBlock(entry, grid) {
   if (startMins < 0 || startMins > (PLANNER_END_HOUR - PLANNER_START_HOUR) * 60) return;
 
   const topPx    = startMins / 60 * PLANNER_HOUR_PX;
-  const heightPx = Math.max(28, Math.max(0, endMins - startMins) / 60 * PLANNER_HOUR_PX);
+  const heightPx = Math.max(30, Math.max(0, endMins - startMins) / 60 * PLANNER_HOUR_PX);
   const color    = plannerColorFor(entry.task);
 
   const startStr = formatTimeAmPm(entry.clockIn);
   const endStr   = formatTimeAmPm(entry.clockOut);
 
   const block = document.createElement('div');
+  block.className = 'pl-task-block';
+  block.dataset.natTop = topPx;
+  block.dataset.h = heightPx;
   block.style.cssText = `position:absolute;top:${topPx}px;height:${heightPx}px;left:56px;right:4px;
     border-radius:8px;padding:4px 8px;font-size:12px;color:#fff;overflow:hidden;z-index:1;
     background:${color};`;
@@ -6234,7 +6264,10 @@ function renderPlannerLiveBlock(cs, grid) {
 
   const block = document.createElement('div');
   block.id = 'planner-live-block';
-  block.style.cssText = `position:absolute;top:${topPx}px;height:${heightPx}px;left:56px;right:4px;
+  block.className = 'pl-task-block';
+  block.dataset.natTop = topPx;
+  block.dataset.h = Math.max(30, heightPx);
+  block.style.cssText = `position:absolute;top:${topPx}px;height:${Math.max(30, heightPx)}px;left:56px;right:4px;
     border-radius:8px;padding:4px 8px;font-size:12px;color:#fff;overflow:hidden;z-index:2;
     background:${color};border:2px solid #fff;`;
   block.innerHTML = `
