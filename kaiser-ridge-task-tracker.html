@@ -571,6 +571,8 @@
     font-size: 10px;
     font-weight: 500;
     padding-bottom: 8px;
+    white-space: nowrap;
+    min-width: 0;
   }
   .nav-tab.active { color: var(--blue); }
   .nav-icon { font-size: 22px; line-height: 1; }
@@ -928,6 +930,25 @@
   </div>
 </div>
 
+<!-- ══════════════ EQUIPMENT SCREEN ══════════════ -->
+<div class="screen" id="screen-equipment">
+  <div class="header">
+    <div class="header-title">Equipment</div>
+    <button id="equip-manage-btn" onclick="openEquipmentManager()" style="background:var(--blue);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:14px;font-weight:600;cursor:pointer;">Manage</button>
+  </div>
+  <div style="padding:8px 12px 8px;background:var(--card);border-bottom:1px solid var(--border);">
+    <div style="position:relative;">
+      <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--subtext);">🔍</span>
+      <input id="equip-screen-search" type="search" placeholder="Search equipment…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+        oninput="renderEquipmentScreen()"
+        style="width:100%;padding:9px 14px 9px 36px;border-radius:10px;border:1px solid var(--border);background:var(--bg);font-size:14px;color:var(--text);outline:none;-webkit-appearance:none;">
+    </div>
+  </div>
+  <div class="scroll-area" id="equip-screen-scroll" style="padding:4px 12px 24px;">
+    <div id="equip-screen-list"></div>
+  </div>
+</div>
+
 <!-- ══════════════ DIR FILTER PICKER ══════════════ -->
 <div class="modal-backdrop" id="modal-dir-filter" style="z-index:300;">
   <div class="modal-sheet" style="padding:16px 0 24px;">
@@ -1219,6 +1240,9 @@
   </button>
   <button class="nav-tab" onclick="showScreen('directory',this)">
     <span class="nav-icon">📁</span>Directory
+  </button>
+  <button class="nav-tab" onclick="showScreen('equipment',this)">
+    <span class="nav-icon">🧰</span>Equipment
   </button>
   <button class="nav-tab" onclick="showScreen('planner',this)">
     <span class="nav-icon">🗓</span>Planner
@@ -1747,7 +1771,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-11.1';
+const APP_VERSION = '2026-06-11.2';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4813,7 +4837,7 @@ function addEquipmentNote() {
   autoBackup();
   input.value = '';
   renderEquipmentNotes();
-  renderEquipmentManager();
+  refreshEquipmentLists();
 }
 
 function deleteEquipmentNote(id) {
@@ -4824,7 +4848,7 @@ function deleteEquipmentNote(id) {
   saveEquipmentNotes(all);
   autoBackup();
   renderEquipmentNotes();
-  renderEquipmentManager();
+  refreshEquipmentLists();
 }
 
 function _equipLinkIcon(label, url) {
@@ -4868,7 +4892,7 @@ function addEquipmentLink() {
   autoBackup();
   labelEl.value = ''; urlEl.value = '';
   renderEquipmentLinks();
-  renderEquipmentManager();
+  refreshEquipmentLists();
 }
 
 function deleteEquipmentLink(id) {
@@ -4879,7 +4903,47 @@ function deleteEquipmentLink(id) {
   saveEquipmentLinks(all);
   autoBackup();
   renderEquipmentLinks();
+  refreshEquipmentLists();
+}
+
+// ── Equipment screen (top-level nav tab) ──
+let _equipScreenNames = [];
+
+function renderEquipmentScreen() {
+  const searchEl = document.getElementById('equip-screen-search');
+  if (!searchEl) return;
+  const q = (searchEl.value || '').trim().toLowerCase();
+  const master = getEquipmentMaster().filter(e => !e.archived);
+  const allNotes = getEquipmentNotes();
+  const allLinks = getEquipmentLinks();
+  const items = q ? master.filter(e => e.name.toLowerCase().includes(q)) : master;
+  _equipScreenNames = items.map(e => e.name);
+  const list = document.getElementById('equip-screen-list');
+  if (!items.length) {
+    list.innerHTML = '<div style="padding:28px 12px;text-align:center;color:var(--subtext);font-size:15px;">' + (q ? 'No matches' : 'No equipment yet') + '</div>';
+    return;
+  }
+  list.innerHTML = items.map((e, i) => {
+    const nC = (allNotes[e.name] || []).length, lC = (allLinks[e.name] || []).length;
+    return `<div onclick="openEquipmentScreenItem(${i})" style="display:flex;align-items:center;gap:12px;padding:15px 4px;border-bottom:1px solid var(--border);cursor:pointer;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:16px;color:var(--text);">${escapeHtmlProj(e.name)}</div>
+        <div style="font-size:12px;color:var(--blue);margin-top:3px;">${equipMetaLabel(nC, lC)}</div>
+      </div>
+      <span style="color:var(--subtext);font-size:22px;flex-shrink:0;">›</span>
+    </div>`;
+  }).join('');
+}
+
+function openEquipmentScreenItem(i) {
+  const name = _equipScreenNames[i];
+  if (name) openEquipmentDetail(name);
+}
+
+// Keep both equipment lists (the Manage modal and the nav-tab screen) in sync
+function refreshEquipmentLists() {
   renderEquipmentManager();
+  renderEquipmentScreen();
 }
 
 let _subtaskItems = [];
@@ -5429,6 +5493,7 @@ showScreen = function(id, tab) {
   _origShowScreen(id, tab);
   if (id === 'directory') renderDirScreen();
   if (id === 'dashboard') renderDashboard();
+  if (id === 'equipment') renderEquipmentScreen();
 };
 
 // ════════════════════════════════
@@ -5458,7 +5523,7 @@ function setRole(role) {
 function applyRoleUI() {
   const isW = isWorker();
   document.body.classList.toggle('worker-mode', isW);
-  ['dir-add-btn', 'planner-add-btn', 'planner-cal-btn', 'lib-publish-btn'].forEach(id => {
+  ['dir-add-btn', 'planner-add-btn', 'planner-cal-btn', 'lib-publish-btn', 'equip-manage-btn'].forEach(id => {
     const el = document.getElementById(id); if (el) el.style.display = isW ? 'none' : '';
   });
   const m = document.getElementById('role-seg-manager'), w = document.getElementById('role-seg-worker');
