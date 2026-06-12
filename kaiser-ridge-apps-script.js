@@ -120,11 +120,44 @@ function doPost(e) {
     ];
 
     sheet.appendRow(row);
+
+    // Keep the sheet ordered by date, then clock-in time (oldest first), so
+    // entries always read chronologically. IDs are assigned once and never
+    // change — only the row order is rearranged here.
+    const lr = sheet.getLastRow();
+    if (lr >= 3) {
+      const data = sheet.getRange(2, 1, lr - 1, 14).getValues();
+      data.sort((a, b) => timesheetSortKey(a) - timesheetSortKey(b));
+      sheet.getRange(2, 1, data.length, 14).setValues(data);
+    }
+
     return jsonResponse({ success: true, taskId });
 
   } catch (err) {
     return jsonResponse({ success: false, error: err.toString() });
   }
+}
+
+// Sort key for a timesheet row: date (col B) then clock-in (col J), oldest
+// first. Handles both string cells ("DD/MM/YYYY", "HH:MM") and native Date
+// values, so it works regardless of how the cells are formatted.
+function timesheetSortKey(row) {
+  let yyyy = 0, mm = 0, dd = 0, hh = 0, mi = 0;
+  const dv = row[1];
+  if (Object.prototype.toString.call(dv) === '[object Date]') {
+    yyyy = dv.getFullYear(); mm = dv.getMonth() + 1; dd = dv.getDate();
+  } else {
+    const p = String(dv || '').split('/');
+    if (p.length === 3) { dd = parseInt(p[0], 10) || 0; mm = parseInt(p[1], 10) || 0; yyyy = parseInt(p[2], 10) || 0; }
+  }
+  const tv = row[9];
+  if (Object.prototype.toString.call(tv) === '[object Date]') {
+    hh = tv.getHours(); mi = tv.getMinutes();
+  } else {
+    const t = String(tv || '').split(':');
+    if (t.length >= 2) { hh = parseInt(t[0], 10) || 0; mi = parseInt(t[1], 10) || 0; }
+  }
+  return ((yyyy * 100 + mm) * 100 + dd) * 10000 + hh * 100 + mi;
 }
 
 // ── Sync one day's planner blocks into the default Google Calendar ──
