@@ -1793,7 +1793,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-11.8';
+const APP_VERSION = '2026-06-11.9';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2017,6 +2017,7 @@ window.addEventListener('load', () => {
   updateStats();
   startTimerTick();
   applyRoleUI();
+  initSearchClears();
   checkForUpdate();
   checkLibraryUpdate();
   // Re-check when the app is brought back to the foreground (throttled to 60s)
@@ -4044,6 +4045,43 @@ function clearDirSearch() {
   if (clr) clr.style.display = 'none';
   renderDirectory();
   inp.focus(); // back to a clean slate, cursor ready
+}
+
+// Give every search field a one-tap clear (✕), matching the Directory search.
+// Wraps each input so the button anchors tightly to it, and re-fires the input's
+// own handler on clear. Skips fields that already have a dedicated clear button.
+function initSearchClears() {
+  document.querySelectorAll('input[type="search"]').forEach(input => {
+    if (input._clearWired) return;
+    if (input.parentElement && input.parentElement.querySelector('button')) return;
+    input._clearWired = true;
+
+    const wrap = document.createElement('span');
+    wrap.style.cssText = 'position:relative;display:block;flex:1 1 auto;min-width:0;';
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+    input.style.width = '100%';
+    input.style.paddingRight = '34px';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = '✕';
+    btn.setAttribute('aria-label', 'Clear');
+    btn.style.cssText = 'display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);width:22px;height:22px;border:none;border-radius:50%;background:var(--border);color:var(--subtext);font-size:12px;line-height:1;cursor:pointer;align-items:center;justify-content:center;padding:0;z-index:2;';
+    wrap.appendChild(btn);
+
+    const sync = () => { btn.style.display = input.value ? 'flex' : 'none'; };
+    input.addEventListener('input', sync);
+    input.addEventListener('focus', sync);
+    btn.addEventListener('click', e => {
+      e.preventDefault();
+      input.value = '';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      sync();
+      input.focus();
+    });
+    sync();
+  });
 }
 
 function renderDirectory() {
