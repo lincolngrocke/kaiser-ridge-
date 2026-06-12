@@ -1061,6 +1061,7 @@
     </div>
 
     <button class="btn-sync" onclick="syncToSheet()">⬆ Sync Unsynced Entries to Sheet</button>
+    <div class="settings-note" style="margin-top:6px;">Entries sync automatically about 5 minutes after clock-out — this button is just a manual catch-up.</div>
     <button class="btn-sync" style="background:#34C759; margin-top:8px;" onclick="forceAppUpdate()">⟳ Force Update App</button>
     <div id="version-status" style="font-size:13px; color:var(--subtext); margin-top:8px; text-align:center; cursor:pointer;" onclick="checkForUpdate(true)">Checking version…</div>
 
@@ -1793,7 +1794,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-11.9';
+const APP_VERSION = '2026-06-11.10';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2009,6 +2010,8 @@ window.addEventListener('load', () => {
   updateBackupReminder();
   updateBackupBanner();
   setInterval(updateBackupBanner, 60000);
+  autoSyncPending();                       // catch up anything pending from a previous session
+  setInterval(autoSyncPending, 60000);     // push entries ~5 min after clock-out, no manual sync needed
   updateHeaderDate();
   populateLocationDropdown();
   populateTsLocationChips();
@@ -2024,6 +2027,7 @@ window.addEventListener('load', () => {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && Date.now() - _lastUpdateCheck > 60000) checkForUpdate();
     if (!document.hidden) checkLibraryUpdate();
+    if (!document.hidden) autoSyncPending();
   });
 
   // After a Force-Update reload, return to the screen the user was on.
@@ -3192,6 +3196,22 @@ function confirmTime(choice) {
 // ════════════════════════════════
 //  GOOGLE SHEETS SYNC
 // ════════════════════════════════
+// Push one entry to the Sheet Web App and mark it synced in place.
+async function _pushEntryToSheet(url, entry) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify({ ...entry, equipment: entry.tool || '', hyperlink: entry.pin ? entry.pin.url : '' }),
+  });
+  const json = await res.json();
+  const idx = entries.findIndex(e => e.id === entry.id);
+  if (idx >= 0) {
+    entries[idx].synced = true;
+    if (json.taskId) entries[idx].sheetId = json.taskId;
+  }
+  return json;
+}
+
 async function syncToSheet() {
   const url = localStorage.getItem('kr_sheet_url');
   if (!url) { showToast('No Web App URL set'); return; }
@@ -3204,17 +3224,7 @@ async function syncToSheet() {
   let synced = 0;
   for (const entry of unsynced) {
     try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ ...entry, equipment: entry.tool || '', hyperlink: entry.pin ? entry.pin.url : '' }),
-      });
-      const json = await res.json();
-      const idx = entries.findIndex(e => e.id === entry.id);
-      if (idx >= 0) {
-        entries[idx].synced = true;
-        if (json.taskId) entries[idx].sheetId = json.taskId;
-      }
+      await _pushEntryToSheet(url, entry);
       synced++;
     } catch (err) {
       console.error('Sync error:', err);
@@ -3224,6 +3234,37 @@ async function syncToSheet() {
   saveEntries();
   updateStats();
   showToast(synced + ' entries synced ✓');
+}
+
+// Auto-sync: silently push any unsynced entries that are ≥5 minutes old, so
+// completed timesheets reach the Sheet without manual syncing. The 5-minute
+// delay leaves a window to edit an entry before it's pushed. Runs on a poll, on
+// launch, and on foreground, so it catches up even if the app was closed.
+const AUTO_SYNC_DELAY_MS = 5 * 60 * 1000;
+let _autoSyncing = false;
+async function autoSyncPending() {
+  if (_autoSyncing) return;
+  const url = localStorage.getItem('kr_sheet_url');
+  if (!url) return;
+  const now = Date.now();
+  const due = entries.filter(e => !e.synced &&
+    (!e.createdAt || (now - new Date(e.createdAt).getTime()) >= AUTO_SYNC_DELAY_MS));
+  if (!due.length) return;
+
+  _autoSyncing = true;
+  let changed = false;
+  for (const entry of due) {
+    try { await _pushEntryToSheet(url, entry); changed = true; }
+    catch (err) { console.error('Auto-sync error:', err); }
+  }
+  _autoSyncing = false;
+
+  if (changed) {
+    saveEntries();
+    updateStats();
+    const ts = document.getElementById('screen-timesheets');
+    if (ts && ts.classList.contains('active')) renderTimesheets();
+  }
 }
 
 // ════════════════════════════════
