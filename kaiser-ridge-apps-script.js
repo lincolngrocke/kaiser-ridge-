@@ -38,13 +38,15 @@ function doGet(e) {
       const idsLr = idsSheet.getLastRow();
       const ids = [];
       if (idsLr >= 2) {
-        idsSheet.getRange(2, 1, idsLr - 1, 14).getValues().forEach(r => {
+        // Use the cells' DISPLAYED text, not raw values — avoids date/time type
+        // coercion (e.g. the 1899-epoch timezone offset that mangles read-back times).
+        idsSheet.getRange(2, 1, idsLr - 1, 14).getDisplayValues().forEach(r => {
           ids.push({
-            taskId:   String(r[0] || ''),
-            date:     normDate(r[1]),
-            clockIn:  normTime(r[9]),
-            clockOut: normTime(r[10]),
-            task:     String(r[6] || ''),
+            taskId:   r[0],
+            date:     r[1],
+            clockIn:  r[9],
+            clockOut: r[10],
+            task:     r[6],
           });
         });
       }
@@ -178,25 +180,6 @@ function timesheetSortKey(row) {
     if (t.length >= 2) { hh = parseInt(t[0], 10) || 0; mi = parseInt(t[1], 10) || 0; }
   }
   return ((yyyy * 100 + mm) * 100 + dd) * 10000 + hh * 100 + mi;
-}
-
-// Normalise a date cell to "DD/MM/YYYY" and a time cell to "HH:MM", whether the
-// cell holds a string or a native Date — so the app can string-match its entries.
-function normDate(v) {
-  if (Object.prototype.toString.call(v) === '[object Date]') {
-    const dd = String(v.getDate()).padStart(2, '0');
-    const mm = String(v.getMonth() + 1).padStart(2, '0');
-    return dd + '/' + mm + '/' + v.getFullYear();
-  }
-  return String(v == null ? '' : v).trim();
-}
-function normTime(v) {
-  if (Object.prototype.toString.call(v) === '[object Date]') {
-    const hh = String(v.getHours()).padStart(2, '0');
-    const mi = String(v.getMinutes()).padStart(2, '0');
-    return hh + ':' + mi;
-  }
-  return String(v == null ? '' : v).trim();
 }
 
 // ── ONE-TIME CLEANUP ──────────────────────────────────────────────────────

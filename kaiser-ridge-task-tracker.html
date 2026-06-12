@@ -1796,7 +1796,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-11.12';
+const APP_VERSION = '2026-06-12.1';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3246,21 +3246,44 @@ async function refreshSheetIds() {
   const url = localStorage.getItem('kr_sheet_url');
   if (!url) { showToast('No Web App URL set'); return; }
   showToast('Matching IDs from sheet…');
+
+  // Parse a time ("17:51", "5:51 PM", "5:51:00 pm", "17:51:00") to minutes,
+  // and a date ("12/06/2026", "2026-06-12", 2-digit years) to "YYYY-MM-DD",
+  // so app entries and displayed sheet cells compare regardless of format.
+  const toMin = t => {
+    const m = String(t == null ? '' : t).trim().toLowerCase().match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm)?/);
+    if (!m) return String(t == null ? '' : t).trim();
+    let h = parseInt(m[1], 10); const mi = parseInt(m[2], 10);
+    if (m[3] === 'pm' && h < 12) h += 12;
+    if (m[3] === 'am' && h === 12) h = 0;
+    return h * 60 + mi;
+  };
+  const toYMD = d => {
+    const s = String(d == null ? '' : d).trim();
+    let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+    if (m) { let y = m[3]; if (y.length === 2) y = '20' + y; return y + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0'); }
+    m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (m) return m[1] + '-' + m[2].padStart(2, '0') + '-' + m[3].padStart(2, '0');
+    return s;
+  };
+  const keyOf = (date, ci, co, task) =>
+    [toYMD(date), toMin(ci), toMin(co), String(task == null ? '' : task).trim().toLowerCase()].join('|');
+
   try {
     const res = await fetch(url + (url.includes('?') ? '&' : '?') + 'ids=1');
     const json = await res.json();
-    if (!json.success || !Array.isArray(json.ids)) { showToast('Could not read sheet IDs'); return; }
-    const norm = s => String(s == null ? '' : s).trim();
-    const keyOf = (date, ci, co, task) => [norm(date), norm(ci), norm(co), norm(task)].join('|');
+    if (!json.success || !Array.isArray(json.ids)) { showToast('Could not read sheet IDs — redeploy the Apps Script'); return; }
     const map = {};
     json.ids.forEach(r => { map[keyOf(r.date, r.clockIn, r.clockOut, r.task)] = r.taskId; });
-    let updated = 0;
+    let updated = 0, found = 0;
     entries.forEach(e => {
       const id = map[keyOf(e.date, e.clockIn, e.clockOut, e.task)];
-      if (id && e.sheetId !== id) { e.sheetId = id; updated++; }
+      if (id) { found++; if (e.sheetId !== id) { e.sheetId = id; updated++; } }
     });
     if (updated) { saveEntries(); updateStats(); renderTimesheets(); }
-    showToast(updated ? (updated + ' IDs matched ✓') : 'IDs already match ✓');
+    if (updated) showToast(updated + ' IDs matched ✓');
+    else if (found) showToast('IDs already match ✓');
+    else showToast('No matching rows found — check the sheet');
   } catch (err) {
     console.error('ID match error:', err);
     showToast('ID match failed — check connection');
