@@ -1796,7 +1796,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-12.1';
+const APP_VERSION = '2026-06-12.2';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4066,7 +4066,8 @@ function openDirFilter(type) {
   let options = [];
   if (type === 'freq') {
     const freqOrder = ['Daily','Weekly','Fortnightly','Monthly','Quarterly','Bi-annually','Annually'];
-    const all = [...new Set(DIRECTORY.map(r => r.frequency).filter(Boolean))];
+    const autoMap = computeAutoFrequencies();
+    const all = [...new Set(DIRECTORY.map(r => (autoMap[r.task] ? autoMap[r.task].freq : r.frequency)).filter(Boolean))];
     options = [...freqOrder.filter(f => all.includes(f)), ...all.filter(f => !freqOrder.includes(f))];
   } else if (type === 'group') {
     options = [...new Set(DIRECTORY.map(r => r.group).filter(Boolean))].sort();
@@ -4179,30 +4180,74 @@ function initSearchClears() {
   });
 }
 
+// ── Auto-frequency ──────────────────────────────────────────────────────────
+// Once a task has more than two entries, its frequency is derived from the
+// average gap between the DISTINCT days it's actually done, and it moves into
+// that frequency in the directory (flagged AUTO). Tasks with ≤2 entries keep
+// their originally allocated frequency.
+function _parseEntryDate(s) {
+  const m = String(s || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return null;
+  return new Date(parseInt(m[3], 10), parseInt(m[2], 10) - 1, parseInt(m[1], 10));
+}
+function gapToFrequency(days) {
+  if (days <= 3)   return 'Daily';
+  if (days <= 10)  return 'Weekly';
+  if (days <= 20)  return 'Fortnightly';
+  if (days <= 52)  return 'Monthly';
+  if (days <= 182) return 'Quarterly';
+  return 'Annually';
+}
+function computeAutoFrequencies() {
+  const byTask = {};
+  entries.forEach(e => {
+    if (!e.task) return;
+    const d = _parseEntryDate(e.date);
+    if (d) (byTask[e.task] = byTask[e.task] || []).push(d.getTime());
+  });
+  const out = {};
+  Object.keys(byTask).forEach(task => {
+    const times = byTask[task];
+    if (times.length <= 2) return;               // need MORE than two entries
+    const days = [...new Set(times)].sort((a, b) => a - b);
+    if (days.length < 2) return;                 // all on one day — no gap to measure
+    let total = 0;
+    for (let i = 1; i < days.length; i++) total += (days[i] - days[i - 1]) / 86400000;
+    const avgGap = total / (days.length - 1);
+    out[task] = { freq: gapToFrequency(avgGap), avgGap: avgGap };
+  });
+  return out;
+}
+
 function renderDirectory() {
   const list = document.getElementById('dir-list');
   if (!list) return;
 
   const searchTerm = (document.getElementById('dir-search')?.value || '').toLowerCase().trim();
+  const autoMap = computeAutoFrequencies();
+  const effFreqOf = r => (autoMap[r.task] ? autoMap[r.task].freq : (r.frequency || 'Other'));
 
-  // Apply active filters + search
+  // Apply active filters + search (frequency uses the effective/auto frequency)
   const visibleDir = DIRECTORY.filter(r => {
-    if (_dirFilters.freq     && r.frequency !== _dirFilters.freq)     return false;
+    if (_dirFilters.freq     && effFreqOf(r) !== _dirFilters.freq)    return false;
     if (_dirFilters.group    && r.group     !== _dirFilters.group)    return false;
     if (_dirFilters.location && r.location  !== _dirFilters.location) return false;
     if (_dirFilters.equip    && r.equipment !== _dirFilters.equip)    return false;
     if (searchTerm) {
-      const haystack = [r.task, r.group, r.frequency, r.location, r.equipment].join(' ').toLowerCase();
+      const haystack = [r.task, r.group, effFreqOf(r), r.location, r.equipment].join(' ').toLowerCase();
       if (!haystack.includes(searchTerm)) return false;
     }
     return true;
   });
 
-  // Group DIRECTORY by frequency then group
+  // Group by (effective) frequency → group → task. The data-key for editing
+  // keeps the ORIGINAL frequency so look-ups still hit the real DIRECTORY row.
   const grouped = {};
-  const taskMeta = {}; // store location per task key
+  const taskMeta = {};      // keyed by effFreq||grp||task → {location}
+  const taskOrigFreq = {};  // keyed by grp||task → original frequency
   visibleDir.forEach(r => {
-    const freq = r.frequency || 'Other';
+    const origFreq = r.frequency || 'Other';
+    const freq = autoMap[r.task] ? autoMap[r.task].freq : origFreq;
     const grp  = r.group || 'Other';
     const task = r.task || '';
     const key  = freq + '||' + grp + '||' + task;
@@ -4211,6 +4256,7 @@ function renderDirectory() {
     if (!grouped[freq][grp][task]) grouped[freq][grp][task] = [];
     if (r.equipment) grouped[freq][grp][task].push(r.equipment);
     if (r.location && !taskMeta[key]) taskMeta[key] = { location: r.location };
+    if (!taskOrigFreq[grp + '||' + task]) taskOrigFreq[grp + '||' + task] = origFreq;
   });
 
   const freqOrder = ['Daily','Weekly','Fortnightly','Monthly','Quarterly','Annually'];
@@ -4238,14 +4284,20 @@ function renderDirectory() {
           ${ordered.map(task => {
             const equip = grouped[freq][grp][task];
             const subtaskList = (SUBTASKS[task] || []);
-            const key = encodeURIComponent(freq + '||' + grp + '||' + task);
+            const origFreq = taskOrigFreq[grp + '||' + task] || freq;
+            const key = encodeURIComponent(origFreq + '||' + grp + '||' + task);
             const meta = taskMeta[freq + '||' + grp + '||' + task] || {};
+            const auto = autoMap[task];
+            const gapDays = auto ? Math.max(1, Math.round(auto.avgGap)) : 0;
+            const autoBadge = auto ? `<span style="display:inline-block;background:#5856D6;color:#fff;font-size:9px;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;">AUTO</span>` : '';
+            const autoSub = auto ? `<div style="font-size:12px;color:#5856D6;margin-top:2px;">⚙ Auto frequency · every ~${gapDays} day${gapDays === 1 ? '' : 's'}${auto.freq !== origFreq ? ` · was ${origFreq}` : ''}</div>` : '';
             return `<div class="dir-task-row" data-task="${task}" data-key="${key}"
               ontouchstart="dirTaskTouchStart(event,this)"
               onclick="dirTaskClick(event,this)"
               style="padding:12px 16px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none;-webkit-user-select:none;">
               <div style="flex:1;min-width:0;">
-                <div style="font-size:15px;font-weight:500;color:var(--text);">${task}</div>
+                <div style="font-size:15px;font-weight:500;color:var(--text);">${task}${autoBadge}</div>
+                ${autoSub}
                 ${meta.location ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">📍 ${meta.location}</div>` : ''}
                 ${equip.length ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${equip.join(', ')}</div>` : ''}
                 ${subtaskList.length ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☑️ ${subtaskList.length} checklist item${subtaskList.length > 1 ? 's' : ''}</div>` : ''}
