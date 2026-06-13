@@ -1796,7 +1796,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-12.2';
+const APP_VERSION = '2026-06-13.1';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2485,13 +2485,14 @@ function openEdit(id) {
   document.getElementById('f-location').value = e.location || '';
   document.getElementById('f-frequency').value = e.frequency || '';
 
-  // Populate group options for this frequency, then set value
-  const groups = [...new Set(DIRECTORY.filter(r => r.frequency === e.frequency).map(r => r.group))];
+  // Populate group options for this frequency, then set value. Always include the
+  // entry's own group so an auto-frequency entry (freq differs from directory) still shows.
+  const groups = [...new Set([...DIRECTORY.filter(r => r.frequency === e.frequency).map(r => r.group), e.group].filter(Boolean))];
   setOptions('f-group', groups, 'Select…');
   document.getElementById('f-group').value = e.group || '';
 
-  // Populate task options for this frequency+group, then set value
-  const tasks = [...new Set(DIRECTORY.filter(r => r.frequency === e.frequency && r.group === e.group).map(r => r.task))];
+  // Populate task options for this frequency+group, then set value (include the entry's own task).
+  const tasks = [...new Set([...DIRECTORY.filter(r => r.frequency === e.frequency && r.group === e.group).map(r => r.task), e.task].filter(Boolean))];
   setOptions('f-task', tasks, 'Select…');
   document.getElementById('f-task').value = e.task || '';
 
@@ -2528,11 +2529,11 @@ function openEditActive() {
   document.getElementById('f-location').value = clockState.location || '';
   document.getElementById('f-frequency').value = clockState.frequency || '';
 
-  const csGroups = [...new Set(DIRECTORY.filter(r => r.frequency === clockState.frequency).map(r => r.group))];
+  const csGroups = [...new Set([...DIRECTORY.filter(r => r.frequency === clockState.frequency).map(r => r.group), clockState.group].filter(Boolean))];
   setOptions('f-group', csGroups, 'Select…');
   document.getElementById('f-group').value = clockState.group || '';
 
-  const csTasks = [...new Set(DIRECTORY.filter(r => r.frequency === clockState.frequency && r.group === clockState.group).map(r => r.task))];
+  const csTasks = [...new Set([...DIRECTORY.filter(r => r.frequency === clockState.frequency && r.group === clockState.group).map(r => r.task), clockState.task].filter(Boolean))];
   setOptions('f-task', csTasks, 'Select…');
   document.getElementById('f-task').value = clockState.task || '';
 
@@ -2822,14 +2823,17 @@ function onTaskSearchInput() {
     return;
   }
 
+  const autoMap = computeAutoFrequencies();
   results.style.display = 'block';
   results.innerHTML = matches.slice(0, 30).map((r, i) => {
-    const sub = [r.frequency, r.group].filter(Boolean).join(' · ');
-    const enc = JSON.stringify({ frequency: r.frequency, group: r.group, task: r.task }).replace(/"/g, '&quot;');
+    const auto = autoMap[r.task];
+    const dispFreq = auto ? auto.freq : r.frequency;
+    const sub = [dispFreq, r.group].filter(Boolean).join(' · ');
+    const badge = auto ? ` <span style="display:inline-block;background:#5856D6;color:#fff;font-size:9px;font-weight:700;letter-spacing:0.5px;padding:1px 5px;border-radius:5px;vertical-align:middle;">AUTO</span>` : '';
     return `<div onclick='selectSearchedTask(${JSON.stringify({frequency:r.frequency,group:r.group,task:r.task})})'
         style="padding:12px 16px;cursor:pointer;${i < matches.length - 1 ? 'border-bottom:1px solid var(--border);' : ''}">
       <div style="font-size:15px;font-weight:500;">${highlightMatch(r.task, q)}</div>
-      ${sub ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">${sub}</div>` : ''}
+      ${sub ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">${sub}${badge}</div>` : ''}
     </div>`;
   }).join('');
 }
@@ -2848,8 +2852,11 @@ function selectSearchedTask(sel) {
   const rows = DIRECTORY.filter(r => r.frequency === frequency && r.group === group && r.task === task);
   const row = rows[0] || {};
 
-  // 1. Frequency — populate dependent Group options, then set value
-  document.getElementById('f-frequency').value = frequency || '';
+  // Effective frequency: a task with 3+ entries is recorded under its auto frequency
+  const auto = computeAutoFrequencies()[task];
+  const effFreq = auto ? auto.freq : frequency;
+
+  // 1. Group options come from the task's real directory rows (original frequency)
   const groups = [...new Set(DIRECTORY.filter(r => r.frequency === frequency).map(r => r.group))];
   setOptions('f-group', groups, 'Select…');
   document.getElementById('f-group').value = group || '';
@@ -2858,6 +2865,9 @@ function selectSearchedTask(sel) {
   const tasks = [...new Set(DIRECTORY.filter(r => r.frequency === frequency && r.group === group).map(r => r.task))];
   setOptions('f-task', tasks, 'Select…');
   document.getElementById('f-task').value = task || '';
+
+  // Frequency field shows the effective (auto) value — this is what the entry records
+  document.getElementById('f-frequency').value = effFreq || '';
 
   // 3. Task — populate dependent Equipment options, then set value
   const equip = [...new Set(rows.map(r => r.equipment).filter(Boolean))];
