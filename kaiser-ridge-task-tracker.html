@@ -1197,6 +1197,7 @@
       <span onclick="undoClockIn()">Undo</span>
     </div>
     <div class="running-task-info" id="run-task-info"></div>
+    <div id="run-estimate" style="font-size:13px;color:var(--blue);font-weight:600;margin-top:6px;display:none;"></div>
     <div id="run-break-info" style="font-size:13px;color:var(--subtext);margin-top:4px;"></div>
   </div>
   <div class="running-buttons">
@@ -1796,7 +1797,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-13.1';
+const APP_VERSION = '2026-06-13.2';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2213,6 +2214,18 @@ function renderClockState() {
     const taskParts = [clockState.group, clockState.task].filter(Boolean).join(' · ');
     const locationPart = clockState.location || '';
     document.getElementById('run-task-info').textContent = [locationPart, taskParts].filter(Boolean).join(' — ');
+    // Estimated time from this task's history (avg of past completed entries)
+    const estEl = document.getElementById('run-estimate');
+    if (estEl) {
+      const avg = getTaskAvgDuration(clockState.task);
+      if (avg) {
+        const n = entries.filter(e => e.task === clockState.task && e.durationHours > 0).length;
+        estEl.textContent = '⏱ Est. ~' + fmtEstHours(avg) + ' · avg of ' + n + ' past';
+        estEl.style.display = '';
+      } else {
+        estEl.style.display = 'none';
+      }
+    }
     const now = new Date();
     const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay()); weekStart.setHours(0,0,0,0);
     let weekH = entries.filter(e => new Date(e.date.split('/').reverse().join('-')) >= weekStart).reduce((s,e) => s+e.durationHours, 0);
@@ -6176,6 +6189,12 @@ function getTaskAvgDuration(taskName) {
   if (!relevant.length) return null;
   const avg = relevant.reduce((s, e) => s + e.durationHours, 0) / relevant.length;
   return parseFloat(avg.toFixed(2));
+}
+
+// Friendly estimate string: "45 min" under an hour, "1.5h" at or above.
+function fmtEstHours(h) {
+  if (h >= 1) return (Math.round(h * 10) / 10) + 'h';
+  return Math.round(h * 60) + ' min';
 }
 
 function renderPlannerScreen() {
