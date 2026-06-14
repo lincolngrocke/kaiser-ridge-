@@ -1318,7 +1318,21 @@
       <button onclick="deletePlannerBlock()" style="background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;">Delete</button>
     </div>
     <div style="padding:20px;">
-      <div id="planner-detail-info" style="font-size:14px;color:var(--subtext);margin-bottom:20px;"></div>
+      <div id="planner-detail-info" style="font-size:14px;color:var(--subtext);margin-bottom:16px;"></div>
+      <div id="planner-detail-edit" style="margin-bottom:18px;">
+        <div style="font-size:12px;color:var(--subtext);margin-bottom:6px;">Adjust time for this day</div>
+        <div style="display:flex;gap:8px;">
+          <div style="flex:1;">
+            <div style="font-size:11px;color:var(--subtext);margin-bottom:3px;">Start</div>
+            <input type="time" id="planner-edit-time" class="form-input" style="width:100%;">
+          </div>
+          <div style="flex:1;">
+            <div style="font-size:11px;color:var(--subtext);margin-bottom:3px;">Duration (hours)</div>
+            <input type="number" id="planner-edit-duration" step="0.25" min="0.25" max="12" class="form-input" style="width:100%;" autocomplete="off">
+          </div>
+        </div>
+        <button onclick="savePlannerTime()" style="width:100%;margin-top:10px;background:none;border:1px solid var(--blue);color:var(--blue);border-radius:12px;padding:11px;font-size:15px;font-weight:600;cursor:pointer;">Update time</button>
+      </div>
       <button onclick="plannerClockIn()" style="width:100%;background:var(--green);color:#fff;border:none;border-radius:14px;padding:14px;font-size:17px;font-weight:700;cursor:pointer;">▶ Clock In Now</button>
     </div>
   </div>
@@ -1797,7 +1811,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-13.2';
+const APP_VERSION = '2026-06-13.3';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6459,6 +6473,9 @@ function openPlannerDoneDetail(entry) {
   // Hide delete for done entries
   const deleteBtn = document.querySelector('#modal-planner-detail button[onclick="deletePlannerBlock()"]');
   if (deleteBtn) deleteBtn.style.display = 'none';
+  // Hide the time editor — a completed entry's time isn't edited from here
+  const editEl = document.getElementById('planner-detail-edit');
+  if (editEl) editEl.style.display = 'none';
 
   openModal('modal-planner-detail');
 }
@@ -6593,6 +6610,13 @@ function openPlannerDetail(planId) {
   const deleteBtn  = document.querySelector('#modal-planner-detail button[onclick="deletePlannerBlock()"]');
   if (clockInBtn) clockInBtn.style.display = '';
   if (deleteBtn)  deleteBtn.style.display  = isWorker() ? 'none' : '';
+  // Time editor — managers only; prefill with the block's current time/duration
+  const editEl = document.getElementById('planner-detail-edit');
+  if (editEl) {
+    editEl.style.display = isWorker() ? 'none' : '';
+    document.getElementById('planner-edit-time').value = plan.startTime || '';
+    document.getElementById('planner-edit-duration').value = plan.durationHours || '';
+  }
   document.getElementById('planner-detail-title').textContent = plan.task;
   const startStr = formatTimeAmPm(plan.startTime);
   const endMins = (parseInt(plan.startTime.split(':')[0]) * 60 + parseInt(plan.startTime.split(':')[1])) + plan.durationHours * 60;
@@ -6616,6 +6640,22 @@ function openPlannerDetail(planId) {
      ${plan.location ? `<div style="margin-bottom:6px;">📍 ${plan.location}</div>` : ''}
      ${subtaskHtml}`;
   openModal('modal-planner-detail');
+}
+
+function savePlannerTime() {
+  if (isWorker()) return;
+  const plan = _plannerPlans.find(p => p.id === _plannerDetailId);
+  if (!plan) return;
+  const t = document.getElementById('planner-edit-time').value;
+  const dur = parseFloat(document.getElementById('planner-edit-duration').value);
+  if (!t) { showToast('Set a start time'); return; }
+  if (!dur || dur <= 0) { showToast('Set a duration'); return; }
+  plan.startTime = t;
+  plan.durationHours = dur;
+  savePlanner();
+  closeModal('modal-planner-detail');
+  renderPlannerScreen();
+  showToast('Time updated');
 }
 
 function deletePlannerBlock() {
