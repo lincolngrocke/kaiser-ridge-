@@ -1060,6 +1060,18 @@
       See the setup guide below. Once deployed, paste the URL above.
     </div>
 
+    <div class="settings-section" style="margin-top:16px">
+      <div class="settings-row">
+        <div class="settings-label">Google Maps API key</div>
+      </div>
+      <div class="settings-row">
+        <input class="settings-input" id="gmaps-key" type="text" placeholder="Paste your Maps JavaScript API key" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+      </div>
+    </div>
+    <div class="settings-note">
+      Optional — lets you tap a spot on a Google Map when dropping a pin. Create a Maps JavaScript API key in Google Cloud and restrict it to your Pages URL. Without a key, Drop Pin just uses your current GPS location.
+    </div>
+
     <button class="btn-sync" onclick="syncToSheet()">⬆ Sync Now</button>
     <div class="settings-note" style="margin-top:6px;">Entries sync automatically about 5 minutes after clock-out — tap this only to push them straight away.</div>
     <button class="btn-sync" style="background:#5856D6; margin-top:8px;" onclick="refreshSheetIds()">🔗 Match IDs from Sheet</button>
@@ -1338,6 +1350,20 @@
   </div>
 </div>
 
+<!-- ══════════════ PIN MAP PICKER ══════════════ -->
+<div class="modal-backdrop" id="modal-pin-map" style="z-index:700;">
+  <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:88vh;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;padding:14px 16px 8px;border-bottom:1px solid var(--border);">
+      <button onclick="closeModal('modal-pin-map')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:0;width:64px;text-align:left;">Cancel</button>
+      <span style="flex:1;text-align:center;font-size:16px;font-weight:600;">Drop a pin</span>
+      <button onclick="confirmPinMap()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:700;cursor:pointer;padding:0;width:64px;text-align:right;">Confirm</button>
+    </div>
+    <div style="font-size:12px;color:var(--subtext);text-align:center;padding:6px 16px;">Tap the map or drag the pin to the exact spot</div>
+    <div id="pin-map" style="flex:1;width:100%;background:var(--bg);"></div>
+    <button onclick="pinMapMyLocation()" style="margin:10px 16px calc(10px + env(safe-area-inset-bottom));background:none;border:1px solid var(--blue);color:var(--blue);border-radius:12px;padding:11px;font-size:15px;font-weight:600;cursor:pointer;">📍 Centre on my location</button>
+  </div>
+</div>
+
 <!-- ══════════════ SUBTASK MODAL ══════════════ -->
 <div class="modal-backdrop" id="modal-subtask" style="z-index:200;">
   <div class="modal-sheet" style="padding:16px 20px 24px;">
@@ -1396,7 +1422,7 @@
       </div>
       <div class="form-row" id="pin-row" style="display:none">
         <span class="form-label">Pin</span>
-        <button type="button" id="pin-btn" onclick="dropPin()" style="flex:1;text-align:right;background:none;border:none;color:var(--blue);font-size:15px;font-weight:500;cursor:pointer;">📍 Drop Pin</button>
+        <button type="button" id="pin-btn" onclick="openPinMap()" style="flex:1;text-align:right;background:none;border:none;color:var(--blue);font-size:15px;font-weight:500;cursor:pointer;">📍 Drop Pin</button>
       </div>
       <div class="form-row">
         <span class="form-label">Frequency</span>
@@ -1811,7 +1837,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-13.3';
+const APP_VERSION = '2026-06-13.4';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2018,6 +2044,13 @@ window.addEventListener('load', () => {
   if (url) document.getElementById('sheet-url').value = url;
   document.getElementById('sheet-url').addEventListener('input', e => {
     localStorage.setItem('kr_sheet_url', e.target.value);
+  });
+
+  // Load Google Maps API key (for the pin map picker)
+  const gkey = localStorage.getItem('kr_gmaps_key');
+  if (gkey) document.getElementById('gmaps-key').value = gkey;
+  document.getElementById('gmaps-key').addEventListener('input', e => {
+    localStorage.setItem('kr_gmaps_key', e.target.value.trim());
   });
 
   initDarkMode();
@@ -2742,28 +2775,98 @@ function onLocationChange() {
   }
 }
 
-function dropPin() {
-  if (!navigator.geolocation) {
-    showToast('GPS not available on this device');
-    return;
-  }
+function _setPinDisplay(lat, lng) {
+  currentPin = { lat, lng, url: `https://maps.google.com/?q=${lat},${lng}` };
+  const btn = document.getElementById('pin-btn');
+  btn.innerHTML = `<a href="${currentPin.url}" target="_blank" style="color:var(--green);text-decoration:none;">✅ ${lat}, ${lng}</a>`;
+  btn.style.color = 'var(--green)';
+}
+
+// Fallback: capture the device's current GPS position (used when no Maps key is set)
+function dropPinCurrent() {
+  if (!navigator.geolocation) { showToast('GPS not available on this device'); return; }
   document.getElementById('pin-btn').textContent = '⏳ Getting location…';
   navigator.geolocation.getCurrentPosition(
-    pos => {
-      const lat = pos.coords.latitude.toFixed(6);
-      const lng = pos.coords.longitude.toFixed(6);
-      currentPin = { lat, lng, url: `https://maps.google.com/?q=${lat},${lng}` };
-      const btn = document.getElementById('pin-btn');
-      btn.innerHTML = `<a href="${currentPin.url}" target="_blank" style="color:var(--green);text-decoration:none;">✅ ${lat}, ${lng}</a>`;
-      btn.style.color = 'var(--green)';
-      showToast('Pin dropped');
-    },
-    err => {
-      showToast('Could not get location — check GPS permissions');
-      document.getElementById('pin-btn').textContent = '📍 Drop Pin';
-    },
+    pos => { _setPinDisplay(pos.coords.latitude.toFixed(6), pos.coords.longitude.toFixed(6)); showToast('Pin dropped'); },
+    () => { showToast('Could not get location — check GPS permissions'); document.getElementById('pin-btn').textContent = '📍 Drop Pin'; },
     { enableHighAccuracy: true, timeout: 10000 }
   );
+}
+
+// ── Google Maps pin picker ──
+let _gmapsLoaded = false, _gmapsLoading = false, _gmapsQueue = [];
+let _pinMap = null, _pinMarker = null;
+
+function loadGoogleMaps(cb) {
+  if (_gmapsLoaded) { cb(); return; }
+  _gmapsQueue.push(cb);
+  if (_gmapsLoading) return;
+  _gmapsLoading = true;
+  window.__gmapsReady = function () {
+    _gmapsLoaded = true; _gmapsLoading = false;
+    _gmapsQueue.forEach(fn => fn()); _gmapsQueue = [];
+  };
+  const s = document.createElement('script');
+  s.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(localStorage.getItem('kr_gmaps_key') || '') + '&callback=__gmapsReady&loading=async';
+  s.async = true;
+  s.onerror = () => { _gmapsLoading = false; showToast('Could not load Google Maps — check the API key in Settings'); };
+  document.head.appendChild(s);
+}
+
+function openPinMap() {
+  const key = (localStorage.getItem('kr_gmaps_key') || '').trim();
+  if (!key) {
+    // No map key — fall back to current GPS location
+    showToast('Add a Google Maps key in Settings to pick on a map — using current location');
+    dropPinCurrent();
+    return;
+  }
+  openModal('modal-pin-map');
+  loadGoogleMaps(initPinMap);
+}
+
+function initPinMap() {
+  const el = document.getElementById('pin-map');
+  if (typeof google === 'undefined' || !google.maps) { showToast('Map failed to load — check the API key'); return; }
+  const def = { lat: -34.55, lng: 139.05 }; // rough Barossa Ranges fallback
+  const center = currentPin ? { lat: parseFloat(currentPin.lat), lng: parseFloat(currentPin.lng) } : def;
+  if (!_pinMap) {
+    _pinMap = new google.maps.Map(el, {
+      center, zoom: currentPin ? 18 : 15, mapTypeId: 'hybrid',
+      streetViewControl: false, fullscreenControl: false, gestureHandling: 'greedy',
+    });
+    _pinMarker = new google.maps.Marker({ position: center, map: _pinMap, draggable: true });
+    _pinMap.addListener('click', e => _pinMarker.setPosition(e.latLng));
+  } else {
+    _pinMap.setCenter(center);
+    _pinMarker.setPosition(center);
+    setTimeout(() => google.maps.event.trigger(_pinMap, 'resize'), 60);
+  }
+  // No existing pin — try to centre on the user's current location
+  if (!currentPin && navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(pos => {
+      const c = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      _pinMap.setCenter(c); _pinMap.setZoom(18); _pinMarker.setPosition(c);
+    }, () => {}, { enableHighAccuracy: true, timeout: 8000 });
+  }
+}
+
+function pinMapMyLocation() {
+  if (!_pinMap || !navigator.geolocation) { showToast('GPS not available'); return; }
+  showToast('Locating…');
+  navigator.geolocation.getCurrentPosition(
+    pos => { const c = { lat: pos.coords.latitude, lng: pos.coords.longitude }; _pinMap.setCenter(c); _pinMap.setZoom(18); _pinMarker.setPosition(c); },
+    () => showToast('Could not get location — check GPS permissions'),
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+
+function confirmPinMap() {
+  if (!_pinMarker) { closeModal('modal-pin-map'); return; }
+  const p = _pinMarker.getPosition();
+  _setPinDisplay(p.lat().toFixed(6), p.lng().toFixed(6));
+  closeModal('modal-pin-map');
+  showToast('Pin set');
 }
 
 // ── Cascade helpers ──
@@ -3652,7 +3755,7 @@ const KR_BACKUP_KEYS = [
   'kr_equipment_notes', 'kr_equipment_links',
   'kr_equipment_master', 'kr_extra_frequencies', 'kr_extra_locations',
   'kr_task_order', 'kr_entries', 'kr_user_name', 'kr_weekly_target',
-  'kr_sheet_url', 'kr_dark_mode',
+  'kr_sheet_url', 'kr_gmaps_key', 'kr_dark_mode',
   'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
   'kr_planner', 'kr_projects'
 ];
