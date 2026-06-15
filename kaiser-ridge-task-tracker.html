@@ -1311,7 +1311,7 @@
       </div>
       <div style="margin-bottom:8px;">
         <div style="font-size:12px;color:var(--subtext);margin-bottom:6px;">Task</div>
-        <input type="search" id="planner-task-search" placeholder="Search tasks…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+        <input type="search" id="planner-task-search" placeholder="Search tasks, equipment, checklists…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
           style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:15px;background:var(--bg);color:var(--text);outline:none;margin-bottom:8px;"
           oninput="renderPlannerTaskList()" />
         <div id="planner-task-list" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;"></div>
@@ -1401,7 +1401,7 @@
     <div id="task-search-wrap" style="padding:14px 16px 0;position:relative;">
       <div style="position:relative;">
         <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--subtext);">🔍</span>
-        <input id="task-search-input" type="search" placeholder="Search for a task…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+        <input id="task-search-input" type="search" placeholder="Search tasks, equipment, checklists…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
           autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
           oninput="onTaskSearchInput()" onfocus="onTaskSearchInput()"
           style="width:100%;padding:11px 36px 11px 36px;border-radius:12px;border:1px solid var(--border);background:var(--card);font-size:15px;color:var(--text);outline:none;-webkit-appearance:none;">
@@ -1837,7 +1837,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-13.6';
+const APP_VERSION = '2026-06-13.7';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2925,6 +2925,18 @@ function clearTaskSearch() {
   input.focus();
 }
 
+// Shared task search: match a task by its name, its equipment, or its checklist items
+function taskEquipmentList(task) {
+  return [...new Set(DIRECTORY.filter(r => r.task === task && r.equipment).map(r => r.equipment))];
+}
+function taskMatchesQuery(task, q) {
+  if (!q) return true;
+  if (task.toLowerCase().includes(q)) return true;
+  if ((SUBTASKS[task] || []).some(s => s.toLowerCase().includes(q))) return true;
+  if (taskEquipmentList(task).some(e => e.toLowerCase().includes(q))) return true;
+  return false;
+}
+
 function onTaskSearchInput() {
   const q = document.getElementById('task-search-input').value.trim().toLowerCase();
   const clearBtn = document.getElementById('task-search-clear');
@@ -2940,8 +2952,7 @@ function onTaskSearchInput() {
   const matches = [];
   DIRECTORY.forEach(r => {
     if (!r.task) return;
-    const subMatch = (SUBTASKS[r.task] || []).some(s => s.toLowerCase().includes(q));
-    if (!r.task.toLowerCase().includes(q) && !subMatch) return;
+    if (!taskMatchesQuery(r.task, q)) return;
     const key = `${r.frequency}||${r.group}||${r.task}`;
     if (seen[key]) return;
     seen[key] = true;
@@ -2963,11 +2974,13 @@ function onTaskSearchInput() {
     const badge = auto ? ` <span style="display:inline-block;background:#5856D6;color:#fff;font-size:9px;font-weight:700;letter-spacing:0.5px;padding:1px 5px;border-radius:5px;vertical-align:middle;">AUTO</span>` : '';
     const matchSubs = (SUBTASKS[r.task] || []).filter(s => s.toLowerCase().includes(q));
     const subsHtml = matchSubs.map(s => `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☑️ ${highlightMatch(s, q)}</div>`).join('');
+    const matchEquip = taskEquipmentList(r.task).filter(e => e.toLowerCase().includes(q));
+    const equipHtml = matchEquip.map(e => `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${highlightMatch(e, q)}</div>`).join('');
     return `<div onclick='selectSearchedTask(${JSON.stringify({frequency:r.frequency,group:r.group,task:r.task})})'
         style="padding:12px 16px;cursor:pointer;${i < matches.length - 1 ? 'border-bottom:1px solid var(--border);' : ''}">
       <div style="font-size:15px;font-weight:500;">${highlightMatch(r.task, q)}</div>
       ${sub ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">${sub}${badge}</div>` : ''}
-      ${subsHtml}
+      ${equipHtml}${subsHtml}
     </div>`;
   }).join('');
 }
@@ -6648,7 +6661,7 @@ function openPlannerAddTask() {
 function renderPlannerTaskList() {
   const query = document.getElementById('planner-task-search').value.toLowerCase();
   const tasks = [...new Map(DIRECTORY.map(r => [r.task, r])).values()];
-  const filtered = query ? tasks.filter(r => r.task.toLowerCase().includes(query)) : tasks;
+  const filtered = query ? tasks.filter(r => taskMatchesQuery(r.task, query)) : tasks;
   const list = document.getElementById('planner-task-list');
   if (!filtered.length) {
     list.innerHTML = '<div style="padding:16px;color:var(--subtext);text-align:center;font-size:14px;">No tasks found</div>';
@@ -6658,11 +6671,16 @@ function renderPlannerTaskList() {
     const avg = getTaskAvgDuration(r.task);
     const avgStr = avg ? ` · avg ${avg}h` : '';
     const isSelected = _plannerAddTask && _plannerAddTask.task === r.task;
+    const matchSubs = query ? (SUBTASKS[r.task] || []).filter(s => s.toLowerCase().includes(query)) : [];
+    const matchEquip = query ? taskEquipmentList(r.task).filter(e => e.toLowerCase().includes(query)) : [];
+    const equipHtml = matchEquip.map(e => `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${highlightMatch(e, query)}</div>`).join('');
+    const subsHtml = matchSubs.map(s => `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☑️ ${highlightMatch(s, query)}</div>`).join('');
     return `<div onclick="selectPlannerTask('${r.task.replace(/'/g,"\\'")}')"
       style="padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;background:${isSelected ? 'rgba(0,122,255,0.08)' : 'transparent'};">
-      <div>
-        <div style="font-size:15px;color:var(--text);">${r.task}</div>
+      <div style="min-width:0;">
+        <div style="font-size:15px;color:var(--text);">${query ? highlightMatch(r.task, query) : r.task}</div>
         <div style="font-size:12px;color:var(--subtext);">${r.group || ''}${avgStr}</div>
+        ${equipHtml}${subsHtml}
       </div>
       ${isSelected ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}
     </div>`;
