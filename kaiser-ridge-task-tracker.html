@@ -921,7 +921,7 @@
   <div id="dir-search-wrap" style="padding:8px 12px 0;background:var(--card);">
     <div style="position:relative;">
       <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--subtext);">🔍</span>
-      <input id="dir-search" type="search" placeholder="Search tasks, groups, equipment…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+      <input id="dir-search" type="search" placeholder="Search tasks, equipment, checklists…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
         oninput="onDirSearchInput()"
         style="width:100%;padding:9px 38px 9px 36px;border-radius:10px;border:1px solid var(--border);background:var(--bg);font-size:14px;color:var(--text);outline:none;-webkit-appearance:none;">
       <button id="dir-search-clear" onclick="clearDirSearch()" type="button"
@@ -1837,7 +1837,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-13.4';
+const APP_VERSION = '2026-06-13.5';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4374,7 +4374,8 @@ function renderDirectory() {
     if (_dirFilters.location && r.location  !== _dirFilters.location) return false;
     if (_dirFilters.equip    && r.equipment !== _dirFilters.equip)    return false;
     if (searchTerm) {
-      const haystack = [r.task, r.group, effFreqOf(r), r.location, r.equipment].join(' ').toLowerCase();
+      const subs = (SUBTASKS[r.task] || []).join(' ');
+      const haystack = [r.task, r.group, effFreqOf(r), r.location, r.equipment, subs].join(' ').toLowerCase();
       if (!haystack.includes(searchTerm)) return false;
     }
     return true;
@@ -4424,6 +4425,10 @@ function renderDirectory() {
           ${ordered.map(task => {
             const equip = grouped[freq][grp][task];
             const subtaskList = (SUBTASKS[task] || []);
+            const matchingSubs = searchTerm ? subtaskList.filter(s => s.toLowerCase().includes(searchTerm)) : [];
+            const checklistHtml = matchingSubs.length
+              ? matchingSubs.map(s => `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☑️ ${highlightMatch(s, searchTerm)}</div>`).join('')
+              : (subtaskList.length ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☑️ ${subtaskList.length} checklist item${subtaskList.length > 1 ? 's' : ''}</div>` : '');
             const origFreq = taskOrigFreq[grp + '||' + task] || freq;
             const key = encodeURIComponent(origFreq + '||' + grp + '||' + task);
             const meta = taskMeta[freq + '||' + grp + '||' + task] || {};
@@ -4440,7 +4445,7 @@ function renderDirectory() {
                 ${autoSub}
                 ${meta.location ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">📍 ${meta.location}</div>` : ''}
                 ${equip.length ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${equip.join(', ')}</div>` : ''}
-                ${subtaskList.length ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☑️ ${subtaskList.length} checklist item${subtaskList.length > 1 ? 's' : ''}</div>` : ''}
+                ${checklistHtml}
               </div>
               <div style="color:var(--subtext);font-size:18px;padding-left:8px;">›</div>
             </div>`;
