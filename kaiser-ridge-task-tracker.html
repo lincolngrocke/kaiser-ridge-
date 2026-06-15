@@ -1076,6 +1076,8 @@
     <div class="settings-note" style="margin-top:6px;">Entries sync automatically about 5 minutes after clock-out — tap this only to push them straight away.</div>
     <button class="btn-sync" style="background:#5856D6; margin-top:8px;" onclick="refreshSheetIds()">🔗 Match IDs from Sheet</button>
     <div class="settings-note" style="margin-top:6px;">Pulls the latest task IDs from the sheet onto your entries — run this once after renumbering the sheet so the app's # matches.</div>
+    <button class="btn-sync" style="background:#FF9500; margin-top:8px;" onclick="repushMissingEntries()">♺ Re-push Missing Entries</button>
+    <div class="settings-note" style="margin-top:6px;">Finds any entries that never made it into the sheet and pushes just those — won't duplicate rows that are already there.</div>
     <button class="btn-sync" style="background:#34C759; margin-top:8px;" onclick="forceAppUpdate()">⟳ Force Update App</button>
     <div id="version-status" style="font-size:13px; color:var(--subtext); margin-top:8px; text-align:center; cursor:pointer;" onclick="checkForUpdate(true)">Checking version…</div>
 
@@ -1837,7 +1839,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-13.7';
+const APP_VERSION = '2026-06-15.1';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3363,6 +3365,9 @@ async function _pushEntryToSheet(url, entry) {
     body: JSON.stringify({ ...entry, equipment: entry.tool || '', hyperlink: entry.pin ? entry.pin.url : '' }),
   });
   const json = await res.json();
+  // Only mark synced when the script actually accepted it — otherwise throw so
+  // the entry stays unsynced and is retried, instead of being silently lost.
+  if (!json || !json.success) throw new Error(json && json.error ? json.error : 'Sheet rejected the entry');
   const idx = entries.findIndex(e => e.id === entry.id);
   if (idx >= 0) {
     entries[idx].synced = true;
@@ -3399,42 +3404,42 @@ async function syncToSheet() {
 // date + clock-in + clock-out + task. Use after renumbering the sheet so the
 // app's displayed # lines up again. IDs are stable afterwards, so this is a
 // one-off catch-up, not something that needs to run regularly.
+// Normalise a date+time into a comparable key, tolerant of formats
+// ("17:51", "5:51 PM", "5:51:00 pm", "12/06/2026", "2026-06-12", 2-digit years).
+function _sheetToMin(t) {
+  const m = String(t == null ? '' : t).trim().toLowerCase().match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm)?/);
+  if (!m) return String(t == null ? '' : t).trim();
+  let h = parseInt(m[1], 10); const mi = parseInt(m[2], 10);
+  if (m[3] === 'pm' && h < 12) h += 12;
+  if (m[3] === 'am' && h === 12) h = 0;
+  return h * 60 + mi;
+}
+function _sheetToYMD(d) {
+  const s = String(d == null ? '' : d).trim();
+  let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (m) { let y = m[3]; if (y.length === 2) y = '20' + y; return y + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0'); }
+  m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) return m[1] + '-' + m[2].padStart(2, '0') + '-' + m[3].padStart(2, '0');
+  return s;
+}
+function _sheetKey(date, ci, co, task) {
+  return [_sheetToYMD(date), _sheetToMin(ci), _sheetToMin(co), String(task == null ? '' : task).trim().toLowerCase()].join('|');
+}
+
 async function refreshSheetIds() {
   const url = localStorage.getItem('kr_sheet_url');
   if (!url) { showToast('No Web App URL set'); return; }
   showToast('Matching IDs from sheet…');
-
-  // Parse a time ("17:51", "5:51 PM", "5:51:00 pm", "17:51:00") to minutes,
-  // and a date ("12/06/2026", "2026-06-12", 2-digit years) to "YYYY-MM-DD",
-  // so app entries and displayed sheet cells compare regardless of format.
-  const toMin = t => {
-    const m = String(t == null ? '' : t).trim().toLowerCase().match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm)?/);
-    if (!m) return String(t == null ? '' : t).trim();
-    let h = parseInt(m[1], 10); const mi = parseInt(m[2], 10);
-    if (m[3] === 'pm' && h < 12) h += 12;
-    if (m[3] === 'am' && h === 12) h = 0;
-    return h * 60 + mi;
-  };
-  const toYMD = d => {
-    const s = String(d == null ? '' : d).trim();
-    let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-    if (m) { let y = m[3]; if (y.length === 2) y = '20' + y; return y + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0'); }
-    m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-    if (m) return m[1] + '-' + m[2].padStart(2, '0') + '-' + m[3].padStart(2, '0');
-    return s;
-  };
-  const keyOf = (date, ci, co, task) =>
-    [toYMD(date), toMin(ci), toMin(co), String(task == null ? '' : task).trim().toLowerCase()].join('|');
 
   try {
     const res = await fetch(url + (url.includes('?') ? '&' : '?') + 'ids=1');
     const json = await res.json();
     if (!json.success || !Array.isArray(json.ids)) { showToast('Could not read sheet IDs — redeploy the Apps Script'); return; }
     const map = {};
-    json.ids.forEach(r => { map[keyOf(r.date, r.clockIn, r.clockOut, r.task)] = r.taskId; });
+    json.ids.forEach(r => { map[_sheetKey(r.date, r.clockIn, r.clockOut, r.task)] = r.taskId; });
     let updated = 0, found = 0;
     entries.forEach(e => {
-      const id = map[keyOf(e.date, e.clockIn, e.clockOut, e.task)];
+      const id = map[_sheetKey(e.date, e.clockIn, e.clockOut, e.task)];
       if (id) { found++; if (e.sheetId !== id) { e.sheetId = id; updated++; } }
     });
     if (updated) { saveEntries(); updateStats(); renderTimesheets(); }
@@ -3445,6 +3450,35 @@ async function refreshSheetIds() {
     console.error('ID match error:', err);
     showToast('ID match failed — check connection');
   }
+}
+
+// Recovery: re-push any local entries that aren't in the sheet (matched by
+// date+clock-in+clock-out+task). Re-queues only the genuinely missing ones, so
+// it never creates duplicates of rows already there.
+async function repushMissingEntries() {
+  const url = localStorage.getItem('kr_sheet_url');
+  if (!url) { showToast('No Web App URL set'); return; }
+  showToast('Checking the sheet…');
+  let sheetKeys;
+  try {
+    const res = await fetch(url + (url.includes('?') ? '&' : '?') + 'ids=1');
+    const json = await res.json();
+    if (!json.success || !Array.isArray(json.ids)) { showToast('Could not read the sheet — check the Web App'); return; }
+    sheetKeys = new Set(json.ids.map(r => _sheetKey(r.date, r.clockIn, r.clockOut, r.task)));
+  } catch (err) {
+    console.error('Re-push check error:', err);
+    showToast('Could not reach the sheet — check the Web App URL');
+    return;
+  }
+  let missing = 0;
+  entries.forEach(e => {
+    if (!sheetKeys.has(_sheetKey(e.date, e.clockIn, e.clockOut, e.task))) { e.synced = false; missing++; }
+  });
+  if (!missing) { showToast('Everything is already in the sheet ✓'); return; }
+  saveEntries();
+  updateStats();
+  showToast(missing + ' missing — pushing now…');
+  await syncToSheet();   // pushes all unsynced (now includes the re-queued ones)
 }
 
 // Auto-sync: silently push any unsynced entries that are ≥5 minutes old, so

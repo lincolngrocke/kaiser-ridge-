@@ -143,15 +143,17 @@ function doPost(e) {
 
     sheet.appendRow(row);
 
-    // Keep the sheet ordered by date, then clock-in time (oldest first), so
-    // entries always read chronologically. IDs are assigned once and never
-    // change — only the row order is rearranged here.
-    const lr = sheet.getLastRow();
-    if (lr >= 3) {
-      const data = sheet.getRange(2, 1, lr - 1, 14).getValues();
-      data.sort((a, b) => timesheetSortKey(a) - timesheetSortKey(b));
-      sheet.getRange(2, 1, data.length, 14).setValues(data);
-    }
+    // Keep the sheet ordered by date, then clock-in time (oldest first). This is
+    // best-effort: the row is already appended above, so a sort hiccup must never
+    // fail the request — otherwise the app would retry and create a duplicate.
+    try {
+      const lr = sheet.getLastRow();
+      if (lr >= 3) {
+        const data = sheet.getRange(2, 1, lr - 1, 14).getValues();
+        data.sort((a, b) => timesheetSortKey(a) - timesheetSortKey(b));
+        sheet.getRange(2, 1, data.length, 14).setValues(data);
+      }
+    } catch (sortErr) { /* ordering is cosmetic; the entry is saved */ }
 
     return jsonResponse({ success: true, taskId });
 
