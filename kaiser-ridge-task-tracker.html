@@ -1839,7 +1839,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-15.1';
+const APP_VERSION = '2026-06-15.2';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3398,6 +3398,8 @@ async function syncToSheet() {
   saveEntries();
   updateStats();
   showToast(synced + ' entries synced ✓');
+  // Sheet renumbers on each append — pull the updated IDs so the app # stays in step
+  if (synced) { try { await refreshSheetIds({ silent: true }); } catch (e) {} }
 }
 
 // Pull the sheet's current task IDs and match them onto local entries by
@@ -3426,15 +3428,16 @@ function _sheetKey(date, ci, co, task) {
   return [_sheetToYMD(date), _sheetToMin(ci), _sheetToMin(co), String(task == null ? '' : task).trim().toLowerCase()].join('|');
 }
 
-async function refreshSheetIds() {
+async function refreshSheetIds(opts) {
+  const silent = !!(opts && opts.silent);
   const url = localStorage.getItem('kr_sheet_url');
-  if (!url) { showToast('No Web App URL set'); return; }
-  showToast('Matching IDs from sheet…');
+  if (!url) { if (!silent) showToast('No Web App URL set'); return; }
+  if (!silent) showToast('Matching IDs from sheet…');
 
   try {
     const res = await fetch(url + (url.includes('?') ? '&' : '?') + 'ids=1');
     const json = await res.json();
-    if (!json.success || !Array.isArray(json.ids)) { showToast('Could not read sheet IDs — redeploy the Apps Script'); return; }
+    if (!json.success || !Array.isArray(json.ids)) { if (!silent) showToast('Could not read sheet IDs — redeploy the Apps Script'); return; }
     const map = {};
     json.ids.forEach(r => { map[_sheetKey(r.date, r.clockIn, r.clockOut, r.task)] = r.taskId; });
     let updated = 0, found = 0;
@@ -3443,12 +3446,14 @@ async function refreshSheetIds() {
       if (id) { found++; if (e.sheetId !== id) { e.sheetId = id; updated++; } }
     });
     if (updated) { saveEntries(); updateStats(); renderTimesheets(); }
-    if (updated) showToast(updated + ' IDs matched ✓');
-    else if (found) showToast('IDs already match ✓');
-    else showToast('No matching rows found — check the sheet');
+    if (!silent) {
+      if (updated) showToast(updated + ' IDs matched ✓');
+      else if (found) showToast('IDs already match ✓');
+      else showToast('No matching rows found — check the sheet');
+    }
   } catch (err) {
     console.error('ID match error:', err);
-    showToast('ID match failed — check connection');
+    if (!silent) showToast('ID match failed — check connection');
   }
 }
 
@@ -3509,6 +3514,8 @@ async function autoSyncPending() {
     updateStats();
     const ts = document.getElementById('screen-timesheets');
     if (ts && ts.classList.contains('active')) renderTimesheets();
+    // The sheet renumbers on each append — pull the updated IDs so the app # stays in step
+    try { await refreshSheetIds({ silent: true }); } catch (e) {}
   }
 }
 

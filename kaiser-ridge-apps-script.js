@@ -122,7 +122,7 @@ function doPost(e) {
       if (nums.length > 0) nextNum = Math.max(...nums) + 1;
     }
 
-    const taskId = '#' + String(nextNum).padStart(4, '0');
+    let taskId = '#' + String(nextNum).padStart(4, '0');
 
     const row = [
       taskId,
@@ -143,19 +143,24 @@ function doPost(e) {
 
     sheet.appendRow(row);
 
-    // Keep the sheet ordered by date, then clock-in time (oldest first). This is
-    // best-effort: the row is already appended above, so a sort hiccup must never
-    // fail the request — otherwise the app would retry and create a duplicate.
+    // Sort by date then clock-in (oldest first) and renumber IDs #0001…#000N so
+    // the sheet always reads cleanly top-to-bottom (newest = highest). Best-effort:
+    // the row is already appended, so a hiccup here must never fail the request
+    // (otherwise the app would retry and create a duplicate). taskId is updated to
+    // the row's new number so the response is accurate.
     try {
       const lr = sheet.getLastRow();
-      if (lr >= 3) {
+      if (lr >= 2) {
         const data = sheet.getRange(2, 1, lr - 1, 14).getValues();
         data.sort((a, b) => timesheetSortKey(a) - timesheetSortKey(b));
+        const myIdx = data.findIndex(r => String(r[0]) === taskId);
+        data.forEach((r, i) => { r[0] = '#' + String(i + 1).padStart(4, '0'); });
         sheet.getRange(2, 1, data.length, 14).setValues(data);
+        if (myIdx >= 0) taskId = '#' + String(myIdx + 1).padStart(4, '0');
       }
-    } catch (sortErr) { /* ordering is cosmetic; the entry is saved */ }
+    } catch (sortErr) { /* ordering/renumber is cosmetic; the entry is saved */ }
 
-    return jsonResponse({ success: true, taskId });
+    return jsonResponse({ success: true, taskId: taskId });
 
   } catch (err) {
     return jsonResponse({ success: false, error: err.toString() });
