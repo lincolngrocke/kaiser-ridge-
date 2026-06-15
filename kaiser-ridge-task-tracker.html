@@ -1837,7 +1837,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-13.5';
+const APP_VERSION = '2026-06-13.6';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2940,7 +2940,8 @@ function onTaskSearchInput() {
   const matches = [];
   DIRECTORY.forEach(r => {
     if (!r.task) return;
-    if (!r.task.toLowerCase().includes(q)) return;
+    const subMatch = (SUBTASKS[r.task] || []).some(s => s.toLowerCase().includes(q));
+    if (!r.task.toLowerCase().includes(q) && !subMatch) return;
     const key = `${r.frequency}||${r.group}||${r.task}`;
     if (seen[key]) return;
     seen[key] = true;
@@ -2960,10 +2961,13 @@ function onTaskSearchInput() {
     const dispFreq = auto ? auto.freq : r.frequency;
     const sub = [dispFreq, r.group].filter(Boolean).join(' · ');
     const badge = auto ? ` <span style="display:inline-block;background:#5856D6;color:#fff;font-size:9px;font-weight:700;letter-spacing:0.5px;padding:1px 5px;border-radius:5px;vertical-align:middle;">AUTO</span>` : '';
+    const matchSubs = (SUBTASKS[r.task] || []).filter(s => s.toLowerCase().includes(q));
+    const subsHtml = matchSubs.map(s => `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☑️ ${highlightMatch(s, q)}</div>`).join('');
     return `<div onclick='selectSearchedTask(${JSON.stringify({frequency:r.frequency,group:r.group,task:r.task})})'
         style="padding:12px 16px;cursor:pointer;${i < matches.length - 1 ? 'border-bottom:1px solid var(--border);' : ''}">
       <div style="font-size:15px;font-weight:500;">${highlightMatch(r.task, q)}</div>
       ${sub ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">${sub}${badge}</div>` : ''}
+      ${subsHtml}
     </div>`;
   }).join('');
 }
