@@ -1839,7 +1839,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-15.2';
+const APP_VERSION = '2026-06-15.3';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3398,8 +3398,6 @@ async function syncToSheet() {
   saveEntries();
   updateStats();
   showToast(synced + ' entries synced ✓');
-  // Sheet renumbers on each append — pull the updated IDs so the app # stays in step
-  if (synced) { try { await refreshSheetIds({ silent: true }); } catch (e) {} }
 }
 
 // Pull the sheet's current task IDs and match them onto local entries by
@@ -3514,8 +3512,6 @@ async function autoSyncPending() {
     updateStats();
     const ts = document.getElementById('screen-timesheets');
     if (ts && ts.classList.contains('active')) renderTimesheets();
-    // The sheet renumbers on each append — pull the updated IDs so the app # stays in step
-    try { await refreshSheetIds({ silent: true }); } catch (e) {}
   }
 }
 
