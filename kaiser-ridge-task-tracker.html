@@ -1074,8 +1074,6 @@
 
     <button class="btn-sync" onclick="syncToSheet()">⬆ Sync Now</button>
     <div class="settings-note" style="margin-top:6px;">Entries sync automatically about 5 minutes after clock-out — tap this only to push them straight away.</div>
-    <button class="btn-sync" style="background:#5856D6; margin-top:8px;" onclick="refreshSheetIds()">🔗 Match IDs from Sheet</button>
-    <div class="settings-note" style="margin-top:6px;">Pulls the latest task IDs from the sheet onto your entries — run this once after renumbering the sheet so the app's # matches.</div>
     <button class="btn-sync" style="background:#FF9500; margin-top:8px;" onclick="repushMissingEntries()">♺ Re-push Missing Entries</button>
     <div class="settings-note" style="margin-top:6px;">Finds any entries that never made it into the sheet and pushes just those — won't duplicate rows that are already there.</div>
     <button class="btn-sync" style="background:#34C759; margin-top:8px;" onclick="forceAppUpdate()">⟳ Force Update App</button>
@@ -1839,7 +1837,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-15.3';
+const APP_VERSION = '2026-06-15.4';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3424,35 +3422,6 @@ function _sheetToYMD(d) {
 }
 function _sheetKey(date, ci, co, task) {
   return [_sheetToYMD(date), _sheetToMin(ci), _sheetToMin(co), String(task == null ? '' : task).trim().toLowerCase()].join('|');
-}
-
-async function refreshSheetIds(opts) {
-  const silent = !!(opts && opts.silent);
-  const url = localStorage.getItem('kr_sheet_url');
-  if (!url) { if (!silent) showToast('No Web App URL set'); return; }
-  if (!silent) showToast('Matching IDs from sheet…');
-
-  try {
-    const res = await fetch(url + (url.includes('?') ? '&' : '?') + 'ids=1');
-    const json = await res.json();
-    if (!json.success || !Array.isArray(json.ids)) { if (!silent) showToast('Could not read sheet IDs — redeploy the Apps Script'); return; }
-    const map = {};
-    json.ids.forEach(r => { map[_sheetKey(r.date, r.clockIn, r.clockOut, r.task)] = r.taskId; });
-    let updated = 0, found = 0;
-    entries.forEach(e => {
-      const id = map[_sheetKey(e.date, e.clockIn, e.clockOut, e.task)];
-      if (id) { found++; if (e.sheetId !== id) { e.sheetId = id; updated++; } }
-    });
-    if (updated) { saveEntries(); updateStats(); renderTimesheets(); }
-    if (!silent) {
-      if (updated) showToast(updated + ' IDs matched ✓');
-      else if (found) showToast('IDs already match ✓');
-      else showToast('No matching rows found — check the sheet');
-    }
-  } catch (err) {
-    console.error('ID match error:', err);
-    if (!silent) showToast('ID match failed — check connection');
-  }
 }
 
 // Recovery: re-push any local entries that aren't in the sheet (matched by

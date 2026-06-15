@@ -152,47 +152,6 @@ function doPost(e) {
   }
 }
 
-// Sort key for a timesheet row: date (col B) then clock-in (col J), oldest
-// first. Handles both string cells ("DD/MM/YYYY", "HH:MM") and native Date
-// values, so it works regardless of how the cells are formatted.
-function timesheetSortKey(row) {
-  let yyyy = 0, mm = 0, dd = 0, hh = 0, mi = 0;
-  const dv = row[1];
-  if (Object.prototype.toString.call(dv) === '[object Date]') {
-    yyyy = dv.getFullYear(); mm = dv.getMonth() + 1; dd = dv.getDate();
-  } else {
-    const p = String(dv || '').split('/');
-    if (p.length === 3) { dd = parseInt(p[0], 10) || 0; mm = parseInt(p[1], 10) || 0; yyyy = parseInt(p[2], 10) || 0; }
-  }
-  const tv = row[9];
-  if (Object.prototype.toString.call(tv) === '[object Date]') {
-    hh = tv.getHours(); mi = tv.getMinutes();
-  } else {
-    const t = String(tv || '').split(':');
-    if (t.length >= 2) { hh = parseInt(t[0], 10) || 0; mi = parseInt(t[1], 10) || 0; }
-  }
-  return ((yyyy * 100 + mm) * 100 + dd) * 10000 + hh * 100 + mi;
-}
-
-// ── ONE-TIME CLEANUP ──────────────────────────────────────────────────────
-// Run this ONCE from the Apps Script editor to fix an existing backlog where
-// older entries were given higher IDs. It sorts the timesheet by date/time and
-// renumbers the ID column #0001…#000N oldest→newest, so the newest entry holds
-// the highest ID. New entries continue from the top number afterwards.
-// How to run: in the editor, pick "renumberTimesheetByDateTime" from the
-// function dropdown, click Run, approve permissions if asked. Safe to re-run.
-function renumberTimesheetByDateTime() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_NAME);
-  if (!sheet) throw new Error('Sheet "' + SHEET_NAME + '" not found');
-  const lr = sheet.getLastRow();
-  if (lr < 2) return;
-  const data = sheet.getRange(2, 1, lr - 1, 14).getValues();
-  data.sort((a, b) => timesheetSortKey(a) - timesheetSortKey(b));
-  data.forEach((r, i) => { r[0] = '#' + String(i + 1).padStart(4, '0'); });
-  sheet.getRange(2, 1, data.length, 14).setValues(data);
-}
-
 // ── Sync one day's planner blocks into the default Google Calendar ──
 // Events created by the app are tagged so re-pushing the same day UPDATES
 // existing events and DELETES ones whose blocks were removed in the app —
