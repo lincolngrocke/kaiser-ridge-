@@ -1217,6 +1217,7 @@
     <div id="run-estimate" style="font-size:13px;color:var(--blue);font-weight:600;margin-top:6px;display:none;"></div>
     <div id="run-break-info" style="font-size:13px;color:var(--subtext);margin-top:4px;"></div>
   </div>
+  <div id="run-checklist" style="display:none;width:100%;max-width:420px;margin:8px auto 0;padding:0 20px;max-height:30vh;overflow-y:auto;-webkit-overflow-scrolling:touch;text-align:left;"></div>
   <div class="running-buttons">
 <button class="btn-clock-out" style="flex:1.4" onclick="openTimeModal('out')">Clock Out</button>
   </div>
@@ -1843,7 +1844,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-16.5';
+const APP_VERSION = '2026-06-16.6';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2232,9 +2233,19 @@ function clockOut(overrideTime) {
     durationHours: parseFloat(durationHours.toFixed(2)),
     break: parseFloat(breakHours.toFixed(2)),
     pin: clockState.pin || null,
+    checklist: (clockState.checklistDone || []),
     synced: false,
     createdAt: new Date().toISOString(),
   };
+  // Fold per-item checklist times into notes so they persist and sync to the sheet
+  if (clockState.checklistDone && clockState.checklistDone.length) {
+    const dur = _checklistDurations();
+    const parts = clockState.checklistDone
+      .slice().sort((a, b) => new Date(a.at) - new Date(b.at))
+      .map(d => d.item + ' ' + fmtMin(dur[d.item]));
+    const summary = 'Checklist times — ' + parts.join(', ');
+    entry.notes = entry.notes ? entry.notes + '\n' + summary : summary;
+  }
   entries.unshift(entry);
   saveEntries();
   clockState = null;
@@ -2295,6 +2306,7 @@ function renderClockState() {
     document.getElementById('at-tool').textContent = clockState.tool ? '🔧 ' + clockState.tool : '';
     document.getElementById('at-note').textContent = clockState.notes || '';
     document.getElementById('btn-subtasks').style.display = (SUBTASKS[clockState.task] && SUBTASKS[clockState.task].length > 0) ? 'inline-flex' : 'none';
+    renderRunChecklist();
     updateAtTimes();
     timer.classList.add('running');
   } else {
@@ -2308,6 +2320,62 @@ function renderClockState() {
   }
   updateRestoreClockBanner();
   updateSummary();
+}
+
+// ── Live checklist timing (running clock) ───────────────────────────────────
+// Tap a checklist item the moment it's done; the gap from clock-in (first item)
+// or the previous tick (later items) is its duration. Tap a done item to undo.
+function _clockInEpoch() {
+  if (!clockState) return Date.now();
+  const dp = String(clockState.date || '').split('/').map(Number);   // DD/MM/YYYY
+  const tp = String(clockState.startTime || '00:00').split(':').map(Number);
+  const d = new Date(dp[2], (dp[1] || 1) - 1, dp[0] || 1, tp[0] || 0, tp[1] || 0, 0);
+  return isNaN(d.getTime()) ? Date.now() : d.getTime();
+}
+function fmtMin(min) {
+  min = Math.max(0, Math.round(min || 0));
+  if (min < 60) return min + 'm';
+  const h = Math.floor(min / 60), mm = min % 60;
+  return h + 'h ' + (mm < 10 ? '0' : '') + mm + 'm';
+}
+// → { item: durationMinutes } computed in tick order
+function _checklistDurations() {
+  const done = (clockState && Array.isArray(clockState.checklistDone)) ? clockState.checklistDone : [];
+  const sorted = done.slice().sort((a, b) => new Date(a.at) - new Date(b.at));
+  const out = {};
+  let prev = _clockInEpoch();
+  sorted.forEach(d => { const t = new Date(d.at).getTime(); out[d.item] = (t - prev) / 60000; prev = t; });
+  return out;
+}
+function markChecklistItemDone(item) {
+  if (!clockState || !clockState.running) return;
+  if (!Array.isArray(clockState.checklistDone)) clockState.checklistDone = [];
+  const i = clockState.checklistDone.findIndex(d => d.item === item);
+  if (i >= 0) clockState.checklistDone.splice(i, 1);          // tap again to undo
+  else clockState.checklistDone.push({ item, at: new Date().toISOString() });
+  localStorage.setItem('kr_clock', JSON.stringify(clockState));
+  renderRunChecklist();
+}
+function renderRunChecklist() {
+  const el = document.getElementById('run-checklist');
+  if (!el) return;
+  const items = (clockState && clockState.running && SUBTASKS[clockState.task]) || [];
+  if (!items.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
+  el.style.display = '';
+  const done = (clockState && Array.isArray(clockState.checklistDone)) ? clockState.checklistDone : [];
+  const dur = _checklistDurations();
+  const rows = items.map(s => {
+    const isDone = done.some(d => d.item === s);
+    const enc = s.replace(/'/g, "\\'");
+    if (isDone) {
+      return `<div onclick="markChecklistItemDone('${enc}')" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer;">
+        <span style="font-size:14px;color:var(--subtext);text-decoration:line-through;">✓ ${s}</span>
+        <span style="font-size:13px;color:var(--green);font-weight:700;white-space:nowrap;">${fmtMin(dur[s])}</span></div>`;
+    }
+    return `<div onclick="markChecklistItemDone('${enc}')" style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer;">
+        <span style="font-size:14px;color:var(--text);">○ ${s}</span></div>`;
+  }).join('');
+  el.innerHTML = `<div style="font-size:12px;font-weight:700;color:var(--subtext);letter-spacing:.04em;margin:0 0 2px;">CHECKLIST · ${done.length}/${items.length} done · tap to time</div>${rows}`;
 }
 
 function formatTimeAmPm(t) {
