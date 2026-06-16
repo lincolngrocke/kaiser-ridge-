@@ -876,6 +876,7 @@
       <div class="ts-period" id="ts-period-label">This pay period</div>
       <div class="ts-summary-top">
         <div class="ts-summary-amount" id="ts-total-hours">0.00h</div>
+        <div id="ts-count" style="font-size:13px;color:var(--subtext);margin-top:2px;">0 timesheets</div>
       </div>
       <div class="hours-bar-wrap">
         <div class="hours-bar-track"><div class="hours-bar-fill" id="ts-bar" style="width:0%"></div></div>
@@ -1841,7 +1842,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-16.3';
+const APP_VERSION = '2026-06-16.4';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2458,6 +2459,15 @@ function renderTimesheets() {
     filtered = filtered.filter(e =>
       [e.task, e.group, e.notes, e.tool, e.location, e.frequency, entryProjectLabel(e)].some(f => f && f.toLowerCase().includes(searchTerm))
     );
+  }
+
+  const countEl = document.getElementById('ts-count');
+  if (countEl) {
+    const shown = filtered.length, all = entries.length;
+    const isFiltered = shown !== all;
+    countEl.textContent = isFiltered
+      ? shown + ' of ' + all + ' timesheet' + (all === 1 ? '' : 's')
+      : all + ' timesheet' + (all === 1 ? '' : 's');
   }
 
   let total = filtered.reduce((s, e) => s + e.durationHours, 0);
