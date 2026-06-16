@@ -1861,7 +1861,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-16.9';
+const APP_VERSION = '2026-06-16.10';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2419,18 +2419,23 @@ function _entryChecklistDurations(e) {
   return out;
 }
 function _aggregateChecklistTimes() {
+  // Pool by item text across all tasks. Key on a normalised form (trim, collapse
+  // whitespace, lowercase) so the same item shared by several tasks always merges,
+  // even with stray spaces or capitalisation; display the first-seen clean label.
   const agg = {};
   entries.forEach(e => {
     const d = _entryChecklistDurations(e);
     Object.keys(d).forEach(item => {
-      if (!agg[item]) agg[item] = { count: 0, total: 0, last: 0 };
-      agg[item].count++;
-      agg[item].total += d[item];
-      agg[item].last = d[item];
+      const label = item.trim().replace(/\s+/g, ' ');
+      const key = label.toLowerCase();
+      if (!agg[key]) agg[key] = { label, count: 0, total: 0, last: 0 };
+      agg[key].count++;
+      agg[key].total += d[item];
+      agg[key].last = d[item];
     });
   });
   return Object.keys(agg)
-    .map(item => ({ item, count: agg[item].count, avg: agg[item].total / agg[item].count, last: agg[item].last }))
+    .map(k => ({ item: agg[k].label, count: agg[k].count, avg: agg[k].total / agg[k].count, last: agg[k].last }))
     .sort((a, b) => b.count - a.count || b.avg - a.avg);
 }
 function openChecklistAvg() { renderChecklistAvg(); openModal('modal-checklist-avg'); }
