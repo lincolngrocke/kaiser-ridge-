@@ -988,7 +988,7 @@
     <button id="planner-cal-btn" onclick="pushPlannerToCalendar()" title="Push this day to Google Calendar" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;font-size:15px;cursor:pointer;">📆</button>
     <button onclick="plannerGoToday()" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-size:13px;color:var(--blue);cursor:pointer;">Today</button>
   </div>
-  <div class="scroll-area" id="planner-scroll" style="position:relative;overflow-y:auto;flex:1;">
+  <div class="scroll-area" id="planner-scroll" style="position:relative;overflow-y:auto;flex:1;touch-action:pan-y;">
     <div id="planner-grid" style="position:relative;margin:0 16px;"></div>
   </div>
 </div>
@@ -1876,7 +1876,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-16.11';
+const APP_VERSION = '2026-06-16.12';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6620,7 +6620,13 @@ let _plannerDragId = null, _plannerDragOffsetY = 0, _plannerIsDragging = false, 
 let _plannerDragLabel = null;
 let _plannerNowTimer = null;
 
-const PLANNER_HOUR_PX = 360; // pixels per hour (6px/min → a 5-min task = 30px, lines up to its true time)
+// Pixels per hour — now adjustable via pinch-to-zoom (like Google Calendar).
+// 360 = 6px/min default; persisted so the chosen zoom sticks between visits.
+const PLANNER_ZOOM_MIN = 90;    // compressed — more of the day on screen
+const PLANNER_ZOOM_MAX = 1080;  // expanded — 5-min tasks become roomy
+let PLANNER_HOUR_PX = Math.max(PLANNER_ZOOM_MIN, Math.min(PLANNER_ZOOM_MAX,
+  parseFloat(localStorage.getItem('kr_planner_zoom')) || 360));
+let _plannerSuppressAutoScroll = false;
 const PLANNER_START_HOUR = 0; // midnight
 const PLANNER_END_HOUR = 24; // full 24-hour day
 
@@ -6739,14 +6745,17 @@ function renderPlannerScreen() {
   // Cascade any overlapping blocks downward so short/back-to-back tasks stay readable
   reflowPlannerBlocks(grid);
 
-  // Scroll to current time or first task
-  const scroll = document.getElementById('planner-scroll');
-  if (diff === 0) {
-    const nowMins = (now.getHours() - PLANNER_START_HOUR) * 60 + now.getMinutes();
-    scroll.scrollTop = Math.max(0, nowMins / 60 * PLANNER_HOUR_PX - 100);
-  } else {
-    scroll.scrollTop = 6 * PLANNER_HOUR_PX; // scroll to 6am
+  // Scroll to current time or first task (skipped during a pinch-zoom re-render)
+  if (!_plannerSuppressAutoScroll) {
+    const scroll = document.getElementById('planner-scroll');
+    if (diff === 0) {
+      const nowMins = (now.getHours() - PLANNER_START_HOUR) * 60 + now.getMinutes();
+      scroll.scrollTop = Math.max(0, nowMins / 60 * PLANNER_HOUR_PX - 100);
+    } else {
+      scroll.scrollTop = 6 * PLANNER_HOUR_PX; // scroll to 6am
+    }
   }
+  initPlannerZoom();
 
   // Refresh now line + live block every minute
   clearInterval(_plannerNowTimer);
@@ -6772,6 +6781,54 @@ function renderPlannerScreen() {
       }
     }, 60000);
   }
+}
+
+// ── Pinch-to-zoom the planner's vertical time scale (like Google Calendar) ──
+// Two fingers: spread to expand time (5-min tasks get roomier), pinch to
+// compress. The time point under the fingers stays put while zooming. The
+// chosen zoom persists. Single-finger scroll and block-drag are untouched.
+let _pz = null, _pzRaf = 0, _plannerZoomInit = false;
+function _pzDist(t) {
+  return Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+}
+function initPlannerZoom() {
+  if (_plannerZoomInit) return;
+  const scroll = document.getElementById('planner-scroll');
+  if (!scroll) return;
+  _plannerZoomInit = true;
+  scroll.addEventListener('touchstart', e => {
+    if (e.touches.length !== 2) return;
+    const rectTop = scroll.getBoundingClientRect().top;
+    const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    const contentY = scroll.scrollTop + (midY - rectTop);
+    _pz = { dist0: _pzDist(e.touches), px0: PLANNER_HOUR_PX, hours0: contentY / PLANNER_HOUR_PX, rectTop, pending: null };
+  }, { passive: true });
+  scroll.addEventListener('touchmove', e => {
+    if (!_pz || e.touches.length !== 2) return;
+    e.preventDefault(); // stop native scroll while pinching
+    const dist = _pzDist(e.touches);
+    const newPx = Math.max(PLANNER_ZOOM_MIN, Math.min(PLANNER_ZOOM_MAX, _pz.px0 * dist / _pz.dist0));
+    const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    _pz.pending = { newPx, midY };
+    if (!_pzRaf) _pzRaf = requestAnimationFrame(_pzApply);
+  }, { passive: false });
+  const end = () => {
+    if (_pz) { localStorage.setItem('kr_planner_zoom', String(Math.round(PLANNER_HOUR_PX))); _pz = null; }
+  };
+  scroll.addEventListener('touchend', end);
+  scroll.addEventListener('touchcancel', end);
+}
+function _pzApply() {
+  _pzRaf = 0;
+  if (!_pz || !_pz.pending) return;
+  const { newPx, midY } = _pz.pending;
+  PLANNER_HOUR_PX = newPx;
+  _plannerSuppressAutoScroll = true;
+  renderPlannerScreen();
+  _plannerSuppressAutoScroll = false;
+  // Keep the time point that was under the fingers anchored there
+  const scroll = document.getElementById('planner-scroll');
+  if (scroll) scroll.scrollTop = _pz.hours0 * PLANNER_HOUR_PX - (midY - _pz.rectTop);
 }
 
 // Keep every task readable: walk blocks top-to-bottom and, whenever one would
