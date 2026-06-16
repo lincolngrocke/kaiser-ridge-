@@ -1844,7 +1844,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-16.6';
+const APP_VERSION = '2026-06-16.7';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2375,7 +2375,7 @@ function renderRunChecklist() {
     return `<div onclick="markChecklistItemDone('${enc}')" style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer;">
         <span style="font-size:14px;color:var(--text);">○ ${s}</span></div>`;
   }).join('');
-  el.innerHTML = `<div style="font-size:12px;font-weight:700;color:var(--subtext);letter-spacing:.04em;margin:0 0 2px;">CHECKLIST · ${done.length}/${items.length} done · tap to time</div>${rows}`;
+  el.innerHTML = `<div style="position:sticky;top:0;z-index:2;background:#000;padding:6px 0 6px;font-size:12px;font-weight:700;color:var(--subtext);letter-spacing:.04em;border-bottom:1px solid var(--border);">CHECKLIST · ${done.length}/${items.length} done · tap to time</div>${rows}`;
 }
 
 function formatTimeAmPm(t) {
