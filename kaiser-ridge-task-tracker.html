@@ -1076,6 +1076,8 @@
     <div class="settings-note" style="margin-top:6px;">Entries sync automatically about 5 minutes after clock-out — tap this only to push them straight away.</div>
     <button class="btn-sync" style="background:#FF9500; margin-top:8px;" onclick="repushMissingEntries()">♺ Re-push Missing Entries</button>
     <div class="settings-note" style="margin-top:6px;">Finds any entries that never made it into the sheet and pushes just those — won't duplicate rows that are already there.</div>
+    <button class="btn-sync" style="background:#5856D6; margin-top:8px;" onclick="importFromSheet()">⬇ Import from Sheet</button>
+    <div class="settings-note" style="margin-top:6px;">Pulls down any timesheets that are in the sheet but missing on this phone (e.g. lost entries or another device). Only adds what's missing — never duplicates or changes the sheet.</div>
     <button class="btn-sync" style="background:#34C759; margin-top:8px;" onclick="forceAppUpdate()">⟳ Force Update App</button>
     <div id="version-status" style="font-size:13px; color:var(--subtext); margin-top:8px; text-align:center; cursor:pointer;" onclick="checkForUpdate(true)">Checking version…</div>
 
@@ -1837,7 +1839,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-16.1';
+const APP_VERSION = '2026-06-16.2';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3471,6 +3473,74 @@ async function repushMissingEntries() {
   updateStats();
   showToast(missing + ' missing — pushing now…');
   await syncToSheet();   // pushes all unsynced (now includes the re-queued ones)
+}
+
+// Recovery (sheet → app): pull down any rows that are in the sheet but missing
+// on this phone (lost entries, or created on another device). Adds only the
+// missing ones, matched by date+clock-in+clock-out+task, and marks them synced
+// so they're never re-pushed. Read-only — never writes to or changes the sheet.
+function _normDate(d) { // → DD/MM/YYYY
+  const ymd = _sheetToYMD(d); // YYYY-MM-DD (or original if unparseable)
+  const m = String(ymd).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? (m[3] + '/' + m[2] + '/' + m[1]) : String(d || '');
+}
+function _normTime(t) { // → HH:MM (24h), '' if blank
+  const min = _sheetToMin(t);
+  if (typeof min !== 'number') return String(t || '');
+  return String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0');
+}
+async function importFromSheet() {
+  const url = localStorage.getItem('kr_sheet_url');
+  if (!url) { showToast('No Web App URL set'); return; }
+  showToast('Reading the sheet…');
+  let rows;
+  try {
+    const res = await fetch(url + (url.includes('?') ? '&' : '?') + 'export=1');
+    const json = await res.json();
+    if (!json.success || !Array.isArray(json.rows)) { showToast('Could not read the sheet — check the Web App'); return; }
+    rows = json.rows;
+  } catch (err) {
+    console.error('Import error:', err);
+    showToast('Could not reach the sheet — check the Web App URL');
+    return;
+  }
+  const localKeys = new Set(entries.map(e => _sheetKey(e.date, e.clockIn, e.clockOut, e.task)));
+  let added = 0;
+  rows.forEach(r => {
+    const key = _sheetKey(r.date, r.clockIn, r.clockOut, r.task);
+    if (localKeys.has(key)) return;
+    localKeys.add(key);
+    const date = _normDate(r.date);
+    const clockIn = _normTime(r.clockIn);
+    const ymd = _sheetToYMD(r.date);
+    entries.push({
+      id: 'imp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+      date,
+      personnel: r.personnel || getUserName(),
+      location: r.location || '',
+      frequency: r.frequency || '',
+      group: r.group || '',
+      task: r.task || '',
+      subtask: '',
+      tool: r.equipment || '',
+      projectId: '', projectStepId: '',
+      notes: r.notes || '',
+      clockIn,
+      clockOut: _normTime(r.clockOut),
+      durationHours: parseFloat(r.durationHours) || 0,
+      break: parseFloat(r.break) || 0,
+      pin: r.hyperlink ? { url: r.hyperlink } : null,
+      synced: true,
+      createdAt: new Date((/^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd : '1970-01-01') + 'T' + (clockIn || '00:00') + ':00').toISOString(),
+    });
+    added++;
+  });
+  if (!added) { showToast('Nothing to import — this phone already has every sheet entry ✓'); return; }
+  entries.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  saveEntries();
+  updateStats();
+  renderTimesheets();
+  showToast('Imported ' + added + ' entr' + (added === 1 ? 'y' : 'ies') + ' from the sheet ✓');
 }
 
 // Auto-sync: silently push any unsynced entries that are ≥5 minutes old, so

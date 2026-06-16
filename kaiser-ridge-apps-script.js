@@ -55,6 +55,36 @@ function doGet(e) {
       return jsonResponse({ success: true, ids: ids });
     }
 
+    // Full timesheet export (read-only), so the app can pull down rows it's
+    // missing ("Import from Sheet" recovery). All 13 columns, displayed text.
+    if (p.export === '1') {
+      const exSs = SpreadsheetApp.getActiveSpreadsheet();
+      const exSheet = exSs.getSheetByName(SHEET_NAME);
+      if (!exSheet) return jsonResponse({ success: false, error: 'Sheet "' + SHEET_NAME + '" not found' });
+      const exLr = exSheet.getLastRow();
+      const rows = [];
+      if (exLr >= 2) {
+        exSheet.getRange(2, 1, exLr - 1, 13).getDisplayValues().forEach(r => {
+          rows.push({
+            date:          r[0],
+            personnel:     r[1],
+            location:      r[2],
+            frequency:     r[3],
+            group:         r[4],
+            task:          r[5],
+            notes:         r[6],
+            durationHours: r[7],
+            clockIn:       r[8],
+            clockOut:      r[9],
+            break:         r[10],
+            hyperlink:     r[11],
+            equipment:     r[12],
+          });
+        });
+      }
+      return jsonResponse({ success: true, rows: rows });
+    }
+
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
     // App Directory
