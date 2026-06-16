@@ -30,7 +30,9 @@ function doGet(e) {
       for (let i = 0; i < count; i++) lib += (props.getProperty('kr_lib_' + i) || '');
       return jsonResponse({ success: true, version: props.getProperty('kr_lib_version') || '', library: lib });
     }
-    // Current sheet IDs, so the app can re-match its entries after a renumber
+    // Current sheet rows (date/time/task only), so the app's "Re-push Missing
+    // Entries" recovery can tell which local entries are already in the sheet.
+    // Matching is purely by content — there is no Task ID column any more.
     if (p.ids === '1') {
       const idsSs = SpreadsheetApp.getActiveSpreadsheet();
       const idsSheet = idsSs.getSheetByName(SHEET_NAME);
@@ -40,13 +42,13 @@ function doGet(e) {
       if (idsLr >= 2) {
         // Use the cells' DISPLAYED text, not raw values — avoids date/time type
         // coercion (e.g. the 1899-epoch timezone offset that mangles read-back times).
-        idsSheet.getRange(2, 1, idsLr - 1, 14).getDisplayValues().forEach(r => {
+        // Columns (no Task ID): date(0) … task(5) … clockIn(8) clockOut(9).
+        idsSheet.getRange(2, 1, idsLr - 1, 13).getDisplayValues().forEach(r => {
           ids.push({
-            taskId:   r[0],
-            date:     r[1],
-            clockIn:  r[9],
-            clockOut: r[10],
-            task:     r[6],
+            date:     r[0],
+            clockIn:  r[8],
+            clockOut: r[9],
+            task:     r[5],
           });
         });
       }
@@ -111,21 +113,7 @@ function doPost(e) {
       return jsonResponse({ success: false, error: 'Sheet "' + SHEET_NAME + '" not found' });
     }
 
-    const lastRow = sheet.getLastRow();
-    let nextNum = 1;
-    if (lastRow >= 2) {
-      const idCol = sheet.getRange('A2:A' + lastRow).getValues().flat();
-      const nums  = idCol
-        .filter(v => String(v).startsWith('#'))
-        .map(v => parseInt(String(v).replace('#', ''), 10))
-        .filter(n => !isNaN(n));
-      if (nums.length > 0) nextNum = Math.max(...nums) + 1;
-    }
-
-    const taskId = '#' + String(nextNum).padStart(4, '0');
-
     const row = [
-      taskId,
       data.date        || '',
       data.personnel   || 'Lincoln',
       data.location    || '',
@@ -141,15 +129,76 @@ function doPost(e) {
       data.equipment   || '',
     ];
 
-    // Append at the bottom with its permanent ID. IDs are locked to the order
-    // tasks reach the sheet (#0001 = first ever) and never change — each new row
-    // simply takes the next number at the end, so the sheet stays sequential.
+    // Pure append-only: no Task ID, no read-modify-write. Each entry is added as
+    // a single atomic row at the bottom. The app pushes unsynced entries oldest
+    // first, so new rows arrive in chronological order and the sheet stays
+    // date/time-sorted without any per-sync sorting or renumbering.
     sheet.appendRow(row);
-    return jsonResponse({ success: true, taskId: taskId });
+    return jsonResponse({ success: true });
 
   } catch (err) {
     return jsonResponse({ success: false, error: err.toString() });
   }
+}
+
+// ════════════════════════════════════════════════════════
+//  ONE-TIME MIGRATION — run manually, once, from the editor
+// ════════════════════════════════════════════════════════
+// Removes the old Task ID column (A) and sorts all timesheet rows by date + time
+// (oldest at the top, newest at the bottom). Run this ONCE, by hand, while no
+// syncing is happening — select oneTimeRemoveIdsAndSort in the editor and press
+// Run. It is safe to run again (it won't re-delete a column or duplicate rows),
+// but it is NOT wired into doPost: ongoing syncs stay pure append-only. Back up
+// the sheet (File → Make a copy) before the first run.
+function oneTimeRemoveIdsAndSort() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAME);
+  if (!sheet) throw new Error('Sheet "' + SHEET_NAME + '" not found');
+
+  // ── 1. Drop the Task ID column (A), if it's still there ──
+  // Detect it so a second run is harmless: header mentions "id"/"#", or the
+  // first data cell looks like "#0001".
+  const headerA    = String(sheet.getRange(1, 1).getDisplayValue()).trim().toLowerCase();
+  const firstDataA = sheet.getLastRow() >= 2 ? String(sheet.getRange(2, 1).getDisplayValue()).trim() : '';
+  const looksLikeIdCol = /(^|\b)id\b/.test(headerA) || headerA.indexOf('#') >= 0 || /^#?\d+$/.test(firstDataA);
+  if (looksLikeIdCol) sheet.deleteColumn(1);
+
+  // ── 2. Sort data rows by date + clock-in, oldest first ──
+  // Columns now: date(0) … task(5) … clockIn(8). Sort by DISPLAY text (tolerant
+  // of DD/MM/YYYY and am/pm) but write back RAW values to preserve cell types.
+  const lastRow = sheet.getLastRow();
+  const numCols = sheet.getLastColumn();
+  if (lastRow < 3) return; // 0 or 1 data rows — nothing to sort
+  const range = sheet.getRange(2, 1, lastRow - 1, numCols);
+  const raw   = range.getValues();
+  const disp  = range.getDisplayValues();
+  const order = raw.map((_, i) => i);
+  order.sort((i, j) => migSortKey_(disp[i][0], disp[i][8]) - migSortKey_(disp[j][0], disp[j][8]));
+  range.setValues(order.map(i => raw[i]));
+}
+
+// Comparable timestamp from a tolerant date + time string; undated rows sink to
+// the bottom. (Mirrors the app's _sheetToYMD/_sheetToMin parsing.)
+function migSortKey_(dateStr, timeStr) {
+  const s = String(dateStr == null ? '' : dateStr).trim();
+  let y, mo, d;
+  let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (m) { d = +m[1]; mo = +m[2]; y = +m[3]; if (y < 100) y += 2000; }
+  else {
+    m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+  }
+  if (!y) return Number.MAX_SAFE_INTEGER;
+  const tm = String(timeStr == null ? '' : timeStr).trim().toLowerCase()
+    .match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm)?/);
+  let min = 0;
+  if (tm) {
+    let h = +tm[1]; const mi = +tm[2];
+    if (tm[3] === 'pm' && h < 12) h += 12;
+    if (tm[3] === 'am' && h === 12) h = 0;
+    min = h * 60 + mi;
+  }
+  return new Date(y, mo - 1, d, 0, min, 0).getTime();
 }
 
 // ── Sync one day's planner blocks into the default Google Calendar ──

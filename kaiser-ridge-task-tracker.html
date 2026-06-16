@@ -1837,7 +1837,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-15.4';
+const APP_VERSION = '2026-06-16.1';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2421,6 +2421,24 @@ function entryProjectLabel(e) {
   return label;
 }
 
+// Comparable timestamp for an entry from its work date (DD/MM/YYYY) + clock-in,
+// tolerant of am/pm. Undated entries sort to the very top (newest).
+function _entryDateTimeKey(e) {
+  const dm = String(e.date || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (!dm) return Number.MAX_SAFE_INTEGER;
+  let y = parseInt(dm[3], 10); if (y < 100) y += 2000;
+  const tm = String(e.clockIn || '').trim().toLowerCase()
+    .match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm)?/);
+  let min = 0;
+  if (tm) {
+    let h = parseInt(tm[1], 10); const mi = parseInt(tm[2], 10);
+    if (tm[3] === 'pm' && h < 12) h += 12;
+    if (tm[3] === 'am' && h === 12) h = 0;
+    min = h * 60 + mi;
+  }
+  return new Date(y, parseInt(dm[2], 10) - 1, parseInt(dm[1], 10), 0, min, 0).getTime();
+}
+
 function renderTimesheets() {
   updateRestoreEntryBanner();
   const list = document.getElementById('ts-list');
@@ -2434,7 +2452,7 @@ function renderTimesheets() {
   });
   if (searchTerm) {
     filtered = filtered.filter(e =>
-      [e.task, e.group, e.notes, e.tool, e.location, e.frequency, e.sheetId, entryProjectLabel(e)].some(f => f && f.toLowerCase().includes(searchTerm))
+      [e.task, e.group, e.notes, e.tool, e.location, e.frequency, entryProjectLabel(e)].some(f => f && f.toLowerCase().includes(searchTerm))
     );
   }
 
@@ -2460,6 +2478,10 @@ function renderTimesheets() {
     return text.replace(regex, '<mark style="background:#FFD60A;color:#000;border-radius:2px;padding:0 1px;">$1</mark>');
   };
 
+  // Newest at the top, oldest at the bottom — sorted by the entry's own work
+  // date + clock-in (the inverse of the sheet, which runs oldest→newest).
+  filtered.sort((a, b) => _entryDateTimeKey(b) - _entryDateTimeKey(a));
+
   list.innerHTML = filtered.map(e => {
     const tag = [e.group, e.task].filter(Boolean).join(' · ');
     const projLabel = entryProjectLabel(e);
@@ -2475,7 +2497,6 @@ function renderTimesheets() {
         <div style="text-align:right">
           <div class="ts-entry-hours">${formatHours(e.durationHours)}</div>
           <div class="ts-entry-tag">${e.location || ''}</div>
-          <div style="font-size:11px;color:var(--subtext);margin-top:2px;">${e.sheetId || '—'}</div>
         </div>
       </div>
       <div class="ts-entry-tag" style="margin-top:4px">${hl(tag)}</div>
@@ -3369,7 +3390,6 @@ async function _pushEntryToSheet(url, entry) {
   const idx = entries.findIndex(e => e.id === entry.id);
   if (idx >= 0) {
     entries[idx].synced = true;
-    if (json.taskId) entries[idx].sheetId = json.taskId;
   }
   return json;
 }
