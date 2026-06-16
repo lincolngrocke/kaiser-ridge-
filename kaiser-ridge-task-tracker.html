@@ -1876,7 +1876,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-16.14';
+const APP_VERSION = '2026-06-16.15';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6788,11 +6788,18 @@ function renderPlannerScreen() {
 
 // ── Pinch-to-zoom the planner's vertical time scale (like Google Calendar) ──
 // Two fingers: spread to expand time (5-min tasks get roomier), pinch to
-// compress. The time point under the fingers stays put while zooming. The
-// chosen zoom persists. Single-finger scroll and block-drag are untouched.
+// compress. For smoothness the grid is scaled with a GPU transform DURING the
+// pinch (no DOM rebuild per frame), then re-laid out for real on release. The
+// time point under the fingers stays anchored. Single-finger scroll and
+// block-drag are untouched.
 let _pz = null, _pzRaf = 0, _plannerZoomInit = false;
 function _pzDist(t) {
   return Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+}
+function _pzTargetPx() {
+  // current finger spread → desired px/hour (amplified + clamped)
+  const amplified = Math.pow(_pz.dist / _pz.dist0, PLANNER_ZOOM_GAIN);
+  return Math.max(PLANNER_ZOOM_MIN, Math.min(PLANNER_ZOOM_MAX, _pz.px0 * amplified));
 }
 function initPlannerZoom() {
   if (_plannerZoomInit) return;
@@ -6803,36 +6810,45 @@ function initPlannerZoom() {
     if (e.touches.length !== 2) return;
     const rectTop = scroll.getBoundingClientRect().top;
     const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-    const contentY = scroll.scrollTop + (midY - rectTop);
-    _pz = { dist0: _pzDist(e.touches), px0: PLANNER_HOUR_PX, hours0: contentY / PLANNER_HOUR_PX, rectTop, pending: null };
+    const anchorContentY = scroll.scrollTop + (midY - rectTop);
+    _pz = { dist0: _pzDist(e.touches), dist: _pzDist(e.touches), px0: PLANNER_HOUR_PX, rectTop, anchorContentY };
+    const grid = document.getElementById('planner-grid');
+    // Scale around the finger point so it stays visually fixed during the pinch
+    grid.style.transformOrigin = '0px ' + anchorContentY + 'px';
+    grid.style.willChange = 'transform';
   }, { passive: true });
   scroll.addEventListener('touchmove', e => {
     if (!_pz || e.touches.length !== 2) return;
     e.preventDefault(); // stop native scroll while pinching
-    const dist = _pzDist(e.touches);
-    const amplified = Math.pow(dist / _pz.dist0, PLANNER_ZOOM_GAIN);
-    const newPx = Math.max(PLANNER_ZOOM_MIN, Math.min(PLANNER_ZOOM_MAX, _pz.px0 * amplified));
-    const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-    _pz.pending = { newPx, midY };
-    if (!_pzRaf) _pzRaf = requestAnimationFrame(_pzApply);
+    _pz.dist = _pzDist(e.touches);
+    if (!_pzRaf) _pzRaf = requestAnimationFrame(_pzTransform);
   }, { passive: false });
   const end = () => {
-    if (_pz) { localStorage.setItem('kr_planner_zoom', String(Math.round(PLANNER_HOUR_PX))); _pz = null; }
+    if (!_pz) return;
+    if (_pzRaf) { cancelAnimationFrame(_pzRaf); _pzRaf = 0; }
+    const newPx = _pzTargetPx();
+    const grid = document.getElementById('planner-grid');
+    grid.style.transform = '';
+    grid.style.transformOrigin = '';
+    grid.style.willChange = '';
+    // Commit: real re-layout at the new scale, keep the anchor point fixed
+    PLANNER_HOUR_PX = newPx;
+    _plannerSuppressAutoScroll = true;
+    renderPlannerScreen();
+    _plannerSuppressAutoScroll = false;
+    const offsetWithin = _pz.anchorContentY - scroll.scrollTop; // pre-zoom finger offset from top
+    scroll.scrollTop = (_pz.anchorContentY / _pz.px0) * PLANNER_HOUR_PX - offsetWithin;
+    localStorage.setItem('kr_planner_zoom', String(Math.round(PLANNER_HOUR_PX)));
+    _pz = null;
   };
   scroll.addEventListener('touchend', end);
   scroll.addEventListener('touchcancel', end);
 }
-function _pzApply() {
+function _pzTransform() {
   _pzRaf = 0;
-  if (!_pz || !_pz.pending) return;
-  const { newPx, midY } = _pz.pending;
-  PLANNER_HOUR_PX = newPx;
-  _plannerSuppressAutoScroll = true;
-  renderPlannerScreen();
-  _plannerSuppressAutoScroll = false;
-  // Keep the time point that was under the fingers anchored there
-  const scroll = document.getElementById('planner-scroll');
-  if (scroll) scroll.scrollTop = _pz.hours0 * PLANNER_HOUR_PX - (midY - _pz.rectTop);
+  if (!_pz) return;
+  const grid = document.getElementById('planner-grid');
+  if (grid) grid.style.transform = 'scaleY(' + (_pzTargetPx() / _pz.px0) + ')';
 }
 
 // Keep every task readable: walk blocks top-to-bottom and, whenever one would
