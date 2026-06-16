@@ -1876,7 +1876,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-16.13';
+const APP_VERSION = '2026-06-16.14';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6626,7 +6626,7 @@ const PLANNER_ZOOM_MIN = 60;    // compressed — most of the day on screen
 const PLANNER_ZOOM_MAX = 1320;  // expanded — 5-min tasks become roomy
 // Gesture amplifier: fingers only spread ~2x on a phone, so raise the pinch
 // ratio to this power — one comfortable pinch then sweeps the whole zoom range.
-const PLANNER_ZOOM_GAIN = 4;
+const PLANNER_ZOOM_GAIN = 6;
 let PLANNER_HOUR_PX = Math.max(PLANNER_ZOOM_MIN, Math.min(PLANNER_ZOOM_MAX,
   parseFloat(localStorage.getItem('kr_planner_zoom')) || 360));
 let _plannerSuppressAutoScroll = false;
