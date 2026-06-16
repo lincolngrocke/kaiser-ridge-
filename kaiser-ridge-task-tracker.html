@@ -1389,7 +1389,7 @@
       <span style="font-size:17px;font-weight:600;">Add Note</span>
       <button onclick="saveNote()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Save</button>
     </div>
-    <textarea id="note-input" placeholder="Type your note…" style="width:100%;min-height:160px;border:1px solid var(--border);border-radius:12px;padding:12px;font-size:16px;font-family:inherit;resize:none;outline:none;" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false"></textarea>
+    <textarea id="note-input" placeholder="Type your note…" style="width:100%;min-height:160px;border:1px solid var(--border);border-radius:12px;padding:12px;font-size:16px;font-family:inherit;resize:none;outline:none;" autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true"></textarea>
   </div>
 </div>
 
@@ -1509,7 +1509,7 @@
     </div>
 
     <div class="form-section">
-      <textarea class="form-textarea" id="f-notes" placeholder="Add notes…" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false"></textarea>
+      <textarea class="form-textarea" id="f-notes" placeholder="Add notes…" autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true"></textarea>
     </div>
 
     <div id="f-delete-wrap" style="display:none">
@@ -1796,6 +1796,7 @@
       <input type="hidden" id="equip-guide-name">
       <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">INSTRUCTIONS</div>
       <textarea id="equip-guide-instructions" placeholder="Add operating instructions, maintenance notes, safety info…"
+        autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true"
         style="width:100%;min-height:200px;padding:14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);font-family:inherit;resize:vertical;outline:none;line-height:1.5;"></textarea>
       <div style="font-size:13px;font-weight:600;color:var(--subtext);margin:20px 0 8px;">VIDEO / LINK</div>
       <input id="equip-guide-url" type="url" placeholder="https://youtube.com/…"
@@ -1842,7 +1843,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-16.4';
+const APP_VERSION = '2026-06-16.5';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -5693,7 +5694,7 @@ function renderGuideStepList(readOnly) {
       <div style="width:26px;height:26px;border-radius:50%;background:var(--blue);color:#fff;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${i + 1}</div>
       ${readOnly
         ? `<span style="flex:1;font-size:15px;color:var(--text);line-height:1.4;">${s}</span>`
-        : `<textarea autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false"
+        : `<textarea autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true"
             onblur="updateGuideStep(${i}, this.value)"
             oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"
             style="flex:1;font-size:15px;color:var(--text);background:transparent;border:none;outline:none;padding:4px 0;min-width:0;line-height:1.4;resize:none;overflow:hidden;font-family:inherit;"
@@ -6196,7 +6197,7 @@ function renderProjectSteps() {
     return `
     <div class="pstep-row">
       <button type="button" class="pstep-check${s.done ? ' done' : ''}"${ro ? ' disabled' : ` onclick="toggleProjectStep(${i})"`}>${s.done ? '✓' : ''}</button>
-      <input class="pstep-input${s.done ? ' done' : ''}" value="${escapeHtmlProj(s.text || '')}" placeholder="Step description"${ro ? ' readonly' : ` oninput="_projDraft.steps[${i}].text = this.value"`}>
+      <input class="pstep-input${s.done ? ' done' : ''}" value="${escapeHtmlProj(s.text || '')}" placeholder="Step description" autocorrect="on" autocapitalize="sentences" spellcheck="true"${ro ? ' readonly' : ` oninput="_projDraft.steps[${i}].text = this.value"`}>
       ${hrsLabel}
       ${ro ? '' : `<button type="button" class="pstep-del" onclick="deleteProjectStep(${i})">✕</button>`}
     </div>`;
