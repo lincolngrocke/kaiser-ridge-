@@ -1174,6 +1174,10 @@
     <button onclick="setChartDimension('location',this)"  class="chart-period-btn" style="flex:1;">Location</button>
     <button onclick="setChartDimension('equipment',this)" class="chart-period-btn" style="flex:1;">Equipment</button>
   </div>
+  <!-- Checklist item-times entry point -->
+  <div style="padding:8px 16px;background:var(--card);border-bottom:1px solid var(--border);">
+    <button onclick="openChecklistAvg()" style="width:100%;background:none;border:1px solid var(--blue);border-radius:8px;padding:9px;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">⏱ Checklist Item Times</button>
+  </div>
   <!-- Chart fills remaining space -->
   <div style="flex:1;display:flex;flex-direction:column;padding:16px;overflow:hidden;">
     <canvas id="dash-chart" style="width:100%;flex:1;display:block;min-height:0;"></canvas>
@@ -1190,6 +1194,19 @@
       <span id="drill-total" style="font-size:15px;color:var(--blue);font-weight:600;"></span>
     </div>
     <div id="drill-list" style="max-height:60vh;overflow-y:auto;"></div>
+  </div>
+</div>
+
+<!-- ══════════════ CHECKLIST ITEM TIMES ══════════════ -->
+<div class="modal-backdrop" id="modal-checklist-avg" style="z-index:300;" onclick="closeModal('modal-checklist-avg')">
+  <div class="modal-sheet" style="padding:16px 0 24px;" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div style="padding:0 20px 4px;display:flex;align-items:center;justify-content:space-between;">
+      <span style="font-size:17px;font-weight:600;">Checklist Item Times</span>
+      <span onclick="closeModal('modal-checklist-avg')" style="color:var(--blue);font-size:16px;cursor:pointer;">Done</span>
+    </div>
+    <div style="padding:0 20px 10px;font-size:13px;color:var(--subtext);">Average time per checklist item, across every job where you timed it on the running clock.</div>
+    <div id="checklist-avg-list" style="max-height:62vh;overflow-y:auto;"></div>
   </div>
 </div>
 
@@ -1844,7 +1861,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-16.8';
+const APP_VERSION = '2026-06-16.9';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2376,6 +2393,63 @@ function renderRunChecklist() {
         <span style="font-size:14px;color:var(--text);">○ ${s}</span></div>`;
   }).join('');
   el.innerHTML = `<div style="background:#000;padding:6px 0;font-size:12px;font-weight:700;color:var(--subtext);letter-spacing:.04em;border-bottom:1px solid var(--border);">CHECKLIST · ${done.length}/${items.length} done · tap to time</div><div style="max-height:28vh;overflow-y:auto;-webkit-overflow-scrolling:touch;">${rows}</div>`;
+}
+
+// ── Per-item checklist averages (Dashboard → Checklist Item Times) ──────────
+function _entryClockInEpoch(e) {
+  const dp = String(e.date || '').split('/').map(Number);          // DD/MM/YYYY
+  const tp = String(e.clockIn || '00:00').split(':').map(Number);
+  const d = new Date(dp[2], (dp[1] || 1) - 1, dp[0] || 1, tp[0] || 0, tp[1] || 0, 0);
+  return isNaN(d.getTime()) ? null : d.getTime();
+}
+// → { item: durationMinutes } for one entry's timed checklist
+function _entryChecklistDurations(e) {
+  const list = Array.isArray(e.checklist) ? e.checklist : [];
+  if (!list.length) return {};
+  const sorted = list.slice().sort((a, b) => new Date(a.at) - new Date(b.at));
+  const ci = _entryClockInEpoch(e);
+  let prev = (ci != null) ? ci : new Date(sorted[0].at).getTime();
+  const out = {};
+  sorted.forEach(d => {
+    const t = new Date(d.at).getTime();
+    const m = (t - prev) / 60000;
+    if (isFinite(m) && m >= 0 && m <= 24 * 60) out[d.item] = m;   // ignore bad/outlier gaps
+    prev = t;
+  });
+  return out;
+}
+function _aggregateChecklistTimes() {
+  const agg = {};
+  entries.forEach(e => {
+    const d = _entryChecklistDurations(e);
+    Object.keys(d).forEach(item => {
+      if (!agg[item]) agg[item] = { count: 0, total: 0, last: 0 };
+      agg[item].count++;
+      agg[item].total += d[item];
+      agg[item].last = d[item];
+    });
+  });
+  return Object.keys(agg)
+    .map(item => ({ item, count: agg[item].count, avg: agg[item].total / agg[item].count, last: agg[item].last }))
+    .sort((a, b) => b.count - a.count || b.avg - a.avg);
+}
+function openChecklistAvg() { renderChecklistAvg(); openModal('modal-checklist-avg'); }
+function renderChecklistAvg() {
+  const list = document.getElementById('checklist-avg-list');
+  if (!list) return;
+  const rows = _aggregateChecklistTimes();
+  if (!rows.length) {
+    list.innerHTML = '<div style="padding:32px 24px;text-align:center;color:var(--subtext);line-height:1.6;">No checklist timings yet.<br>On the running clock, tap each checklist item as you finish it — those times build this list.</div>';
+    return;
+  }
+  list.innerHTML = rows.map(r => `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--border);">
+      <span style="font-size:15px;color:var(--text);flex:1;">${r.item}</span>
+      <span style="text-align:right;white-space:nowrap;">
+        <span style="font-size:16px;font-weight:700;color:var(--blue);">${fmtMin(r.avg)}</span>
+        <span style="font-size:12px;color:var(--subtext);"> avg · ${r.count}×</span>
+      </span>
+    </div>`).join('');
 }
 
 function formatTimeAmPm(t) {
