@@ -1077,7 +1077,9 @@
     <button class="btn-sync" style="background:#FF9500; margin-top:8px;" onclick="repushMissingEntries()">♺ Re-push Missing Entries</button>
     <div class="settings-note" style="margin-top:6px;">Finds any entries that never made it into the sheet and pushes just those — won't duplicate rows that are already there.</div>
     <button class="btn-sync" style="background:#5856D6; margin-top:8px;" onclick="importFromSheet()">⬇ Import from Sheet</button>
-    <div class="settings-note" style="margin-top:6px;">Pulls down any timesheets that are in the sheet but missing on this phone (e.g. lost entries or another device). Only adds what's missing — never duplicates or changes the sheet.</div>
+    <div class="settings-note" style="margin-top:6px;">Pulls down any of <b>your own</b> timesheets that are in the sheet but missing on this phone (e.g. lost entries or a new device). Only adds your missing ones — never duplicates, never imports other people's, and never changes the sheet.</div>
+    <button class="btn-sync" style="background:#FF3B30; margin-top:8px;" onclick="removeOthersEntries()">🧹 Remove Others' Entries</button>
+    <div class="settings-note" style="margin-top:6px;">Cleanup: removes any timesheets on this phone that belong to someone else (wrong name). Keeps all of your own. Doesn't touch the sheet.</div>
     <button class="btn-sync" style="background:#34C759; margin-top:8px;" onclick="forceAppUpdate()">⟳ Force Update App</button>
     <div id="version-status" style="font-size:13px; color:var(--subtext); margin-top:8px; text-align:center; cursor:pointer;" onclick="checkForUpdate(true)">Checking version…</div>
 
@@ -1839,7 +1841,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-16.2';
+const APP_VERSION = '2026-06-16.3';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3504,9 +3506,14 @@ async function importFromSheet() {
     showToast('Could not reach the sheet — check the Web App URL');
     return;
   }
+  const me = getUserName().trim().toLowerCase();
   const localKeys = new Set(entries.map(e => _sheetKey(e.date, e.clockIn, e.clockOut, e.task)));
-  let added = 0;
+  let added = 0, skippedOthers = 0;
   rows.forEach(r => {
+    // Only ever import THIS user's own rows — the export returns everyone's, and
+    // pulling other people's entries onto a phone is never wanted.
+    const who = String(r.personnel || '').trim().toLowerCase();
+    if (!who || who !== me) { skippedOthers++; return; }
     const key = _sheetKey(r.date, r.clockIn, r.clockOut, r.task);
     if (localKeys.has(key)) return;
     localKeys.add(key);
@@ -3535,12 +3542,32 @@ async function importFromSheet() {
     });
     added++;
   });
-  if (!added) { showToast('Nothing to import — this phone already has every sheet entry ✓'); return; }
+  if (!added) {
+    showToast(skippedOthers ? 'Nothing to import — you already have all your entries ✓' : 'Nothing to import — this phone already has every sheet entry ✓');
+    return;
+  }
   entries.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
   saveEntries();
   updateStats();
   renderTimesheets();
   showToast('Imported ' + added + ' entr' + (added === 1 ? 'y' : 'ies') + ' from the sheet ✓');
+}
+
+// Cleanup: drop any local entries that belong to someone else (e.g. pulled in by
+// an over-broad Import). Keeps this user's own entries and anything with no name
+// set. Local-only — never touches the sheet (the master keeps everyone's rows).
+function removeOthersEntries() {
+  const me = getUserName().trim().toLowerCase();
+  const isOther = e => { const p = String(e.personnel || '').trim().toLowerCase(); return p && p !== me; };
+  const others = entries.filter(isOther);
+  if (!others.length) { showToast('No entries from other people on this phone ✓'); return; }
+  if (!confirm('Remove ' + others.length + " timesheet" + (others.length === 1 ? '' : 's') +
+    " that aren't yours (you're \"" + getUserName() + "\")?\n\nYour own entries are kept. This only affects this phone — the sheet is untouched.")) return;
+  entries = entries.filter(e => !isOther(e));
+  saveEntries();
+  updateStats();
+  renderTimesheets();
+  showToast('Removed ' + others.length + " entr" + (others.length === 1 ? 'y' : 'ies') + " that weren't yours ✓");
 }
 
 // Auto-sync: silently push any unsynced entries that are ≥5 minutes old, so
