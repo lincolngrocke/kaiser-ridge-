@@ -1210,6 +1210,20 @@
   </div>
 </div>
 
+<!-- ══════════════ COPY CHECKLIST TO OTHER TASKS ══════════════ -->
+<div class="modal-backdrop" id="modal-copy-checklist" style="z-index:600;">
+  <div class="modal-sheet" style="padding:16px 0 24px;display:flex;flex-direction:column;max-height:85vh;">
+    <div class="modal-handle"></div>
+    <div style="padding:0 20px 4px;display:flex;align-items:center;justify-content:space-between;">
+      <span onclick="closeModal('modal-copy-checklist')" style="color:var(--blue);font-size:16px;cursor:pointer;">Cancel</span>
+      <span style="font-size:17px;font-weight:600;">Copy Checklist To…</span>
+      <span onclick="confirmCopyChecklist()" style="color:var(--blue);font-size:16px;font-weight:700;cursor:pointer;">Copy</span>
+    </div>
+    <div style="padding:6px 20px 10px;font-size:13px;color:var(--subtext);">Replaces the checklist on each selected task with the <b><span id="copy-cl-count">0</span> items</b> from this one. Guides follow each item automatically.</div>
+    <div id="copy-checklist-list" style="flex:1;overflow-y:auto;padding:0 20px;"></div>
+  </div>
+</div>
+
 <!-- ══════════════ RUNNING OVERLAY ══════════════ -->
 <div class="clock-running-overlay" id="running-overlay">
   <div class="running-top-bar">
@@ -1583,6 +1597,7 @@
         <div id="dir-subtask-list"></div>
         <button onclick="openSubtaskPicker()" style="margin-top:8px;background:none;border:1px dashed var(--border);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">+ Add Checklist Item</button>
         <button id="dir-restore-subtasks-btn" onclick="restoreDefaultSubtasks()" style="display:none;margin-top:8px;background:none;border:1px dashed var(--blue);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">↺ Restore Default Checklist</button>
+        <button onclick="openCopyChecklist()" style="margin-top:8px;background:none;border:1px dashed var(--blue);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">⧉ Copy Checklist to Other Tasks…</button>
       </div>
 
       <div style="padding:16px 20px 0;" id="dir-duplicate-wrap">
@@ -1861,7 +1876,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-16.10';
+const APP_VERSION = '2026-06-16.11';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6082,6 +6097,41 @@ function getDirEquipment() {
 
 function getDirSubtasks() {
   return [..._subtaskItems];
+}
+
+// Copy the checklist currently in the editor onto one or more other tasks.
+// Guides are keyed by item text, so they apply on the targets automatically.
+function openCopyChecklist() {
+  const items = getDirSubtasks();
+  if (!items.length) { showToast('Add some checklist items first'); return; }
+  const current = document.getElementById('dir-task').value.trim();
+  const tasks = [...new Set(DIRECTORY.map(r => r.task).filter(Boolean))]
+    .filter(t => t !== current)
+    .sort((a, b) => a.localeCompare(b));
+  document.getElementById('copy-cl-count').textContent = items.length;
+  const el = document.getElementById('copy-checklist-list');
+  if (!tasks.length) {
+    el.innerHTML = '<div style="padding:24px;text-align:center;color:var(--subtext);">No other tasks to copy to.</div>';
+  } else {
+    el.innerHTML = tasks.map(t => {
+      const n = (SUBTASKS[t] || []).length;
+      const enc = t.replace(/"/g, '&quot;');
+      return `<label style="display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid var(--border);cursor:pointer;">
+        <input type="checkbox" class="copy-cl-target" value="${enc}" style="width:20px;height:20px;accent-color:var(--blue);flex-shrink:0;">
+        <span style="flex:1;font-size:15px;color:var(--text);">${t}<span style="font-size:12px;color:var(--subtext);"> · ${n} item${n === 1 ? '' : 's'} now</span></span>
+      </label>`;
+    }).join('');
+  }
+  openModal('modal-copy-checklist');
+}
+function confirmCopyChecklist() {
+  const items = getDirSubtasks();
+  const targets = [...document.querySelectorAll('.copy-cl-target:checked')].map(c => c.value);
+  if (!targets.length) { showToast('Pick at least one task to copy to'); return; }
+  targets.forEach(t => { SUBTASKS[t] = [...items]; });
+  localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
+  closeModal('modal-copy-checklist');
+  showToast('Checklist copied to ' + targets.length + ' task' + (targets.length === 1 ? '' : 's') + ' ✓ — Publish Library to share');
 }
 
 function saveDirTask() {
