@@ -894,7 +894,7 @@
     <div style="padding:0 16px 10px;">
       <div style="position:relative;">
         <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--subtext);">🔍</span>
-        <input id="ts-search" type="search" placeholder="Search tasks, notes, equipment…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+        <input id="ts-search" type="search" placeholder="Search tasks, notes, equipment…" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
           oninput="renderTimesheets()"
           style="width:100%;padding:9px 12px 9px 36px;border-radius:10px;border:1px solid var(--border);background:var(--card);font-size:14px;color:var(--text);outline:none;-webkit-appearance:none;">
       </div>
@@ -922,7 +922,7 @@
   <div id="dir-search-wrap" style="padding:8px 12px 0;background:var(--card);">
     <div style="position:relative;">
       <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--subtext);">🔍</span>
-      <input id="dir-search" type="search" placeholder="Search tasks, equipment, checklists…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+      <input id="dir-search" type="search" placeholder="Search tasks, equipment, checklists…" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
         oninput="onDirSearchInput()"
         style="width:100%;padding:9px 38px 9px 36px;border-radius:10px;border:1px solid var(--border);background:var(--bg);font-size:14px;color:var(--text);outline:none;-webkit-appearance:none;">
       <button id="dir-search-clear" onclick="clearDirSearch()" type="button"
@@ -951,7 +951,7 @@
   <div style="padding:8px 12px 8px;background:var(--card);border-bottom:1px solid var(--border);">
     <div style="position:relative;">
       <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--subtext);">🔍</span>
-      <input id="equip-screen-search" type="search" placeholder="Search equipment…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+      <input id="equip-screen-search" type="search" placeholder="Search equipment…" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
         oninput="renderEquipmentScreen()"
         style="width:100%;padding:9px 14px 9px 36px;border-radius:10px;border:1px solid var(--border);background:var(--bg);font-size:14px;color:var(--text);outline:none;-webkit-appearance:none;">
     </div>
@@ -1016,7 +1016,7 @@
         <div class="settings-label">Your Name</div>
       </div>
       <div class="settings-row">
-        <input class="settings-input" id="user-name" type="text" placeholder="e.g. Lincoln" oninput="saveName()" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+        <input class="settings-input" id="user-name" type="text" placeholder="e.g. Lincoln" oninput="saveName()" autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false" />
       </div>
     </div>
     <div class="settings-note" style="margin-top:0">
@@ -1348,7 +1348,7 @@
       </div>
       <div style="margin-bottom:8px;">
         <div style="font-size:12px;color:var(--subtext);margin-bottom:6px;">Task</div>
-        <input type="search" id="planner-task-search" placeholder="Search tasks, equipment, checklists…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+        <input type="search" id="planner-task-search" placeholder="Search tasks, equipment, checklists…" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
           style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:15px;background:var(--bg);color:var(--text);outline:none;margin-bottom:8px;"
           oninput="renderPlannerTaskList()" />
         <div id="planner-task-list" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;"></div>
@@ -1438,8 +1438,8 @@
     <div id="task-search-wrap" style="padding:14px 16px 0;position:relative;">
       <div style="position:relative;">
         <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--subtext);">🔍</span>
-        <input id="task-search-input" type="search" placeholder="Search tasks, equipment, checklists…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
-          autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+        <input id="task-search-input" type="search" placeholder="Search tasks, equipment, checklists…" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
+          autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
           oninput="onTaskSearchInput()" onfocus="onTaskSearchInput()"
           style="width:100%;padding:11px 36px 11px 36px;border-radius:12px;border:1px solid var(--border);background:var(--card);font-size:15px;color:var(--text);outline:none;-webkit-appearance:none;">
         <button id="task-search-clear" onclick="clearTaskSearch()" type="button"
@@ -1580,8 +1580,8 @@
       </div>
 
       <div class="form-row"><div class="form-label">Task Name</div>
-        <input class="form-select" id="dir-task" type="text" placeholder="e.g. Change over tiny house" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false"
-          autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false" name="kr-label-text" data-lpignore="true" data-1p-ignore
+        <input class="form-select" id="dir-task" type="text" placeholder="e.g. Change over tiny house" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
+          autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true" name="kr-label-text" data-lpignore="true" data-1p-ignore
           oninput="updateRestoreSubtasksBtn(this.value.trim())"
           style="font-size:16px;border:none;width:100%;text-align:right;background:transparent;color:var(--text);">
       </div>
@@ -1622,8 +1622,8 @@
     <div style="padding:8px 16px 12px;">
       <div style="display:flex;align-items:center;background:var(--bg);border-radius:12px;padding:0 12px;">
         <span style="font-size:16px;color:var(--subtext);margin-right:8px;">🔍</span>
-        <input id="group-picker-search" type="search" placeholder="Find or add a group" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
-          autocomplete="off" autocorrect="off" spellcheck="false"
+        <input id="group-picker-search" type="search" placeholder="Find or add a group" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
+          autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
           oninput="renderGroupPickerList()"
           style="flex:1;padding:10px 0;border:none;background:transparent;font-size:16px;color:var(--text);outline:none;">
       </div>
@@ -1643,8 +1643,8 @@
     <div style="padding:8px 16px 12px;">
       <div style="display:flex;align-items:center;background:var(--bg);border-radius:12px;padding:0 12px;">
         <span style="font-size:16px;color:var(--subtext);margin-right:8px;">🔍</span>
-        <input id="frequency-picker-search" type="search" placeholder="Find or add frequency" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
-          autocomplete="off" autocorrect="off" spellcheck="false"
+        <input id="frequency-picker-search" type="search" placeholder="Find or add frequency" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
+          autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
           oninput="renderFrequencyPickerList()"
           style="flex:1;padding:10px 0;border:none;background:transparent;font-size:16px;color:var(--text);outline:none;">
       </div>
@@ -1664,8 +1664,8 @@
     <div style="padding:8px 16px 12px;">
       <div style="display:flex;align-items:center;background:var(--bg);border-radius:12px;padding:0 12px;">
         <span style="font-size:16px;color:var(--subtext);margin-right:8px;">🔍</span>
-        <input id="location-picker-search" type="search" placeholder="Find or add a location" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
-          autocomplete="off" autocorrect="off" spellcheck="false"
+        <input id="location-picker-search" type="search" placeholder="Find or add a location" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
+          autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
           oninput="renderLocationPickerList()"
           style="flex:1;padding:10px 0;border:none;background:transparent;font-size:16px;color:var(--text);outline:none;">
       </div>
@@ -1685,8 +1685,8 @@
     <div style="padding:8px 16px 12px;">
       <div style="display:flex;align-items:center;background:var(--bg);border-radius:12px;padding:0 12px;">
         <span style="font-size:16px;color:var(--subtext);margin-right:8px;">🔍</span>
-        <input id="equip-picker-search" type="search" placeholder="Find or add equipment" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
-          autocomplete="off" autocorrect="off" spellcheck="false"
+        <input id="equip-picker-search" type="search" placeholder="Find or add equipment" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
+          autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
           oninput="renderEquipmentPickerList()"
           style="flex:1;padding:10px 0;border:none;background:transparent;font-size:16px;color:var(--text);outline:none;">
       </div>
@@ -1732,7 +1732,7 @@
       <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">NOTES</div>
       <div id="equip-detail-note-add" style="display:flex;gap:8px;margin-bottom:14px;">
         <input id="equip-detail-note-input" type="text" placeholder="Add a quick note…"
-          autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false"
+          autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
           style="flex:1;padding:12px 14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;"
           onkeydown="if(event.key==='Enter'){event.preventDefault();addEquipmentNote();}">
         <button onclick="addEquipmentNote()" style="background:var(--blue);border:none;border-radius:12px;color:#fff;font-size:15px;font-weight:600;padding:0 18px;cursor:pointer;">Add</button>
@@ -1743,11 +1743,11 @@
       <div style="font-size:12px;color:var(--subtext);margin-bottom:10px;">Paste a Google Drive / Dropbox link to a manual, photo or document.</div>
       <div id="equip-detail-link-add">
         <input id="equip-detail-link-label" type="text" placeholder="Label (e.g. Parts Manual)"
-          autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false"
+          autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
           style="width:100%;padding:12px 14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;margin-bottom:8px;">
         <div style="display:flex;gap:8px;">
           <input id="equip-detail-link-url" type="url" placeholder="https://drive.google.com/…"
-            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+            autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
             style="flex:1;padding:12px 14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;"
             onkeydown="if(event.key==='Enter'){event.preventDefault();addEquipmentLink();}">
           <button onclick="addEquipmentLink()" style="background:var(--blue);border:none;border-radius:12px;color:#fff;font-size:15px;font-weight:600;padding:0 16px;cursor:pointer;white-space:nowrap;">Add link</button>
@@ -1769,8 +1769,8 @@
     <div style="padding:8px 16px 12px;">
       <div style="display:flex;align-items:center;background:var(--bg);border-radius:12px;padding:0 12px;">
         <span style="font-size:16px;color:var(--subtext);margin-right:8px;">🔍</span>
-        <input id="subtask-picker-search" type="search" placeholder="Find or add checklist item" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
-          autocomplete="off" autocorrect="off" spellcheck="false"
+        <input id="subtask-picker-search" type="search" placeholder="Find or add checklist item" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
+          autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
           oninput="renderSubtaskPickerList()"
           style="flex:1;padding:10px 0;border:none;background:transparent;font-size:16px;color:var(--text);outline:none;">
       </div>
@@ -1791,20 +1791,20 @@
       <input type="hidden" id="guide-subtask-name">
       <div id="guide-rename-section">
         <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">RENAME</div>
-        <input id="guide-rename" type="text" autocomplete="off" autocorrect="off" spellcheck="false"
+        <input id="guide-rename" type="text" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
           style="width:100%;padding:14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;margin-bottom:20px;">
       </div>
       <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">INSTRUCTIONS</div>
       <div id="guide-step-list"></div>
       <div id="guide-step-add-wrap" style="display:flex;gap:8px;margin-top:8px;">
-        <input id="guide-step-input" type="text" placeholder="Add a step…" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false"
+        <input id="guide-step-input" type="text" placeholder="Add a step…" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
           style="flex:1;padding:12px 14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;"
           onkeydown="if(event.key==='Enter'){event.preventDefault();addGuideStep();}">
         <button onclick="addGuideStep()" style="background:var(--blue);border:none;border-radius:12px;color:#fff;font-size:15px;font-weight:600;padding:0 18px;cursor:pointer;">Add</button>
       </div>
       <div style="font-size:13px;font-weight:600;color:var(--subtext);margin:20px 0 8px;">VIDEO / LINK</div>
       <input id="guide-url" type="url" placeholder="https://youtube.com/…"
-        autocomplete="off" autocorrect="off" spellcheck="false"
+        autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
         style="width:100%;padding:14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;">
       <div id="guide-url-preview" style="margin-top:12px;display:none;">
         <a id="guide-url-link" href="#" target="_blank"
@@ -1833,7 +1833,7 @@
         style="width:100%;min-height:200px;padding:14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);font-family:inherit;resize:vertical;outline:none;line-height:1.5;"></textarea>
       <div style="font-size:13px;font-weight:600;color:var(--subtext);margin:20px 0 8px;">VIDEO / LINK</div>
       <input id="equip-guide-url" type="url" placeholder="https://youtube.com/…"
-        autocomplete="off" autocorrect="off" spellcheck="false"
+        autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
         style="width:100%;padding:14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;">
       <div id="equip-guide-url-preview" style="margin-top:12px;display:none;">
         <a id="equip-guide-url-link" href="#" target="_blank"
@@ -1876,7 +1876,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-17.2';
+const APP_VERSION = '2026-06-17.3';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -5666,7 +5666,7 @@ function renderDirSubtaskList(items) {
       <div style="color:var(--subtext);font-size:22px;padding:0 4px;user-select:none;-webkit-user-select:none;cursor:grab;"
         ontouchstart="stTouchStart(event,${i})">≡</div>
       <input type="text" value="${s.replace(/"/g,'&quot;')}"
-        autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+        autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
         onblur="updateSubtaskItem(${i}, this.value)"
         onkeydown="if(event.key==='Enter'){this.blur();}"
         style="flex:1;font-size:15px;color:var(--text);background:transparent;border:none;outline:none;padding:4px 0;min-width:0;">
