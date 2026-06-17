@@ -1782,12 +1782,13 @@
       <span style="width:60px;"></span>
     </div>
     <div style="padding:8px 16px 12px;">
-      <div style="display:flex;align-items:center;background:var(--bg);border-radius:12px;padding:0 12px;">
-        <span style="font-size:16px;color:var(--subtext);margin-right:8px;">🔍</span>
-        <input id="subtask-picker-search" type="search" placeholder="Find or add checklist item" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
+      <div style="display:flex;align-items:flex-start;background:var(--bg);border-radius:12px;padding:8px 12px;">
+        <span style="font-size:16px;color:var(--subtext);margin-right:8px;padding-top:2px;">🔍</span>
+        <textarea id="subtask-picker-search" rows="1" placeholder="Find or add checklist item"
           autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
-          oninput="renderSubtaskPickerList()"
-          style="flex:1;padding:10px 0;border:none;background:transparent;font-size:16px;color:var(--text);outline:none;">
+          oninput="renderSubtaskPickerList(); this.style.height='auto'; this.style.height=this.scrollHeight+'px';"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();}"
+          style="flex:1;padding:2px 0;border:none;background:transparent;font-size:16px;color:var(--text);outline:none;resize:none;line-height:1.4;font-family:inherit;max-height:40vh;overflow-y:auto;"></textarea>
       </div>
     </div>
     <div id="subtask-picker-list" style="flex:1;overflow-y:auto;padding:0 16px 24px;"></div>
@@ -1891,7 +1892,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-17.10';
+const APP_VERSION = '2026-06-17.11';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -5846,7 +5847,9 @@ let _subtaskPickerTask = ''; // task name the picker is currently scoped to
 
 function openSubtaskPicker() {
   _subtaskPickerTask = document.getElementById('dir-task').value.trim();
-  document.getElementById('subtask-picker-search').value = '';
+  const pickerInput = document.getElementById('subtask-picker-search');
+  pickerInput.value = '';
+  pickerInput.style.height = 'auto';
   renderSubtaskPickerList();
   openModal('modal-subtask-picker');
 }
