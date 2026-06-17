@@ -1229,13 +1229,12 @@
   <div class="modal-sheet" style="padding:16px 0 24px;display:flex;flex-direction:column;max-height:85vh;">
     <div class="modal-handle"></div>
     <div style="padding:0 20px 4px;display:flex;align-items:center;justify-content:space-between;">
-      <span onclick="closeModal('modal-subtask-steps')" style="color:var(--blue);font-size:16px;cursor:pointer;">Cancel</span>
       <span id="subtask-steps-title" style="font-size:17px;font-weight:600;">Steps</span>
-      <span onclick="saveSubtaskStepsEditor()" style="color:var(--blue);font-size:16px;font-weight:700;cursor:pointer;">Save</span>
+      <span onclick="saveSubtaskStepsEditor()" style="color:var(--blue);font-size:16px;font-weight:700;cursor:pointer;">Done</span>
     </div>
-    <div style="padding:6px 20px 10px;font-size:13px;color:var(--subtext);">One step per line, in priority order. They show under the item on the running clock — tick as you go (steps aren't timed; only completing the item is).</div>
+    <div style="padding:6px 20px 10px;font-size:13px;color:var(--subtext);">One step per line, in priority order. <b>Saves automatically as you type.</b> They show under the item on the running clock — tick as you go (steps aren't timed; only completing the item is).</div>
     <div style="padding:0 20px;">
-      <textarea id="subtask-steps-text" placeholder="Drain the hot tub&#10;Scrub the shell&#10;Refill and dose" autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true" style="width:100%;min-height:240px;padding:12px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);font-family:inherit;resize:vertical;outline:none;line-height:1.6;"></textarea>
+      <textarea id="subtask-steps-text" oninput="_stepsAutosave()" placeholder="Drain the hot tub&#10;Scrub the shell&#10;Refill and dose" autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true" style="width:100%;min-height:240px;padding:12px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);font-family:inherit;resize:vertical;outline:none;line-height:1.6;"></textarea>
     </div>
   </div>
 </div>
@@ -1892,7 +1891,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-17.4';
+const APP_VERSION = '2026-06-17.5';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -5894,6 +5893,7 @@ function saveSubtaskSteps(steps) {
   localStorage.setItem('kr_subtask_steps', JSON.stringify(steps));
 }
 let _stepsEditingItem = null;
+let _stepsAutosaveTimer = null;
 function openSubtaskStepsEditor(name) {
   _stepsEditingItem = name;
   const steps = getSubtaskSteps()[name] || [];
@@ -5901,16 +5901,27 @@ function openSubtaskStepsEditor(name) {
   document.getElementById('subtask-steps-text').value = steps.join('\n');
   openModal('modal-subtask-steps');
 }
-function saveSubtaskStepsEditor() {
-  if (_stepsEditingItem == null) return;
+// Persist the textarea straight to storage — the single source of truth, so the
+// steps are saved continuously and never depend on a final button tap.
+function _stepsPersist() {
+  if (_stepsEditingItem == null) return 0;
   const lines = document.getElementById('subtask-steps-text').value.split('\n').map(l => l.trim()).filter(Boolean);
   const all = getSubtaskSteps();
   if (lines.length) all[_stepsEditingItem] = lines;
   else delete all[_stepsEditingItem];
   saveSubtaskSteps(all);
+  return lines.length;
+}
+function _stepsAutosave() {
+  clearTimeout(_stepsAutosaveTimer);
+  _stepsAutosaveTimer = setTimeout(_stepsPersist, 350);
+}
+function saveSubtaskStepsEditor() {
+  clearTimeout(_stepsAutosaveTimer);
+  const n = _stepsPersist();
   closeModal('modal-subtask-steps');
   renderDirSubtaskList();
-  showToast(lines.length ? lines.length + ' step' + (lines.length === 1 ? '' : 's') + ' saved ✓' : 'Steps cleared');
+  showToast(n ? n + ' step' + (n === 1 ? '' : 's') + ' saved ✓' : 'Steps cleared');
 }
 
 // Guide instructions are stored as an ordered array of step strings.
