@@ -1892,7 +1892,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-17.11';
+const APP_VERSION = '2026-06-17.12';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -5738,14 +5738,15 @@ function renderDirSubtaskList(items) {
     const hasGuide = guides[s] && (_guideInstructionsToSteps(guides[s].instructions).length > 0 || guides[s].url);
     const nSteps = (stepsMap[s] || []).length;
     return `
-    <div id="strow-${i}" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
-      <div style="color:var(--subtext);font-size:22px;padding:0 4px;user-select:none;-webkit-user-select:none;cursor:grab;"
+    <div id="strow-${i}" style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
+      <div style="color:var(--subtext);font-size:22px;padding:2px 4px 0;user-select:none;-webkit-user-select:none;cursor:grab;"
         ontouchstart="stTouchStart(event,${i})">≡</div>
-      <input type="text" value="${s.replace(/"/g,'&quot;')}"
+      <textarea class="st-item-input" rows="1"
         autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
+        oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px';"
         onblur="updateSubtaskItem(${i}, this.value)"
-        onkeydown="if(event.key==='Enter'){this.blur();}"
-        style="flex:1;font-size:15px;color:var(--text);background:transparent;border:none;outline:none;padding:4px 0;min-width:0;">
+        onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
+        style="flex:1;font-size:15px;color:var(--text);background:transparent;border:none;outline:none;padding:4px 0;min-width:0;resize:none;line-height:1.4;font-family:inherit;overflow:hidden;">${s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</textarea>
       <button onclick="openSubtaskStepsEditor('${enc}')" title="${nSteps ? 'Edit steps' : 'Add steps'}"
         style="background:none;border:none;color:${nSteps ? 'var(--blue)' : 'var(--subtext)'};font-size:13px;font-weight:600;cursor:pointer;padding:4px 6px;flex-shrink:0;white-space:nowrap;">≣${nSteps ? ' ' + nSteps : ''}</button>
       <button onclick="openSubtaskGuide('${enc}')" title="${hasGuide ? 'Edit guide' : 'Add guide'}"
@@ -5753,6 +5754,10 @@ function renderDirSubtaskList(items) {
       <button onclick="removeSubtaskItem(${i})" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:4px;flex-shrink:0;">✕</button>
     </div>`;
   }).join('');
+  // Size each item box to its full wrapped text so long items are fully visible.
+  document.querySelectorAll('#dir-subtask-list .st-item-input').forEach(t => {
+    t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px';
+  });
 }
 
 function updateSubtaskItem(i, val) {
