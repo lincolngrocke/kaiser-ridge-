@@ -238,12 +238,13 @@
   }
 
   .running-timer-area {
-    flex: 1;
+    flex: 0 0 auto;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 16px;
+    gap: 8px;
+    margin: 6px 0 4px;
   }
   .running-big-timer {
     font-size: 88px;
@@ -1263,7 +1264,7 @@
     <div id="run-estimate" style="font-size:13px;color:var(--blue);font-weight:600;margin-top:6px;display:none;"></div>
     <div id="run-break-info" style="font-size:13px;color:var(--subtext);margin-top:4px;"></div>
   </div>
-  <div id="run-checklist" style="display:none;width:100%;max-width:420px;margin:8px auto 0;padding:0 20px;text-align:left;"></div>
+  <div id="run-checklist" style="display:none;width:100%;max-width:420px;margin:4px auto 0;padding:0 20px;text-align:left;flex:1 1 auto;min-height:0;flex-direction:column;">
   <div class="running-buttons">
 <button class="btn-clock-out" style="flex:1.4" onclick="openTimeModal('out')">Clock Out</button>
   </div>
@@ -1891,7 +1892,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-17.6';
+const APP_VERSION = '2026-06-17.7';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2444,7 +2445,7 @@ function renderRunChecklist() {
   if (!el) return;
   const items = (clockState && clockState.running && SUBTASKS[clockState.task]) || [];
   if (!items.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
-  el.style.display = '';
+  el.style.display = 'flex';
   const done = (clockState && Array.isArray(clockState.checklistDone)) ? clockState.checklistDone : [];
   const dur = _checklistDurations();
   const stepsMap = getSubtaskSteps();
@@ -2477,7 +2478,7 @@ function renderRunChecklist() {
   }).join('');
   // Preserve scroll position across re-render so ticking/expanding doesn't jump to top.
   const prevScroll = (document.getElementById('run-checklist-scroll') || {}).scrollTop || 0;
-  el.innerHTML = `<div style="background:#000;padding:6px 0;font-size:12px;font-weight:700;color:var(--subtext);letter-spacing:.04em;border-bottom:1px solid var(--border);">CHECKLIST · ${done.length}/${items.length} done · tap ○ to time, item to expand</div><div id="run-checklist-scroll" style="max-height:28vh;overflow-y:auto;-webkit-overflow-scrolling:touch;">${rows}</div>`;
+  el.innerHTML = `<div style="background:#000;padding:6px 0;font-size:12px;font-weight:700;color:var(--subtext);letter-spacing:.04em;border-bottom:1px solid var(--border);">CHECKLIST · ${done.length}/${items.length} done · tap ○ to time, item to expand</div><div id="run-checklist-scroll" style="flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;">${rows}</div>`;
   const sc = document.getElementById('run-checklist-scroll');
   if (sc) sc.scrollTop = prevScroll;
 }
