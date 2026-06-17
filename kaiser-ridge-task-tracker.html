@@ -1891,7 +1891,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-17.5';
+const APP_VERSION = '2026-06-17.6';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4331,7 +4331,9 @@ function importTaskLibraryFromFile(event) {
       }
       if (!confirm(`Import this task library (made ${new Date(payload.createdAt).toLocaleString()})?\n\nThis REPLACES this phone's tasks, checklists, guides, equipment and locations with the shared list.\n\nYour timesheets, projects and settings are NOT affected.`)) return;
 
+      localStorage.setItem('kr_lib_prepull_backup', JSON.stringify({ when: new Date().toISOString(), data: buildLibraryPayload().data }));
       applyLibraryPayload(payload);
+      localStorage.setItem('kr_lib_synced', _currentLibraryDataJson());
       showToast('Task library imported — reloading…');
       setTimeout(() => location.reload(), 900);
     } catch (err) {
@@ -4365,6 +4367,15 @@ function showLibraryBanner(show) {
   });
 }
 
+// True if this device's task library differs from the last published/applied
+// snapshot — i.e. there are local edits (e.g. new steps) not yet shared.
+function _currentLibraryDataJson() { return JSON.stringify(buildLibraryPayload().data); }
+function _hasUnpublishedLibraryEdits() {
+  const synced = localStorage.getItem('kr_lib_synced');
+  if (synced == null) return true; // unknown baseline — assume yes, to be safe
+  return _currentLibraryDataJson() !== synced;
+}
+
 // Manager: publish the current task library to the Sheet
 async function publishLibraryToSheet() {
   if (isWorker()) return;
@@ -4380,6 +4391,7 @@ async function publishLibraryToSheet() {
     const json = await res.json();
     if (json && json.success) {
       localStorage.setItem('kr_lib_applied_version', payload.version); // don't prompt myself
+      localStorage.setItem('kr_lib_synced', _currentLibraryDataJson()); // baseline = what I just published
       showLibraryBanner(false);
       showToast('Task list published ✓ — other phones will see the update');
     } else {
@@ -4407,6 +4419,12 @@ async function checkLibraryUpdate() {
 async function pullLibrary() {
   const url = localStorage.getItem('kr_sheet_url');
   if (!url) { showToast('No Sheet URL set'); return; }
+  // Guard against wiping unpublished local work with a wrong tap.
+  const unsaved = _hasUnpublishedLibraryEdits();
+  const msg = unsaved
+    ? '⚠️ This device has task-list changes that haven’t been published yet — for example checklist steps you’ve been editing.\n\nUpdating from the sheet REPLACES the whole task list (tasks, checklists, steps, guides) with the published version, so those unpublished changes would be lost.\n\nIf this is the manager device, tap Cancel and use “Publish Task Library” instead.\n\n(A local backup is saved first either way.) Update anyway?'
+    : 'Update this device’s task list with the published version from the sheet?\n\nThis replaces tasks, checklists, steps and guides. Your timesheets and settings are not affected.';
+  if (!confirm(msg)) return;
   showToast('Updating task list…');
   try {
     const res = await fetch(url + (url.includes('?') ? '&' : '?') + 'library=1', { cache: 'no-store' });
@@ -4415,8 +4433,11 @@ async function pullLibrary() {
     let payload;
     try { payload = JSON.parse(json.library); } catch (e) { showToast('Task list data was invalid'); return; }
     if (!payload || payload.kind !== 'task-library' || !payload.data) { showToast('Task list data was invalid'); return; }
+    // Snapshot the current library before overwriting, so it can be recovered.
+    localStorage.setItem('kr_lib_prepull_backup', JSON.stringify({ when: new Date().toISOString(), data: buildLibraryPayload().data }));
     applyLibraryPayload(payload);
     localStorage.setItem('kr_lib_applied_version', json.version || payload.version || '');
+    localStorage.setItem('kr_lib_synced', _currentLibraryDataJson());
     showToast('Task list updated — reloading…');
     setTimeout(() => location.reload(), 900);
   } catch (e) {
