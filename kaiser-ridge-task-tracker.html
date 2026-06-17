@@ -1891,7 +1891,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-17.9';
+const APP_VERSION = '2026-06-17.10';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2289,14 +2289,18 @@ function clockOut(overrideTime) {
     synced: false,
     createdAt: new Date().toISOString(),
   };
-  // Fold per-item checklist times into notes so they persist and sync to the sheet
+  // Fold per-item checklist times into notes, one row per completed item, led by
+  // the completion time and minutes taken — so they persist and sync to the sheet.
   if (clockState.checklistDone && clockState.checklistDone.length) {
     const dur = _checklistDurations();
-    const parts = clockState.checklistDone
+    const lines = clockState.checklistDone
       .slice().sort((a, b) => new Date(a.at) - new Date(b.at))
-      .map(d => d.item + ' ' + fmtMin(dur[d.item]));
-    const summary = 'Checklist times — ' + parts.join(', ');
-    entry.notes = entry.notes ? entry.notes + '\n' + summary : summary;
+      .map(d => {
+        const t = new Date(d.at).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true });
+        return `[${t}] (${fmtMin(dur[d.item])}) ${d.item}`;
+      });
+    const block = lines.join('\n');
+    entry.notes = entry.notes ? entry.notes + '\n' + block : block;
   }
   entries.unshift(entry);
   saveEntries();
