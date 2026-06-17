@@ -1892,7 +1892,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-17.12';
+const APP_VERSION = '2026-06-17.13';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -5159,6 +5159,7 @@ function openDirAddTask() {
   renderDirSubtaskList([]);
   updateRestoreSubtasksBtn('');
   openModal('modal-dir-task');
+  requestAnimationFrame(_sizeDirSubtaskInputs);
 }
 
 function openDirEditTask(encodedKey) {
@@ -5187,6 +5188,7 @@ function openDirEditTask(encodedKey) {
   renderDirSubtaskList(SUBTASKS[task] || []);
   updateRestoreSubtasksBtn(task);
   openModal('modal-dir-task');
+  requestAnimationFrame(_sizeDirSubtaskInputs);
 }
 
 // Show the "Restore Default Subtasks" button only for tasks that have a known
@@ -5754,9 +5756,15 @@ function renderDirSubtaskList(items) {
       <button onclick="removeSubtaskItem(${i})" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:4px;flex-shrink:0;">✕</button>
     </div>`;
   }).join('');
-  // Size each item box to its full wrapped text so long items are fully visible.
+  _sizeDirSubtaskInputs();
+}
+// Size each item box to its full wrapped text so long items are fully visible.
+// Guarded: when the editor is still hidden, scrollHeight is 0 — don't collapse
+// the box to 0 (that hid the text); leave it and re-size once it's on screen.
+function _sizeDirSubtaskInputs() {
   document.querySelectorAll('#dir-subtask-list .st-item-input').forEach(t => {
-    t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px';
+    t.style.height = 'auto';
+    if (t.scrollHeight) t.style.height = t.scrollHeight + 'px';
   });
 }
 
