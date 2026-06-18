@@ -1398,6 +1398,8 @@
         <button onclick="savePlannerTime()" style="width:100%;margin-top:10px;background:none;border:1px solid var(--blue);color:var(--blue);border-radius:12px;padding:11px;font-size:15px;font-weight:600;cursor:pointer;">Update time</button>
       </div>
       <button onclick="plannerClockIn()" style="width:100%;background:var(--green);color:#fff;border:none;border-radius:14px;padding:14px;font-size:17px;font-weight:700;cursor:pointer;">▶ Clock In Now</button>
+      <button id="planner-resume-btn" onclick="plannerResume()" style="display:none;width:100%;background:var(--blue);color:#fff;border:none;border-radius:14px;padding:14px;font-size:17px;font-weight:700;cursor:pointer;">▶ Resume This Task</button>
+      <div id="planner-resume-note" style="display:none;font-size:12px;color:var(--subtext);text-align:center;margin-top:8px;">Starts a new session now and keeps the checklist items you already finished ticked off, so you can work through the rest.</div>
     </div>
   </div>
 </div>
@@ -1892,7 +1894,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-17.13';
+const APP_VERSION = '2026-06-18.1';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2451,12 +2453,21 @@ function renderRunChecklist() {
   if (!items.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
   el.style.display = 'flex';
   const done = (clockState && Array.isArray(clockState.checklistDone)) ? clockState.checklistDone : [];
+  const carried = new Set((clockState && Array.isArray(clockState.checklistCarried)) ? clockState.checklistCarried : []);
   const dur = _checklistDurations();
   const stepsMap = getSubtaskSteps();
   const stepChecks = (clockState && clockState.stepChecks) || {};
+  const completedCount = items.filter(s => done.some(d => d.item === s) || carried.has(s)).length;
   const rows = items.map(s => {
-    const isDone = done.some(d => d.item === s);
     const enc = s.replace(/'/g, "\\'");
+    // Carried over from an earlier session — show ticked, not re-timed, not tappable
+    if (carried.has(s) && !done.some(d => d.item === s)) {
+      return `<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--border);opacity:0.55;">
+        <span style="font-size:18px;flex-shrink:0;color:var(--green);">✓</span>
+        <span style="flex:1;font-size:14px;color:var(--subtext);text-decoration:line-through;">${s}</span>
+        <span style="font-size:11px;color:var(--subtext);white-space:nowrap;">earlier</span></div>`;
+    }
+    const isDone = done.some(d => d.item === s);
     const steps = stepsMap[s] || [];
     const expanded = _expandedChecklistItems.has(s);
     const checkedCount = steps.filter(st => stepChecks[s] && stepChecks[s][st]).length;
@@ -2482,7 +2493,7 @@ function renderRunChecklist() {
   }).join('');
   // Preserve scroll position across re-render so ticking/expanding doesn't jump to top.
   const prevScroll = (document.getElementById('run-checklist-scroll') || {}).scrollTop || 0;
-  el.innerHTML = `<div style="background:#000;padding:6px 0;font-size:12px;font-weight:700;color:var(--subtext);letter-spacing:.04em;border-bottom:1px solid var(--border);">CHECKLIST · ${done.length}/${items.length} done · tap ○ to time, item to expand</div><div id="run-checklist-scroll" style="flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;">${rows}</div>`;
+  el.innerHTML = `<div style="background:#000;padding:6px 0;font-size:12px;font-weight:700;color:var(--subtext);letter-spacing:.04em;border-bottom:1px solid var(--border);">CHECKLIST · ${completedCount}/${items.length} done · tap ○ to time, item to expand</div><div id="run-checklist-scroll" style="flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;">${rows}</div>`;
   const sc = document.getElementById('run-checklist-scroll');
   if (sc) sc.scrollTop = prevScroll;
 }
@@ -7169,7 +7180,42 @@ function openPlannerDoneDetail(entry) {
   const editEl = document.getElementById('planner-detail-edit');
   if (editEl) editEl.style.display = 'none';
 
+  // Offer to resume this task as a new session, carrying its done checklist items
+  _plannerResumeEntry = entry;
+  const resumeBtn = document.getElementById('planner-resume-btn');
+  const resumeNote = document.getElementById('planner-resume-note');
+  if (resumeBtn) resumeBtn.style.display = 'block';
+  if (resumeNote) resumeNote.style.display = 'block';
+
   openModal('modal-planner-detail');
+}
+
+// Resume a completed task as a fresh session, carrying over the checklist items
+// already finished (shown ticked) so only the remaining ones are worked & timed.
+let _plannerResumeEntry = null;
+function plannerResume() {
+  const entry = _plannerResumeEntry;
+  if (!entry) return;
+  if (clockState && clockState.running) { showToast('Clock out of your current task first'); return; }
+  // Which checklist items were already done — prefer the structured field, else notes
+  let carried = [];
+  if (Array.isArray(entry.checklist) && entry.checklist.length) {
+    carried = entry.checklist.map(c => c.item).filter(Boolean);
+  } else if (entry.notes) {
+    entry.notes.split('\n').forEach(line => {
+      const m = line.match(/^\[.+?\]\s*(?:\(.*?\)\s*)?(.+)$/);
+      if (m) m[1].split(',').forEach(it => { const t = it.trim(); if (t) carried.push(t); });
+    });
+  }
+  closeModal('modal-planner-detail');
+  startClock({
+    location: entry.location, frequency: entry.frequency || '', group: entry.group,
+    task: entry.task, subtask: entry.subtask || '', tool: entry.tool || '', notes: '',
+  });
+  clockState.checklistCarried = carried;
+  localStorage.setItem('kr_clock', JSON.stringify(clockState));
+  renderClockState();
+  showToast('Resumed ' + entry.task + (carried.length ? ' — ' + carried.length + ' already done' : ''));
 }
 
 // ── Live in-progress block ──
@@ -7307,6 +7353,11 @@ function openPlannerDetail(planId) {
   const deleteBtn  = document.querySelector('#modal-planner-detail button[onclick="deletePlannerBlock()"]');
   if (clockInBtn) clockInBtn.style.display = '';
   if (deleteBtn)  deleteBtn.style.display  = isWorker() ? 'none' : '';
+  // Resume is only for completed entries, not planned blocks
+  const resumeBtn = document.getElementById('planner-resume-btn');
+  const resumeNote = document.getElementById('planner-resume-note');
+  if (resumeBtn) resumeBtn.style.display = 'none';
+  if (resumeNote) resumeNote.style.display = 'none';
   // Time editor — managers only; prefill with the block's current time/duration
   const editEl = document.getElementById('planner-detail-edit');
   if (editEl) {
