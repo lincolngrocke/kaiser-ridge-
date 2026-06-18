@@ -1928,7 +1928,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-18.2';
+const APP_VERSION = '2026-06-18.3';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -7217,14 +7217,10 @@ function openPlannerDoneDetail(entry) {
   const tickedItems = [];
   if (entry.notes) {
     entry.notes.split('\n').forEach(line => {
-      const match = line.match(/^\[.+?\]\s+(.+)$/);
-      if (match) {
-        // Items are comma-separated within that line
-        match[1].split(',').forEach(item => {
-          const trimmed = item.trim();
-          if (trimmed) tickedItems.push(trimmed);
-        });
-      }
+      // New format: one item per line, "[time] (Xm) item" — keep the time prefix
+      // so it matches the timesheet (time before minutes).
+      const m = line.match(/^\[(.+?)\]\s*(.+)$/);
+      if (m) tickedItems.push('[' + m[1].trim() + '] ' + m[2].trim());
     });
   }
 
