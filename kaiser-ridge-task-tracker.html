@@ -1939,7 +1939,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-18.4';
+const APP_VERSION = '2026-06-18.5';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -7085,19 +7085,19 @@ function renderPlannerScreen() {
 
   const dateStr = plannerDateStr(_plannerDate);
 
-  // Completed entries for this day
-  const dayEntries = entries.filter(e => e.date === dateStr && e.clockIn && e.clockOut);
-
   // Render all planned blocks for this day
   const dayPlans = _plannerPlans.filter(p => p.date === dateStr);
   dayPlans.forEach(p => renderPlannerBlock(p, grid));
 
-  // Render completed timesheet entries
-  dayEntries.forEach(e => renderPlannerDoneBlock(e, grid));
-
-  // Render live "in progress" block if clocked in today
-  if (clockState && clockState.running && dateStr === plannerDateStr(new Date())) {
-    renderPlannerLiveBlock(clockState, grid);
+  // Own completed entries and the live clock only belong on MY planner — never on
+  // the "Ethan's Day" view, which is purely the plan being built for him.
+  if (_plannerView === 'me') {
+    entries
+      .filter(e => e.date === dateStr && e.clockIn && e.clockOut)
+      .forEach(e => renderPlannerDoneBlock(e, grid));
+    if (clockState && clockState.running && dateStr === plannerDateStr(new Date())) {
+      renderPlannerLiveBlock(clockState, grid);
+    }
   }
 
   // Cascade any overlapping blocks downward so short/back-to-back tasks stay readable
