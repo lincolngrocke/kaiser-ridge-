@@ -995,7 +995,7 @@
     <button id="pv-ethan" onclick="switchPlannerView('ethan')" style="flex:1;border-radius:10px;padding:8px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--text);">Ethan's Day</button>
   </div>
   <div id="planner-send-row" style="display:none;padding:0 16px 8px;">
-    <button onclick="sendPlannerToEthan()" style="width:100%;background:var(--green);color:#fff;border:none;border-radius:12px;padding:11px;font-size:15px;font-weight:700;cursor:pointer;">📤 Send Ethan's Day to his app</button>
+    <button id="planner-send-btn" onclick="sendPlannerToEthan()" style="width:100%;background:var(--green);color:#fff;border:none;border-radius:12px;padding:11px;font-size:15px;font-weight:700;cursor:pointer;">📤 Send Ethan's Day to his app</button>
   </div>
   <!-- Worker only: banner when the manager has planned tasks for today -->
   <div class="update-banner" id="assign-banner" onclick="ackAssignmentBanner()" style="display:none;background:var(--green);margin:0 16px 8px;"></div>
@@ -1940,7 +1940,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-18.9';
+const APP_VERSION = '2026-06-18.10';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6950,6 +6950,15 @@ function switchPlannerView(view) {
   renderPlannerScreen();
 }
 
+// True if Ethan's Day differs from what was last sent (so the manager can be
+// nudged to re-send after editing).
+function ethanDayHasUnsentChanges() {
+  const cur = localStorage.getItem('kr_planner_ethan') || '[]';
+  const sent = localStorage.getItem('kr_planner_ethan_sent');
+  if (sent == null) return JSON.parse(cur).length > 0; // never sent
+  return cur !== sent;
+}
+
 // Manager: push the worker's planned day to the backend so their app pulls it.
 async function sendPlannerToEthan() {
   const url = localStorage.getItem('kr_sheet_url');
@@ -6965,8 +6974,11 @@ async function sendPlannerToEthan() {
       body: JSON.stringify({ action: 'assignPlanner', assignee: 'Ethan', version, plans }),
     });
     const json = await res.json();
-    if (json && json.success) showToast('Sent ' + json.count + ' task' + (json.count === 1 ? '' : 's') + ' to Ethan ✓');
-    else showToast('Send failed' + (json && json.error ? ': ' + json.error : ''));
+    if (json && json.success) {
+      localStorage.setItem('kr_planner_ethan_sent', localStorage.getItem('kr_planner_ethan') || '[]');
+      if (_plannerView === 'ethan') renderPlannerScreen();
+      showToast('Sent ' + json.count + ' task' + (json.count === 1 ? '' : 's') + ' to Ethan ✓');
+    } else showToast('Send failed' + (json && json.error ? ': ' + json.error : ''));
   } catch (e) { showToast('Send failed — check connection'); }
 }
 
@@ -7074,7 +7086,20 @@ function renderPlannerScreen() {
   const switchEl = document.getElementById('planner-view-switch');
   const sendRow = document.getElementById('planner-send-row');
   if (switchEl) switchEl.style.display = manager ? 'flex' : 'none';
-  if (sendRow) sendRow.style.display = (manager && _plannerView === 'ethan') ? 'block' : 'none';
+  const showSend = manager && _plannerView === 'ethan';
+  if (sendRow) sendRow.style.display = showSend ? 'block' : 'none';
+  if (showSend) {
+    const btn = document.getElementById('planner-send-btn');
+    if (btn) {
+      if (ethanDayHasUnsentChanges()) {
+        btn.textContent = '📤 Send Ethan’s Day — unsent changes';
+        btn.style.background = 'var(--green)'; btn.style.opacity = '1';
+      } else {
+        btn.textContent = '✓ Ethan’s Day sent — up to date';
+        btn.style.background = 'var(--subtext)'; btn.style.opacity = '0.8';
+      }
+    }
+  }
   if (manager) {
     const meBtn = document.getElementById('pv-me'), ethBtn = document.getElementById('pv-ethan');
     const on = b => { b.style.background = 'var(--blue)'; b.style.color = '#fff'; b.style.borderColor = 'var(--blue)'; };
