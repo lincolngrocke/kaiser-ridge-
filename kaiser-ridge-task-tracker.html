@@ -813,6 +813,7 @@
   <div class="update-banner" id="library-banner" onclick="pullLibrary()" style="display:none;background:var(--green);">📋 New task list available — tap to update</div>
   <div class="update-banner" id="restore-clock-banner" onclick="restoreDiscardedClock()" style="display:none;background:var(--green);"></div>
   <div class="backup-banner" id="backup-banner-clock" onclick="exportBackup()" style="display:none;"></div>
+  <div class="update-banner" id="assign-banner-clock" onclick="ackAssignmentBanner()" style="display:none;background:var(--green);"></div>
 
   <div class="scroll-area">
     <!-- Summary bar -->
@@ -1939,7 +1940,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-18.7';
+const APP_VERSION = '2026-06-18.8';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -7000,7 +7001,7 @@ function updateAssignmentBanner() {
   const appliedV = localStorage.getItem('kr_assign_applied_v') || '';
   const ackV = localStorage.getItem('kr_assign_ack_v') || '';
   const show = n > 0 && appliedV && appliedV !== ackV;
-  ['assign-banner', 'assign-banner-running'].forEach(id => {
+  ['assign-banner-clock', 'assign-banner', 'assign-banner-running'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     if (show) {
@@ -7014,7 +7015,7 @@ function updateAssignmentBanner() {
 // Worker tapped the banner: acknowledge this plan, hide the banner, open planner.
 function ackAssignmentBanner() {
   localStorage.setItem('kr_assign_ack_v', localStorage.getItem('kr_assign_applied_v') || '');
-  ['assign-banner', 'assign-banner-running'].forEach(id => {
+  ['assign-banner-clock', 'assign-banner', 'assign-banner-running'].forEach(id => {
     const el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   showScreen('planner', 'planner');
