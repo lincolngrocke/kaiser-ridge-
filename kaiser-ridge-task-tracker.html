@@ -997,7 +997,7 @@
     <button onclick="sendPlannerToEthan()" style="width:100%;background:var(--green);color:#fff;border:none;border-radius:12px;padding:11px;font-size:15px;font-weight:700;cursor:pointer;">📤 Send Ethan's Day to his app</button>
   </div>
   <!-- Worker only: banner when the manager has planned tasks for today -->
-  <div class="update-banner" id="assign-banner" onclick="showScreen('planner','planner')" style="display:none;background:var(--green);margin:0 16px 8px;"></div>
+  <div class="update-banner" id="assign-banner" onclick="ackAssignmentBanner()" style="display:none;background:var(--green);margin:0 16px 8px;"></div>
   <div class="scroll-area" id="planner-scroll" style="position:relative;overflow-y:auto;flex:1;touch-action:pan-y;">
     <div id="planner-grid" style="position:relative;margin:0 16px;"></div>
   </div>
@@ -1258,7 +1258,7 @@
   <div class="update-banner" id="update-banner-running" onclick="forceAppUpdate()" style="display:none;">🔄 New version available — tap to update</div>
   <div class="update-banner" id="library-banner-running" onclick="pullLibrary()" style="display:none;background:var(--green);">📋 New task list available — tap to update</div>
   <div class="backup-banner" id="backup-banner-running" onclick="exportBackup()" style="display:none;"></div>
-  <div class="update-banner" id="assign-banner-running" onclick="showScreen('planner','planner')" style="display:none;background:var(--green);"></div>
+  <div class="update-banner" id="assign-banner-running" onclick="ackAssignmentBanner()" style="display:none;background:var(--green);"></div>
   <div class="running-meta">
     <button class="running-add-note" onclick="openNoteModal()">📋 Add Note</button>
     <button class="running-tag-btn" onclick="openQuickCapture()">💡 Capture</button>
@@ -1939,7 +1939,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-18.6';
+const APP_VERSION = '2026-06-18.7';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6990,22 +6990,34 @@ async function pullAssignments() {
   } catch (e) { /* offline — try again next foreground */ }
 }
 
-// Worker: banner showing how many tasks the manager planned for today.
+// Worker: a one-time alert when the manager sends a NEW plan. It shows until the
+// worker taps it (acknowledges that version); a fresh assignment shows it again.
 function updateAssignmentBanner() {
   if (!isWorker()) return;
   const plans = JSON.parse(localStorage.getItem('kr_planner') || '[]');
   const todayStr = plannerDateStr(new Date());
   const n = plans.filter(p => p.date === todayStr).length;
+  const appliedV = localStorage.getItem('kr_assign_applied_v') || '';
+  const ackV = localStorage.getItem('kr_assign_ack_v') || '';
+  const show = n > 0 && appliedV && appliedV !== ackV;
   ['assign-banner', 'assign-banner-running'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
-    if (n > 0) {
+    if (show) {
       el.textContent = '📋 ' + n + ' task' + (n === 1 ? '' : 's') + ' planned for you today — tap to view';
       el.style.display = 'block';
     } else {
       el.style.display = 'none';
     }
   });
+}
+// Worker tapped the banner: acknowledge this plan, hide the banner, open planner.
+function ackAssignmentBanner() {
+  localStorage.setItem('kr_assign_ack_v', localStorage.getItem('kr_assign_applied_v') || '');
+  ['assign-banner', 'assign-banner-running'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+  showScreen('planner', 'planner');
 }
 
 function plannerDateStr(d) {
