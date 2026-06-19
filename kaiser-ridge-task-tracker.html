@@ -1263,7 +1263,6 @@
   <div class="running-meta">
     <button class="running-add-note" onclick="openNoteModal()">📋 Add Note</button>
     <button class="running-tag-btn" onclick="openQuickCapture()">💡 Capture</button>
-    <button class="running-tag-btn" id="btn-subtasks" onclick="openSubtaskModal()" style="display:none">☑️ Checklist</button>
     <button class="running-tag-btn" onclick="openEditActive()">🏷 Edit Entry</button>
   </div>
   <div class="running-timer-area">
@@ -1940,7 +1939,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-18.10';
+const APP_VERSION = '2026-06-18.11';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2415,7 +2414,6 @@ function renderClockState() {
     document.getElementById('at-name').textContent = [clockState.group, clockState.task].filter(Boolean).join(' · ');
     document.getElementById('at-tool').textContent = clockState.tool ? '🔧 ' + clockState.tool : '';
     document.getElementById('at-note').textContent = clockState.notes || '';
-    document.getElementById('btn-subtasks').style.display = (SUBTASKS[clockState.task] && SUBTASKS[clockState.task].length > 0) ? 'inline-flex' : 'none';
     renderRunChecklist();
     updateAtTimes();
     timer.classList.add('running');
