@@ -988,6 +988,16 @@
     <button id="planner-cal-btn" onclick="pushPlannerToCalendar()" title="Push this day to Google Calendar" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;font-size:15px;cursor:pointer;">📆</button>
     <button onclick="plannerGoToday()" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-size:13px;color:var(--blue);cursor:pointer;">Today</button>
   </div>
+  <!-- Manager only: switch between own day and the worker's planned day -->
+  <div id="planner-view-switch" style="display:none;padding:0 16px 8px;gap:8px;">
+    <button id="pv-me" onclick="switchPlannerView('me')" style="flex:1;border-radius:10px;padding:8px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid var(--blue);background:var(--blue);color:#fff;">My Day</button>
+    <button id="pv-ethan" onclick="switchPlannerView('ethan')" style="flex:1;border-radius:10px;padding:8px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--text);">Ethan's Day</button>
+  </div>
+  <div id="planner-send-row" style="display:none;padding:0 16px 8px;">
+    <button onclick="sendPlannerToEthan()" style="width:100%;background:var(--green);color:#fff;border:none;border-radius:12px;padding:11px;font-size:15px;font-weight:700;cursor:pointer;">📤 Send Ethan's Day to his app</button>
+  </div>
+  <!-- Worker only: banner when the manager has planned tasks for today -->
+  <div class="update-banner" id="assign-banner" onclick="showScreen('planner','planner')" style="display:none;background:var(--green);margin:0 16px 8px;"></div>
   <div class="scroll-area" id="planner-scroll" style="position:relative;overflow-y:auto;flex:1;touch-action:pan-y;">
     <div id="planner-grid" style="position:relative;margin:0 16px;"></div>
   </div>
@@ -1248,6 +1258,7 @@
   <div class="update-banner" id="update-banner-running" onclick="forceAppUpdate()" style="display:none;">🔄 New version available — tap to update</div>
   <div class="update-banner" id="library-banner-running" onclick="pullLibrary()" style="display:none;background:var(--green);">📋 New task list available — tap to update</div>
   <div class="backup-banner" id="backup-banner-running" onclick="exportBackup()" style="display:none;"></div>
+  <div class="update-banner" id="assign-banner-running" onclick="showScreen('planner','planner')" style="display:none;background:var(--green);"></div>
   <div class="running-meta">
     <button class="running-add-note" onclick="openNoteModal()">📋 Add Note</button>
     <button class="running-tag-btn" onclick="openQuickCapture()">💡 Capture</button>
@@ -1928,7 +1939,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-18.3';
+const APP_VERSION = '2026-06-18.4';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2163,6 +2174,8 @@ window.addEventListener('load', () => {
   applyRoleUI();
   initSearchClears();
   updateInboxCount();
+  updateAssignmentBanner();
+  pullAssignments();                       // worker: fetch the day the manager planned
   checkForUpdate();
   checkLibraryUpdate();
   // Re-check when the app is brought back to the foreground (throttled to 60s)
@@ -2170,6 +2183,7 @@ window.addEventListener('load', () => {
     if (!document.hidden && Date.now() - _lastUpdateCheck > 60000) checkForUpdate();
     if (!document.hidden) checkLibraryUpdate();
     if (!document.hidden) autoSyncPending();
+    if (!document.hidden) pullAssignments();
   });
 
   // After a Force-Update reload, return to the screen the user was on.
@@ -6869,6 +6883,8 @@ function _dtCleanup() {
 // date format: DD/MM/YYYY, startTime: 'HH:MM'
 
 let _plannerDate = new Date(); // current day being viewed
+let _plannerView = 'me'; // 'me' = own planner | 'ethan' = the day the manager is planning for the worker
+function plannerStoreKey() { return _plannerView === 'ethan' ? 'kr_planner_ethan' : 'kr_planner'; }
 let _plannerPlans = JSON.parse(localStorage.getItem('kr_planner') || '[]');
 let _plannerAddTask = null; // task object selected in add modal
 let _plannerDetailId = null; // plan id in detail modal
@@ -6900,7 +6916,74 @@ function plannerColorFor(task) {
 }
 
 function savePlanner() {
-  localStorage.setItem('kr_planner', JSON.stringify(_plannerPlans));
+  localStorage.setItem(plannerStoreKey(), JSON.stringify(_plannerPlans));
+}
+
+// Switch the planner between the manager's own day and the worker's planned day.
+function switchPlannerView(view) {
+  _plannerView = view;
+  _plannerPlans = JSON.parse(localStorage.getItem(plannerStoreKey()) || '[]');
+  renderPlannerScreen();
+}
+
+// Manager: push the worker's planned day to the backend so their app pulls it.
+async function sendPlannerToEthan() {
+  const url = localStorage.getItem('kr_sheet_url');
+  if (!url) { showToast('Add your Apps Script URL in Settings first'); return; }
+  const plans = JSON.parse(localStorage.getItem('kr_planner_ethan') || '[]');
+  if (!plans.length) { showToast('Nothing to send — add tasks to Ethan’s Day first'); return; }
+  const version = Date.now().toString();
+  showToast('Sending to Ethan…');
+  try {
+    const res = await fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'assignPlanner', assignee: 'Ethan', version, plans }),
+    });
+    const json = await res.json();
+    if (json && json.success) showToast('Sent ' + json.count + ' task' + (json.count === 1 ? '' : 's') + ' to Ethan ✓');
+    else showToast('Send failed' + (json && json.error ? ': ' + json.error : ''));
+  } catch (e) { showToast('Send failed — check connection'); }
+}
+
+// Worker: pull the day the manager planned for me; replace my planner, flag new.
+async function pullAssignments() {
+  if (!isWorker()) return;
+  const url = localStorage.getItem('kr_sheet_url');
+  if (!url) return;
+  const who = getUserName().trim();
+  try {
+    const res = await fetch(url + (url.includes('?') ? '&' : '?') + 'assignments=1&who=' + encodeURIComponent(who), { cache: 'no-store' });
+    const json = await res.json();
+    if (!json || !json.success || !json.assignment) return;
+    const remoteV = json.assignment.version || '';
+    const appliedV = localStorage.getItem('kr_assign_applied_v') || '';
+    if (!remoteV || remoteV === appliedV) { updateAssignmentBanner(); return; }
+    const plans = Array.isArray(json.assignment.plans) ? json.assignment.plans : [];
+    localStorage.setItem('kr_planner', JSON.stringify(plans));
+    localStorage.setItem('kr_assign_applied_v', remoteV);
+    if (_plannerView === 'me') _plannerPlans = plans;
+    updateAssignmentBanner();
+    const ps = document.getElementById('screen-planner');
+    if (ps && ps.classList.contains('active')) renderPlannerScreen();
+  } catch (e) { /* offline — try again next foreground */ }
+}
+
+// Worker: banner showing how many tasks the manager planned for today.
+function updateAssignmentBanner() {
+  if (!isWorker()) return;
+  const plans = JSON.parse(localStorage.getItem('kr_planner') || '[]');
+  const todayStr = plannerDateStr(new Date());
+  const n = plans.filter(p => p.date === todayStr).length;
+  ['assign-banner', 'assign-banner-running'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (n > 0) {
+      el.textContent = '📋 ' + n + ' task' + (n === 1 ? '' : 's') + ' planned for you today — tap to view';
+      el.style.display = 'block';
+    } else {
+      el.style.display = 'none';
+    }
+  });
 }
 
 function plannerDateStr(d) {
@@ -6947,6 +7030,22 @@ function renderPlannerScreen() {
     _plannerDate.toLocaleDateString('en-AU', { weekday: 'long' });
   document.getElementById('planner-date-label').textContent = label;
   document.getElementById('planner-date-sub').textContent = _plannerDate.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  // Manager: show the My Day / Ethan's Day switcher + send button. Worker: hide
+  // (their planner just receives assignments) and show the assignment banner.
+  const manager = !isWorker();
+  const switchEl = document.getElementById('planner-view-switch');
+  const sendRow = document.getElementById('planner-send-row');
+  if (switchEl) switchEl.style.display = manager ? 'flex' : 'none';
+  if (sendRow) sendRow.style.display = (manager && _plannerView === 'ethan') ? 'block' : 'none';
+  if (manager) {
+    const meBtn = document.getElementById('pv-me'), ethBtn = document.getElementById('pv-ethan');
+    const on = b => { b.style.background = 'var(--blue)'; b.style.color = '#fff'; b.style.borderColor = 'var(--blue)'; };
+    const off = b => { b.style.background = 'var(--card)'; b.style.color = 'var(--text)'; b.style.borderColor = 'var(--border)'; };
+    if (meBtn && ethBtn) { (_plannerView === 'me' ? on : off)(meBtn); (_plannerView === 'ethan' ? on : off)(ethBtn); }
+  } else {
+    updateAssignmentBanner();
+  }
 
   // Build grid
   const grid = document.getElementById('planner-grid');

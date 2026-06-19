@@ -85,6 +85,15 @@ function doGet(e) {
       return jsonResponse({ success: true, rows: rows });
     }
 
+    // Planner assignments — a worker pulls the blocks the manager planned for them.
+    if (p.assignments === '1') {
+      const who = String(p.who || '').trim();
+      const raw = props.getProperty('kr_assign_' + who) || '';
+      let assignment = { version: '', plans: [] };
+      if (raw) { try { assignment = JSON.parse(raw); } catch (e) {} }
+      return jsonResponse({ success: true, assignment: assignment });
+    }
+
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
     // App Directory
@@ -134,6 +143,14 @@ function doPost(e) {
     // Manager publishes the shared task library for other devices to pull
     if (data.action === 'publishLibrary') {
       return handlePublishLibrary(data);
+    }
+    // Manager assigns a planned day to a worker — stored per person, pulled by them
+    if (data.action === 'assignPlanner') {
+      const props = PropertiesService.getScriptProperties();
+      const who = String(data.assignee || '').trim();
+      const payload = { version: String(data.version || Date.now()), plans: data.plans || [] };
+      props.setProperty('kr_assign_' + who, JSON.stringify(payload));
+      return jsonResponse({ success: true, version: payload.version, count: payload.plans.length });
     }
 
     const ss    = SpreadsheetApp.getActiveSpreadsheet();
