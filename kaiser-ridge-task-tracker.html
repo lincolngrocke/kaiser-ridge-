@@ -1939,7 +1939,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-18.5';
+const APP_VERSION = '2026-06-18.6';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -5997,9 +5997,14 @@ function saveSubtaskSteps(steps) {
 function getInbox() { return JSON.parse(localStorage.getItem('kr_inbox') || '[]'); }
 function saveInbox(arr) { localStorage.setItem('kr_inbox', JSON.stringify(arr)); updateInboxCount(); }
 function updateInboxCount() {
-  const n = getInbox().length;
+  const n = getInbox().filter(x => !x.done).length;  // only outstanding notes
   const el = document.getElementById('inbox-count');
   if (el) el.textContent = n ? ' (' + n + ')' : '';
+}
+function _inboxStamp(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) +
+    ' · ' + d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
 function openQuickCapture() {
   document.getElementById('quick-capture-text').value = '';
@@ -6025,19 +6030,36 @@ function renderInbox() {
     list.innerHTML = '<div style="padding:30px 20px;text-align:center;color:var(--subtext);line-height:1.6;">Inbox empty.<br>Catch thoughts with 💡 Capture on the clock screen, or ＋ New above.</div>';
     return;
   }
+  // Outstanding first (newest caught on top); completed sink to the bottom
+  // (most recently completed first).
+  items.sort((a, b) => {
+    const ad = a.done ? 1 : 0, bd = b.done ? 1 : 0;
+    if (ad !== bd) return ad - bd;
+    if (ad) return new Date(b.doneTs || 0) - new Date(a.doneTs || 0);
+    return new Date(b.ts) - new Date(a.ts);
+  });
   list.innerHTML = items.map(n => {
-    const d = new Date(n.ts);
-    const stamp = d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) +
-      ' · ' + d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true });
     const safe = n.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    return `<div style="display:flex;gap:10px;align-items:flex-start;padding:12px 4px;border-bottom:1px solid var(--border);">
+    const box = `<span onclick="toggleInboxDone('${n.id}')" style="font-size:22px;line-height:1;cursor:pointer;flex-shrink:0;padding-top:1px;color:${n.done ? 'var(--green)' : 'var(--subtext)'};">${n.done ? '☑' : '☐'}</span>`;
+    const meta = 'Caught ' + _inboxStamp(n.ts) + (n.done && n.doneTs ? '　•　✓ Done ' + _inboxStamp(n.doneTs) : '');
+    return `<div style="display:flex;gap:10px;align-items:flex-start;padding:12px 4px;border-bottom:1px solid var(--border);${n.done ? 'opacity:0.55;' : ''}">
+      ${box}
       <div style="flex:1;">
-        <div style="font-size:15px;color:var(--text);white-space:pre-wrap;line-height:1.4;">${safe}</div>
-        <div style="font-size:12px;color:var(--subtext);margin-top:4px;">${stamp}</div>
+        <div style="font-size:15px;white-space:pre-wrap;line-height:1.4;${n.done ? 'text-decoration:line-through;color:var(--subtext);' : 'color:var(--text);'}">${safe}</div>
+        <div style="font-size:12px;color:var(--subtext);margin-top:4px;">${meta}</div>
       </div>
       <button onclick="deleteInboxItem('${n.id}')" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:2px 4px;flex-shrink:0;">✕</button>
     </div>`;
   }).join('');
+}
+function toggleInboxDone(id) {
+  const arr = getInbox();
+  const n = arr.find(x => x.id === id);
+  if (!n) return;
+  if (n.done) { n.done = false; delete n.doneTs; }       // uncheck — bring it back to life
+  else { n.done = true; n.doneTs = new Date().toISOString(); }
+  saveInbox(arr);
+  renderInbox();
 }
 function deleteInboxItem(id) {
   saveInbox(getInbox().filter(n => n.id !== id));
