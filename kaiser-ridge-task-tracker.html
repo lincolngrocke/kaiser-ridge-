@@ -1940,7 +1940,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-18.8';
+const APP_VERSION = '2026-06-18.9';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2177,6 +2177,7 @@ window.addEventListener('load', () => {
   updateInboxCount();
   updateAssignmentBanner();
   pullAssignments();                       // worker: fetch the day the manager planned
+  setInterval(pullAssignments, 60000);     // worker: keep the plan live (time changes/deletes) without reopening
   checkForUpdate();
   checkLibraryUpdate();
   // Re-check when the app is brought back to the foreground (throttled to 60s)
@@ -6954,7 +6955,8 @@ async function sendPlannerToEthan() {
   const url = localStorage.getItem('kr_sheet_url');
   if (!url) { showToast('Add your Apps Script URL in Settings first'); return; }
   const plans = JSON.parse(localStorage.getItem('kr_planner_ethan') || '[]');
-  if (!plans.length) { showToast('Nothing to send — add tasks to Ethan’s Day first'); return; }
+  // Sending an empty day is how you CLEAR his planner after deleting tasks.
+  if (!plans.length && !confirm('Ethan’s Day has no tasks. Send anyway to clear his planned tasks?')) return;
   const version = Date.now().toString();
   showToast('Sending to Ethan…');
   try {
