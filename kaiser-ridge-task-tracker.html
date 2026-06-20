@@ -1960,7 +1960,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-18.16';
+const APP_VERSION = '2026-06-18.17';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6079,6 +6079,7 @@ function renderInbox() {
     let meta = 'Caught ' + _inboxStamp(n.ts);
     if (n.movedTo) meta += '　•　📂 → ' + esc(n.movedTo);
     if (n.done && n.doneTs) meta += '　•　✓ Done ' + _inboxStamp(n.doneTs);
+    (n.completions || []).forEach(c => { meta += '　•　✅ ' + esc(c.task) + ' ' + _inboxStamp(c.ts); });
     const assignBtn = n.done ? '' : `<button onclick="openInboxAssign('${n.id}')" title="Add to a task" style="background:none;border:none;color:var(--blue);font-size:18px;cursor:pointer;padding:2px 4px;flex-shrink:0;">📂</button>`;
     return `<div style="display:flex;gap:10px;align-items:flex-start;padding:12px 4px;border-bottom:1px solid var(--border);${n.done ? 'opacity:0.55;' : ''}">
       ${box}
@@ -6194,7 +6195,7 @@ function assignInboxToTask(mode) {
       if (!SUBTASKS[task].some(s => s.trim().toLowerCase() === text.toLowerCase())) SUBTASKS[task].push(text);
     } else {
       if (!tn[task]) tn[task] = [];
-      tn[task].push({ id: 'tn' + Date.now() + '_' + i + Math.random().toString(36).slice(2, 5), text, ts: new Date().toISOString() });
+      tn[task].push({ id: 'tn' + Date.now() + '_' + i + Math.random().toString(36).slice(2, 5), text, ts: new Date().toISOString(), inboxId: _inboxAssignId });
     }
   });
   if (mode === 'permanent') localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
@@ -6210,10 +6211,22 @@ function assignInboxToTask(mode) {
 // Tick off a pinned task-note while clocked in — removes it for good.
 function completeTaskNote(id) {
   if (!clockState || !clockState.task) return;
+  const task = clockState.task;
   const tn = getTaskNotes();
-  tn[clockState.task] = (tn[clockState.task] || []).filter(p => p.id !== id);
-  if (!tn[clockState.task].length) delete tn[clockState.task];
+  const note = (tn[task] || []).find(p => p.id === id);
+  tn[task] = (tn[task] || []).filter(p => p.id !== id);
+  if (!tn[task].length) delete tn[task];
   saveTaskNotes(tn);
+  // Record this completion on the originating inbox note — its full journey.
+  if (note && note.inboxId) {
+    const arr = getInbox();
+    const inb = arr.find(x => x.id === note.inboxId);
+    if (inb) {
+      if (!Array.isArray(inb.completions)) inb.completions = [];
+      inb.completions.push({ task, ts: new Date().toISOString() });
+      saveInbox(arr);
+    }
+  }
   renderRunChecklist();
   showToast('Note done ✓');
 }
