@@ -1369,7 +1369,17 @@
     <div style="padding:6px 20px 10px;font-size:13px;color:var(--subtext);">Catch the thought now — review it later in the Inbox (More → Inbox). Time-stamped automatically.</div>
     <div style="padding:0 20px;">
       <textarea id="quick-capture-text" placeholder="What needs doing? Just jot it…" autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true" style="width:100%;min-height:140px;padding:12px;border:1px solid var(--border);border-radius:12px;font-size:16px;color:var(--text);background:var(--bg);font-family:inherit;resize:vertical;outline:none;line-height:1.5;"></textarea>
+      <input type="file" accept="image/*" id="capture-photo-input" style="display:none;" onchange="onCapturePhoto(event)">
+      <button onclick="document.getElementById('capture-photo-input').click()" style="margin-top:10px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:9px 14px;font-size:14px;color:var(--blue);font-weight:600;cursor:pointer;">📷 Add photo</button>
+      <div id="capture-photo-preview"></div>
     </div>
+  </div>
+</div>
+
+<!-- ══════════════ IMAGE VIEWER ══════════════ -->
+<div class="modal-backdrop" id="modal-image-view" style="z-index:700;" onclick="closeModal('modal-image-view')">
+  <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:20px;">
+    <img id="image-view-img" src="" alt="" style="max-width:100%;max-height:100%;border-radius:12px;">
   </div>
 </div>
 
@@ -1978,7 +1988,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-18.25';
+const APP_VERSION = '2026-06-21.1';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2585,9 +2595,10 @@ function renderRunChecklist() {
     const safe = p.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const caughtTs = p.caught || p.ts;
     const caughtLine = caughtTs ? `<div style="font-size:11px;color:var(--subtext);margin-top:2px;">Caught ${_inboxStamp(caughtTs)}</div>` : '';
+    const thumb = p.image ? `<img src="${p.image}" onclick="event.stopPropagation();openImageLightbox(this.src)" style="margin-top:6px;max-height:80px;max-width:100%;border-radius:8px;display:block;cursor:pointer;">` : '';
     return `<div onclick="completeTaskNote('${p.id}')" style="display:flex;align-items:flex-start;gap:8px;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer;">
       <span style="font-size:18px;flex-shrink:0;color:var(--subtext);">☐</span>
-      <div style="flex:1;"><span style="font-size:14px;color:#FFD60A;">📌 ${safe}</span>${caughtLine}</div></div>`;
+      <div style="flex:1;min-width:0;"><span style="font-size:14px;color:#FFD60A;">📌 ${safe}</span>${caughtLine}${thumb}</div></div>`;
   }).join('');
   const pinnedHeader = (pinned.length && items.length)
     ? `<div style="padding:6px 0 2px;font-size:11px;font-weight:700;color:#FFD60A;letter-spacing:.04em;">📌 NOTES — tap to tick off</div>` : '';
@@ -6071,7 +6082,12 @@ function openItemOrigin(encText) {
 }
 // ── Quick-capture Inbox: catch a thought fast, review/clear it later ──────────
 function getInbox() { return JSON.parse(localStorage.getItem('kr_inbox') || '[]'); }
-function saveInbox(arr) { localStorage.setItem('kr_inbox', JSON.stringify(arr)); updateInboxCount(); }
+function saveInbox(arr) {
+  try { localStorage.setItem('kr_inbox', JSON.stringify(arr)); }
+  catch (e) { showToast('Storage full — couldn’t save. Try removing some photos.'); return false; }
+  updateInboxCount();
+  return true;
+}
 function updateInboxCount() {
   const n = getInbox().filter(x => !x.done).length;  // only outstanding notes
   const el = document.getElementById('inbox-count');
@@ -6082,19 +6098,59 @@ function _inboxStamp(iso) {
   return d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) +
     ' · ' + d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
-let _editingInboxId = null;
+let _editingInboxId = null, _captureImage = null;
+// Resize+compress a chosen photo to a small JPEG data URL (localStorage-safe).
+function _compressImage(file, maxDim, quality) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if (w > maxDim || h > maxDim) {
+          if (w >= h) { h = Math.round(h * maxDim / w); w = maxDim; }
+          else { w = Math.round(w * maxDim / h); h = maxDim; }
+        }
+        const c = document.createElement('canvas'); c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(c.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = reject; img.src = e.target.result;
+    };
+    reader.onerror = reject; reader.readAsDataURL(file);
+  });
+}
+async function onCapturePhoto(ev) {
+  const file = ev.target.files && ev.target.files[0];
+  ev.target.value = '';
+  if (!file) return;
+  try { _captureImage = await _compressImage(file, 1000, 0.6); renderCapturePreview(); }
+  catch (e) { showToast('Could not load that image'); }
+}
+function renderCapturePreview() {
+  const el = document.getElementById('capture-photo-preview');
+  if (!el) return;
+  el.innerHTML = _captureImage
+    ? `<div style="position:relative;display:inline-block;margin-top:10px;">
+        <img src="${_captureImage}" style="max-height:140px;max-width:100%;border-radius:10px;display:block;">
+        <button onclick="removeCaptureImage()" style="position:absolute;top:-8px;right:-8px;width:26px;height:26px;border-radius:50%;background:var(--red);color:#fff;border:none;font-size:14px;cursor:pointer;">✕</button>
+      </div>` : '';
+}
+function removeCaptureImage() { _captureImage = null; renderCapturePreview(); }
+function openImageLightbox(src) { document.getElementById('image-view-img').src = src; openModal('modal-image-view'); }
+
 function openQuickCapture() {
-  _editingInboxId = null;
+  _editingInboxId = null; _captureImage = null; renderCapturePreview();
   document.getElementById('quick-capture-title').textContent = 'Quick Note';
   document.getElementById('quick-capture-text').value = '';
   openModal('modal-quick-capture');
   setTimeout(() => { const t = document.getElementById('quick-capture-text'); if (t) t.focus(); }, 150);
 }
-// Edit an existing note's text — keeps its original caught timestamp.
+// Edit an existing note's text/photo — keeps its original caught timestamp.
 function openInboxEdit(id) {
   const note = getInbox().find(x => x.id === id);
   if (!note) return;
-  _editingInboxId = id;
+  _editingInboxId = id; _captureImage = note.image || null; renderCapturePreview();
   document.getElementById('quick-capture-title').textContent = 'Edit Note';
   document.getElementById('quick-capture-text').value = note.text;
   openModal('modal-quick-capture');
@@ -6103,20 +6159,18 @@ function openInboxEdit(id) {
 function saveQuickCapture() {
   const t = document.getElementById('quick-capture-text');
   const text = (t.value || '').trim();
-  if (!text) { closeModal('modal-quick-capture'); _editingInboxId = null; return; }
+  if (!text && !_captureImage) { closeModal('modal-quick-capture'); _editingInboxId = null; return; }
   const inbox = getInbox();
   if (_editingInboxId) {
     const note = inbox.find(x => x.id === _editingInboxId);
-    if (note) note.text = text;            // keep original ts (caught time)
-    _editingInboxId = null;
-    saveInbox(inbox);
-    closeModal('modal-quick-capture');
-    showToast('Note updated ✓');
+    if (note) { note.text = text; if (_captureImage) note.image = _captureImage; else delete note.image; }
+    _editingInboxId = null; _captureImage = null;
+    if (saveInbox(inbox)) { closeModal('modal-quick-capture'); showToast('Note updated ✓'); }
   } else {
-    inbox.unshift({ id: 'n' + Date.now() + Math.random().toString(36).slice(2, 6), text, ts: new Date().toISOString() });
-    saveInbox(inbox);
-    closeModal('modal-quick-capture');
-    showToast('Caught it ✓');
+    const note = { id: 'n' + Date.now() + Math.random().toString(36).slice(2, 6), text, ts: new Date().toISOString() };
+    if (_captureImage) note.image = _captureImage;
+    inbox.unshift(note); _captureImage = null;
+    if (saveInbox(inbox)) { closeModal('modal-quick-capture'); showToast('Caught it ✓'); }
   }
   if (document.getElementById('modal-inbox').classList.contains('open')) renderInbox();
 }
@@ -6162,8 +6216,10 @@ function renderInbox() {
     if (n.movedTo) meta += '　•　📂 → ' + esc(n.movedTo);
     if (n.done && n.doneTs) meta += '　•　✓ Done ' + _inboxStamp(n.doneTs);
     (n.completions || []).forEach(c => { meta += '　•　✅ ' + esc(c.task) + ' ' + _inboxStamp(c.ts); });
-    const body = `<div style="flex:1;">
+    const thumb = n.image ? `<img src="${n.image}" onclick="event.stopPropagation();openImageLightbox(this.src)" style="margin-top:8px;max-height:90px;max-width:100%;border-radius:8px;display:block;cursor:pointer;">` : '';
+    const body = `<div style="flex:1;min-width:0;">
         <div style="font-size:15px;white-space:pre-wrap;line-height:1.4;${n.done ? 'text-decoration:line-through;color:var(--subtext);' : 'color:var(--text);'}">${safe}</div>
+        ${thumb}
         <div style="font-size:12px;color:var(--subtext);margin-top:4px;">${meta}</div>
       </div>`;
     if (_inboxSelectMode) {
@@ -6305,7 +6361,7 @@ function assignInboxToTask(mode) {
         if (!orig[text]) orig[text] = { caught: note.ts || '', added: new Date().toISOString() };
       } else {
         if (!tn[task]) tn[task] = [];
-        tn[task].push({ id: 'tn' + (uid++) + Math.random().toString(36).slice(2, 5), text, ts: new Date().toISOString(), caught: note.ts || '', inboxId: note.id });
+        tn[task].push({ id: 'tn' + (uid++) + Math.random().toString(36).slice(2, 5), text, ts: new Date().toISOString(), caught: note.ts || '', inboxId: note.id, image: note.image || '' });
       }
     });
     note.done = true; note.doneTs = new Date().toISOString();
