@@ -1956,7 +1956,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-18.12';
+const APP_VERSION = '2026-06-18.13';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2516,7 +2516,8 @@ function renderRunChecklist() {
   const el = document.getElementById('run-checklist');
   if (!el) return;
   const items = (clockState && clockState.running && SUBTASKS[clockState.task]) || [];
-  if (!items.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
+  const pinned = (clockState && clockState.running && getTaskNotes()[clockState.task]) || [];
+  if (!items.length && !pinned.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
   el.style.display = 'flex';
   const done = (clockState && Array.isArray(clockState.checklistDone)) ? clockState.checklistDone : [];
   const carried = new Set((clockState && Array.isArray(clockState.checklistCarried)) ? clockState.checklistCarried : []);
@@ -2557,9 +2558,21 @@ function renderRunChecklist() {
     }
     return html;
   }).join('');
+  // Pinned task-notes ride at the very top until ticked off (📌, amber).
+  const pinnedRows = pinned.map(p => {
+    const safe = p.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return `<div onclick="completeTaskNote('${p.id}')" style="display:flex;align-items:flex-start;gap:8px;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer;">
+      <span style="font-size:18px;flex-shrink:0;color:var(--subtext);">☐</span>
+      <span style="flex:1;font-size:14px;color:#FFD60A;">📌 ${safe}</span></div>`;
+  }).join('');
+  const pinnedHeader = (pinned.length && items.length)
+    ? `<div style="padding:6px 0 2px;font-size:11px;font-weight:700;color:#FFD60A;letter-spacing:.04em;">📌 NOTES — tap to tick off</div>` : '';
+  const headText = items.length
+    ? `CHECKLIST · ${completedCount}/${items.length} done · tap ○ to time, item to expand`
+    : '📌 TASK NOTES — tap to tick off';
   // Preserve scroll position across re-render so ticking/expanding doesn't jump to top.
   const prevScroll = (document.getElementById('run-checklist-scroll') || {}).scrollTop || 0;
-  el.innerHTML = `<div style="background:#000;padding:6px 0;font-size:12px;font-weight:700;color:var(--subtext);letter-spacing:.04em;border-bottom:1px solid var(--border);">CHECKLIST · ${completedCount}/${items.length} done · tap ○ to time, item to expand</div><div id="run-checklist-scroll" style="flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;">${rows}</div>`;
+  el.innerHTML = `<div style="background:#000;padding:6px 0;font-size:12px;font-weight:700;color:var(--subtext);letter-spacing:.04em;border-bottom:1px solid var(--border);">${headText}</div><div id="run-checklist-scroll" style="flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;">${pinnedHeader}${pinnedRows}${rows}</div>`;
   const sc = document.getElementById('run-checklist-scroll');
   if (sc) sc.scrollTop = prevScroll;
 }
@@ -4224,7 +4237,7 @@ const KR_BACKUP_KEYS = [
   'kr_task_order', 'kr_entries', 'kr_user_name', 'kr_weekly_target',
   'kr_sheet_url', 'kr_gmaps_key', 'kr_dark_mode',
   'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
-  'kr_planner', 'kr_projects', 'kr_inbox'
+  'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes'
 ];
 
 function buildBackupSnapshot() {
@@ -6088,10 +6101,15 @@ function deleteInboxItem(id) {
   renderInbox();
 }
 
-// Triage: add a note to an existing task's checklist, then file it as done.
-let _inboxAssignId = null;
+// Per-task "pinned notes" — sticky reminders that show at the top of a task each
+// time it's started, until ticked off (then gone). Device-local (not synced).
+function getTaskNotes() { return JSON.parse(localStorage.getItem('kr_task_notes') || '{}'); }
+function saveTaskNotes(o) { localStorage.setItem('kr_task_notes', JSON.stringify(o)); }
+
+// Triage: route a note to a task — as a permanent checklist item OR a pinned note.
+let _inboxAssignId = null, _inboxAssignTask = null;
 function openInboxAssign(id) {
-  _inboxAssignId = id;
+  _inboxAssignId = id; _inboxAssignTask = null;
   document.getElementById('inbox-assign-search').value = '';
   renderInboxAssignList();
   openModal('modal-inbox-assign');
@@ -6109,29 +6127,61 @@ function renderInboxAssignList() {
   list.innerHTML = tasks.map(t => {
     const enc = t.replace(/'/g, "\\'");
     const n = (SUBTASKS[t] || []).length;
-    return `<div onclick="assignInboxToTask('${enc}')" style="padding:14px 4px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;justify-content:space-between;gap:10px;">
+    return `<div onclick="chooseInboxAssignType('${enc}')" style="padding:14px 4px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;justify-content:space-between;gap:10px;">
       <span style="font-size:15px;color:var(--text);">${t.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</span>
-      <span style="font-size:12px;color:var(--subtext);white-space:nowrap;">${n} item${n === 1 ? '' : 's'}</span>
+      <span style="font-size:12px;color:var(--subtext);white-space:nowrap;">${n} item${n === 1 ? '' : 's'} ›</span>
     </div>`;
   }).join('');
 }
-function assignInboxToTask(task) {
+function chooseInboxAssignType(task) {
+  _inboxAssignTask = task;
+  const safe = task.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  document.getElementById('inbox-assign-list').innerHTML = `
+    <div style="padding:4px 4px 14px;font-size:14px;color:var(--subtext);">Add to <b style="color:var(--text);">${safe}</b> as…</div>
+    <button onclick="assignInboxToTask('permanent')" style="display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px;cursor:pointer;color:var(--text);">
+      <div style="font-size:15px;font-weight:600;">📋 Permanent checklist item</div>
+      <div style="font-size:13px;color:var(--subtext);margin-top:3px;">Part of this task’s checklist every time it’s done.</div>
+    </button>
+    <button onclick="assignInboxToTask('pinned')" style="display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;cursor:pointer;color:var(--text);">
+      <div style="font-size:15px;font-weight:600;">📌 Pinned note (until checked off)</div>
+      <div style="font-size:13px;color:var(--subtext);margin-top:3px;">Sticks to the top of this task each time it’s started, until someone ticks it off — then it’s gone.</div>
+    </button>
+    <div onclick="renderInboxAssignList()" style="margin-top:16px;color:var(--blue);font-size:15px;cursor:pointer;">‹ Back to tasks</div>`;
+}
+function assignInboxToTask(mode) {
+  const task = _inboxAssignTask;
   const arr = getInbox();
   const n = arr.find(x => x.id === _inboxAssignId);
-  if (!n) { closeModal('modal-inbox-assign'); return; }
-  // Add the note text as a checklist item on the task (no duplicates)
-  if (!SUBTASKS[task]) SUBTASKS[task] = [];
+  if (!task || !n) { closeModal('modal-inbox-assign'); return; }
   const text = n.text.trim();
-  if (!SUBTASKS[task].some(s => s.trim().toLowerCase() === text.toLowerCase())) {
-    SUBTASKS[task].push(text);
-    localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
+  if (mode === 'permanent') {
+    if (!SUBTASKS[task]) SUBTASKS[task] = [];
+    if (!SUBTASKS[task].some(s => s.trim().toLowerCase() === text.toLowerCase())) {
+      SUBTASKS[task].push(text);
+      localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
+    }
+  } else { // pinned
+    const tn = getTaskNotes();
+    if (!tn[task]) tn[task] = [];
+    tn[task].push({ id: 'tn' + Date.now() + Math.random().toString(36).slice(2, 6), text, ts: new Date().toISOString() });
+    saveTaskNotes(tn);
   }
-  // File the note as done, tagged with where it went
-  n.done = true; n.doneTs = new Date().toISOString(); n.movedTo = task;
+  n.done = true; n.doneTs = new Date().toISOString();
+  n.movedTo = task + (mode === 'pinned' ? ' (pinned)' : '');
   saveInbox(arr);
   closeModal('modal-inbox-assign');
   renderInbox();
-  showToast('Added to “' + task + '” ✓ — Publish Library to share');
+  showToast(mode === 'permanent' ? 'Added to checklist: ' + task + ' ✓ — Publish to share' : 'Pinned to: ' + task + ' ✓');
+}
+// Tick off a pinned task-note while clocked in — removes it for good.
+function completeTaskNote(id) {
+  if (!clockState || !clockState.task) return;
+  const tn = getTaskNotes();
+  tn[clockState.task] = (tn[clockState.task] || []).filter(p => p.id !== id);
+  if (!tn[clockState.task].length) delete tn[clockState.task];
+  saveTaskNotes(tn);
+  renderRunChecklist();
+  showToast('Note done ✓');
 }
 
 let _stepsEditingItem = null;
