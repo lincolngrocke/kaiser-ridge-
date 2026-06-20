@@ -1978,7 +1978,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-18.24';
+const APP_VERSION = '2026-06-18.25';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2583,9 +2583,11 @@ function renderRunChecklist() {
   // Pinned task-notes ride at the very top until ticked off (📌, amber).
   const pinnedRows = pinned.map(p => {
     const safe = p.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const caughtTs = p.caught || p.ts;
+    const caughtLine = caughtTs ? `<div style="font-size:11px;color:var(--subtext);margin-top:2px;">Caught ${_inboxStamp(caughtTs)}</div>` : '';
     return `<div onclick="completeTaskNote('${p.id}')" style="display:flex;align-items:flex-start;gap:8px;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer;">
       <span style="font-size:18px;flex-shrink:0;color:var(--subtext);">☐</span>
-      <span style="flex:1;font-size:14px;color:#FFD60A;">📌 ${safe}</span></div>`;
+      <div style="flex:1;"><span style="font-size:14px;color:#FFD60A;">📌 ${safe}</span>${caughtLine}</div></div>`;
   }).join('');
   const pinnedHeader = (pinned.length && items.length)
     ? `<div style="padding:6px 0 2px;font-size:11px;font-weight:700;color:#FFD60A;letter-spacing:.04em;">📌 NOTES — tap to tick off</div>` : '';
@@ -6303,7 +6305,7 @@ function assignInboxToTask(mode) {
         if (!orig[text]) orig[text] = { caught: note.ts || '', added: new Date().toISOString() };
       } else {
         if (!tn[task]) tn[task] = [];
-        tn[task].push({ id: 'tn' + (uid++) + Math.random().toString(36).slice(2, 5), text, ts: new Date().toISOString(), inboxId: note.id });
+        tn[task].push({ id: 'tn' + (uid++) + Math.random().toString(36).slice(2, 5), text, ts: new Date().toISOString(), caught: note.ts || '', inboxId: note.id });
       }
     });
     note.done = true; note.doneTs = new Date().toISOString();
