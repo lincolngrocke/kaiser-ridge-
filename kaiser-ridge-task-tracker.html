@@ -1363,7 +1363,7 @@
     <div class="modal-handle"></div>
     <div style="padding:0 20px 4px;display:flex;align-items:center;justify-content:space-between;">
       <span onclick="closeModal('modal-quick-capture')" style="color:var(--blue);font-size:16px;cursor:pointer;">Cancel</span>
-      <span style="font-size:17px;font-weight:600;">Quick Note</span>
+      <span id="quick-capture-title" style="font-size:17px;font-weight:600;">Quick Note</span>
       <span onclick="saveQuickCapture()" style="color:var(--blue);font-size:16px;font-weight:700;cursor:pointer;">Save</span>
     </div>
     <div style="padding:6px 20px 10px;font-size:13px;color:var(--subtext);">Catch the thought now — review it later in the Inbox (More → Inbox). Time-stamped automatically.</div>
@@ -1978,7 +1978,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-18.21';
+const APP_VERSION = '2026-06-18.22';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6077,20 +6077,42 @@ function _inboxStamp(iso) {
   return d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) +
     ' · ' + d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
+let _editingInboxId = null;
 function openQuickCapture() {
+  _editingInboxId = null;
+  document.getElementById('quick-capture-title').textContent = 'Quick Note';
   document.getElementById('quick-capture-text').value = '';
+  openModal('modal-quick-capture');
+  setTimeout(() => { const t = document.getElementById('quick-capture-text'); if (t) t.focus(); }, 150);
+}
+// Edit an existing note's text — keeps its original caught timestamp.
+function openInboxEdit(id) {
+  const note = getInbox().find(x => x.id === id);
+  if (!note) return;
+  _editingInboxId = id;
+  document.getElementById('quick-capture-title').textContent = 'Edit Note';
+  document.getElementById('quick-capture-text').value = note.text;
   openModal('modal-quick-capture');
   setTimeout(() => { const t = document.getElementById('quick-capture-text'); if (t) t.focus(); }, 150);
 }
 function saveQuickCapture() {
   const t = document.getElementById('quick-capture-text');
   const text = (t.value || '').trim();
-  if (!text) { closeModal('modal-quick-capture'); return; }
+  if (!text) { closeModal('modal-quick-capture'); _editingInboxId = null; return; }
   const inbox = getInbox();
-  inbox.unshift({ id: 'n' + Date.now() + Math.random().toString(36).slice(2, 6), text, ts: new Date().toISOString() });
-  saveInbox(inbox);
-  closeModal('modal-quick-capture');
-  showToast('Caught it ✓');
+  if (_editingInboxId) {
+    const note = inbox.find(x => x.id === _editingInboxId);
+    if (note) note.text = text;            // keep original ts (caught time)
+    _editingInboxId = null;
+    saveInbox(inbox);
+    closeModal('modal-quick-capture');
+    showToast('Note updated ✓');
+  } else {
+    inbox.unshift({ id: 'n' + Date.now() + Math.random().toString(36).slice(2, 6), text, ts: new Date().toISOString() });
+    saveInbox(inbox);
+    closeModal('modal-quick-capture');
+    showToast('Caught it ✓');
+  }
   if (document.getElementById('modal-inbox').classList.contains('open')) renderInbox();
 }
 let _inboxSelectMode = false, _inboxSelected = new Set();
@@ -6147,10 +6169,12 @@ function renderInbox() {
       </div>`;
     }
     const box = `<span onclick="toggleInboxDone('${n.id}')" style="font-size:22px;line-height:1;cursor:pointer;flex-shrink:0;padding-top:1px;color:${n.done ? 'var(--green)' : 'var(--subtext)'};">${n.done ? '☑' : '☐'}</span>`;
+    const editBtn = n.done ? '' : `<button onclick="openInboxEdit('${n.id}')" title="Edit note" style="background:none;border:none;color:var(--subtext);font-size:16px;cursor:pointer;padding:2px 4px;flex-shrink:0;">✏️</button>`;
     const assignBtn = n.done ? '' : `<button onclick="openInboxAssign('${n.id}')" title="Add to a task" style="background:none;border:none;color:var(--blue);font-size:18px;cursor:pointer;padding:2px 4px;flex-shrink:0;">📂</button>`;
     return `<div style="display:flex;gap:10px;align-items:flex-start;padding:12px 4px;border-bottom:1px solid var(--border);${n.done ? 'opacity:0.55;' : ''}">
       ${box}
       ${body}
+      ${editBtn}
       ${assignBtn}
       <button onclick="deleteInboxItem('${n.id}')" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:2px 4px;flex-shrink:0;">✕</button>
     </div>`;
