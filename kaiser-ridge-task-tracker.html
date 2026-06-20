@@ -1978,7 +1978,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-18.23';
+const APP_VERSION = '2026-06-18.24';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6743,6 +6743,29 @@ function saveDirTask() {
   if (_dirEditingKey) {
     const [oldFreq, oldGrp, oldTask] = _dirEditingKey.split('||');
     DIRECTORY = DIRECTORY.filter(r => !_dirKeyMatches(r, oldFreq, oldGrp, oldTask));
+    // RENAME: carry the whole history forward so it's the same task, not a new one.
+    if (oldTask !== task) {
+      let migrated = 0;
+      entries.forEach(e => { if (e.task === oldTask) { e.task = task; migrated++; } });
+      if (migrated) saveEntries();
+      // Pinned notes keyed by task name
+      const tnotes = getTaskNotes();
+      if (tnotes[oldTask]) { tnotes[task] = (tnotes[task] || []).concat(tnotes[oldTask]); delete tnotes[oldTask]; saveTaskNotes(tnotes); }
+      // Planner blocks (my day + Ethan's day)
+      ['kr_planner', 'kr_planner_ethan'].forEach(k => {
+        const arr = JSON.parse(localStorage.getItem(k) || '[]');
+        let ch = false;
+        arr.forEach(p => { if (p.task === oldTask) { p.task = task; ch = true; } });
+        if (ch) localStorage.setItem(k, JSON.stringify(arr));
+      });
+      _plannerPlans = JSON.parse(localStorage.getItem(plannerStoreKey()) || '[]');
+      // Task-order lists
+      const ord = JSON.parse(localStorage.getItem('kr_task_order') || '{}');
+      let ordCh = false;
+      Object.keys(ord).forEach(k => { ord[k] = (ord[k] || []).map(tn => { if (tn === oldTask) { ordCh = true; return task; } return tn; }); });
+      if (ordCh) localStorage.setItem('kr_task_order', JSON.stringify(ord));
+      if (migrated) showToast(migrated + ' past entr' + (migrated === 1 ? 'y' : 'ies') + ' kept with the renamed task');
+    }
     if (SUBTASKS[oldTask] && oldTask !== task) delete SUBTASKS[oldTask];
   }
 
