@@ -1960,7 +1960,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-18.17';
+const APP_VERSION = '2026-06-18.18';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2372,6 +2372,19 @@ function clockOut(overrideTime) {
       .map(d => {
         const t = new Date(d.at).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true });
         return `[${t}] (${fmtMin(dur[d.item])}) ${d.item}`;
+      });
+    const block = lines.join('\n');
+    entry.notes = entry.notes ? entry.notes + '\n' + block : block;
+  }
+  // Fold completed pinned notes into the entry — their permanent home, with the
+  // journey (caught → completed). Synced to the sheet via notes.
+  if (clockState.notesDone && clockState.notesDone.length) {
+    const lines = clockState.notesDone
+      .slice().sort((a, b) => new Date(a.at) - new Date(b.at))
+      .map(d => {
+        const t = new Date(d.at).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true });
+        const caught = d.caught ? ' (caught ' + _inboxStamp(d.caught) + ')' : '';
+        return `[${t}] 📌 ${d.text}${caught}`;
       });
     const block = lines.join('\n');
     entry.notes = entry.notes ? entry.notes + '\n' + block : block;
@@ -6217,14 +6230,24 @@ function completeTaskNote(id) {
   tn[task] = (tn[task] || []).filter(p => p.id !== id);
   if (!tn[task].length) delete tn[task];
   saveTaskNotes(tn);
-  // Record this completion on the originating inbox note — its full journey.
-  if (note && note.inboxId) {
-    const arr = getInbox();
-    const inb = arr.find(x => x.id === note.inboxId);
-    if (inb) {
-      if (!Array.isArray(inb.completions)) inb.completions = [];
-      inb.completions.push({ task, ts: new Date().toISOString() });
-      saveInbox(arr);
+  if (note) {
+    // Fold into this session so it lands in the task's timesheet entry (+ sheet),
+    // carrying its journey (caught → completed). This is its permanent home.
+    const inb = note.inboxId ? getInbox().find(x => x.id === note.inboxId) : null;
+    if (!Array.isArray(clockState.notesDone)) clockState.notesDone = [];
+    clockState.notesDone.push({ text: note.text, at: new Date().toISOString(), caught: inb ? inb.ts : (note.ts || '') });
+    localStorage.setItem('kr_clock', JSON.stringify(clockState));
+    // Inbox: clear the note once it's no longer pinned to ANY task (journey done);
+    // while other tasks still have it pinned, just record this completion.
+    if (note.inboxId) {
+      const stillPinned = Object.values(getTaskNotes()).some(a => a.some(p => p.inboxId === note.inboxId));
+      const arr = getInbox();
+      if (!stillPinned) {
+        saveInbox(arr.filter(x => x.id !== note.inboxId));
+      } else {
+        const inb2 = arr.find(x => x.id === note.inboxId);
+        if (inb2) { if (!Array.isArray(inb2.completions)) inb2.completions = []; inb2.completions.push({ task, ts: new Date().toISOString() }); saveInbox(arr); }
+      }
     }
   }
   renderRunChecklist();
