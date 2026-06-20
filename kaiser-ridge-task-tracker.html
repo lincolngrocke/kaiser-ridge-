@@ -1396,7 +1396,8 @@
       <span style="font-size:17px;font-weight:600;">Add to a task</span>
       <span style="width:48px;"></span>
     </div>
-    <div style="padding:6px 20px 10px;font-size:13px;color:var(--subtext);">Pick a task — the note is added to its checklist, then filed as done with a “moved to” tag.</div>
+    <div style="padding:6px 20px 8px;font-size:13px;color:var(--subtext);">Pick a task — the note is added to its checklist, then filed as done with a “moved to” tag.</div>
+    <div id="inbox-assign-note" style="margin:0 20px 10px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:10px;font-size:14px;color:var(--text);white-space:pre-wrap;line-height:1.4;max-height:22vh;overflow-y:auto;"></div>
     <div style="padding:0 20px 10px;">
       <input id="inbox-assign-search" type="search" placeholder="Find a task…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="renderInboxAssignList()" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;">
     </div>
@@ -1956,7 +1957,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-18.14';
+const APP_VERSION = '2026-06-18.15';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6110,6 +6111,9 @@ function saveTaskNotes(o) { localStorage.setItem('kr_task_notes', JSON.stringify
 let _inboxAssignId = null, _inboxAssignTask = null;
 function openInboxAssign(id) {
   _inboxAssignId = id; _inboxAssignTask = null;
+  const note = getInbox().find(x => x.id === id);
+  const noteEl = document.getElementById('inbox-assign-note');
+  if (noteEl) noteEl.textContent = note ? '📝 ' + note.text : '';
   document.getElementById('inbox-assign-search').value = '';
   renderInboxAssignList();
   openModal('modal-inbox-assign');
