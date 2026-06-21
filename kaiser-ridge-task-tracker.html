@@ -1988,7 +1988,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.2';
+const APP_VERSION = '2026-06-21.3';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2583,9 +2583,9 @@ function renderRunChecklist() {
       html += steps.map(st => {
         const encStep = st.replace(/'/g, "\\'");
         const checked = !!(stepChecks[s] && stepChecks[s][st]);
-        return `<div onclick="toggleChecklistStep('${enc}','${encStep}')" style="display:flex;align-items:center;gap:10px;padding:7px 0 7px 30px;border-bottom:1px solid var(--border);cursor:pointer;">
-          <span style="font-size:16px;flex-shrink:0;color:${checked ? 'var(--green)' : 'var(--subtext)'};">${checked ? '☑' : '☐'}</span>
-          <span style="font-size:13px;${checked ? 'color:var(--subtext);text-decoration:line-through;' : 'color:var(--text);'}">${st}</span></div>`;
+        return `<div onclick="toggleChecklistStep('${enc}','${encStep}')" style="display:flex;align-items:center;gap:12px;padding:9px 0 9px 30px;border-bottom:1px solid var(--border);cursor:pointer;">
+          <span style="font-size:22px;flex-shrink:0;color:${checked ? 'var(--green)' : 'var(--subtext)'};">${checked ? '☑' : '☐'}</span>
+          <span style="font-size:15px;${checked ? 'color:var(--subtext);text-decoration:line-through;' : 'color:var(--text);'}">${st}</span></div>`;
       }).join('');
     }
     return html;
