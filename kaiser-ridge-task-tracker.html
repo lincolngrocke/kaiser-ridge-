@@ -986,6 +986,7 @@
   </div>
   <div style="padding:0 16px 8px;display:flex;gap:8px;align-items:center;">
     <button id="planner-add-btn" onclick="openPlannerAddTask()" style="flex:1;background:var(--blue);color:#fff;border:none;border-radius:12px;padding:10px;font-size:15px;font-weight:600;cursor:pointer;">+ Add Task</button>
+    <button id="planner-paste-btn" onclick="pastePlannerBlock()" title="Paste copied task into this day" style="display:none;background:var(--green);color:#fff;border:none;border-radius:12px;padding:10px 12px;font-size:15px;font-weight:600;cursor:pointer;">📋 Paste</button>
     <button id="planner-cal-btn" onclick="pushPlannerToCalendar()" title="Push this day to Google Calendar" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;font-size:15px;cursor:pointer;">📆</button>
     <button onclick="plannerGoToday()" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-size:13px;color:var(--blue);cursor:pointer;">Today</button>
   </div>
@@ -1494,6 +1495,7 @@
       <button onclick="plannerClockIn()" style="width:100%;background:var(--green);color:#fff;border:none;border-radius:14px;padding:14px;font-size:17px;font-weight:700;cursor:pointer;">▶ Clock In Now</button>
       <button id="planner-resume-btn" onclick="plannerResume()" style="display:none;width:100%;background:var(--blue);color:#fff;border:none;border-radius:14px;padding:14px;font-size:17px;font-weight:700;cursor:pointer;">▶ Resume This Task</button>
       <div id="planner-resume-note" style="display:none;font-size:12px;color:var(--subtext);text-align:center;margin-top:8px;">Starts a new session now and keeps the checklist items you already finished ticked off, so you can work through the rest.</div>
+      <button id="planner-copy-btn" onclick="copyPlannerBlock()" style="width:100%;margin-top:10px;background:none;border:1px solid var(--blue);color:var(--blue);border-radius:12px;padding:11px;font-size:15px;font-weight:600;cursor:pointer;">⧉ Copy — paste to another day</button>
     </div>
   </div>
 </div>
@@ -1988,7 +1990,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.3';
+const APP_VERSION = '2026-06-21.4';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -7523,6 +7525,8 @@ function renderPlannerScreen() {
 
   // Manager: show the My Day / Ethan's Day switcher + send button. Worker: hide
   // (their planner just receives assignments) and show the assignment banner.
+  const pasteBtn = document.getElementById('planner-paste-btn');
+  if (pasteBtn) pasteBtn.style.display = _plannerClipboard ? '' : 'none';
   const manager = !isWorker();
   const switchEl = document.getElementById('planner-view-switch');
   const sendRow = document.getElementById('planner-send-row');
@@ -8100,6 +8104,29 @@ function deletePlannerBlock() {
   closeModal('modal-planner-detail');
   renderPlannerScreen();
   showToast('Removed');
+}
+
+// Copy a planned block, then Paste it into any day (great for multi-day tasks).
+let _plannerClipboard = null;
+function copyPlannerBlock() {
+  const p = _plannerPlans.find(x => x.id === _plannerDetailId);
+  if (!p) return;
+  const { id, date, ...rest } = p;                // keep task/time/duration/etc.
+  _plannerClipboard = JSON.parse(JSON.stringify(rest));
+  closeModal('modal-planner-detail');
+  renderPlannerScreen();                          // reveals the 📋 Paste button
+  showToast('Copied — open a day and tap 📋 Paste');
+}
+function pastePlannerBlock() {
+  if (!_plannerClipboard) { showToast('Nothing copied yet'); return; }
+  const block = Object.assign(JSON.parse(JSON.stringify(_plannerClipboard)), {
+    id: 'p' + Date.now() + Math.random().toString(36).slice(2, 6),
+    date: plannerDateStr(_plannerDate),
+  });
+  _plannerPlans.push(block);
+  savePlanner();
+  renderPlannerScreen();
+  showToast('Pasted into ' + _plannerDate.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }));
 }
 
 // Remove this block's Google Calendar event (if one was pushed). Fire-and-forget;
