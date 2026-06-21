@@ -814,6 +814,7 @@
   <div class="update-banner" id="restore-clock-banner" onclick="restoreDiscardedClock()" style="display:none;background:var(--green);"></div>
   <div class="backup-banner" id="backup-banner-clock" onclick="exportBackup()" style="display:none;"></div>
   <div class="update-banner" id="assign-banner-clock" onclick="ackAssignmentBanner()" style="display:none;background:var(--green);"></div>
+  <div class="update-banner" id="undo-banner" onclick="doUndo()" style="display:none;background:#FF9500;"></div>
 
   <div class="scroll-area">
     <!-- Summary bar -->
@@ -1261,6 +1262,7 @@
   <div class="update-banner" id="library-banner-running" onclick="pullLibrary()" style="display:none;background:var(--green);">📋 New task list available — tap to update</div>
   <div class="backup-banner" id="backup-banner-running" onclick="exportBackup()" style="display:none;"></div>
   <div class="update-banner" id="assign-banner-running" onclick="ackAssignmentBanner()" style="display:none;background:var(--green);"></div>
+  <div class="update-banner" id="undo-banner-running" onclick="doUndo()" style="display:none;background:#FF9500;"></div>
   <div class="running-meta">
     <button class="running-add-note" onclick="openNoteModal()">📋 Add Note</button>
     <button class="running-tag-btn" onclick="openQuickCapture()">💡 Capture</button>
@@ -1990,7 +1992,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.7';
+const APP_VERSION = '2026-06-21.8';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2330,6 +2332,7 @@ function handleMainBtn() {
 }
 
 function startClock(taskInfo) {
+  _lastUndo = null;   // fresh session — drop any stale undo
   clockState = {
     running: true,
     startMs: Date.now(),
@@ -2354,6 +2357,7 @@ function startClock(taskInfo) {
 
 function clockOut(overrideTime) {
   if (!clockState || !clockState.running) return;
+  _lastUndo = null;   // session ending — in-session undo no longer applies
   let endMs = Date.now();
   if (overrideTime) {
     const now = new Date();
@@ -2481,6 +2485,7 @@ function renderClockState() {
   }
   updateRestoreClockBanner();
   updateSummary();
+  renderUndo();
 }
 
 // ── Live checklist timing (running clock) ───────────────────────────────────
@@ -2522,15 +2527,46 @@ function _checklistDurations() {
   });
   return out;
 }
+// ── One-step Undo for accidental completions ─────────────────────────────────
+// Snapshot the affected storage keys before an action; Undo restores them.
+const _UNDO_KEYS = ['kr_clock', 'kr_task_notes', 'kr_inbox'];
+let _lastUndo = null;
+function _undoSnapshot() { const s = {}; _UNDO_KEYS.forEach(k => s[k] = localStorage.getItem(k)); return s; }
+function setUndo(label) { _lastUndo = { label, snap: _undoSnapshot() }; renderUndo(); }
+function renderUndo() {
+  ['undo-banner', 'undo-banner-running'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (_lastUndo) { el.textContent = '↩ Undo: ' + _lastUndo.label; el.style.display = 'block'; }
+    else el.style.display = 'none';
+  });
+}
+function doUndo() {
+  if (!_lastUndo) return;
+  const snap = _lastUndo.snap;
+  Object.keys(snap).forEach(k => { if (snap[k] === null) localStorage.removeItem(k); else localStorage.setItem(k, snap[k]); });
+  clockState = JSON.parse(localStorage.getItem('kr_clock') || 'null');
+  _lastUndo = null;
+  renderClockState();          // refreshes checklist + pinned notes + undo bar
+  updateInboxCount();
+  if (document.getElementById('modal-inbox') && document.getElementById('modal-inbox').classList.contains('open')) renderInbox();
+  showToast('Undone ↩');
+}
+function clearUndo() { _lastUndo = null; renderUndo(); }
+
 let _expandedChecklistItems = new Set();
 function markChecklistItemDone(item) {
   if (!clockState || !clockState.running) return;
+  const before = _undoSnapshot();
   if (!Array.isArray(clockState.checklistDone)) clockState.checklistDone = [];
   const i = clockState.checklistDone.findIndex(d => d.item === item);
-  if (i >= 0) clockState.checklistDone.splice(i, 1);          // tap again to undo
+  let undone = false;
+  if (i >= 0) { clockState.checklistDone.splice(i, 1); undone = true; }   // tap again to undo
   else { clockState.checklistDone.push({ item, at: new Date().toISOString() }); _expandedChecklistItems.delete(item); }
   localStorage.setItem('kr_clock', JSON.stringify(clockState));
+  if (!undone) { _lastUndo = { label: 'completed “' + (item.length > 24 ? item.slice(0, 24) + '…' : item) + '”', snap: before }; }
   renderRunChecklist();
+  renderUndo();
 }
 function toggleChecklistExpand(item) {
   if (_expandedChecklistItems.has(item)) _expandedChecklistItems.delete(item);
@@ -6485,6 +6521,7 @@ async function assignInboxToTask(mode) {
 function completeTaskNote(id) {
   if (!clockState || !clockState.task) return;
   const task = clockState.task;
+  const before = _undoSnapshot();
   const tn = getTaskNotes();
   const note = (tn[task] || []).find(p => p.id === id);
   tn[task] = (tn[task] || []).filter(p => p.id !== id);
@@ -6511,6 +6548,7 @@ function completeTaskNote(id) {
         if (inb2) { if (!Array.isArray(inb2.completions)) inb2.completions = []; inb2.completions.push({ task, ts: new Date().toISOString() }); saveInbox(arr); }
       }
     }
+    _lastUndo = { label: 'completed note “' + (note.text.length > 22 ? note.text.slice(0, 22) + '…' : note.text) + '”', snap: before };
   }
   renderClockState();   // refresh checklist + the live notes shown on the entry
   showToast('Note done ✓');
