@@ -1990,7 +1990,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.4';
+const APP_VERSION = '2026-06-21.5';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -7818,6 +7818,7 @@ function renderPlannerDoneBlock(entry, grid) {
 function openPlannerDoneDetail(entry) {
   const startStr = formatTimeAmPm(entry.clockIn);
   const endStr   = formatTimeAmPm(entry.clockOut);
+  _plannerDetailCopySource = { task: entry.task, group: entry.group, frequency: entry.frequency, location: entry.location, tool: entry.tool, durationHours: entry.durationHours, startTime: entry.clockIn };
 
   // Parse ticked checklist items from notes — lines matching [time] pattern
   const tickedItems = [];
@@ -8036,6 +8037,7 @@ function openPlannerDetail(planId) {
   const plan = _plannerPlans.find(p => p.id === planId);
   if (!plan) return;
   _plannerDetailId = planId;
+  _plannerDetailCopySource = { task: plan.task, group: plan.group, frequency: plan.frequency, location: plan.location, tool: plan.tool, durationHours: plan.durationHours, startTime: plan.startTime };
   // Restore buttons (may have been hidden by done-detail)
   const clockInBtn = document.querySelector('#modal-planner-detail button[onclick="plannerClockIn()"]');
   const deleteBtn  = document.querySelector('#modal-planner-detail button[onclick="deletePlannerBlock()"]');
@@ -8106,13 +8108,11 @@ function deletePlannerBlock() {
   showToast('Removed');
 }
 
-// Copy a planned block, then Paste it into any day (great for multi-day tasks).
-let _plannerClipboard = null;
+// Copy a planned block OR a completed task, then Paste into any day.
+let _plannerClipboard = null, _plannerDetailCopySource = null;
 function copyPlannerBlock() {
-  const p = _plannerPlans.find(x => x.id === _plannerDetailId);
-  if (!p) return;
-  const { id, date, ...rest } = p;                // keep task/time/duration/etc.
-  _plannerClipboard = JSON.parse(JSON.stringify(rest));
+  if (!_plannerDetailCopySource) { showToast('Nothing to copy'); return; }
+  _plannerClipboard = JSON.parse(JSON.stringify(_plannerDetailCopySource));
   closeModal('modal-planner-detail');
   renderPlannerScreen();                          // reveals the 📋 Paste button
   showToast('Copied — open a day and tap 📋 Paste');
