@@ -1988,7 +1988,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.1';
+const APP_VERSION = '2026-06-21.2';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2595,7 +2595,7 @@ function renderRunChecklist() {
     const safe = p.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const caughtTs = p.caught || p.ts;
     const caughtLine = caughtTs ? `<div style="font-size:11px;color:var(--subtext);margin-top:2px;">Caught ${_inboxStamp(caughtTs)}</div>` : '';
-    const thumb = p.image ? `<img src="${p.image}" onclick="event.stopPropagation();openImageLightbox(this.src)" style="margin-top:6px;max-height:80px;max-width:100%;border-radius:8px;display:block;cursor:pointer;">` : '';
+    const thumb = _photoThumbHtml(p, 80);
     return `<div onclick="completeTaskNote('${p.id}')" style="display:flex;align-items:flex-start;gap:8px;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer;">
       <span style="font-size:18px;flex-shrink:0;color:var(--subtext);">☐</span>
       <div style="flex:1;min-width:0;"><span style="font-size:14px;color:#FFD60A;">📌 ${safe}</span>${caughtLine}${thumb}</div></div>`;
@@ -2610,6 +2610,7 @@ function renderRunChecklist() {
   el.innerHTML = `<div style="background:#000;padding:6px 0;font-size:12px;font-weight:700;color:var(--subtext);letter-spacing:.04em;border-bottom:1px solid var(--border);">${headText}</div><div id="run-checklist-scroll" style="flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;">${pinnedHeader}${pinnedRows}${rows}</div>`;
   const sc = document.getElementById('run-checklist-scroll');
   if (sc) sc.scrollTop = prevScroll;
+  _loadPhotoThumbs();
 }
 
 // ── Per-item checklist averages (Dashboard → Checklist Item Times) ──────────
@@ -6098,8 +6099,52 @@ function _inboxStamp(iso) {
   return d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) +
     ' · ' + d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
-let _editingInboxId = null, _captureImage = null;
-// Resize+compress a chosen photo to a small JPEG data URL (localStorage-safe).
+let _editingInboxId = null, _captureImage = null, _captureImageId = null, _captureOldImageId = null;
+const _PHOTO_PLACEHOLDER = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+const _photoCache = {};
+// Upload a compressed data URL to Drive (via Apps Script); returns its file id.
+async function _uploadPhoto(dataUrl) {
+  const url = localStorage.getItem('kr_sheet_url');
+  if (!url) return null;
+  try {
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'uploadPhoto', dataUrl }) });
+    const json = await res.json();
+    return (json && json.success && json.id) ? json.id : null;
+  } catch (e) { return null; }
+}
+function _deletePhoto(id) {
+  const url = localStorage.getItem('kr_sheet_url');
+  if (!url || !id) return;
+  fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'deletePhoto', id }) }).catch(() => {});
+}
+async function _fetchPhoto(id) {
+  if (_photoCache[id]) return _photoCache[id];
+  const url = localStorage.getItem('kr_sheet_url');
+  if (!url) return null;
+  try {
+    const res = await fetch(url + (url.includes('?') ? '&' : '?') + 'photo=' + encodeURIComponent(id));
+    const json = await res.json();
+    if (json && json.success && json.dataUrl) { _photoCache[id] = json.dataUrl; return json.dataUrl; }
+  } catch (e) {}
+  return null;
+}
+// After a render, fill in any Drive-photo thumbnails (lazy, cached per session).
+function _loadPhotoThumbs() {
+  document.querySelectorAll('img[data-pid]:not([data-loaded])').forEach(img => {
+    img.dataset.loaded = '1';
+    const id = img.dataset.pid;
+    if (_photoCache[id]) { img.src = _photoCache[id]; return; }
+    _fetchPhoto(id).then(d => { if (d) img.src = d; });
+  });
+}
+// Thumbnail HTML for an object that has either a Drive imageId or a legacy local image.
+function _photoThumbHtml(obj, maxH) {
+  const base = `margin-top:8px;max-height:${maxH || 90}px;max-width:100%;border-radius:8px;display:block;cursor:pointer;`;
+  if (obj.imageId) return `<img data-pid="${obj.imageId}" src="${_PHOTO_PLACEHOLDER}" onclick="event.stopPropagation();if(this.src&&!this.src.startsWith('data:image/gif'))openImageLightbox(this.src)" style="${base}background:var(--border);min-height:48px;">`;
+  if (obj.image) return `<img src="${obj.image}" onclick="event.stopPropagation();openImageLightbox(this.src)" style="${base}">`;
+  return '';
+}
+// Resize+compress a chosen photo to a small JPEG data URL.
 function _compressImage(file, maxDim, quality) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -6124,7 +6169,7 @@ async function onCapturePhoto(ev) {
   const file = ev.target.files && ev.target.files[0];
   ev.target.value = '';
   if (!file) return;
-  try { _captureImage = await _compressImage(file, 1000, 0.6); renderCapturePreview(); }
+  try { _captureImage = await _compressImage(file, 1000, 0.6); _captureImageId = null; renderCapturePreview(); }
   catch (e) { showToast('Could not load that image'); }
 }
 function renderCapturePreview() {
@@ -6136,11 +6181,12 @@ function renderCapturePreview() {
         <button onclick="removeCaptureImage()" style="position:absolute;top:-8px;right:-8px;width:26px;height:26px;border-radius:50%;background:var(--red);color:#fff;border:none;font-size:14px;cursor:pointer;">✕</button>
       </div>` : '';
 }
-function removeCaptureImage() { _captureImage = null; renderCapturePreview(); }
+function removeCaptureImage() { _captureImage = null; _captureImageId = null; renderCapturePreview(); }
 function openImageLightbox(src) { document.getElementById('image-view-img').src = src; openModal('modal-image-view'); }
 
 function openQuickCapture() {
-  _editingInboxId = null; _captureImage = null; renderCapturePreview();
+  _editingInboxId = null; _captureImage = null; _captureImageId = null; _captureOldImageId = null;
+  renderCapturePreview();
   document.getElementById('quick-capture-title').textContent = 'Quick Note';
   document.getElementById('quick-capture-text').value = '';
   openModal('modal-quick-capture');
@@ -6150,28 +6196,56 @@ function openQuickCapture() {
 function openInboxEdit(id) {
   const note = getInbox().find(x => x.id === id);
   if (!note) return;
-  _editingInboxId = id; _captureImage = note.image || null; renderCapturePreview();
+  _editingInboxId = id;
+  _captureImageId = note.imageId || null;
+  _captureOldImageId = note.imageId || null;
+  _captureImage = note.image || null;   // legacy local image, if any
+  renderCapturePreview();
+  if (note.imageId) {                    // pull the Drive photo into the preview
+    _fetchPhoto(note.imageId).then(d => { if (d && _editingInboxId === id) { _captureImage = d; renderCapturePreview(); } });
+  }
   document.getElementById('quick-capture-title').textContent = 'Edit Note';
   document.getElementById('quick-capture-text').value = note.text;
   openModal('modal-quick-capture');
   setTimeout(() => { const t = document.getElementById('quick-capture-text'); if (t) t.focus(); }, 150);
 }
-function saveQuickCapture() {
+async function saveQuickCapture() {
   const t = document.getElementById('quick-capture-text');
   const text = (t.value || '').trim();
-  if (!text && !_captureImage) { closeModal('modal-quick-capture'); _editingInboxId = null; return; }
+  if (!text && !_captureImage) { closeModal('modal-quick-capture'); _editingInboxId = null; _captureOldImageId = null; return; }
+  // Resolve the image: keep existing Drive id, upload a new photo, or fall back
+  // to keeping it on-device this once if the upload can't reach Drive.
+  let imageId = _captureImageId, localImg = null;
+  if (!imageId && _captureImage) {
+    showToast('Uploading photo…');
+    imageId = await _uploadPhoto(_captureImage);
+    if (!imageId) { localImg = _captureImage; showToast('Saved photo on-device (no connection to Drive)'); }
+  }
+  // Clean up a replaced/removed Drive photo
+  if (_captureOldImageId && _captureOldImageId !== imageId) _deletePhoto(_captureOldImageId);
+
   const inbox = getInbox();
+  const apply = note => {
+    note.text = text;
+    if (imageId) { note.imageId = imageId; delete note.image; }
+    else if (localImg) { note.image = localImg; delete note.imageId; }
+    else { delete note.imageId; delete note.image; }
+  };
+  let ok;
   if (_editingInboxId) {
     const note = inbox.find(x => x.id === _editingInboxId);
-    if (note) { note.text = text; if (_captureImage) note.image = _captureImage; else delete note.image; }
-    _editingInboxId = null; _captureImage = null;
-    if (saveInbox(inbox)) { closeModal('modal-quick-capture'); showToast('Note updated ✓'); }
+    if (note) apply(note);
+    ok = saveInbox(inbox);
+    if (ok) showToast('Note updated ✓');
   } else {
-    const note = { id: 'n' + Date.now() + Math.random().toString(36).slice(2, 6), text, ts: new Date().toISOString() };
-    if (_captureImage) note.image = _captureImage;
-    inbox.unshift(note); _captureImage = null;
-    if (saveInbox(inbox)) { closeModal('modal-quick-capture'); showToast('Caught it ✓'); }
+    const note = { id: 'n' + Date.now() + Math.random().toString(36).slice(2, 6), ts: new Date().toISOString() };
+    apply(note);
+    inbox.unshift(note);
+    ok = saveInbox(inbox);
+    if (ok) showToast('Caught it ✓');
   }
+  _editingInboxId = null; _captureImage = null; _captureImageId = null; _captureOldImageId = null;
+  if (ok) closeModal('modal-quick-capture');
   if (document.getElementById('modal-inbox').classList.contains('open')) renderInbox();
 }
 let _inboxSelectMode = false, _inboxSelected = new Set();
@@ -6216,7 +6290,7 @@ function renderInbox() {
     if (n.movedTo) meta += '　•　📂 → ' + esc(n.movedTo);
     if (n.done && n.doneTs) meta += '　•　✓ Done ' + _inboxStamp(n.doneTs);
     (n.completions || []).forEach(c => { meta += '　•　✅ ' + esc(c.task) + ' ' + _inboxStamp(c.ts); });
-    const thumb = n.image ? `<img src="${n.image}" onclick="event.stopPropagation();openImageLightbox(this.src)" style="margin-top:8px;max-height:90px;max-width:100%;border-radius:8px;display:block;cursor:pointer;">` : '';
+    const thumb = _photoThumbHtml(n);
     const body = `<div style="flex:1;min-width:0;">
         <div style="font-size:15px;white-space:pre-wrap;line-height:1.4;${n.done ? 'text-decoration:line-through;color:var(--subtext);' : 'color:var(--text);'}">${safe}</div>
         ${thumb}
@@ -6241,6 +6315,7 @@ function renderInbox() {
     </div>`;
   }).join('');
   _updateInboxFooter();
+  _loadPhotoThumbs();
 }
 function toggleInboxDone(id) {
   const arr = getInbox();
@@ -6361,7 +6436,7 @@ function assignInboxToTask(mode) {
         if (!orig[text]) orig[text] = { caught: note.ts || '', added: new Date().toISOString() };
       } else {
         if (!tn[task]) tn[task] = [];
-        tn[task].push({ id: 'tn' + (uid++) + Math.random().toString(36).slice(2, 5), text, ts: new Date().toISOString(), caught: note.ts || '', inboxId: note.id, image: note.image || '' });
+        tn[task].push({ id: 'tn' + (uid++) + Math.random().toString(36).slice(2, 5), text, ts: new Date().toISOString(), caught: note.ts || '', inboxId: note.id, image: note.image || '', imageId: note.imageId || '' });
       }
     });
     note.done = true; note.doneTs = new Date().toISOString();

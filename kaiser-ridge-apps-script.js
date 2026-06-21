@@ -94,6 +94,17 @@ function doGet(e) {
       return jsonResponse({ success: true, assignment: assignment });
     }
 
+    // Return a previously uploaded photo (by Drive file id) as a data URL.
+    if (p.photo) {
+      try {
+        const file = DriveApp.getFileById(String(p.photo));
+        const blob = file.getBlob();
+        return jsonResponse({ success: true, dataUrl: 'data:' + blob.getContentType() + ';base64,' + Utilities.base64Encode(blob.getBytes()) });
+      } catch (err) {
+        return jsonResponse({ success: false, error: 'Photo not found' });
+      }
+    }
+
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
     // App Directory
@@ -143,6 +154,19 @@ function doPost(e) {
     // Manager publishes the shared task library for other devices to pull
     if (data.action === 'publishLibrary') {
       return handlePublishLibrary(data);
+    }
+    // Save a captured photo to Drive ("KR App Photos" folder); return its file id.
+    if (data.action === 'uploadPhoto') {
+      const m = String(data.dataUrl || '').match(/^data:(.+?);base64,(.*)$/);
+      if (!m) return jsonResponse({ success: false, error: 'Bad image data' });
+      const blob = Utilities.newBlob(Utilities.base64Decode(m[2]), m[1], (data.name || ('kr-photo-' + Date.now() + '.jpg')));
+      const file = getKrPhotosFolder().createFile(blob);
+      return jsonResponse({ success: true, id: file.getId() });
+    }
+    // Remove a photo from Drive (when a note/image is deleted)
+    if (data.action === 'deletePhoto') {
+      try { DriveApp.getFileById(String(data.id)).setTrashed(true); } catch (e) { /* already gone */ }
+      return jsonResponse({ success: true });
     }
     // Manager assigns a planned day to a worker — stored per person, pulled by them
     if (data.action === 'assignPlanner') {
@@ -434,6 +458,13 @@ function formatVersion(v) {
   const n = parseInt(v, 10);
   if (!isNaN(n) && String(n) === String(v)) return new Date(n).toLocaleString();
   return v;
+}
+
+// Find (or create) the Drive folder where captured note photos are stored.
+function getKrPhotosFolder() {
+  const NAME = 'KR App Photos';
+  const it = DriveApp.getFoldersByName(NAME);
+  return it.hasNext() ? it.next() : DriveApp.createFolder(NAME);
 }
 
 function jsonResponse(obj) {
