@@ -94,6 +94,14 @@ function doGet(e) {
       return jsonResponse({ success: true, assignment: assignment });
     }
 
+    // Pinned notes the manager sent to a person, pulled onto their device.
+    if (p.pins === '1') {
+      const who = String(p.who || '').trim();
+      let pins = [];
+      try { pins = JSON.parse(props.getProperty('kr_pins_' + who) || '[]'); } catch (e) {}
+      return jsonResponse({ success: true, pins: pins });
+    }
+
     // Return a previously uploaded photo (by Drive file id) as a data URL.
     if (p.photo) {
       try {
@@ -175,6 +183,18 @@ function doPost(e) {
       const payload = { version: String(data.version || Date.now()), plans: data.plans || [] };
       props.setProperty('kr_assign_' + who, JSON.stringify(payload));
       return jsonResponse({ success: true, version: payload.version, count: payload.plans.length });
+    }
+    // Manager pins note(s) to a task for a person — appended to their pin list.
+    if (data.action === 'pinNote') {
+      const props = PropertiesService.getScriptProperties();
+      const who = String(data.assignee || '').trim();
+      const key = 'kr_pins_' + who;
+      let arr = [];
+      try { arr = JSON.parse(props.getProperty(key) || '[]'); } catch (e) {}
+      (data.pins || []).forEach(pin => arr.push(pin));
+      if (arr.length > 200) arr = arr.slice(arr.length - 200);  // keep it bounded
+      props.setProperty(key, JSON.stringify(arr));
+      return jsonResponse({ success: true, count: (data.pins || []).length });
     }
 
     const ss    = SpreadsheetApp.getActiveSpreadsheet();

@@ -1990,7 +1990,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.5';
+const APP_VERSION = '2026-06-21.6';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2227,6 +2227,7 @@ window.addEventListener('load', () => {
   updateInboxCount();
   updateAssignmentBanner();
   pullAssignments();                       // worker: fetch the day the manager planned
+  pullPins();                              // worker: fetch pinned notes from the manager
   setInterval(pullAssignments, 60000);     // worker: keep the plan live (time changes/deletes) without reopening
   checkForUpdate();
   checkLibraryUpdate();
@@ -2236,6 +2237,7 @@ window.addEventListener('load', () => {
     if (!document.hidden) checkLibraryUpdate();
     if (!document.hidden) autoSyncPending();
     if (!document.hidden) pullAssignments();
+    if (!document.hidden) pullPins();
   });
 
   // After a Force-Update reload, return to the screen the user was on.
@@ -4275,7 +4277,7 @@ const KR_BACKUP_KEYS = [
   'kr_task_order', 'kr_entries', 'kr_user_name', 'kr_weekly_target',
   'kr_sheet_url', 'kr_gmaps_key', 'kr_dark_mode',
   'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
-  'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_subtask_origin'
+  'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_subtask_origin', 'kr_pins_applied'
 ];
 
 function buildBackupSnapshot() {
@@ -6410,21 +6412,47 @@ function chooseInboxAssignType() {
       <div style="font-size:15px;font-weight:600;">📋 Permanent checklist item</div>
       <div style="font-size:13px;color:var(--subtext);margin-top:3px;">Part of each task’s checklist every time it’s done.</div>
     </button>
-    <button onclick="assignInboxToTask('pinned')" style="display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;cursor:pointer;color:var(--text);">
-      <div style="font-size:15px;font-weight:600;">📌 Pinned note (until checked off)</div>
-      <div style="font-size:13px;color:var(--subtext);margin-top:3px;">Sticks to the top of each task each time it’s started, until someone ticks it off — then it’s gone.</div>
+    <button onclick="assignInboxToTask('pinned')" style="display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px;cursor:pointer;color:var(--text);">
+      <div style="font-size:15px;font-weight:600;">📌 Pin for me (until checked off)</div>
+      <div style="font-size:13px;color:var(--subtext);margin-top:3px;">Shows at the top of the task on <b>this</b> phone until you tick it off.</div>
     </button>
+    ${isWorker() ? '' : `<button onclick="assignInboxToTask('pinned-ethan')" style="display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;cursor:pointer;color:var(--text);">
+      <div style="font-size:15px;font-weight:600;">📌 Pin for Ethan (until checked off)</div>
+      <div style="font-size:13px;color:var(--subtext);margin-top:3px;">Sends it to Ethan’s phone — shows at the top of the task there until he ticks it off.</div>
+    </button>`}
     <div onclick="backToInboxAssignList()" style="margin-top:16px;color:var(--blue);font-size:15px;cursor:pointer;">‹ Back to tasks</div>`;
 }
 function backToInboxAssignList() {
   document.getElementById('inbox-assign-search-row').style.display = '';
   renderInboxAssignList();
 }
-function assignInboxToTask(mode) {
+async function assignInboxToTask(mode) {
   const tasks = [..._inboxAssignSelected];
   const arr = getInbox();
   const notes = _inboxAssignNoteIds.map(id => arr.find(x => x.id === id)).filter(Boolean);
   if (!tasks.length || !notes.length) { closeModal('modal-inbox-assign'); return; }
+  const tagEarly = tasks.length === 1 ? tasks[0] : tasks.length + ' tasks';
+  // Pin to Ethan's phone via the backend.
+  if (mode === 'pinned-ethan') {
+    const url = localStorage.getItem('kr_sheet_url');
+    if (!url) { showToast('Add your Apps Script URL in Settings first'); return; }
+    const pins = [];
+    let pid = Date.now();
+    notes.forEach(note => { tasks.forEach(task => { pins.push({ id: 'tn' + (pid++) + Math.random().toString(36).slice(2, 5), task, text: note.text.trim(), ts: new Date().toISOString(), caught: note.ts || '' }); }); });
+    showToast('Sending to Ethan…');
+    try {
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'pinNote', assignee: 'Ethan', pins }) });
+      const json = await res.json();
+      if (!json || !json.success) { showToast('Send failed' + (json && json.error ? ': ' + json.error : '')); return; }
+    } catch (e) { showToast('Send failed — check connection'); return; }
+    notes.forEach(note => { note.done = true; note.doneTs = new Date().toISOString(); note.movedTo = tagEarly + ' (pinned · Ethan)'; });
+    saveInbox(arr);
+    closeModal('modal-inbox-assign');
+    _inboxSelectMode = false; _inboxSelected = new Set(); _syncInboxSelectUI();
+    renderInbox();
+    showToast('Sent ' + notes.length + ' note' + (notes.length === 1 ? '' : 's') + ' to Ethan ✓');
+    return;
+  }
   const tn = (mode === 'pinned') ? getTaskNotes() : null;
   const orig = (mode === 'permanent') ? getSubtaskOrigin() : null;
   const tag = tasks.length === 1 ? tasks[0] : tasks.length + ' tasks';
@@ -7426,6 +7454,33 @@ async function sendPlannerToEthan() {
 }
 
 // Worker: pull the day the manager planned for me; replace my planner, flag new.
+// Worker: pull pinned notes the manager sent me, into my task notes (dedup by id).
+async function pullPins() {
+  if (!isWorker()) return;
+  const url = localStorage.getItem('kr_sheet_url');
+  if (!url) return;
+  const who = getUserName().trim();
+  try {
+    const res = await fetch(url + (url.includes('?') ? '&' : '?') + 'pins=1&who=' + encodeURIComponent(who), { cache: 'no-store' });
+    const json = await res.json();
+    if (!json || !json.success || !Array.isArray(json.pins)) return;
+    const applied = new Set(JSON.parse(localStorage.getItem('kr_pins_applied') || '[]'));
+    const tn = getTaskNotes();
+    let added = 0;
+    json.pins.forEach(p => {
+      if (!p.id || applied.has(p.id)) return;
+      if (!tn[p.task]) tn[p.task] = [];
+      tn[p.task].push({ id: p.id, text: p.text, ts: p.ts || new Date().toISOString(), caught: p.caught || '' });
+      applied.add(p.id); added++;
+    });
+    if (added) {
+      saveTaskNotes(tn);
+      localStorage.setItem('kr_pins_applied', JSON.stringify([...applied]));
+      if (clockState && clockState.running) renderRunChecklist();
+      showToast(added + ' pinned note' + (added === 1 ? '' : 's') + ' from your manager 📌');
+    }
+  } catch (e) { /* offline — try next time */ }
+}
 async function pullAssignments() {
   if (!isWorker()) return;
   const url = localStorage.getItem('kr_sheet_url');
