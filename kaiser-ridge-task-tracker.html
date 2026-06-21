@@ -1479,6 +1479,9 @@
       <button onclick="deletePlannerBlock()" style="background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;">Delete</button>
     </div>
     <div style="padding:20px;">
+      <button onclick="plannerClockIn()" style="width:100%;background:var(--green);color:#fff;border:none;border-radius:14px;padding:14px;font-size:17px;font-weight:700;cursor:pointer;margin-bottom:8px;">▶ Clock In Now</button>
+      <button id="planner-resume-btn" onclick="plannerResume()" style="display:none;width:100%;background:var(--blue);color:#fff;border:none;border-radius:14px;padding:14px;font-size:17px;font-weight:700;cursor:pointer;margin-bottom:8px;">▶ Resume This Task</button>
+      <div id="planner-resume-note" style="display:none;font-size:12px;color:var(--subtext);text-align:center;margin:0 0 14px;">Starts a new session now and keeps the checklist items you already finished ticked off, so you can work through the rest.</div>
       <div id="planner-detail-info" style="font-size:14px;color:var(--subtext);margin-bottom:16px;"></div>
       <div id="planner-detail-edit" style="margin-bottom:18px;">
         <div style="font-size:12px;color:var(--subtext);margin-bottom:6px;">Adjust time for this day</div>
@@ -1494,9 +1497,6 @@
         </div>
         <button onclick="savePlannerTime()" style="width:100%;margin-top:10px;background:none;border:1px solid var(--blue);color:var(--blue);border-radius:12px;padding:11px;font-size:15px;font-weight:600;cursor:pointer;">Update time</button>
       </div>
-      <button onclick="plannerClockIn()" style="width:100%;background:var(--green);color:#fff;border:none;border-radius:14px;padding:14px;font-size:17px;font-weight:700;cursor:pointer;">▶ Clock In Now</button>
-      <button id="planner-resume-btn" onclick="plannerResume()" style="display:none;width:100%;background:var(--blue);color:#fff;border:none;border-radius:14px;padding:14px;font-size:17px;font-weight:700;cursor:pointer;">▶ Resume This Task</button>
-      <div id="planner-resume-note" style="display:none;font-size:12px;color:var(--subtext);text-align:center;margin-top:8px;">Starts a new session now and keeps the checklist items you already finished ticked off, so you can work through the rest.</div>
       <button id="planner-copy-btn" onclick="copyPlannerBlock()" style="width:100%;margin-top:10px;background:none;border:1px solid var(--blue);color:var(--blue);border-radius:12px;padding:11px;font-size:15px;font-weight:600;cursor:pointer;">⧉ Copy — paste to another day</button>
     </div>
   </div>
@@ -1992,7 +1992,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.8';
+const APP_VERSION = '2026-06-21.9';
 
 // ════════════════════════════════
 //  DIRECTORY
