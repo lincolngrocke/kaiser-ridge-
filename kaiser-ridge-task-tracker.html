@@ -1990,7 +1990,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.6';
+const APP_VERSION = '2026-06-21.7';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -7911,6 +7911,7 @@ function openPlannerDoneDetail(entry) {
      ${entry.group   ? `<div style="margin-bottom:6px;">📂 ${entry.group}</div>`    : ''}
      ${entry.location? `<div style="margin-bottom:6px;">📍 ${entry.location}</div>` : ''}
      ${entry.tool    ? `<div style="margin-bottom:6px;">🔧 ${entry.tool}</div>`     : ''}
+     ${_pinnedNotesHtml(entry.task)}
      ${notesHtml}
      ${checklistHtml}`;
 
@@ -8088,6 +8089,21 @@ function confirmPlannerAdd() {
 
 // ── Detail / Clock In ──
 
+// Pinned notes for a task, shown in the planner detail (viewable before clocking in).
+function _pinnedNotesHtml(task) {
+  const pins = getTaskNotes()[task] || [];
+  if (!pins.length) return '';
+  return `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">
+    <div style="font-size:12px;color:#FFD60A;margin-bottom:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">📌 Pinned notes</div>
+    ${pins.map(p => {
+      const safe = p.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const caught = (p.caught || p.ts) ? `<div style="font-size:11px;color:var(--subtext);margin-top:2px;">Caught ${_inboxStamp(p.caught || p.ts)}</div>` : '';
+      const thumb = p.image ? `<img src="${p.image}" onclick="openImageLightbox(this.src)" style="margin-top:6px;max-height:90px;max-width:100%;border-radius:8px;display:block;cursor:pointer;">` : '';
+      return `<div style="margin-bottom:10px;"><span style="font-size:14px;color:#FFD60A;">📌 ${safe}</span>${caught}${thumb}</div>`;
+    }).join('')}
+  </div>`;
+}
+
 function openPlannerDetail(planId) {
   const plan = _plannerPlans.find(p => p.id === planId);
   if (!plan) return;
@@ -8131,6 +8147,7 @@ function openPlannerDetail(planId) {
      <div style="margin-bottom:6px;">⏱ ${plan.durationHours}h planned</div>
      ${plan.group ? `<div style="margin-bottom:6px;">📂 ${plan.group}</div>` : ''}
      ${plan.location ? `<div style="margin-bottom:6px;">📍 ${plan.location}</div>` : ''}
+     ${_pinnedNotesHtml(plan.task)}
      ${subtaskHtml}`;
   openModal('modal-planner-detail');
 }
