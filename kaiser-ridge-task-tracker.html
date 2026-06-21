@@ -814,7 +814,6 @@
   <div class="update-banner" id="restore-clock-banner" onclick="restoreDiscardedClock()" style="display:none;background:var(--green);"></div>
   <div class="backup-banner" id="backup-banner-clock" onclick="exportBackup()" style="display:none;"></div>
   <div class="update-banner" id="assign-banner-clock" onclick="ackAssignmentBanner()" style="display:none;background:var(--green);"></div>
-  <div class="update-banner" id="undo-banner" onclick="doUndo()" style="display:none;background:#FF9500;"></div>
 
   <div class="scroll-area">
     <!-- Summary bar -->
@@ -1262,7 +1261,6 @@
   <div class="update-banner" id="library-banner-running" onclick="pullLibrary()" style="display:none;background:var(--green);">📋 New task list available — tap to update</div>
   <div class="backup-banner" id="backup-banner-running" onclick="exportBackup()" style="display:none;"></div>
   <div class="update-banner" id="assign-banner-running" onclick="ackAssignmentBanner()" style="display:none;background:var(--green);"></div>
-  <div class="update-banner" id="undo-banner-running" onclick="doUndo()" style="display:none;background:#FF9500;"></div>
   <div class="running-meta">
     <button class="running-add-note" onclick="openNoteModal()">📋 Add Note</button>
     <button class="running-tag-btn" onclick="openQuickCapture()">💡 Capture</button>
@@ -1992,7 +1990,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.9';
+const APP_VERSION = '2026-06-21.10';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2332,7 +2330,6 @@ function handleMainBtn() {
 }
 
 function startClock(taskInfo) {
-  _lastUndo = null;   // fresh session — drop any stale undo
   clockState = {
     running: true,
     startMs: Date.now(),
@@ -2357,7 +2354,7 @@ function startClock(taskInfo) {
 
 function clockOut(overrideTime) {
   if (!clockState || !clockState.running) return;
-  _lastUndo = null;   // session ending — in-session undo no longer applies
+  finalizeDonePins();   // fold any ticked-off pinned notes into the entry + clear them
   let endMs = Date.now();
   if (overrideTime) {
     const now = new Date();
@@ -2485,7 +2482,6 @@ function renderClockState() {
   }
   updateRestoreClockBanner();
   updateSummary();
-  renderUndo();
 }
 
 // ── Live checklist timing (running clock) ───────────────────────────────────
@@ -2527,46 +2523,15 @@ function _checklistDurations() {
   });
   return out;
 }
-// ── One-step Undo for accidental completions ─────────────────────────────────
-// Snapshot the affected storage keys before an action; Undo restores them.
-const _UNDO_KEYS = ['kr_clock', 'kr_task_notes', 'kr_inbox'];
-let _lastUndo = null;
-function _undoSnapshot() { const s = {}; _UNDO_KEYS.forEach(k => s[k] = localStorage.getItem(k)); return s; }
-function setUndo(label) { _lastUndo = { label, snap: _undoSnapshot() }; renderUndo(); }
-function renderUndo() {
-  ['undo-banner', 'undo-banner-running'].forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    if (_lastUndo) { el.textContent = '↩ Undo: ' + _lastUndo.label; el.style.display = 'block'; }
-    else el.style.display = 'none';
-  });
-}
-function doUndo() {
-  if (!_lastUndo) return;
-  const snap = _lastUndo.snap;
-  Object.keys(snap).forEach(k => { if (snap[k] === null) localStorage.removeItem(k); else localStorage.setItem(k, snap[k]); });
-  clockState = JSON.parse(localStorage.getItem('kr_clock') || 'null');
-  _lastUndo = null;
-  renderClockState();          // refreshes checklist + pinned notes + undo bar
-  updateInboxCount();
-  if (document.getElementById('modal-inbox') && document.getElementById('modal-inbox').classList.contains('open')) renderInbox();
-  showToast('Undone ↩');
-}
-function clearUndo() { _lastUndo = null; renderUndo(); }
-
 let _expandedChecklistItems = new Set();
 function markChecklistItemDone(item) {
   if (!clockState || !clockState.running) return;
-  const before = _undoSnapshot();
   if (!Array.isArray(clockState.checklistDone)) clockState.checklistDone = [];
   const i = clockState.checklistDone.findIndex(d => d.item === item);
-  let undone = false;
-  if (i >= 0) { clockState.checklistDone.splice(i, 1); undone = true; }   // tap again to undo
+  if (i >= 0) clockState.checklistDone.splice(i, 1);          // tap again to untick
   else { clockState.checklistDone.push({ item, at: new Date().toISOString() }); _expandedChecklistItems.delete(item); }
   localStorage.setItem('kr_clock', JSON.stringify(clockState));
-  if (!undone) { _lastUndo = { label: 'completed “' + (item.length > 24 ? item.slice(0, 24) + '…' : item) + '”', snap: before }; }
   renderRunChecklist();
-  renderUndo();
 }
 function toggleChecklistExpand(item) {
   if (_expandedChecklistItems.has(item)) _expandedChecklistItems.delete(item);
@@ -2630,15 +2595,18 @@ function renderRunChecklist() {
     }
     return html;
   }).join('');
-  // Pinned task-notes ride at the very top until ticked off (📌, amber).
+  // Pinned task-notes ride at the very top. Ticking marks them done in place
+  // (greyed + struck, still untickable); they're removed only at clock-out.
+  const pinDone = (clockState && clockState.pinDone) || {};
   const pinnedRows = pinned.map(p => {
+    const done = !!pinDone[p.id];
     const safe = p.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const caughtTs = p.caught || p.ts;
     const caughtLine = caughtTs ? `<div style="font-size:11px;color:var(--subtext);margin-top:2px;">Caught ${_inboxStamp(caughtTs)}</div>` : '';
     const thumb = _photoThumbHtml(p, 80);
-    return `<div onclick="completeTaskNote('${p.id}')" style="display:flex;align-items:flex-start;gap:8px;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer;">
-      <span style="font-size:18px;flex-shrink:0;color:var(--subtext);">☐</span>
-      <div style="flex:1;min-width:0;"><span style="font-size:14px;color:#FFD60A;">📌 ${safe}</span>${caughtLine}${thumb}</div></div>`;
+    return `<div onclick="togglePinnedNote('${p.id}')" style="display:flex;align-items:flex-start;gap:8px;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer;${done ? 'opacity:0.5;' : ''}">
+      <span style="font-size:18px;flex-shrink:0;color:${done ? 'var(--green)' : 'var(--subtext)'};">${done ? '☑' : '☐'}</span>
+      <div style="flex:1;min-width:0;"><span style="font-size:14px;${done ? 'color:var(--subtext);text-decoration:line-through;' : 'color:#FFD60A;'}">📌 ${safe}</span>${caughtLine}${thumb}</div></div>`;
   }).join('');
   const pinnedHeader = (pinned.length && items.length)
     ? `<div style="padding:6px 0 2px;font-size:11px;font-weight:700;color:#FFD60A;letter-spacing:.04em;">📌 NOTES — tap to tick off</div>` : '';
@@ -6517,41 +6485,50 @@ async function assignInboxToTask(mode) {
   const nc = notes.length;
   showToast((mode === 'permanent' ? 'Added ' : 'Pinned ') + nc + ' note' + (nc === 1 ? '' : 's') + ' to ' + tag + ' ✓' + (mode === 'permanent' ? ' — Publish to share' : ''));
 }
-// Tick off a pinned task-note while clocked in — removes it for good.
-function completeTaskNote(id) {
+// Tick a pinned note done IN PLACE (greyed + struck), reversible by tapping
+// again. It isn't removed/folded until clock-out (see finalizeDonePins).
+function togglePinnedNote(id) {
   if (!clockState || !clockState.task) return;
+  if (!clockState.pinDone) clockState.pinDone = {};
+  if (clockState.pinDone[id]) delete clockState.pinDone[id];
+  else clockState.pinDone[id] = new Date().toISOString();
+  localStorage.setItem('kr_clock', JSON.stringify(clockState));
+  renderRunChecklist();
+}
+// At clock-out: for each pinned note ticked done this session, fold it into the
+// entry notes (with its journey), stamp/clear the inbox, and remove the pin.
+function finalizeDonePins() {
+  if (!clockState || !clockState.task || !clockState.pinDone) return;
   const task = clockState.task;
-  const before = _undoSnapshot();
+  const doneIds = Object.keys(clockState.pinDone);
+  if (!doneIds.length) return;
   const tn = getTaskNotes();
-  const note = (tn[task] || []).find(p => p.id === id);
-  tn[task] = (tn[task] || []).filter(p => p.id !== id);
-  if (!tn[task].length) delete tn[task];
-  saveTaskNotes(tn);
-  if (note) {
-    // Append straight into the live entry notes so it's visible right away (Edit
-    // Active Entry, and the entry/sheet on clock-out), carrying its journey.
+  const list = tn[task] || [];
+  doneIds.forEach(id => {
+    const note = list.find(p => p.id === id);
+    if (!note) return;
+    const at = clockState.pinDone[id];
+    const t = new Date(at).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true });
     const inb = note.inboxId ? getInbox().find(x => x.id === note.inboxId) : null;
-    const t = new Date().toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true });
     const caughtTs = (inb && inb.ts) || note.ts || '';
     const line = '[' + t + '] 📌 ' + note.text + (caughtTs ? ' (caught ' + _inboxStamp(caughtTs) + ')' : '');
     clockState.notes = clockState.notes ? clockState.notes + '\n' + line : line;
-    localStorage.setItem('kr_clock', JSON.stringify(clockState));
-    // Inbox: clear the note once it's no longer pinned to ANY task (journey done);
-    // while other tasks still have it pinned, just record this completion.
-    if (note.inboxId) {
-      const stillPinned = Object.values(getTaskNotes()).some(a => a.some(p => p.inboxId === note.inboxId));
-      const arr = getInbox();
-      if (!stillPinned) {
-        saveInbox(arr.filter(x => x.id !== note.inboxId));
-      } else {
-        const inb2 = arr.find(x => x.id === note.inboxId);
-        if (inb2) { if (!Array.isArray(inb2.completions)) inb2.completions = []; inb2.completions.push({ task, ts: new Date().toISOString() }); saveInbox(arr); }
-      }
-    }
-    _lastUndo = { label: 'completed note “' + (note.text.length > 22 ? note.text.slice(0, 22) + '…' : note.text) + '”', snap: before };
-  }
-  renderClockState();   // refresh checklist + the live notes shown on the entry
-  showToast('Note done ✓');
+  });
+  // Remove the done pins from the task
+  tn[task] = list.filter(p => !clockState.pinDone[p.id]);
+  if (!tn[task].length) delete tn[task];
+  saveTaskNotes(tn);
+  // Inbox journey: clear each note once it's no longer pinned anywhere, else stamp.
+  const remaining = getTaskNotes();
+  doneIds.forEach(id => {
+    const note = list.find(p => p.id === id);
+    if (!note || !note.inboxId) return;
+    const stillPinned = Object.values(remaining).some(a => a.some(p => p.inboxId === note.inboxId));
+    const arr = getInbox();
+    if (!stillPinned) { saveInbox(arr.filter(x => x.id !== note.inboxId)); }
+    else { const i2 = arr.find(x => x.id === note.inboxId); if (i2) { if (!Array.isArray(i2.completions)) i2.completions = []; i2.completions.push({ task, ts: at0(note, id) }); saveInbox(arr); } }
+  });
+  function at0(note, id) { return clockState.pinDone[id] || new Date().toISOString(); }
 }
 
 let _stepsEditingItem = null;
