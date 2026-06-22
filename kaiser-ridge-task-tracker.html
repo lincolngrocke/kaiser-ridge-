@@ -1998,7 +1998,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.17';
+const APP_VERSION = '2026-06-21.18';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -8075,7 +8075,10 @@ let _plannerResumeEntry = null;
 function plannerResume() {
   const entry = _plannerResumeEntry;
   if (!entry) return;
-  if (clockState && clockState.running) { showToast('Clock out of your current task first'); return; }
+  if (clockState && clockState.running) {
+    alert('You’re already clocked into “' + clockState.task + '”.\n\nClock out of that task first, then resume this one.');
+    return;
+  }
   // Which checklist items were already done — prefer the structured field, else notes
   let carried = [];
   if (Array.isArray(entry.checklist) && entry.checklist.length) {
@@ -8351,6 +8354,10 @@ function deletePlannerCalendarEvent(plan) {
 function plannerClockIn() {
   const plan = _plannerPlans.find(p => p.id === _plannerDetailId);
   if (!plan) return;
+  if (clockState && clockState.running) {
+    alert('You’re already clocked into “' + clockState.task + '”.\n\nClock out of that task first, then clock into this one.');
+    return;
+  }
   closeModal('modal-planner-detail');
   // Remove the planned block — the live/done block takes its place
   _plannerPlans = _plannerPlans.filter(p => p.id !== _plannerDetailId);
