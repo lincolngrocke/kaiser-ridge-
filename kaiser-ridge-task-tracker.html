@@ -1990,7 +1990,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.11';
+const APP_VERSION = '2026-06-21.12';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2228,6 +2228,7 @@ window.addEventListener('load', () => {
   updateAssignmentBanner();
   pullAssignments();                       // worker: fetch the day the manager planned
   pullPins();                              // worker: fetch pinned notes from the manager
+  fetchSharedLastDone();                   // shared "last done per task" from the sheet
   setInterval(pullAssignments, 60000);     // worker: keep the plan live (time changes/deletes) without reopening
   checkForUpdate();
   checkLibraryUpdate();
@@ -2238,6 +2239,7 @@ window.addEventListener('load', () => {
     if (!document.hidden) autoSyncPending();
     if (!document.hidden) pullAssignments();
     if (!document.hidden) pullPins();
+    if (!document.hidden) fetchSharedLastDone();
   });
 
   // After a Force-Update reload, return to the screen the user was on.
@@ -4966,6 +4968,12 @@ function renderDirectory() {
     const ts = d.getTime();
     if (!lastUsed[e.task] || ts > lastUsed[e.task]) lastUsed[e.task] = ts;
   });
+  // Merge the shared map (both people's history) pulled from the sheet.
+  const sharedLastDone = JSON.parse(localStorage.getItem('kr_lastdone') || '{}');
+  Object.keys(sharedLastDone).forEach(task => {
+    const ts = sharedLastDone[task];
+    if (typeof ts === 'number' && (!lastUsed[task] || ts > lastUsed[task])) lastUsed[task] = ts;
+  });
 
   list.innerHTML = freqs.map(freq => `
     <div style="margin-bottom:8px;" data-freq="${freq}">
@@ -7516,6 +7524,31 @@ async function pullPins() {
       showToast(added + ' pinned note' + (added === 1 ? '' : 's') + ' from your manager 📌');
     }
   } catch (e) { /* offline — try next time */ }
+}
+// Build a shared "last done per task" map from the sheet (everyone's entries),
+// cached locally so the Task Directory shows the true most-recent completion.
+let _lastSharedFetch = 0;
+async function fetchSharedLastDone(force) {
+  const url = localStorage.getItem('kr_sheet_url');
+  if (!url) return;
+  if (!force && Date.now() - _lastSharedFetch < 60000) return;   // throttle
+  _lastSharedFetch = Date.now();
+  try {
+    const res = await fetch(url + (url.includes('?') ? '&' : '?') + 'export=1', { cache: 'no-store' });
+    const json = await res.json();
+    if (!json || !json.success || !Array.isArray(json.rows)) return;
+    const map = {};
+    json.rows.forEach(r => {
+      const task = String(r.task || '').trim();
+      if (!task) return;
+      const d = _parseEntryDate(r.date);
+      if (!d) return;
+      const ts = d.getTime();
+      if (!map[task] || ts > map[task]) map[task] = ts;
+    });
+    localStorage.setItem('kr_lastdone', JSON.stringify(map));
+    if (document.getElementById('dir-list')) renderDirectory();
+  } catch (e) { /* offline — keep last cache */ }
 }
 async function pullAssignments() {
   if (!isWorker()) return;
