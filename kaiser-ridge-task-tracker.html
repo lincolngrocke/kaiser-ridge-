@@ -987,6 +987,7 @@
   <div style="padding:0 16px 8px;display:flex;gap:8px;align-items:center;">
     <button id="planner-add-btn" onclick="openPlannerAddTask()" style="flex:1;background:var(--blue);color:#fff;border:none;border-radius:12px;padding:10px;font-size:15px;font-weight:600;cursor:pointer;">+ Add Task</button>
     <button id="planner-paste-btn" onclick="pastePlannerBlock()" title="Paste copied task into this day" style="display:none;background:var(--green);color:#fff;border:none;border-radius:12px;padding:10px 12px;font-size:15px;font-weight:600;cursor:pointer;">📋 Paste</button>
+    <button onclick="openPlannerReorder()" title="Reorder this day's tasks" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;font-size:15px;cursor:pointer;">↕</button>
     <button id="planner-cal-btn" onclick="pushPlannerToCalendar()" title="Push this day to Google Calendar" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;font-size:15px;cursor:pointer;">📆</button>
     <button onclick="plannerGoToday()" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-size:13px;color:var(--blue);cursor:pointer;">Today</button>
   </div>
@@ -1472,6 +1473,24 @@
         <div id="planner-task-list" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;"></div>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- ══════════════ PLANNER REORDER MODAL ══════════════ -->
+<div class="modal-backdrop" id="modal-planner-reorder" style="z-index:300;" onclick="if(event.target===this)closeModal('modal-planner-reorder')">
+  <div class="modal-sheet" style="padding:16px 0 24px;display:flex;flex-direction:column;max-height:85vh;">
+    <div class="modal-handle"></div>
+    <div style="padding:0 20px 4px;display:flex;align-items:center;justify-content:space-between;">
+      <span onclick="closeModal('modal-planner-reorder')" style="color:var(--blue);font-size:16px;cursor:pointer;">Cancel</span>
+      <span style="font-size:17px;font-weight:600;">Reorder day</span>
+      <span onclick="applyPlannerReorder()" style="color:var(--blue);font-size:16px;font-weight:700;cursor:pointer;">Apply</span>
+    </div>
+    <div style="padding:6px 20px 8px;font-size:13px;color:var(--subtext);">Order the tasks with ▲▼. They’ll be laid out back-to-back from the start time, each keeping its duration.</div>
+    <div style="padding:0 20px 8px;display:flex;align-items:center;gap:10px;">
+      <span style="font-size:14px;color:var(--text);">Start at</span>
+      <input type="time" id="planner-reorder-start" class="form-input" style="flex:0 0 auto;">
+    </div>
+    <div id="planner-reorder-list" style="flex:1;overflow-y:auto;padding:0 16px;"></div>
   </div>
 </div>
 
@@ -1998,7 +2017,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.18';
+const APP_VERSION = '2026-06-21.19';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -8336,6 +8355,56 @@ function pastePlannerBlock() {
   savePlanner();
   renderPlannerScreen();
   showToast('Pasted into ' + _plannerDate.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }));
+}
+
+// ── Reorder a day's tasks (▲▼), then lay them back-to-back keeping durations ──
+let _reorderItems = [];
+function _planStartMins(p) { const [h, m] = String(p.startTime || '0:0').split(':').map(Number); return (h || 0) * 60 + (m || 0); }
+function openPlannerReorder() {
+  const dateStr = plannerDateStr(_plannerDate);
+  _reorderItems = _plannerPlans.filter(p => p.date === dateStr).slice().sort((a, b) => _planStartMins(a) - _planStartMins(b));
+  if (!_reorderItems.length) { showToast('No tasks to reorder on this day'); return; }
+  document.getElementById('planner-reorder-start').value = _reorderItems[0].startTime || '06:00';
+  renderReorderList();
+  openModal('modal-planner-reorder');
+}
+function renderReorderList() {
+  document.getElementById('planner-reorder-list').innerHTML = _reorderItems.map((p, i) => {
+    const dur = (Number(p.durationHours) || 1);
+    const durStr = dur >= 1 ? (Math.round(dur * 10) / 10) + 'h' : Math.round(dur * 60) + 'm';
+    const safe = String(p.task || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    return `<div style="display:flex;align-items:center;gap:10px;padding:12px 4px;border-bottom:1px solid var(--border);">
+      <div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0;">
+        <button onclick="moveReorderItem(${i},-1)" ${i === 0 ? 'disabled' : ''} style="background:var(--card);border:1px solid var(--border);border-radius:6px;width:34px;height:26px;font-size:14px;color:var(--blue);cursor:pointer;${i === 0 ? 'opacity:0.3;' : ''}">▲</button>
+        <button onclick="moveReorderItem(${i},1)" ${i === _reorderItems.length - 1 ? 'disabled' : ''} style="background:var(--card);border:1px solid var(--border);border-radius:6px;width:34px;height:26px;font-size:14px;color:var(--blue);cursor:pointer;${i === _reorderItems.length - 1 ? 'opacity:0.3;' : ''}">▼</button>
+      </div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:15px;color:var(--text);">${safe}</div>
+        <div style="font-size:12px;color:var(--subtext);margin-top:2px;">${durStr}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+function moveReorderItem(i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= _reorderItems.length) return;
+  const tmp = _reorderItems[i]; _reorderItems[i] = _reorderItems[j]; _reorderItems[j] = tmp;
+  renderReorderList();
+}
+function applyPlannerReorder() {
+  const start = document.getElementById('planner-reorder-start').value || '06:00';
+  let cursor = _planStartMins({ startTime: start });
+  _reorderItems.forEach(item => {
+    const block = _plannerPlans.find(p => p.id === item.id);
+    if (!block) return;
+    const h = Math.floor(cursor / 60) % 24, m = cursor % 60;
+    block.startTime = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+    cursor += (Number(block.durationHours) || 1) * 60;
+  });
+  savePlanner();
+  closeModal('modal-planner-reorder');
+  renderPlannerScreen();
+  showToast('Day re-ordered ✓');
 }
 
 // Remove this block's Google Calendar event (if one was pushed). Fire-and-forget;
