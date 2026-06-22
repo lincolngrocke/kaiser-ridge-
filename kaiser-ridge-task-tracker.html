@@ -1989,7 +1989,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.15';
+const APP_VERSION = '2026-06-21.16';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2508,21 +2508,31 @@ function _breakOverlapMs(breaks, s, e) {
   breaks.forEach(b => { const a = Math.max(s, b.start), z = Math.min(e, b.end); if (z > a) ov += z - a; });
   return ov;
 }
-// → { item: durationMinutes } computed in tick order, with any break taken
-// during an item's interval subtracted from that item (not just the total).
+// → { item: durationMinutes }. Items ticked within a minute of each other are
+// treated as one batch and the elapsed time is shared evenly across them (so
+// ticking several at once doesn't dump it all on the first). Breaks subtracted.
+const _BATCH_WINDOW_MS = 60000;
+function _computeChecklistDurations(sorted, clockInMs, breaks) {
+  const out = {};
+  let prev = clockInMs, i = 0;
+  while (i < sorted.length) {
+    let j = i;
+    while (j + 1 < sorted.length && (new Date(sorted[j + 1].at) - new Date(sorted[j].at)) < _BATCH_WINDOW_MS) j++;
+    const last = new Date(sorted[j].at).getTime();
+    const net = Math.max(0, (last - prev) - _breakOverlapMs(breaks, prev, last));
+    const per = net / (j - i + 1) / 60000;            // minutes per item in the batch
+    for (let k = i; k <= j; k++) out[sorted[k].item] = per;
+    prev = last;
+    i = j + 1;
+  }
+  return out;
+}
 function _checklistDurations() {
   const done = (clockState && Array.isArray(clockState.checklistDone)) ? clockState.checklistDone : [];
   const breaks = (clockState && Array.isArray(clockState.breaks)) ? clockState.breaks.slice() : [];
   if (clockState && clockState.onBreak && clockState.breakStartMs) breaks.push({ start: clockState.breakStartMs, end: Date.now() });
   const sorted = done.slice().sort((a, b) => new Date(a.at) - new Date(b.at));
-  const out = {};
-  let prev = _clockInEpoch();
-  sorted.forEach(d => {
-    const t = new Date(d.at).getTime();
-    out[d.item] = Math.max(0, (t - prev - _breakOverlapMs(breaks, prev, t)) / 60000);
-    prev = t;
-  });
-  return out;
+  return _computeChecklistDurations(sorted, _clockInEpoch(), breaks);
 }
 let _expandedChecklistItems = new Set();
 function markChecklistItemDone(item) {
@@ -2635,14 +2645,10 @@ function _entryChecklistDurations(e) {
   if (!list.length) return {};
   const sorted = list.slice().sort((a, b) => new Date(a.at) - new Date(b.at));
   const ci = _entryClockInEpoch(e);
-  let prev = (ci != null) ? ci : new Date(sorted[0].at).getTime();
+  const clockIn = (ci != null) ? ci : new Date(sorted[0].at).getTime();
+  const raw = _computeChecklistDurations(sorted, clockIn, e.breaks);
   const out = {};
-  sorted.forEach(d => {
-    const t = new Date(d.at).getTime();
-    const m = (t - prev - _breakOverlapMs(e.breaks, prev, t)) / 60000;
-    if (isFinite(m) && m >= 0 && m <= 24 * 60) out[d.item] = m;   // ignore bad/outlier gaps
-    prev = t;
-  });
+  Object.keys(raw).forEach(k => { const m = raw[k]; if (isFinite(m) && m >= 0 && m <= 24 * 60) out[k] = m; });  // drop outliers
   return out;
 }
 function _aggregateChecklistTimes() {
