@@ -1365,7 +1365,7 @@
     <div style="padding:0 20px 4px;display:flex;align-items:center;justify-content:space-between;">
       <span onclick="closeModal('modal-quick-capture')" style="color:var(--blue);font-size:16px;cursor:pointer;">Cancel</span>
       <span id="quick-capture-title" style="font-size:17px;font-weight:600;">Quick Note</span>
-      <span onclick="saveQuickCapture()" style="color:var(--blue);font-size:16px;font-weight:700;cursor:pointer;">Save</span>
+      <span id="quick-capture-save" onclick="saveQuickCapture()" style="color:var(--blue);font-size:16px;font-weight:700;cursor:pointer;">Save</span>
     </div>
     <div style="padding:6px 20px 10px;font-size:13px;color:var(--subtext);">Catch the thought now — review it later in the Inbox (More → Inbox). Time-stamped automatically.</div>
     <div style="padding:0 20px;">
@@ -1990,7 +1990,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.12';
+const APP_VERSION = '2026-06-21.13';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6246,44 +6246,53 @@ function openInboxEdit(id) {
   openModal('modal-quick-capture');
   setTimeout(() => { const t = document.getElementById('quick-capture-text'); if (t) t.focus(); }, 150);
 }
+let _savingCapture = false;
 async function saveQuickCapture() {
+  if (_savingCapture) return;            // ignore double-taps while a save is in flight
   const t = document.getElementById('quick-capture-text');
   const text = (t.value || '').trim();
   if (!text && !_captureImage) { closeModal('modal-quick-capture'); _editingInboxId = null; _captureOldImageId = null; return; }
-  // Resolve the image: keep existing Drive id, upload a new photo, or fall back
-  // to keeping it on-device this once if the upload can't reach Drive.
-  let imageId = _captureImageId, localImg = null;
-  if (!imageId && _captureImage) {
-    showToast('Uploading photo…');
-    imageId = await _uploadPhoto(_captureImage);
-    if (!imageId) { localImg = _captureImage; showToast('Saved photo on-device (no connection to Drive)'); }
-  }
-  // Clean up a replaced/removed Drive photo
-  if (_captureOldImageId && _captureOldImageId !== imageId) _deletePhoto(_captureOldImageId);
+  _savingCapture = true;
+  const saveBtn = document.getElementById('quick-capture-save');
+  if (saveBtn) { saveBtn.textContent = (_captureImage && !_captureImageId) ? 'Saving photo…' : 'Saving…'; saveBtn.style.opacity = '0.5'; saveBtn.style.pointerEvents = 'none'; }
+  try {
+    // Resolve the image: keep existing Drive id, upload a new photo, or fall back
+    // to keeping it on-device this once if the upload can't reach Drive.
+    let imageId = _captureImageId, localImg = null;
+    if (!imageId && _captureImage) {
+      imageId = await _uploadPhoto(_captureImage);
+      if (!imageId) { localImg = _captureImage; showToast('Saved photo on-device (no connection to Drive)'); }
+    }
+    // Clean up a replaced/removed Drive photo
+    if (_captureOldImageId && _captureOldImageId !== imageId) _deletePhoto(_captureOldImageId);
 
-  const inbox = getInbox();
-  const apply = note => {
-    note.text = text;
-    if (imageId) { note.imageId = imageId; delete note.image; }
-    else if (localImg) { note.image = localImg; delete note.imageId; }
-    else { delete note.imageId; delete note.image; }
-  };
-  let ok;
-  if (_editingInboxId) {
-    const note = inbox.find(x => x.id === _editingInboxId);
-    if (note) apply(note);
-    ok = saveInbox(inbox);
-    if (ok) showToast('Note updated ✓');
-  } else {
-    const note = { id: 'n' + Date.now() + Math.random().toString(36).slice(2, 6), ts: new Date().toISOString() };
-    apply(note);
-    inbox.unshift(note);
-    ok = saveInbox(inbox);
-    if (ok) showToast('Caught it ✓');
+    const inbox = getInbox();
+    const apply = note => {
+      note.text = text;
+      if (imageId) { note.imageId = imageId; delete note.image; }
+      else if (localImg) { note.image = localImg; delete note.imageId; }
+      else { delete note.imageId; delete note.image; }
+    };
+    let ok;
+    if (_editingInboxId) {
+      const note = inbox.find(x => x.id === _editingInboxId);
+      if (note) apply(note);
+      ok = saveInbox(inbox);
+      if (ok) showToast('Note updated ✓');
+    } else {
+      const note = { id: 'n' + Date.now() + Math.random().toString(36).slice(2, 6), ts: new Date().toISOString() };
+      apply(note);
+      inbox.unshift(note);
+      ok = saveInbox(inbox);
+      if (ok) showToast('Caught it ✓');
+    }
+    _editingInboxId = null; _captureImage = null; _captureImageId = null; _captureOldImageId = null;
+    if (ok) closeModal('modal-quick-capture');
+    if (document.getElementById('modal-inbox').classList.contains('open')) renderInbox();
+  } finally {
+    _savingCapture = false;
+    if (saveBtn) { saveBtn.textContent = 'Save'; saveBtn.style.opacity = ''; saveBtn.style.pointerEvents = ''; }
   }
-  _editingInboxId = null; _captureImage = null; _captureImageId = null; _captureOldImageId = null;
-  if (ok) closeModal('modal-quick-capture');
-  if (document.getElementById('modal-inbox').classList.contains('open')) renderInbox();
 }
 let _inboxSelectMode = false, _inboxSelected = new Set();
 function openInbox() { _inboxSelectMode = false; _inboxSelected = new Set(); _syncInboxSelectUI(); renderInbox(); openModal('modal-inbox'); }
