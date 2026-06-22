@@ -1391,12 +1391,10 @@
     <div style="padding:0 20px 4px;display:flex;align-items:center;justify-content:space-between;">
       <span onclick="openQuickCapture()" style="color:var(--blue);font-size:16px;cursor:pointer;">＋ New</span>
       <span style="font-size:17px;font-weight:600;">📥 Inbox</span>
+      <span id="inbox-select-toggle" onclick="toggleInboxSelectMode()" style="color:var(--blue);font-size:16px;cursor:pointer;">Select</span>
       <span onclick="closeModal('modal-inbox')" style="color:var(--blue);font-size:16px;font-weight:700;cursor:pointer;">Done</span>
     </div>
-    <div style="padding:6px 20px 8px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
-      <span style="font-size:13px;color:var(--subtext);flex:1;">Quick notes you caught during the day. Clear each one as you action it.</span>
-      <span id="inbox-select-toggle" onclick="toggleInboxSelectMode()" style="color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;">Select</span>
-    </div>
+    <div style="padding:6px 20px 8px;font-size:13px;color:var(--subtext);">Quick notes you caught during the day. Clear each one as you action it.</div>
     <div id="inbox-counts" style="padding:0 20px 8px;display:flex;gap:16px;font-size:13px;font-weight:600;"></div>
     <div id="inbox-list" style="flex:1;overflow-y:auto;padding:0 16px 8px;"></div>
     <div id="inbox-footer" style="display:none;padding:10px 20px 0;">
@@ -1991,7 +1989,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.14';
+const APP_VERSION = '2026-06-21.15';
 
 // ════════════════════════════════
 //  DIRECTORY
