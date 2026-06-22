@@ -487,6 +487,40 @@ function getKrPhotosFolder() {
   return it.hasNext() ? it.next() : DriveApp.createFolder(NAME);
 }
 
+// ── ONE-TIME manual sort ─────────────────────────────────────────────────────
+// Run this by hand from the editor (Run → oneTimeSortByDateTime) to put the
+// timesheet rows back in date+time order (oldest top). NOT wired into doPost —
+// per-sync sorting caused data loss; this is a deliberate one-off. Back the sheet
+// up first (File → Make a copy). Don't clock/sync while it runs.
+function oneTimeSortByDateTime() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAME);
+  if (!sheet) throw new Error('Sheet "' + SHEET_NAME + '" not found');
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  if (lastRow < 3) return;  // 0 or 1 data rows — nothing to do
+  const range = sheet.getRange(2, 1, lastRow - 1, lastCol);
+  const values = range.getValues();
+  const display = range.getDisplayValues();   // reliable text for date/time parsing
+
+  function keyFor(i) {
+    const dStr = String(display[i][0] || '').trim();   // A = date (DD/MM/YYYY)
+    const tStr = String(display[i][8] || '').trim();    // I = clock-in time
+    let ms;
+    const dm = dStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+    if (dm) { const y = dm[3].length === 2 ? '20' + dm[3] : dm[3]; ms = new Date(+y, +dm[2] - 1, +dm[1]).getTime(); }
+    else { const d2 = new Date(dStr); ms = isNaN(d2.getTime()) ? 0 : d2.getTime(); }
+    let mins = 0;
+    const tm = tStr.toLowerCase().match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm)?/);
+    if (tm) { let h = +tm[1]; const mi = +tm[2]; if (tm[3] === 'pm' && h < 12) h += 12; if (tm[3] === 'am' && h === 12) h = 0; mins = h * 60 + mi; }
+    return ms + mins * 60000;
+  }
+
+  const idx = values.map((_, i) => i);
+  idx.sort((a, b) => keyFor(a) - keyFor(b));   // stable: equal keys keep order
+  range.setValues(idx.map(i => values[i]));
+}
+
 function jsonResponse(obj) {
   return ContentService
     .createTextOutput(JSON.stringify(obj))
