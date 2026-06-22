@@ -1061,6 +1061,15 @@
     <div class="settings-note" style="margin-top:0">Used on the dashboard progress bar.</div>
 
     <div class="settings-section" style="margin-top:16px">
+      <div class="settings-row"><div class="settings-label">Checklist order (running clock)</div></div>
+      <div style="display:flex;gap:8px;padding:4px 0 2px;">
+        <button id="clorder-manual" onclick="setChecklistOrder('manual')" style="flex:1;border-radius:10px;padding:9px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid var(--blue);background:var(--blue);color:#fff;">Manual</button>
+        <button id="clorder-typical" onclick="setChecklistOrder('typical')" style="flex:1;border-radius:10px;padding:9px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--text);">Typical</button>
+      </div>
+    </div>
+    <div class="settings-note" style="margin-top:0">Manual = your editor order. Typical = reordered by the average order you usually complete them (display only; doesn’t change the saved checklist).</div>
+
+    <div class="settings-section" style="margin-top:16px">
       <div class="settings-row">
         <div class="settings-label">Google Sheet Web App URL</div>
       </div>
@@ -1989,7 +1998,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.16';
+const APP_VERSION = '2026-06-21.17';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2223,6 +2232,7 @@ window.addEventListener('load', () => {
   startTimerTick();
   applyRoleUI();
   initSearchClears();
+  _syncChecklistOrderUI();
   updateInboxCount();
   updateAssignmentBanner();
   pullAssignments();                       // worker: fetch the day the manager planned
@@ -2527,6 +2537,39 @@ function _computeChecklistDurations(sorted, clockInMs, breaks) {
   }
   return out;
 }
+// Checklist display order: 'manual' (editor order) or 'typical' (avg completion
+// order across this task's recent entries). Display-only; never changes SUBTASKS.
+function setChecklistOrder(mode) {
+  localStorage.setItem('kr_checklist_order', mode);
+  _syncChecklistOrderUI();
+  renderRunChecklist();
+}
+function _syncChecklistOrderUI() {
+  const mode = localStorage.getItem('kr_checklist_order') || 'manual';
+  const m = document.getElementById('clorder-manual'), t = document.getElementById('clorder-typical');
+  if (!m || !t) return;
+  const on = b => { b.style.background = 'var(--blue)'; b.style.color = '#fff'; b.style.borderColor = 'var(--blue)'; };
+  const off = b => { b.style.background = 'var(--card)'; b.style.color = 'var(--text)'; b.style.borderColor = 'var(--border)'; };
+  (mode === 'typical' ? off : on)(m); (mode === 'typical' ? on : off)(t);
+}
+// → { item: averageCompletionIndex } over recent entries for the task.
+function _typicalChecklistOrder(task) {
+  const sums = {}, counts = {};
+  entries.filter(e => e.task === task && Array.isArray(e.checklist) && e.checklist.length).forEach(e => {
+    e.checklist.slice().sort((a, b) => new Date(a.at) - new Date(b.at)).forEach((d, idx) => {
+      sums[d.item] = (sums[d.item] || 0) + idx;
+      counts[d.item] = (counts[d.item] || 0) + 1;
+    });
+  });
+  const avg = {};
+  Object.keys(sums).forEach(it => avg[it] = sums[it] / counts[it]);
+  return avg;
+}
+function _orderedChecklistItems(task, items) {
+  if ((localStorage.getItem('kr_checklist_order') || 'manual') !== 'typical') return items;
+  const avg = _typicalChecklistOrder(task);
+  return items.slice().sort((a, b) => (a in avg ? avg[a] : Infinity) - (b in avg ? avg[b] : Infinity));  // stable: no-data keep manual order
+}
 function _checklistDurations() {
   const done = (clockState && Array.isArray(clockState.checklistDone)) ? clockState.checklistDone : [];
   const breaks = (clockState && Array.isArray(clockState.breaks)) ? clockState.breaks.slice() : [];
@@ -2563,7 +2606,8 @@ function toggleChecklistStep(item, step) {
 function renderRunChecklist() {
   const el = document.getElementById('run-checklist');
   if (!el) return;
-  const items = (clockState && clockState.running && SUBTASKS[clockState.task]) || [];
+  const items = (clockState && clockState.running && SUBTASKS[clockState.task])
+    ? _orderedChecklistItems(clockState.task, SUBTASKS[clockState.task]) : [];
   const pinned = (clockState && clockState.running && getTaskNotes()[clockState.task]) || [];
   if (!items.length && !pinned.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
   el.style.display = 'flex';
