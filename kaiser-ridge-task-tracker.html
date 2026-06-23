@@ -795,6 +795,20 @@
     pointer-events: none;
     box-shadow: 0 2px 6px rgba(0,0,0,0.3);
   }
+  /* ── WEEK PLANNER (best in landscape) ── */
+  .pw-grid { display: grid; grid-template-columns: 34px repeat(7, minmax(90px, 1fr)); position: relative; }
+  .pw-corner { position: sticky; top: 0; left: 0; z-index: 6; background: var(--bg); }
+  .pw-dayhead { position: sticky; top: 0; z-index: 5; background: var(--bg); text-align: center; padding: 6px 2px 4px; border-left: 1px solid var(--border); cursor: pointer; }
+  .pw-dayhead .pw-dow { font-size: 10px; color: var(--subtext); text-transform: uppercase; letter-spacing: 0.4px; }
+  .pw-dayhead .pw-dom { font-size: 16px; font-weight: 700; color: var(--text); line-height: 1.15; }
+  .pw-dayhead.pw-today .pw-dom { color: #fff; background: var(--blue); border-radius: 50%; width: 24px; height: 24px; line-height: 24px; margin: 1px auto 0; }
+  .pw-hourcol { position: sticky; left: 0; z-index: 4; background: var(--bg); }
+  .pw-hourlabel { position: absolute; right: 4px; font-size: 10px; color: var(--subtext); transform: translateY(-5px); }
+  .pw-daycol { position: relative; border-left: 1px solid var(--border); background-image: repeating-linear-gradient(to bottom, rgba(128,128,128,0.14) 0, rgba(128,128,128,0.14) 1px, transparent 1px, transparent var(--pw-hour, 32px)); }
+  .pw-block { position: absolute; left: 2px; right: 2px; border-radius: 5px; padding: 2px 4px; font-size: 10px; font-weight: 700; color: #fff; overflow: hidden; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.18); line-height: 1.15; }
+  .pw-block.pw-done { opacity: 0.72; }
+  .pw-now { position: absolute; left: 0; right: 0; height: 2px; background: var(--red); z-index: 3; pointer-events: none; }
+  .pw-rotate-hint { text-align: center; font-size: 12px; color: var(--subtext); padding: 7px 16px 2px; }
 </style>
 </head>
 <body>
@@ -985,11 +999,14 @@
     <button id="planner-next" onclick="plannerChangeDay(1)" style="background:none;border:none;color:var(--blue);font-size:22px;padding:4px 8px;cursor:pointer;">›</button>
   </div>
   <div style="padding:0 16px 8px;display:flex;gap:8px;align-items:center;">
-    <button id="planner-add-btn" onclick="openPlannerAddTask()" style="flex:1;background:var(--blue);color:#fff;border:none;border-radius:12px;padding:10px;font-size:15px;font-weight:600;cursor:pointer;">+ Add Task</button>
-    <button id="planner-paste-btn" onclick="pastePlannerBlock()" title="Paste copied task into this day" style="display:none;background:var(--green);color:#fff;border:none;border-radius:12px;padding:10px 12px;font-size:15px;font-weight:600;cursor:pointer;">📋 Paste</button>
-    <button onclick="openPlannerReorder()" title="Reorder this day's tasks" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;font-size:15px;cursor:pointer;">↕</button>
-    <button id="planner-cal-btn" onclick="pushPlannerToCalendar()" title="Push this day to Google Calendar" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;font-size:15px;cursor:pointer;">📆</button>
+    <span id="planner-day-actions" style="display:contents;">
+      <button id="planner-add-btn" onclick="openPlannerAddTask()" style="flex:1;background:var(--blue);color:#fff;border:none;border-radius:12px;padding:10px;font-size:15px;font-weight:600;cursor:pointer;">+ Add Task</button>
+      <button id="planner-paste-btn" onclick="pastePlannerBlock()" title="Paste copied task into this day" style="display:none;background:var(--green);color:#fff;border:none;border-radius:12px;padding:10px 12px;font-size:15px;font-weight:600;cursor:pointer;">📋 Paste</button>
+      <button id="planner-reorder-btn" onclick="openPlannerReorder()" title="Reorder this day's tasks" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;font-size:15px;cursor:pointer;">↕</button>
+      <button id="planner-cal-btn" onclick="pushPlannerToCalendar()" title="Push this day to Google Calendar" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;font-size:15px;cursor:pointer;">📆</button>
+    </span>
     <button onclick="plannerGoToday()" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-size:13px;color:var(--blue);cursor:pointer;">Today</button>
+    <button id="planner-mode-btn" onclick="togglePlannerMode()" title="Switch between day and week view" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;font-size:13px;color:var(--blue);cursor:pointer;white-space:nowrap;">📅 Week</button>
   </div>
   <!-- Manager only: switch between own day and the worker's planned day -->
   <div id="planner-view-switch" style="display:none;padding:0 16px 8px;gap:8px;">
@@ -1001,11 +1018,18 @@
   </div>
   <!-- Worker only: banner when the manager has planned tasks for today -->
   <div class="update-banner" id="assign-banner" onclick="ackAssignmentBanner()" style="display:none;background:var(--green);margin:0 16px 8px;"></div>
-  <div style="display:flex;flex:1;min-height:0;">
+  <div id="planner-day-wrap" style="display:flex;flex:1;min-height:0;">
     <div class="scroll-area" id="planner-scroll" style="position:relative;overflow-y:auto;flex:1;touch-action:pan-y;">
       <div id="planner-grid" style="position:relative;margin:0 16px;"></div>
     </div>
     <div id="planner-holding" style="display:none;width:104px;flex-shrink:0;overflow-y:auto;border-left:1px solid var(--border);background:var(--card);padding:6px 6px 24px;"></div>
+  </div>
+  <!-- Week overview (best viewed in landscape) -->
+  <div id="planner-week-wrap" style="display:none;flex:1;min-height:0;flex-direction:column;">
+    <div class="pw-rotate-hint" id="pw-rotate-hint" style="display:none;">↻ Rotate to landscape for the full week</div>
+    <div id="pw-scroll" style="flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;">
+      <div class="pw-grid" id="planner-week"></div>
+    </div>
   </div>
 </div>
 
@@ -2038,7 +2062,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.21';
+const APP_VERSION = '2026-06-21.22';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -7535,6 +7559,9 @@ let _plannerDetailId = null; // plan id in detail modal
 let _plannerDragId = null, _plannerDragOffsetY = 0, _plannerIsDragging = false, _plannerTouchStartY = 0, _plannerTouchStartX = 0;
 let _plannerDragLabel = null;
 let _plannerNowTimer = null;
+let _plannerMode = localStorage.getItem('kr_planner_mode') || 'day'; // 'day' | 'week'
+let _plannerWeekTimer = null;
+const WEEK_HOUR_PX = 32; // fixed compact scale for the 7-day overview
 
 // Pixels per hour — now adjustable via pinch-to-zoom (like Google Calendar).
 // 360 = 6px/min default; persisted so the chosen zoom sticks between visits.
@@ -7714,13 +7741,167 @@ function plannerDateStr(d) {
 
 function plannerChangeDay(delta) {
   _plannerDate = new Date(_plannerDate);
-  _plannerDate.setDate(_plannerDate.getDate() + delta);
+  _plannerDate.setDate(_plannerDate.getDate() + delta * (_plannerMode === 'week' ? 7 : 1));
   renderPlannerScreen();
 }
 
 function plannerGoToday() {
   _plannerDate = new Date();
   renderPlannerScreen();
+}
+
+// ── Week (landscape) overview ──
+
+function togglePlannerMode() {
+  _plannerMode = _plannerMode === 'week' ? 'day' : 'week';
+  localStorage.setItem('kr_planner_mode', _plannerMode);
+  _plannerSuppressAutoScroll = false;
+  renderPlannerScreen();
+}
+
+// Monday of the week containing d (00:00).
+function _weekStart(d) {
+  const x = new Date(d); x.setHours(0, 0, 0, 0);
+  const dow = (x.getDay() + 6) % 7; // 0 = Monday
+  x.setDate(x.getDate() - dow);
+  return x;
+}
+
+function _pwDur(a, b) {
+  const [ah, am] = a.split(':').map(Number);
+  const [bh, bm] = b.split(':').map(Number);
+  return Math.max(0, (bh * 60 + bm) - (ah * 60 + am)) / 60;
+}
+function _hmNow() {
+  const n = new Date();
+  return String(n.getHours()).padStart(2, '0') + ':' + String(n.getMinutes()).padStart(2, '0');
+}
+
+// Place one compact block in a week day-column. `label` colours the block by task.
+function _pwBlock(col, startTime, durationHours, label, onTap, done) {
+  if (!startTime) return;
+  const [h, m] = startTime.split(':').map(Number);
+  const topMins = (h - PLANNER_START_HOUR) * 60 + m;
+  if (topMins < 0 || topMins > (PLANNER_END_HOUR - PLANNER_START_HOUR) * 60) return;
+  const b = document.createElement('div');
+  b.className = 'pw-block' + (done ? ' pw-done' : '');
+  b.style.top = (topMins / 60 * WEEK_HOUR_PX) + 'px';
+  b.style.height = Math.max(13, (durationHours || 0.25) * WEEK_HOUR_PX - 2) + 'px';
+  b.style.background = plannerColorFor(label.replace(/ \(now\)$/, ''));
+  b.textContent = label;
+  b.onclick = onTap;
+  col.appendChild(b);
+}
+
+// Jump from the week overview into a single day, optionally opening a block.
+function _pwGoToDay(d, planId) {
+  _plannerDate = new Date(d);
+  _plannerMode = 'day';
+  localStorage.setItem('kr_planner_mode', 'day');
+  _plannerSuppressAutoScroll = false;
+  renderPlannerScreen();
+  if (planId) openPlannerDetail(planId);
+}
+
+function renderPlannerWeek() {
+  clearInterval(_plannerWeekTimer);
+  const grid = document.getElementById('planner-week');
+  if (!grid) return;
+  grid.innerHTML = '';
+  const totalHours = PLANNER_END_HOUR - PLANNER_START_HOUR;
+  const colH = totalHours * WEEK_HOUR_PX;
+  grid.style.setProperty('--pw-hour', WEEK_HOUR_PX + 'px');
+
+  const ws = _weekStart(_plannerDate);
+  const todayStr = plannerDateStr(new Date());
+  const now = new Date();
+
+  // Corner + 7 day headers (tap a header to open that day)
+  const corner = document.createElement('div');
+  corner.className = 'pw-corner';
+  grid.appendChild(corner);
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(ws); d.setDate(ws.getDate() + i);
+    days.push(d);
+    const head = document.createElement('div');
+    head.className = 'pw-dayhead' + (plannerDateStr(d) === todayStr ? ' pw-today' : '');
+    head.innerHTML = `<div class="pw-dow">${d.toLocaleDateString('en-AU', { weekday: 'short' })}</div>
+      <div class="pw-dom">${d.getDate()}</div>`;
+    head.onclick = () => _pwGoToDay(d);
+    grid.appendChild(head);
+  }
+
+  // Hour-label column (sticky left)
+  const hourCol = document.createElement('div');
+  hourCol.className = 'pw-hourcol';
+  hourCol.style.height = colH + 'px';
+  for (let h = PLANNER_START_HOUR; h <= PLANNER_END_HOUR; h++) {
+    const lab = document.createElement('div');
+    lab.className = 'pw-hourlabel';
+    lab.style.top = ((h - PLANNER_START_HOUR) * WEEK_HOUR_PX) + 'px';
+    const hh = h % 24, ampm = hh < 12 ? 'a' : 'p', h12 = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh;
+    lab.textContent = h12 + ampm;
+    hourCol.appendChild(lab);
+  }
+  grid.appendChild(hourCol);
+
+  // One column per day
+  days.forEach(d => {
+    const dStr = plannerDateStr(d);
+    const col = document.createElement('div');
+    col.className = 'pw-daycol';
+    col.style.height = colH + 'px';
+    // Planned blocks → tap drops into that day with the block open
+    _plannerPlans.filter(p => p.date === dStr && !p.parked).forEach(p => {
+      _pwBlock(col, p.startTime, p.durationHours, p.task, () => _pwGoToDay(d, p.id), false);
+    });
+    // Completed entries + the live clock belong only on my own planner
+    if (_plannerView === 'me') {
+      entries.filter(e => e.date === dStr && e.clockIn && e.clockOut).forEach(e => {
+        _pwBlock(col, e.clockIn, _pwDur(e.clockIn, e.clockOut), e.task, () => _pwGoToDay(d), true);
+      });
+      if (clockState && clockState.running && dStr === todayStr && clockState.startTime) {
+        _pwBlock(col, clockState.startTime, _pwDur(clockState.startTime, _hmNow()), clockState.task + ' (now)', () => _pwGoToDay(d), false);
+      }
+    }
+    // Now line on today's column
+    if (dStr === todayStr) {
+      const nm = (now.getHours() - PLANNER_START_HOUR) * 60 + now.getMinutes();
+      if (nm >= 0 && nm <= totalHours * 60) {
+        const nl = document.createElement('div');
+        nl.className = 'pw-now';
+        nl.style.top = (nm / 60 * WEEK_HOUR_PX) + 'px';
+        col.appendChild(nl);
+      }
+    }
+    grid.appendChild(col);
+  });
+
+  // Portrait nudge
+  const hint = document.getElementById('pw-rotate-hint');
+  if (hint) hint.style.display = window.innerHeight > window.innerWidth ? '' : 'none';
+
+  // Scroll to now (this week) or 6am once
+  const sc = document.getElementById('pw-scroll');
+  if (sc && !_plannerSuppressAutoScroll) {
+    const inThisWeek = days.some(d => plannerDateStr(d) === todayStr);
+    if (inThisWeek) {
+      const nm = (now.getHours() - PLANNER_START_HOUR) * 60 + now.getMinutes();
+      sc.scrollTop = Math.max(0, nm / 60 * WEEK_HOUR_PX - 80);
+    } else {
+      sc.scrollTop = 6 * WEEK_HOUR_PX;
+    }
+  }
+
+  // Keep the now line moving while the week stays open
+  _plannerWeekTimer = setInterval(() => {
+    if (_plannerMode !== 'week') { clearInterval(_plannerWeekTimer); return; }
+    const n = new Date();
+    const nm = (n.getHours() - PLANNER_START_HOUR) * 60 + n.getMinutes();
+    const nl = grid.querySelector('.pw-now');
+    if (nl) nl.style.top = (nm / 60 * WEEK_HOUR_PX) + 'px';
+  }, 60000);
 }
 
 function getTaskAvgDuration(taskName) {
@@ -7781,6 +7962,31 @@ function renderPlannerScreen() {
     if (meBtn && ethBtn) { (_plannerView === 'me' ? on : off)(meBtn); (_plannerView === 'ethan' ? on : off)(ethBtn); }
   } else {
     updateAssignmentBanner();
+  }
+
+  // ── Day vs Week mode ── toggle the containers and the action buttons that
+  // only make sense for a single day, then hand off to the week renderer.
+  const weekMode = _plannerMode === 'week';
+  const dayWrap = document.getElementById('planner-day-wrap');
+  const weekWrap = document.getElementById('planner-week-wrap');
+  const dayActions = document.getElementById('planner-day-actions');
+  const modeBtn = document.getElementById('planner-mode-btn');
+  if (dayWrap) dayWrap.style.display = weekMode ? 'none' : 'flex';
+  if (weekWrap) weekWrap.style.display = weekMode ? 'flex' : 'none';
+  if (dayActions) dayActions.style.display = weekMode ? 'none' : 'contents';
+  if (modeBtn) modeBtn.textContent = weekMode ? '🗓 Day' : '📅 Week';
+  if (weekMode) {
+    const ws = _weekStart(_plannerDate);
+    const we = new Date(ws); we.setDate(we.getDate() + 6);
+    const todayStr = plannerDateStr(new Date());
+    const inThisWeek = [...Array(7)].some((_, i) => { const d = new Date(ws); d.setDate(ws.getDate() + i); return plannerDateStr(d) === todayStr; });
+    document.getElementById('planner-date-label').textContent = inThisWeek ? 'This Week' : 'Week';
+    document.getElementById('planner-date-sub').textContent =
+      ws.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) + ' – ' +
+      we.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+    clearInterval(_plannerNowTimer);
+    renderPlannerWeek();
+    return;
   }
 
   // Build grid
