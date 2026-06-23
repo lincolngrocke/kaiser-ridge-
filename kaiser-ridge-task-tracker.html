@@ -1001,8 +1001,11 @@
   </div>
   <!-- Worker only: banner when the manager has planned tasks for today -->
   <div class="update-banner" id="assign-banner" onclick="ackAssignmentBanner()" style="display:none;background:var(--green);margin:0 16px 8px;"></div>
-  <div class="scroll-area" id="planner-scroll" style="position:relative;overflow-y:auto;flex:1;touch-action:pan-y;">
-    <div id="planner-grid" style="position:relative;margin:0 16px;"></div>
+  <div style="display:flex;flex:1;min-height:0;">
+    <div class="scroll-area" id="planner-scroll" style="position:relative;overflow-y:auto;flex:1;touch-action:pan-y;">
+      <div id="planner-grid" style="position:relative;margin:0 16px;"></div>
+    </div>
+    <div id="planner-holding" style="display:none;width:104px;flex-shrink:0;overflow-y:auto;border-left:1px solid var(--border);background:var(--card);padding:6px 6px 24px;"></div>
   </div>
 </div>
 
@@ -2017,7 +2020,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.19';
+const APP_VERSION = '2026-06-21.20';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -7511,7 +7514,7 @@ function plannerStoreKey() { return _plannerView === 'ethan' ? 'kr_planner_ethan
 let _plannerPlans = JSON.parse(localStorage.getItem('kr_planner') || '[]');
 let _plannerAddTask = null; // task object selected in add modal
 let _plannerDetailId = null; // plan id in detail modal
-let _plannerDragId = null, _plannerDragOffsetY = 0, _plannerIsDragging = false, _plannerTouchStartY = 0;
+let _plannerDragId = null, _plannerDragOffsetY = 0, _plannerIsDragging = false, _plannerTouchStartY = 0, _plannerTouchStartX = 0;
 let _plannerDragLabel = null;
 let _plannerNowTimer = null;
 
@@ -7800,9 +7803,10 @@ function renderPlannerScreen() {
 
   const dateStr = plannerDateStr(_plannerDate);
 
-  // Render all planned blocks for this day
+  // Render all planned blocks for this day (parked ones live in the holding column)
   const dayPlans = _plannerPlans.filter(p => p.date === dateStr);
-  dayPlans.forEach(p => renderPlannerBlock(p, grid));
+  dayPlans.filter(p => !p.parked).forEach(p => renderPlannerBlock(p, grid));
+  renderPlannerHolding(dateStr);
 
   // Own completed entries and the live clock only belong on MY planner — never on
   // the "Ethan's Day" view, which is purely the plan being built for him.
@@ -7973,6 +7977,7 @@ function renderPlannerBlock(plan, grid) {
   block.addEventListener('touchstart', e => {
     _blockTouchStartTime = Date.now();
     _plannerTouchStartY = e.touches[0].clientY;
+    _plannerTouchStartX = e.touches[0].clientX;
     _plannerIsDragging = false;
     plannerDragStart(e, plan.id, topPx);
   }, { passive: false });
@@ -8362,7 +8367,7 @@ let _reorderItems = [];
 function _planStartMins(p) { const [h, m] = String(p.startTime || '0:0').split(':').map(Number); return (h || 0) * 60 + (m || 0); }
 function openPlannerReorder() {
   const dateStr = plannerDateStr(_plannerDate);
-  _reorderItems = _plannerPlans.filter(p => p.date === dateStr).slice().sort((a, b) => _planStartMins(a) - _planStartMins(b));
+  _reorderItems = _plannerPlans.filter(p => p.date === dateStr && !p.parked).slice().sort((a, b) => _planStartMins(a) - _planStartMins(b));
   if (!_reorderItems.length) { showToast('No tasks to reorder on this day'); return; }
   document.getElementById('planner-reorder-start').value = _reorderItems[0].startTime || '06:00';
   renderReorderList();
@@ -8473,6 +8478,18 @@ function plannerDragMove(e) {
   if (!_plannerDragId) return;
   if (isWorker()) return; // workers can tap to view a block but not drag it
   const t = e.touches[0];
+  // Swipe RIGHT → park the block into the holding column.
+  if (!_plannerIsDragging) {
+    const dx = t.clientX - _plannerTouchStartX, dy = t.clientY - _plannerTouchStartY;
+    if (dx > 50 && dx > Math.abs(dy) * 1.4) {
+      e.preventDefault();
+      const id = _plannerDragId;
+      _plannerDragId = null;
+      plannerDragEnd(e);   // cleanup listeners/label
+      parkPlannerBlock(id);
+      return;
+    }
+  }
   // Only start moving after finger travels >8px — prevents tap from repositioning block
   if (!_plannerIsDragging) {
     if (Math.abs(t.clientY - _plannerTouchStartY) < 8) return;
@@ -8533,6 +8550,94 @@ function plannerDragEnd(e) {
   }
   _plannerDragId = null;
   _plannerIsDragging = false;
+}
+
+// ── Park a block to the holding column, drag it back to place it ──
+function parkPlannerBlock(id) {
+  const plan = _plannerPlans.find(p => p.id === id);
+  if (!plan) return;
+  plan.parked = true;
+  savePlanner();
+  renderPlannerScreen();
+  showToast('Parked — drag it back onto the timeline');
+}
+function renderPlannerHolding(dateStr) {
+  const col = document.getElementById('planner-holding');
+  if (!col) return;
+  const parked = _plannerPlans.filter(p => p.date === dateStr && p.parked);
+  if (!parked.length) { col.style.display = 'none'; col.innerHTML = ''; return; }
+  col.style.display = 'block';
+  col.innerHTML = '<div style="font-size:10px;font-weight:700;color:var(--subtext);text-align:center;padding:2px 0 6px;">HOLDING</div>' +
+    parked.map(p => {
+      const dur = Number(p.durationHours) || 1;
+      const durStr = dur >= 1 ? (Math.round(dur * 10) / 10) + 'h' : Math.round(dur * 60) + 'm';
+      const safe = String(p.task || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+      return `<div data-park-id="${p.id}" ontouchstart="parkedChipTouchStart(event,'${p.id}')" style="background:${plannerColorFor(p.task)};color:#fff;border-radius:8px;padding:6px;margin-bottom:6px;font-size:11px;cursor:grab;touch-action:none;">
+        <div style="font-weight:700;line-height:1.2;">${safe}</div>
+        <div style="opacity:0.9;margin-top:2px;">${durStr}</div>
+      </div>`;
+    }).join('');
+}
+let _parkDragId = null, _parkClone = null;
+function _moveParkClone(x, y) {
+  if (!_parkClone) return;
+  _parkClone.style.left = (x - _parkClone.offsetWidth / 2) + 'px';
+  _parkClone.style.top = (y - 20) + 'px';
+}
+function _parkDropTime(t) {
+  const grid = document.getElementById('planner-grid');
+  const r = grid.getBoundingClientRect();
+  let snap = Math.round(((t.clientY - r.top) / PLANNER_HOUR_PX) * 60 / 5) * 5;
+  const max = (PLANNER_END_HOUR - PLANNER_START_HOUR) * 60;
+  snap = Math.max(0, Math.min(snap, max - 5));
+  return { overGrid: t.clientX < r.right, mins: snap };
+}
+function parkedChipTouchStart(e, id) {
+  if (isWorker()) return;
+  e.preventDefault();
+  _parkDragId = id;
+  const touch = e.touches[0];
+  const chip = e.currentTarget;
+  _parkClone = chip.cloneNode(true);
+  Object.assign(_parkClone.style, { position: 'fixed', zIndex: '9999', width: chip.offsetWidth + 'px', opacity: '0.85', pointerEvents: 'none' });
+  document.body.appendChild(_parkClone);
+  _moveParkClone(touch.clientX, touch.clientY);
+  document.addEventListener('touchmove', _parkDragMove, { passive: false });
+  document.addEventListener('touchend', _parkDragEnd, { once: true });
+}
+function _parkDragMove(e) {
+  if (!_parkDragId) return;
+  e.preventDefault();
+  const t = e.touches[0];
+  _moveParkClone(t.clientX, t.clientY);
+  const grid = document.getElementById('planner-grid');
+  const d = _parkDropTime(t);
+  if (d.overGrid) {
+    if (!_plannerDragLabel) { _plannerDragLabel = document.createElement('div'); _plannerDragLabel.className = 'planner-drag-time'; grid.appendChild(_plannerDragLabel); }
+    const absH = PLANNER_START_HOUR + Math.floor(d.mins / 60), absM = d.mins % 60;
+    _plannerDragLabel.textContent = formatTimeAmPm(`${String(absH).padStart(2, '0')}:${String(absM).padStart(2, '0')}`);
+    _plannerDragLabel.style.top = (d.mins / 60 * PLANNER_HOUR_PX) + 'px';
+  }
+}
+function _parkDragEnd(e) {
+  document.removeEventListener('touchmove', _parkDragMove);
+  if (_plannerDragLabel) { _plannerDragLabel.remove(); _plannerDragLabel = null; }
+  if (_parkClone) { _parkClone.remove(); _parkClone = null; }
+  const id = _parkDragId; _parkDragId = null;
+  if (!id) return;
+  const t = (e.changedTouches && e.changedTouches[0]);
+  const plan = _plannerPlans.find(p => p.id === id);
+  if (!plan || !t) return;
+  const grid = document.getElementById('planner-grid');
+  const r = grid.getBoundingClientRect();
+  if (t.clientX < r.right && t.clientY > r.top - 30) {   // dropped on the timeline
+    const d = _parkDropTime(t);
+    const absH = PLANNER_START_HOUR + Math.floor(d.mins / 60), absM = d.mins % 60;
+    plan.startTime = `${String(absH).padStart(2, '0')}:${String(absM).padStart(2, '0')}`;
+    plan.parked = false;
+    savePlanner();
+    renderPlannerScreen();
+  }
 }
 
 // ── Push the viewed day's planner blocks to Google Calendar ──
