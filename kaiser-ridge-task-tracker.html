@@ -1497,6 +1497,23 @@
   </div>
 </div>
 
+<!-- ══════════════ PLANNER MOVE-TO-DAY MODAL ══════════════ -->
+<div class="modal-backdrop" id="modal-planner-move" style="z-index:340;" onclick="if(event.target===this)closeModal('modal-planner-move')">
+  <div class="modal-sheet" style="padding:16px 0 24px;">
+    <div class="modal-handle"></div>
+    <div style="padding:0 20px 4px;display:flex;align-items:center;justify-content:space-between;">
+      <span onclick="closeModal('modal-planner-move')" style="color:var(--blue);font-size:16px;cursor:pointer;">Cancel</span>
+      <span style="font-size:17px;font-weight:600;">Move to another day</span>
+      <span onclick="confirmPlannerMove()" style="color:var(--blue);font-size:16px;font-weight:700;cursor:pointer;">Move</span>
+    </div>
+    <div style="padding:6px 20px 12px;font-size:13px;color:var(--subtext);">Pick a day to move <b id="planner-move-task" style="color:var(--text);"></b> to. It’ll land parked in that day’s holding column, ready to drop onto the timeline.</div>
+    <div style="padding:0 20px;display:flex;align-items:center;gap:10px;">
+      <span style="font-size:14px;color:var(--text);">Date</span>
+      <input type="date" id="planner-move-date" class="form-input" style="flex:1;">
+    </div>
+  </div>
+</div>
+
 <!-- ══════════════ PLANNER BLOCK DETAIL MODAL ══════════════ -->
 <div class="modal-backdrop" id="modal-planner-detail" style="z-index:300;" onclick="if(event.target===this)closeModal('modal-planner-detail')">
   <div class="modal-sheet" style="max-height:60vh;">
@@ -1525,6 +1542,7 @@
         </div>
         <button onclick="savePlannerTime()" style="width:100%;margin-top:10px;background:none;border:1px solid var(--blue);color:var(--blue);border-radius:12px;padding:11px;font-size:15px;font-weight:600;cursor:pointer;">Update time</button>
       </div>
+      <button id="planner-move-btn" onclick="openPlannerMove()" style="width:100%;margin-top:10px;background:none;border:1px solid var(--blue);color:var(--blue);border-radius:12px;padding:11px;font-size:15px;font-weight:600;cursor:pointer;">📆 Move to another day</button>
       <button id="planner-copy-btn" onclick="copyPlannerBlock()" style="width:100%;margin-top:10px;background:none;border:1px solid var(--blue);color:var(--blue);border-radius:12px;padding:11px;font-size:15px;font-weight:600;cursor:pointer;">⧉ Copy — paste to another day</button>
     </div>
   </div>
@@ -2020,7 +2038,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.20';
+const APP_VERSION = '2026-06-21.21';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -8360,6 +8378,32 @@ function pastePlannerBlock() {
   savePlanner();
   renderPlannerScreen();
   showToast('Pasted into ' + _plannerDate.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }));
+}
+
+// ── Move a planned task to another day (lands parked in that day's holding) ──
+function openPlannerMove() {
+  const plan = _plannerPlans.find(p => p.id === _plannerDetailId);
+  if (!plan) return;
+  document.getElementById('planner-move-task').textContent = plan.task || 'this task';
+  const d = new Date(_plannerDate); d.setDate(d.getDate() + 1);   // default tomorrow
+  const pad = n => String(n).padStart(2, '0');
+  document.getElementById('planner-move-date').value = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  closeModal('modal-planner-detail');
+  openModal('modal-planner-move');
+}
+function confirmPlannerMove() {
+  const plan = _plannerPlans.find(p => p.id === _plannerDetailId);
+  if (!plan) { closeModal('modal-planner-move'); return; }
+  const v = document.getElementById('planner-move-date').value;
+  if (!v) { showToast('Pick a date'); return; }
+  const [y, m, dd] = v.split('-').map(Number);
+  const target = new Date(y, m - 1, dd);
+  plan.date = plannerDateStr(target);
+  plan.parked = true;
+  savePlanner();
+  closeModal('modal-planner-move');
+  renderPlannerScreen();
+  showToast('Moved to ' + target.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) + ' (parked)');
 }
 
 // ── Reorder a day's tasks (▲▼), then lay them back-to-back keeping durations ──
