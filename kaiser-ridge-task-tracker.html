@@ -1525,18 +1525,18 @@
 </div>
 
 <!-- ══════════════ PLANNER MOVE-TO-DAY MODAL ══════════════ -->
-<div class="modal-backdrop" id="modal-planner-move" style="z-index:340;" onclick="if(event.target===this)closeModal('modal-planner-move')">
+<div class="modal-backdrop" id="modal-planner-move" style="z-index:340;" onclick="if(event.target===this){closeModal('modal-planner-move');_quickMove=false;}">
   <div class="modal-sheet" style="padding:16px 0 24px;">
     <div class="modal-handle"></div>
     <div style="padding:0 20px 4px;display:flex;align-items:center;justify-content:space-between;">
-      <span onclick="closeModal('modal-planner-move')" style="color:var(--blue);font-size:16px;cursor:pointer;">Cancel</span>
+      <span onclick="closeModal('modal-planner-move');_quickMove=false;" style="color:var(--blue);font-size:16px;cursor:pointer;">Cancel</span>
       <span style="font-size:17px;font-weight:600;">Move to another day</span>
       <span onclick="confirmPlannerMove()" style="color:var(--blue);font-size:16px;font-weight:700;cursor:pointer;">Move</span>
     </div>
     <div style="padding:6px 20px 12px;font-size:13px;color:var(--subtext);">Pick a day to move <b id="planner-move-task" style="color:var(--text);"></b> to. It’ll land parked in that day’s holding column, ready to drop onto the timeline.</div>
     <div style="padding:0 20px;display:flex;align-items:center;gap:10px;">
       <span style="font-size:14px;color:var(--text);">Date</span>
-      <input type="date" id="planner-move-date" class="form-input" style="flex:1;">
+      <input type="date" id="planner-move-date" class="form-input" style="flex:1;" onchange="plannerMoveDatePicked()">
     </div>
   </div>
 </div>
@@ -2065,7 +2065,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.23';
+const APP_VERSION = '2026-06-21.24';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -8222,10 +8222,13 @@ function renderPlannerBlock(plan, grid) {
     _plannerTouchStartY = e.touches[0].clientY;
     _plannerTouchStartX = e.touches[0].clientX;
     _plannerIsDragging = false;
+    _armLongPress(plan.id, e.touches[0].clientX, e.touches[0].clientY);
     plannerDragStart(e, plan.id, topPx);
   }, { passive: false });
 
   block.addEventListener('touchend', e => {
+    _cancelLongPress();
+    if (_lpFired) { _lpFired = false; _plannerDragId = null; plannerDragEnd(e); return; } // long-press handled it
     if (!_plannerIsDragging) {
       // No movement — it's a tap, cancel drag and open detail
       _plannerDragId = null;
@@ -8609,6 +8612,7 @@ function pastePlannerBlock() {
 function openPlannerMove() {
   const plan = _plannerPlans.find(p => p.id === _plannerDetailId);
   if (!plan) return;
+  _quickMove = false; // detail path keeps its explicit "Move" button
   document.getElementById('planner-move-task').textContent = plan.task || 'this task';
   const d = new Date(_plannerDate); d.setDate(d.getDate() + 1);   // default tomorrow
   const pad = n => String(n).padStart(2, '0');
@@ -8616,8 +8620,56 @@ function openPlannerMove() {
   closeModal('modal-planner-detail');
   openModal('modal-planner-move');
 }
+
+// ── Long-press a block / parked chip → quick "move to another day" ──
+// Reuses confirmPlannerMove but pops the calendar straight away, and once a
+// date is picked it drops the task (parked) onto that day with no extra tap.
+let _quickMove = false;
+let _lpTimer = null, _lpFired = false, _lpStartX = 0, _lpStartY = 0;
+function _armLongPress(planId, x, y) {
+  if (isWorker()) return; // workers can view but not move blocks
+  _cancelLongPress();
+  _lpStartX = x; _lpStartY = y; _lpFired = false;
+  _lpTimer = setTimeout(() => {
+    _lpTimer = null; _lpFired = true;
+    if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
+    _teardownActiveDrag();
+    startQuickMove(planId);
+  }, 500);
+}
+function _cancelLongPress() { if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; } }
+function _lpMaybeCancelOnMove(x, y) {
+  if (_lpTimer && Math.hypot(x - _lpStartX, y - _lpStartY) > 10) _cancelLongPress();
+}
+// Abort any in-progress drag visuals (timeline or holding) when long-press wins.
+function _teardownActiveDrag() {
+  _plannerDragId = null; _plannerIsDragging = false;
+  if (_parkClone) { _parkClone.remove(); _parkClone = null; }
+  document.removeEventListener('touchmove', _parkDragMove);
+  _parkDragId = null;
+  if (_plannerDragLabel) { _plannerDragLabel.remove(); _plannerDragLabel = null; }
+}
+function startQuickMove(planId) {
+  const plan = _plannerPlans.find(p => p.id === planId);
+  if (!plan || isWorker()) return;
+  _plannerDetailId = planId;
+  _quickMove = true;
+  document.getElementById('planner-move-task').textContent = plan.task || 'this task';
+  const d = new Date(_plannerDate); d.setDate(d.getDate() + 1); // default tomorrow
+  const pad = n => String(n).padStart(2, '0');
+  document.getElementById('planner-move-date').value = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  openModal('modal-planner-move');
+  // Pop the native date calendar immediately — "long-press → pick a day".
+  setTimeout(() => {
+    const di = document.getElementById('planner-move-date');
+    if (di) { di.focus(); if (di.showPicker) { try { di.showPicker(); } catch (e) {} } }
+  }, 120);
+}
+// Auto-confirm the move the instant a date is chosen (quick-move only).
+function plannerMoveDatePicked() { if (_quickMove) confirmPlannerMove(); }
 function confirmPlannerMove() {
   const plan = _plannerPlans.find(p => p.id === _plannerDetailId);
+  _quickMove = false;
   if (!plan) { closeModal('modal-planner-move'); return; }
   const v = document.getElementById('planner-move-date').value;
   if (!v) { showToast('Pick a date'); return; }
@@ -8747,11 +8799,13 @@ function plannerDragMove(e) {
   if (!_plannerDragId) return;
   if (isWorker()) return; // workers can tap to view a block but not drag it
   const t = e.touches[0];
+  _lpMaybeCancelOnMove(t.clientX, t.clientY); // finger moved → not a long-press
   // Swipe RIGHT → park the block into the holding column.
   if (!_plannerIsDragging) {
     const dx = t.clientX - _plannerTouchStartX, dy = t.clientY - _plannerTouchStartY;
     if (dx > 50 && dx > Math.abs(dy) * 1.4) {
       e.preventDefault();
+      _cancelLongPress();
       const id = _plannerDragId;
       _plannerDragId = null;
       plannerDragEnd(e);   // cleanup listeners/label
@@ -8762,6 +8816,7 @@ function plannerDragMove(e) {
   // Only start moving after finger travels >8px — prevents tap from repositioning block
   if (!_plannerIsDragging) {
     if (Math.abs(t.clientY - _plannerTouchStartY) < 8) return;
+    _cancelLongPress();
     _plannerIsDragging = true;
   }
   e.preventDefault();
@@ -8793,6 +8848,7 @@ function plannerDragMove(e) {
 }
 
 function plannerDragEnd(e) {
+  _cancelLongPress();
   const grid = document.getElementById('planner-grid');
   grid.removeEventListener('touchmove', plannerDragMove);
   grid.removeEventListener('touchend', plannerDragEnd);
@@ -8866,6 +8922,7 @@ function parkedChipTouchStart(e, id) {
   e.preventDefault();
   _parkDragId = id;
   const touch = e.touches[0];
+  _armLongPress(id, touch.clientX, touch.clientY);
   const chip = e.currentTarget;
   _parkClone = chip.cloneNode(true);
   Object.assign(_parkClone.style, { position: 'fixed', zIndex: '9999', width: chip.offsetWidth + 'px', opacity: '0.85', pointerEvents: 'none' });
@@ -8878,6 +8935,7 @@ function _parkDragMove(e) {
   if (!_parkDragId) return;
   e.preventDefault();
   const t = e.touches[0];
+  _lpMaybeCancelOnMove(t.clientX, t.clientY); // dragging the chip → not a long-press
   _moveParkClone(t.clientX, t.clientY);
   const grid = document.getElementById('planner-grid');
   const d = _parkDropTime(t);
@@ -8893,6 +8951,8 @@ function _parkDragEnd(e) {
   if (_plannerDragLabel) { _plannerDragLabel.remove(); _plannerDragLabel = null; }
   if (_parkClone) { _parkClone.remove(); _parkClone = null; }
   const id = _parkDragId; _parkDragId = null;
+  _cancelLongPress();
+  if (_lpFired) { _lpFired = false; return; } // long-press opened the move picker
   if (!id) return;
   const t = (e.changedTouches && e.changedTouches[0]);
   const plan = _plannerPlans.find(p => p.id === id);
