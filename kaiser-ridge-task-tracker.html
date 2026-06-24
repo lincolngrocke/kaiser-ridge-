@@ -50,6 +50,9 @@
     position: relative;
     overflow: hidden;
   }
+  /* Week planner uses the full landscape width; the phone-width cap is dropped
+     only while the week overview is showing. Nav bar + modals stay centred. */
+  body.kr-wide { max-width: none; }
 
   /* ── SCREENS ── */
   .screen { display: none; flex-direction: column; height: 100vh; height: 100dvh; padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom)); }
@@ -2062,7 +2065,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.22';
+const APP_VERSION = '2026-06-21.23';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2344,6 +2347,7 @@ function showScreen(id, tab) {
   if (id === 'timesheets') renderTimesheets();
   if (id === 'settings') { updateStats(); updateLastBackupLabel(); updateBackupReminder(); }
   if (id === 'planner') { _plannerDate = new Date(); renderPlannerScreen(); }
+  else document.body.classList.remove('kr-wide');
   if (id === 'clock') updateBackupBanner();
   // Hide running overlay when not on clock screen; restore it if clock is running
   const overlay = document.getElementById('running-overlay');
@@ -7904,6 +7908,20 @@ function renderPlannerWeek() {
   }, 60000);
 }
 
+// Rotating the phone doesn't re-run the renderer, so the column widths and the
+// "rotate to landscape" hint would go stale. Re-render the week (preserving the
+// scroll position) whenever the viewport changes while it's on screen.
+window.addEventListener('resize', () => {
+  const scr = document.getElementById('screen-planner');
+  if (!scr || !scr.classList.contains('active') || _plannerMode !== 'week') return;
+  const sc = document.getElementById('pw-scroll');
+  const keep = sc ? sc.scrollTop : 0;
+  _plannerSuppressAutoScroll = true;
+  renderPlannerWeek();
+  _plannerSuppressAutoScroll = false;
+  if (sc) sc.scrollTop = keep;
+});
+
 function getTaskAvgDuration(taskName) {
   const relevant = entries.filter(e => e.task === taskName && e.durationHours > 0);
   if (!relevant.length) return null;
@@ -7975,6 +7993,7 @@ function renderPlannerScreen() {
   if (weekWrap) weekWrap.style.display = weekMode ? 'flex' : 'none';
   if (dayActions) dayActions.style.display = weekMode ? 'none' : 'contents';
   if (modeBtn) modeBtn.textContent = weekMode ? '🗓 Day' : '📅 Week';
+  document.body.classList.toggle('kr-wide', weekMode);
   if (weekMode) {
     const ws = _weekStart(_plannerDate);
     const we = new Date(ws); we.setDate(we.getDate() + 6);
