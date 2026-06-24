@@ -1555,6 +1555,18 @@
   </div>
 </div>
 
+<!-- ══════════════ PINNED-NOTES PREVIEW (tap the 📌 badge) ══════════════ -->
+<div class="modal-backdrop" id="modal-pin-preview" style="z-index:360;" onclick="if(event.target===this)closeModal('modal-pin-preview')">
+  <div class="modal-sheet" style="padding:16px 0 28px;max-height:80vh;display:flex;flex-direction:column;">
+    <div class="modal-handle"></div>
+    <div style="padding:0 20px 10px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
+      <span id="pin-preview-title" style="font-size:16px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:10px;"></span>
+      <span onclick="closeModal('modal-pin-preview')" style="color:var(--blue);font-size:16px;cursor:pointer;flex-shrink:0;">Done</span>
+    </div>
+    <div id="pin-preview-body" style="padding:0 20px;overflow-y:auto;flex:1;"></div>
+  </div>
+</div>
+
 <!-- ══════════════ PLANNER BLOCK DETAIL MODAL ══════════════ -->
 <div class="modal-backdrop" id="modal-planner-detail" style="z-index:300;" onclick="if(event.target===this)closeModal('modal-planner-detail')">
   <div class="modal-sheet" style="max-height:60vh;">
@@ -2079,7 +2091,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.26';
+const APP_VERSION = '2026-06-21.27';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -5145,7 +5157,7 @@ function renderDirectory() {
             const gapDays = auto ? Math.max(1, Math.round(auto.avgGap)) : 0;
             const autoBadge = auto ? `<span style="display:inline-block;background:#5856D6;color:#fff;font-size:9px;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;">AUTO</span>` : '';
             const nPins = (taskNotes[task] || []).length;
-            const pinBadge = nPins ? `<span title="${nPins} pinned note${nPins === 1 ? '' : 's'}" style="display:inline-block;background:#FFD60A;color:#000;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;">📌 ${nPins}</span>` : '';
+            const pinBadge = nPins ? `<span onclick="event.stopPropagation();showPinnedNotesPopup(this)" ontouchstart="event.stopPropagation()" title="View ${nPins} pinned note${nPins === 1 ? '' : 's'}" style="display:inline-block;background:#FFD60A;color:#000;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;cursor:pointer;">📌 ${nPins}</span>` : '';
             const lu = lastUsed[task];
             let usedLine;
             if (lu) {
@@ -8537,6 +8549,19 @@ function _pinnedNotesHtml(task) {
       return `<div style="margin-bottom:10px;"><span style="font-size:14px;color:#FFD60A;">📌 ${safe}</span>${caught}${thumb}</div>`;
     }).join('')}
   </div>`;
+}
+
+// Tap a task's 📌 badge in the Task Directory to preview its pinned notes
+// without starting the task. Reads the task off the row so no escaping needed.
+function showPinnedNotesPopup(el) {
+  const row = el.closest('.dir-task-row');
+  const task = row ? row.dataset.task : '';
+  if (!task) return;
+  document.getElementById('pin-preview-title').textContent = task;
+  const html = _pinnedNotesHtml(task);
+  document.getElementById('pin-preview-body').innerHTML =
+    html || '<div style="padding:24px 0;color:var(--subtext);text-align:center;">No pinned notes.</div>';
+  openModal('modal-pin-preview');
 }
 
 function openPlannerDetail(planId) {
