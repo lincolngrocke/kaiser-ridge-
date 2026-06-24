@@ -2091,7 +2091,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.28';
+const APP_VERSION = '2026-06-21.29';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2712,7 +2712,9 @@ function renderRunChecklist() {
   if (!el) return;
   const items = (clockState && clockState.running && SUBTASKS[clockState.task])
     ? _orderedChecklistItems(clockState.task, SUBTASKS[clockState.task]) : [];
-  const pinned = (clockState && clockState.running && getTaskNotes()[clockState.task]) || [];
+  const pinned = ((clockState && clockState.running && getTaskNotes()[clockState.task]) || [])
+    .slice().sort((a, b) => _pinTime(a) - _pinTime(b)); // oldest→newest, matches the 📌 preview
+
   if (!items.length && !pinned.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
   el.style.display = 'flex';
   const done = (clockState && Array.isArray(clockState.checklistDone)) ? clockState.checklistDone : [];
@@ -8537,10 +8539,12 @@ function confirmPlannerAdd() {
 // ── Detail / Clock In ──
 
 // Pinned notes for a task, shown in the planner detail (viewable before clocking in).
+// Chronological key for a pinned note (oldest→newest), by when it was caught/created.
+function _pinTime(p) { return new Date(p.caught || p.ts || 0).getTime() || 0; }
+
 function _pinnedNotesHtml(task) {
-  // Oldest first (top) → newest last (bottom), by when each note was caught/created.
-  const pins = (getTaskNotes()[task] || []).slice().sort((a, b) =>
-    (new Date(a.caught || a.ts || 0).getTime() || 0) - (new Date(b.caught || b.ts || 0).getTime() || 0));
+  // Oldest first (top) → newest last (bottom).
+  const pins = (getTaskNotes()[task] || []).slice().sort((a, b) => _pinTime(a) - _pinTime(b));
   if (!pins.length) return '';
   return `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">
     <div style="font-size:12px;color:#FFD60A;margin-bottom:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">📌 Pinned notes</div>
