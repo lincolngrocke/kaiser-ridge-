@@ -1020,8 +1020,6 @@
     <span id="planner-day-actions" style="display:contents;">
       <button id="planner-add-btn" onclick="openPlannerAddTask()" style="flex:1;background:var(--blue);color:#fff;border:none;border-radius:12px;padding:10px;font-size:15px;font-weight:600;cursor:pointer;">+ Add Task</button>
       <button id="planner-paste-btn" onclick="pastePlannerBlock()" title="Paste copied task into this day" style="display:none;background:var(--green);color:#fff;border:none;border-radius:12px;padding:10px 12px;font-size:15px;font-weight:600;cursor:pointer;">📋 Paste</button>
-      <button id="planner-reorder-btn" onclick="openPlannerReorder()" title="Reorder this day's tasks" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;font-size:15px;cursor:pointer;">↕</button>
-      <button id="planner-cal-btn" onclick="pushPlannerToCalendar()" title="Push this day to Google Calendar" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;font-size:15px;cursor:pointer;">📆</button>
     </span>
     <button onclick="plannerGoToday()" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-size:13px;color:var(--blue);cursor:pointer;">Today</button>
     <button id="planner-mode-btn" onclick="togglePlannerMode()" title="Switch between day and week view" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;font-size:13px;color:var(--blue);cursor:pointer;white-space:nowrap;">📅 Week</button>
@@ -2081,7 +2079,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.25';
+const APP_VERSION = '2026-06-21.26';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -7221,7 +7219,7 @@ function setRole(role) {
 function applyRoleUI() {
   const isW = isWorker();
   document.body.classList.toggle('worker-mode', isW);
-  ['dir-add-btn', 'planner-add-btn', 'planner-cal-btn', 'lib-publish-btn', 'equip-manage-btn'].forEach(id => {
+  ['dir-add-btn', 'planner-add-btn', 'lib-publish-btn', 'equip-manage-btn'].forEach(id => {
     const el = document.getElementById(id); if (el) el.style.display = isW ? 'none' : '';
   });
   const m = document.getElementById('role-seg-manager'), w = document.getElementById('role-seg-worker');
@@ -8518,6 +8516,7 @@ function confirmPlannerAdd() {
   };
   _plannerPlans.push(plan);
   savePlanner();
+  scheduleCalendarAutoPush(plan.date);
   closeModal('modal-planner-add');
   renderPlannerScreen();
   showToast('Added to planner');
@@ -8599,6 +8598,7 @@ function savePlannerTime() {
   plan.startTime = t;
   plan.durationHours = dur;
   savePlanner();
+  scheduleCalendarAutoPush(plan.date);
   closeModal('modal-planner-detail');
   renderPlannerScreen();
   showToast('Time updated');
@@ -8633,6 +8633,7 @@ function pastePlannerBlock() {
   });
   _plannerPlans.push(block);
   savePlanner();
+  scheduleCalendarAutoPush(block.date);
   renderPlannerScreen();
   showToast('Pasted into ' + _plannerDate.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }));
 }
@@ -9086,6 +9087,25 @@ async function syncCalendarForDate(dateStr, opts) {
 function pushPlannerToCalendar() {
   if (isWorker()) return;
   return syncCalendarForDate(plannerDateStr(_plannerDate), { requireItems: true });
+}
+
+// ── Auto-push planner changes to Google Calendar (replaces the manual 📆) ──
+// Debounced ~60s per day: adding/editing a task quietly mirrors that day to the
+// calendar. Manager + My Day only — the calendar is the manager's, so Ethan's
+// Day is never pushed. The 60s wait batches rapid edits into one sync.
+let _calAutoTimers = {};
+function scheduleCalendarAutoPush(dateStr) {
+  if (isWorker() || _plannerView !== 'me' || !dateStr) return;
+  if (!localStorage.getItem('kr_sheet_url')) return;
+  if (_calAutoTimers[dateStr]) clearTimeout(_calAutoTimers[dateStr]);
+  _calAutoTimers[dateStr] = setTimeout(function fire() {
+    if (!localStorage.getItem('kr_sheet_url')) { delete _calAutoTimers[dateStr]; return; }
+    // syncCalendarForDate reads the live _plannerPlans; only push while that's My
+    // Day — if the manager flipped to Ethan's Day, wait and retry, never push his.
+    if (_plannerView !== 'me') { _calAutoTimers[dateStr] = setTimeout(fire, 60000); return; }
+    delete _calAutoTimers[dateStr];
+    syncCalendarForDate(dateStr, { silent: true });
+  }, 60000);
 }
 
 // Planner renders when showScreen('planner') is called — hooked via showScreen's existing id check
