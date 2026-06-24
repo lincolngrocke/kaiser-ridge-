@@ -317,6 +317,21 @@
     font-weight: 600;
     cursor: pointer;
   }
+  .btn-pause {
+    flex: 1;
+    height: 56px;
+    border-radius: 28px;
+    border: none;
+    background: #FF9500;
+    color: white;
+    font-size: 18px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-pause.on-pause { background: var(--green); } /* shows "Resume" */
+  /* While paused: freeze + dim the timer and flag the status line */
+  .clock-running-overlay.paused .running-big-timer { opacity: 0.4; }
+  .clock-running-overlay.paused #run-clockedin-text { color: #FF9500; font-weight: 600; }
 
   /* ── ACTIVE TASK CARD ── */
   .active-task-card {
@@ -1318,6 +1333,7 @@
   </div>
   <div id="run-checklist" style="display:none;width:100%;max-width:420px;margin:8px auto 0;padding:0 20px;text-align:left;flex:1000 1 0;min-height:0;flex-direction:column;"></div>
   <div class="running-buttons">
+<button class="btn-pause" id="btn-pause" onclick="togglePause()">⏸ Pause</button>
 <button class="btn-clock-out" style="flex:1.4" onclick="openTimeModal('out')">Clock Out</button>
   </div>
 </div>
@@ -2065,7 +2081,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.24';
+const APP_VERSION = '2026-06-21.25';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2377,7 +2393,7 @@ function startTimerTick() {
       document.getElementById('run-timer').textContent = fmt;
       // Update break display
       const breakEl = document.getElementById('run-break-info');
-      if (breakEl) breakEl.textContent = breakSecs > 0 ? '☕ ' + Math.round(breakSecs / 60) + 'min break deducted' : '';
+      if (breakEl) breakEl.textContent = breakSecs > 0 ? '⏸ ' + Math.round(breakSecs / 60) + 'min paused (deducted)' : '';
       updateAtTimes();
     }
   }, 1000);
@@ -2517,6 +2533,16 @@ function renderClockState() {
     // Populate overlay fields
     const clockInFmt = formatTimeAmPm(clockState.startTime);
     document.getElementById('run-clockedin-text').textContent = 'Clocked In @ ' + clockInFmt;
+    // Restore the paused look if the app was reopened mid-pause
+    const pauseBtn = document.getElementById('btn-pause');
+    if (clockState.onBreak) {
+      overlay.classList.add('paused');
+      if (pauseBtn) { pauseBtn.textContent = '▶ Resume'; pauseBtn.classList.add('on-pause'); }
+      document.getElementById('run-clockedin-text').textContent = '⏸ Paused @ ' + formatTimeAmPm(clockState.breakStartTime || clockState.startTime);
+    } else {
+      overlay.classList.remove('paused');
+      if (pauseBtn) { pauseBtn.textContent = '⏸ Pause'; pauseBtn.classList.remove('on-pause'); }
+    }
     const taskParts = [clockState.group, clockState.task].filter(Boolean).join(' · ');
     const locationPart = clockState.location || '';
     document.getElementById('run-task-info').textContent = [locationPart, taskParts].filter(Boolean).join(' — ');
@@ -4769,23 +4795,27 @@ function showToast(msg) {
 // ════════════════════════════════
 //  BREAK & UNDO
 // ════════════════════════════════
-function toggleBreak() {
-  if (!clockState) return;
-  const btn = document.getElementById('btn-break');
+// Pause / Resume the running task. Freezes the on-screen timer and deducts the
+// paused stretch from the recorded duration. Uses the existing break machinery
+// (breakTotal + breaks[] intervals), so clock-out, the Sheet break column and
+// per-item checklist timing all account for it automatically.
+function togglePause() {
+  if (!clockState || !clockState.running) return;
+  const btn = document.getElementById('btn-pause');
+  const overlay = document.getElementById('running-overlay');
   if (!clockState.onBreak) {
-    // Start break — record break start time but keep timer running
+    // Pause — record the moment; timer freezes because break time is deducted live
     clockState.onBreak = true;
     clockState.breakStartMs = Date.now();
     clockState.breakStartTime = new Date().toTimeString().slice(0,5);
     clockState.breakTotal = clockState.breakTotal || 0;
     localStorage.setItem('kr_clock', JSON.stringify(clockState));
-    btn.textContent = 'End Break';
-    btn.classList.add('on-break');
-    // Update the clocked-in text to show break started
-    document.getElementById('run-clockedin-text').textContent = 'Break Started @ ' + formatTimeAmPm(clockState.breakStartTime);
-    showToast('Break started');
+    if (btn) { btn.textContent = '▶ Resume'; btn.classList.add('on-pause'); }
+    if (overlay) overlay.classList.add('paused');
+    document.getElementById('run-clockedin-text').textContent = '⏸ Paused @ ' + formatTimeAmPm(clockState.breakStartTime);
+    showToast('Paused — timer stopped');
   } else {
-    // End break — accumulate break time
+    // Resume — bank the paused stretch as a break interval
     const breakEndMs = Date.now();
     clockState.breakTotal = (clockState.breakTotal || 0) + (breakEndMs - clockState.breakStartMs);
     if (!Array.isArray(clockState.breaks)) clockState.breaks = [];
@@ -4794,11 +4824,10 @@ function toggleBreak() {
     clockState.breakStartMs = null;
     clockState.breakStartTime = null;
     localStorage.setItem('kr_clock', JSON.stringify(clockState));
-    btn.textContent = 'Start Break';
-    btn.classList.remove('on-break');
-    // Restore clocked-in text
+    if (btn) { btn.textContent = '⏸ Pause'; btn.classList.remove('on-pause'); }
+    if (overlay) overlay.classList.remove('paused');
     document.getElementById('run-clockedin-text').textContent = 'Clocked In @ ' + formatTimeAmPm(clockState.startTime);
-    showToast('Break ended');
+    showToast('Resumed');
   }
 }
 
