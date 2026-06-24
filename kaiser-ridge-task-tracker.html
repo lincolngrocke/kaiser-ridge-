@@ -2091,7 +2091,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.30';
+const APP_VERSION = '2026-06-21.31';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -8528,13 +8528,13 @@ function confirmPlannerAdd() {
     tool: _plannerAddTask.equipment || '',
     startTime: time,
     durationHours: dur,
+    parked: true,            // new tasks land in the holding bay to organise before placing
   };
   _plannerPlans.push(plan);
   savePlanner();
-  scheduleCalendarAutoPush(plan.date);
   closeModal('modal-planner-add');
   renderPlannerScreen();
-  showToast('Added to planner');
+  showToast('Added to holding bay — drag it onto the timeline when ready');
 }
 
 // ── Detail / Clock In ──
@@ -8794,8 +8794,10 @@ function confirmPlannerMove() {
   if (!v) { showToast('Pick a date'); return; }
   const [y, m, dd] = v.split('-').map(Number);
   const target = new Date(y, m - 1, dd);
+  if (plan.calEventId) deletePlannerCalendarEvent(plan); // clear the old day's event; it lands parked
   plan.date = plannerDateStr(target);
   plan.parked = true;
+  plan.calEventId = '';
   savePlanner();
   closeModal('modal-planner-move');
   renderPlannerScreen();
@@ -9001,6 +9003,7 @@ function parkPlannerBlock(id) {
   const plan = _plannerPlans.find(p => p.id === id);
   if (!plan) return;
   plan.parked = true;
+  if (plan.calEventId) { deletePlannerCalendarEvent(plan); plan.calEventId = ''; } // back in holding → off the calendar
   savePlanner();
   renderPlannerScreen();
   showToast('Parked — drag it back onto the timeline');
@@ -9084,6 +9087,7 @@ function _parkDragEnd(e) {
     plan.startTime = `${String(absH).padStart(2, '0')}:${String(absM).padStart(2, '0')}`;
     plan.parked = false;
     savePlanner();
+    scheduleCalendarAutoPush(plan.date); // now scheduled → mirror to the calendar
     renderPlannerScreen();
   }
 }
@@ -9110,8 +9114,9 @@ async function syncCalendarForDate(dateStr, opts) {
 
   const items = [];
 
-  // 1. Planned blocks (id prefixed so completed/live can coexist)
-  _plannerPlans.filter(p => p.date === dateStr).forEach(p => {
+  // 1. Planned blocks (id prefixed so completed/live can coexist). Parked tasks
+  // sit in the holding bay — not yet scheduled, so they're kept off the calendar.
+  _plannerPlans.filter(p => p.date === dateStr && !p.parked).forEach(p => {
     items.push({
       id: 'plan:' + p.id, task: p.task,
       group: p.group || '', frequency: p.frequency || '',
