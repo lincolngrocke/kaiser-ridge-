@@ -1500,6 +1500,14 @@
       <button onclick="confirmPlannerAdd()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Add</button>
     </div>
     <div style="padding:16px;">
+      <div style="margin-bottom:14px;">
+        <div style="font-size:12px;color:var(--subtext);margin-bottom:6px;">Add to</div>
+        <div style="display:flex;gap:8px;">
+          <button id="pa-dest-hold" onclick="setPlannerAddDest(false)" style="flex:1;border-radius:10px;padding:9px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid var(--blue);background:var(--blue);color:#fff;">📥 Holding bay</button>
+          <button id="pa-dest-time" onclick="setPlannerAddDest(true)" style="flex:1;border-radius:10px;padding:9px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--text);">📌 At start time</button>
+        </div>
+        <div id="pa-dest-hint" style="font-size:11px;color:var(--subtext);margin-top:6px;">Lands in the holding bay to organise — drag it onto the timeline when ready.</div>
+      </div>
       <div style="margin-bottom:12px;">
         <div style="font-size:12px;color:var(--subtext);margin-bottom:4px;">Start Time</div>
         <input type="time" id="planner-add-time" class="form-input" style="width:100%;" />
@@ -2091,7 +2099,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.31';
+const APP_VERSION = '2026-06-21.32';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -8449,9 +8457,25 @@ function renderPlannerLiveBlock(cs, grid) {
 
 // ── Add task modal ──
 
+// Where a newly added task lands: false = holding bay (default), true = placed on
+// the timeline at its start time (for appointments).
+let _plannerAddPlace = false;
+function setPlannerAddDest(place) {
+  _plannerAddPlace = place;
+  const hold = document.getElementById('pa-dest-hold'), time = document.getElementById('pa-dest-time');
+  const on = b => { b.style.background = 'var(--blue)'; b.style.color = '#fff'; b.style.borderColor = 'var(--blue)'; };
+  const off = b => { b.style.background = 'var(--card)'; b.style.color = 'var(--text)'; b.style.borderColor = 'var(--border)'; };
+  if (hold && time) { (place ? off : on)(hold); (place ? on : off)(time); }
+  const hint = document.getElementById('pa-dest-hint');
+  if (hint) hint.textContent = place
+    ? 'Drops straight onto the timeline at the start time — handy for appointments.'
+    : 'Lands in the holding bay to organise — drag it onto the timeline when ready.';
+}
+
 function openPlannerAddTask() {
   if (isWorker()) return;
   _plannerAddTask = null;
+  setPlannerAddDest(false); // default every time: holding bay
   // Default start time: now rounded to nearest 15min, or 8am
   const now = new Date();
   const mins = Math.ceil((now.getHours() * 60 + now.getMinutes()) / 5) * 5;
@@ -8528,13 +8552,16 @@ function confirmPlannerAdd() {
     tool: _plannerAddTask.equipment || '',
     startTime: time,
     durationHours: dur,
-    parked: true,            // new tasks land in the holding bay to organise before placing
+    parked: !_plannerAddPlace, // holding bay by default; placed on the timeline if chosen
   };
   _plannerPlans.push(plan);
   savePlanner();
+  if (_plannerAddPlace) scheduleCalendarAutoPush(plan.date); // placed → mirror to the calendar
   closeModal('modal-planner-add');
   renderPlannerScreen();
-  showToast('Added to holding bay — drag it onto the timeline when ready');
+  showToast(_plannerAddPlace
+    ? 'Placed at ' + formatTimeAmPm(time)
+    : 'Added to holding bay — drag it onto the timeline when ready');
 }
 
 // ── Detail / Clock In ──
