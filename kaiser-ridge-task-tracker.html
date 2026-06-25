@@ -1424,7 +1424,7 @@
     <div style="padding:6px 20px 10px;font-size:13px;color:var(--subtext);">Catch the thought now — review it later in the Inbox (More → Inbox). Time-stamped automatically.</div>
     <div style="padding:0 20px;">
       <textarea id="quick-capture-text" placeholder="What needs doing? Just jot it…" autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true" style="width:100%;min-height:140px;padding:12px;border:1px solid var(--border);border-radius:12px;font-size:16px;color:var(--text);background:var(--bg);font-family:inherit;resize:vertical;outline:none;line-height:1.5;"></textarea>
-      <input type="file" accept="image/*" id="capture-photo-input" style="display:none;" onchange="onCapturePhoto(event)">
+      <input type="file" accept="image/*" multiple id="capture-photo-input" style="display:none;" onchange="onCapturePhoto(event)">
       <button onclick="document.getElementById('capture-photo-input').click()" style="margin-top:10px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:9px 14px;font-size:14px;color:var(--blue);font-weight:600;cursor:pointer;">📷 Add photo</button>
       <div id="capture-photo-preview"></div>
     </div>
@@ -2099,7 +2099,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.32';
+const APP_VERSION = '2026-06-21.33';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6302,7 +6302,9 @@ function _inboxStamp(iso) {
   return d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) +
     ' · ' + d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
-let _editingInboxId = null, _captureImage = null, _captureImageId = null, _captureOldImageId = null;
+// A note can hold multiple photos in `photos` = [{id} (Drive) | {data} (local)].
+// _capturePhotos mirrors that while editing; _captureRemovedIds = Drive ids to delete on save.
+let _editingInboxId = null, _capturePhotos = [], _captureRemovedIds = [];
 const _PHOTO_PLACEHOLDER = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
 const _photoCache = {};
 // Upload a compressed data URL to Drive (via Apps Script); returns its file id.
@@ -6340,13 +6342,28 @@ function _loadPhotoThumbs() {
     _fetchPhoto(id).then(d => { if (d) img.src = d; });
   });
 }
-// Thumbnail HTML for an object that has either a Drive imageId or a legacy local image.
-function _photoThumbHtml(obj, maxH) {
-  const base = `margin-top:8px;max-height:${maxH || 90}px;max-width:100%;border-radius:8px;display:block;cursor:pointer;`;
-  if (obj.imageId) return `<img data-pid="${obj.imageId}" src="${_PHOTO_PLACEHOLDER}" onclick="event.stopPropagation();if(this.src&&!this.src.startsWith('data:image/gif'))openImageLightbox(this.src)" style="${base}background:var(--border);min-height:48px;">`;
-  if (obj.image) return `<img src="${obj.image}" onclick="event.stopPropagation();openImageLightbox(this.src)" style="${base}">`;
-  return '';
+// A note's photos as an ordered array of refs. Migrates legacy single-photo fields
+// (imageId / image) on read so existing notes keep working without a data migration.
+function _notePhotos(note) {
+  if (Array.isArray(note.photos)) return note.photos;
+  const out = [];
+  if (note.imageId) out.push({ id: note.imageId });
+  if (note.image) out.push({ data: note.image });
+  return out;
 }
+// Thumbnails for ALL of a note's photos. Drive ones lazy-load via _loadPhotoThumbs().
+function _photosHtml(obj, maxH) {
+  const ph = _notePhotos(obj);
+  if (!ph.length) return '';
+  const base = `max-height:${maxH || 90}px;max-width:100%;border-radius:8px;display:block;cursor:pointer;`;
+  return `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">` + ph.map(p => {
+    if (p.id) return `<img data-pid="${p.id}" src="${_PHOTO_PLACEHOLDER}" onclick="event.stopPropagation();if(this.src&&!this.src.startsWith('data:image/gif'))openImageLightbox(this.src)" style="${base}min-height:48px;min-width:48px;background:var(--border);">`;
+    if (p.data) return `<img src="${p.data}" onclick="event.stopPropagation();openImageLightbox(this.src)" style="${base}">`;
+    return '';
+  }).join('') + `</div>`;
+}
+// Back-compat alias — same multi-photo renderer for existing call sites.
+function _photoThumbHtml(obj, maxH) { return _photosHtml(obj, maxH); }
 // Resize+compress a chosen photo to a small JPEG data URL.
 function _compressImage(file, maxDim, quality) {
   return new Promise((resolve, reject) => {
@@ -6369,26 +6386,39 @@ function _compressImage(file, maxDim, quality) {
   });
 }
 async function onCapturePhoto(ev) {
-  const file = ev.target.files && ev.target.files[0];
+  const files = Array.from(ev.target.files || []);
   ev.target.value = '';
-  if (!file) return;
-  try { _captureImage = await _compressImage(file, 1000, 0.6); _captureImageId = null; renderCapturePreview(); }
-  catch (e) { showToast('Could not load that image'); }
+  if (!files.length) return;
+  for (const file of files) {
+    try { const data = await _compressImage(file, 1000, 0.6); _capturePhotos.push({ id: null, data }); }
+    catch (e) { showToast('Could not load one of the images'); }
+  }
+  renderCapturePreview();
 }
 function renderCapturePreview() {
   const el = document.getElementById('capture-photo-preview');
   if (!el) return;
-  el.innerHTML = _captureImage
-    ? `<div style="position:relative;display:inline-block;margin-top:10px;">
-        <img src="${_captureImage}" style="max-height:140px;max-width:100%;border-radius:10px;display:block;">
-        <button onclick="removeCaptureImage()" style="position:absolute;top:-8px;right:-8px;width:26px;height:26px;border-radius:50%;background:var(--red);color:#fff;border:none;font-size:14px;cursor:pointer;">✕</button>
-      </div>` : '';
+  if (!_capturePhotos.length) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">` + _capturePhotos.map((p, i) => {
+    const drive = !p.data && p.id;
+    return `<div style="position:relative;display:inline-block;">
+        <img${drive ? ` data-pid="${p.id}"` : ''} src="${p.data || _PHOTO_PLACEHOLDER}" style="max-height:110px;max-width:120px;border-radius:10px;display:block;${drive ? 'min-height:60px;min-width:60px;background:var(--border);' : ''}">
+        <button onclick="removeCapturePhoto(${i})" style="position:absolute;top:-8px;right:-8px;width:24px;height:24px;border-radius:50%;background:var(--red);color:#fff;border:none;font-size:13px;cursor:pointer;">✕</button>
+      </div>`;
+  }).join('') + `</div>`;
+  _loadPhotoThumbs(); // fill in any Drive previews being edited
 }
-function removeCaptureImage() { _captureImage = null; _captureImageId = null; renderCapturePreview(); }
+function removeCapturePhoto(i) {
+  const p = _capturePhotos[i];
+  if (!p) return;
+  if (p.id) _captureRemovedIds.push(p.id); // delete from Drive on save
+  _capturePhotos.splice(i, 1);
+  renderCapturePreview();
+}
 function openImageLightbox(src) { document.getElementById('image-view-img').src = src; openModal('modal-image-view'); }
 
 function openQuickCapture() {
-  _editingInboxId = null; _captureImage = null; _captureImageId = null; _captureOldImageId = null;
+  _editingInboxId = null; _capturePhotos = []; _captureRemovedIds = [];
   renderCapturePreview();
   document.getElementById('quick-capture-title').textContent = 'Quick Note';
   document.getElementById('quick-capture-text').value = '';
@@ -6400,13 +6430,9 @@ function openInboxEdit(id) {
   const note = getInbox().find(x => x.id === id);
   if (!note) return;
   _editingInboxId = id;
-  _captureImageId = note.imageId || null;
-  _captureOldImageId = note.imageId || null;
-  _captureImage = note.image || null;   // legacy local image, if any
-  renderCapturePreview();
-  if (note.imageId) {                    // pull the Drive photo into the preview
-    _fetchPhoto(note.imageId).then(d => { if (d && _editingInboxId === id) { _captureImage = d; renderCapturePreview(); } });
-  }
+  _captureRemovedIds = [];
+  _capturePhotos = _notePhotos(note).map(p => ({ id: p.id || null, data: p.data || null }));
+  renderCapturePreview(); // Drive photos lazy-load their preview via data-pid
   document.getElementById('quick-capture-title').textContent = 'Edit Note';
   document.getElementById('quick-capture-text').value = note.text;
   openModal('modal-quick-capture');
@@ -6417,27 +6443,33 @@ async function saveQuickCapture() {
   if (_savingCapture) return;            // ignore double-taps while a save is in flight
   const t = document.getElementById('quick-capture-text');
   const text = (t.value || '').trim();
-  if (!text && !_captureImage) { closeModal('modal-quick-capture'); _editingInboxId = null; _captureOldImageId = null; return; }
+  if (!text && !_capturePhotos.length) { closeModal('modal-quick-capture'); _editingInboxId = null; _captureRemovedIds = []; return; }
   _savingCapture = true;
   const saveBtn = document.getElementById('quick-capture-save');
-  if (saveBtn) { saveBtn.textContent = (_captureImage && !_captureImageId) ? 'Saving photo…' : 'Saving…'; saveBtn.style.opacity = '0.5'; saveBtn.style.pointerEvents = 'none'; }
+  const hasNew = _capturePhotos.some(p => !p.id && p.data);
+  if (saveBtn) { saveBtn.textContent = hasNew ? 'Saving photos…' : 'Saving…'; saveBtn.style.opacity = '0.5'; saveBtn.style.pointerEvents = 'none'; }
   try {
-    // Resolve the image: keep existing Drive id, upload a new photo, or fall back
-    // to keeping it on-device this once if the upload can't reach Drive.
-    let imageId = _captureImageId, localImg = null;
-    if (!imageId && _captureImage) {
-      imageId = await _uploadPhoto(_captureImage);
-      if (!imageId) { localImg = _captureImage; showToast('Saved photo on-device (no connection to Drive)'); }
+    // Resolve each photo (in order): keep existing Drive id, upload a new one, or
+    // fall back to keeping it on-device this once if the upload can't reach Drive.
+    const photos = [];
+    let anyLocal = false;
+    for (const p of _capturePhotos) {
+      if (p.id) photos.push({ id: p.id });
+      else if (p.data) {
+        const id = await _uploadPhoto(p.data);
+        if (id) photos.push({ id });
+        else { photos.push({ data: p.data }); anyLocal = true; }
+      }
     }
-    // Clean up a replaced/removed Drive photo
-    if (_captureOldImageId && _captureOldImageId !== imageId) _deletePhoto(_captureOldImageId);
+    if (anyLocal) showToast('Some photos saved on-device (no connection to Drive)');
+    // Clean up any photos removed during this edit
+    _captureRemovedIds.forEach(id => _deletePhoto(id));
 
     const inbox = getInbox();
     const apply = note => {
       note.text = text;
-      if (imageId) { note.imageId = imageId; delete note.image; }
-      else if (localImg) { note.image = localImg; delete note.imageId; }
-      else { delete note.imageId; delete note.image; }
+      if (photos.length) note.photos = photos; else delete note.photos;
+      delete note.image; delete note.imageId; // migrate off the legacy single-photo fields
     };
     let ok;
     if (_editingInboxId) {
@@ -6452,7 +6484,7 @@ async function saveQuickCapture() {
       ok = saveInbox(inbox);
       if (ok) showToast('Caught it ✓');
     }
-    _editingInboxId = null; _captureImage = null; _captureImageId = null; _captureOldImageId = null;
+    _editingInboxId = null; _capturePhotos = []; _captureRemovedIds = [];
     if (ok) closeModal('modal-quick-capture');
     if (document.getElementById('modal-inbox').classList.contains('open')) renderInbox();
   } finally {
@@ -6681,7 +6713,7 @@ async function assignInboxToTask(mode) {
         if (!orig[text]) orig[text] = { caught: note.ts || '', added: new Date().toISOString() };
       } else {
         if (!tn[task]) tn[task] = [];
-        tn[task].push({ id: 'tn' + (uid++) + Math.random().toString(36).slice(2, 5), text, ts: new Date().toISOString(), caught: note.ts || '', inboxId: note.id, image: note.image || '', imageId: note.imageId || '' });
+        tn[task].push({ id: 'tn' + (uid++) + Math.random().toString(36).slice(2, 5), text, ts: new Date().toISOString(), caught: note.ts || '', inboxId: note.id, photos: _notePhotos(note) });
       }
     });
     note.done = true; note.doneTs = new Date().toISOString();
@@ -8590,7 +8622,7 @@ function _pinnedNotesHtml(task) {
     ${pins.map(p => {
       const safe = p.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const caught = (p.caught || p.ts) ? `<div style="font-size:11px;color:var(--subtext);margin-top:2px;">Caught ${_inboxStamp(p.caught || p.ts)}</div>` : '';
-      const thumb = p.image ? `<img src="${p.image}" onclick="openImageLightbox(this.src)" style="margin-top:6px;max-height:90px;max-width:100%;border-radius:8px;display:block;cursor:pointer;">` : '';
+      const thumb = _photosHtml(p, 90);
       return `<div data-pin-id="${p.id}" data-pin-task="${taskAttr}" ontouchstart="pinSwipeStart(event)" ontouchmove="pinSwipeMove(event)" ontouchend="pinSwipeEnd(event)" style="margin-bottom:8px;padding:8px;border-radius:8px;${p.flagged ? 'background:rgba(255,214,10,0.12);' : ''}"><span style="font-size:14px;color:#FFD60A;">${p.flagged ? '🚩 ' : ''}📌 ${safe}</span>${caught}${thumb}</div>`;
     }).join('')}
   </div>`;
@@ -8653,6 +8685,7 @@ function showPinnedNotesPopupTask(task) {
   document.getElementById('pin-preview-body').innerHTML =
     html || '<div style="padding:24px 0;color:var(--subtext);text-align:center;">No pinned notes.</div>';
   openModal('modal-pin-preview');
+  _loadPhotoThumbs();
 }
 
 function openPlannerDetail(planId) {
@@ -8701,6 +8734,7 @@ function openPlannerDetail(planId) {
      ${_pinnedNotesHtml(plan.task)}
      ${subtaskHtml}`;
   openModal('modal-planner-detail');
+  _loadPhotoThumbs();
 }
 
 function savePlannerTime() {
