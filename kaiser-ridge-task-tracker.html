@@ -2135,7 +2135,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.38';
+const APP_VERSION = '2026-06-21.39';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6847,17 +6847,20 @@ function finalizeDonePins() {
   tn[task] = list.filter(p => !clockState.pinDone[p.id]);
   if (!tn[task].length) delete tn[task];
   saveTaskNotes(tn);
-  // Inbox journey: clear each note once it's no longer pinned anywhere, else stamp.
-  const remaining = getTaskNotes();
+  // Inbox journey: keep the note as a done record and stamp the completion
+  // (task + time) instead of deleting it — it stays in the Inbox, struck off.
   doneIds.forEach(id => {
     const note = list.find(p => p.id === id);
     if (!note || !note.inboxId) return;
-    const stillPinned = Object.values(remaining).some(a => a.some(p => p.inboxId === note.inboxId));
     const arr = getInbox();
-    if (!stillPinned) { saveInbox(arr.filter(x => x.id !== note.inboxId)); }
-    else { const i2 = arr.find(x => x.id === note.inboxId); if (i2) { if (!Array.isArray(i2.completions)) i2.completions = []; i2.completions.push({ task, ts: at0(note, id) }); saveInbox(arr); } }
+    const i2 = arr.find(x => x.id === note.inboxId);
+    if (!i2) return;
+    if (!Array.isArray(i2.completions)) i2.completions = [];
+    i2.completions.push({ task, ts: clockState.pinDone[id] || new Date().toISOString() });
+    i2.done = true;
+    if (!i2.doneTs) i2.doneTs = new Date().toISOString();
+    saveInbox(arr);
   });
-  function at0(note, id) { return clockState.pinDone[id] || new Date().toISOString(); }
 }
 
 let _stepsEditingItem = null;
