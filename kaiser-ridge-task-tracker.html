@@ -680,6 +680,33 @@
   }
   .toast.show { opacity: 1; }
 
+  /* Reusable Undo bar — sits above every modal so it works on any screen. */
+  .undo-toast {
+    position: fixed;
+    bottom: calc(var(--nav-height) + 12px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.9);
+    color: #fff;
+    padding: 9px 8px 9px 18px;
+    border-radius: 22px;
+    font-size: 14px;
+    z-index: 720;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    max-width: calc(100vw - 32px);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.45);
+  }
+  .undo-toast.show { opacity: 1; pointer-events: auto; }
+  .undo-toast button {
+    background: none; border: none; color: #4da3ff; font-size: 14px; font-weight: 700;
+    cursor: pointer; padding: 5px 10px; flex-shrink: 0;
+  }
+
   .empty-state {
     text-align: center;
     padding: 48px 20px;
@@ -2094,12 +2121,13 @@
 
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
+<div class="undo-toast" id="undo-toast"><span id="undo-toast-msg"></span><button onclick="_doUndo()">Undo</button></div>
 
 <script>
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.33';
+const APP_VERSION = '2026-06-21.34';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4812,6 +4840,26 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 2500);
 }
 
+// Reusable Undo bar: do the action immediately, then offer ~5s to reverse it.
+// Pass a callback that restores prior state. Drop this onto any delete action.
+let _undoTimer = null, _undoAction = null;
+function showUndoToast(msg, onUndo, ms) {
+  const el = document.getElementById('undo-toast');
+  if (!el) return;
+  document.getElementById('undo-toast-msg').textContent = msg;
+  _undoAction = onUndo;
+  el.classList.add('show');
+  clearTimeout(_undoTimer);
+  _undoTimer = setTimeout(() => { el.classList.remove('show'); _undoAction = null; }, ms || 5000);
+}
+function _doUndo() {
+  clearTimeout(_undoTimer);
+  const el = document.getElementById('undo-toast');
+  if (el) el.classList.remove('show');
+  const fn = _undoAction; _undoAction = null;
+  if (fn) fn();
+}
+
 // ════════════════════════════════
 //  BREAK & UNDO
 // ════════════════════════════════
@@ -6578,8 +6626,20 @@ function toggleInboxDone(id) {
   renderInbox();
 }
 function deleteInboxItem(id) {
-  saveInbox(getInbox().filter(n => n.id !== id));
+  const inbox = getInbox();
+  const idx = inbox.findIndex(n => n.id === id);
+  if (idx === -1) return;
+  const removed = inbox[idx];
+  inbox.splice(idx, 1);
+  saveInbox(inbox);
   renderInbox();
+  showUndoToast('Note deleted', () => {
+    const cur = getInbox();
+    cur.splice(Math.min(idx, cur.length), 0, removed); // back where it was
+    saveInbox(cur);
+    renderInbox();
+    showToast('Note restored');
+  });
 }
 
 // Per-task "pinned notes" — sticky reminders that show at the top of a task each
