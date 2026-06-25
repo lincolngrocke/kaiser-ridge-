@@ -2138,7 +2138,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.40';
+const APP_VERSION = '2026-06-21.41';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6552,7 +6552,26 @@ async function saveQuickCapture() {
   }
 }
 let _inboxSelectMode = false, _inboxSelected = new Set();
-function openInbox() { _inboxSelectMode = false; _inboxSelected = new Set(); const s = document.getElementById('inbox-search'); if (s) s.value = ''; _syncInboxSelectUI(); renderInbox(); openModal('modal-inbox'); }
+// Three states: 'open' (to action), 'assigned' (pinned to a task, pending — greyed,
+// not struck), 'done' (actually completed or manually ticked — greyed + struck).
+function _inboxState(n) { return n.done ? 'done' : (n.assigned ? 'assigned' : 'open'); }
+// One-time fix: notes pinned to a task used to be force-marked done. Re-classify
+// those (pinned, no completion recorded) as 'assigned' so they're no longer struck.
+function _migrateInboxAssignedOnce() {
+  if (localStorage.getItem('kr_inbox_assigned_migrated') === '1') return;
+  const arr = getInbox();
+  let changed = false;
+  arr.forEach(n => {
+    if (n.done && /\(pinned/.test(n.movedTo || '') && !(n.completions && n.completions.length)) {
+      n.done = false; delete n.doneTs; n.assigned = true;
+      if (!n.assignedTs) n.assignedTs = n.ts || new Date().toISOString();
+      changed = true;
+    }
+  });
+  if (changed) saveInbox(arr);
+  localStorage.setItem('kr_inbox_assigned_migrated', '1');
+}
+function openInbox() { _migrateInboxAssignedOnce(); _inboxSelectMode = false; _inboxSelected = new Set(); const s = document.getElementById('inbox-search'); if (s) s.value = ''; _syncInboxSelectUI(); renderInbox(); openModal('modal-inbox'); }
 function toggleInboxSelectMode() { _inboxSelectMode = !_inboxSelectMode; _inboxSelected = new Set(); _syncInboxSelectUI(); renderInbox(); }
 function _syncInboxSelectUI() {
   const t = document.getElementById('inbox-select-toggle');
@@ -6577,9 +6596,9 @@ function renderInbox() {
   // Tally: outstanding (to action) vs assigned/done (greyed out).
   const countsEl = document.getElementById('inbox-counts');
   if (countsEl) {
-    const outstanding = items.filter(n => !n.done).length;
-    const done = items.length - outstanding;
-    countsEl.innerHTML = `<span style="color:var(--text);">📥 ${outstanding} to action</span><span style="color:var(--subtext);">✓ ${done} assigned/done</span>`;
+    let open = 0, assigned = 0, done = 0;
+    items.forEach(n => { const s = _inboxState(n); if (s === 'done') done++; else if (s === 'assigned') assigned++; else open++; });
+    countsEl.innerHTML = `<span style="color:var(--text);">📥 ${open} to action</span><span style="color:var(--subtext);">📌 ${assigned} assigned</span><span style="color:var(--subtext);">✓ ${done} done</span>`;
   }
   if (!items.length) {
     list.innerHTML = '<div style="padding:30px 20px;text-align:center;color:var(--subtext);line-height:1.6;">Inbox empty.<br>Catch thoughts with 💡 Capture on the clock screen, or ＋ New above.</div>';
@@ -6602,37 +6621,43 @@ function renderInbox() {
     _updateInboxFooter();
     return;
   }
-  // Outstanding first (newest caught on top); completed sink to the bottom.
+  // To-action first, then assigned (pending), then completed — newest on top in each.
+  const rank = n => { const s = _inboxState(n); return s === 'done' ? 2 : s === 'assigned' ? 1 : 0; };
   view.sort((a, b) => {
-    const ad = a.done ? 1 : 0, bd = b.done ? 1 : 0;
-    if (ad !== bd) return ad - bd;
-    if (ad) return new Date(b.doneTs || 0) - new Date(a.doneTs || 0);
+    const ra = rank(a), rb = rank(b);
+    if (ra !== rb) return ra - rb;
+    if (ra === 2) return new Date(b.doneTs || 0) - new Date(a.doneTs || 0);
+    if (ra === 1) return new Date(b.assignedTs || b.ts || 0) - new Date(a.assignedTs || a.ts || 0);
     return new Date(b.ts) - new Date(a.ts);
   });
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   list.innerHTML = view.map(n => {
+    const st = _inboxState(n);
+    const isDone = st === 'done', isAssigned = st === 'assigned';
     const safe = esc(n.text);
     let meta = 'Caught ' + _inboxStamp(n.ts);
     if (n.movedTo) meta += '　•　📂 → ' + esc(n.movedTo);
-    if (n.done && n.doneTs) meta += '　•　✓ Done ' + _inboxStamp(n.doneTs);
+    if (isDone && n.doneTs) meta += '　•　✓ Done ' + _inboxStamp(n.doneTs);
     (n.completions || []).forEach(c => { meta += '　•　✅ ' + esc(c.task) + ' ' + _inboxStamp(c.ts); });
     const thumb = _photoThumbHtml(n);
+    const titleStyle = isDone ? 'text-decoration:line-through;color:var(--subtext);' : (isAssigned ? 'color:var(--subtext);' : 'color:var(--text);');
+    const rowDim = isDone ? 'opacity:0.55;' : (isAssigned ? 'opacity:0.8;' : '');
     const body = `<div style="flex:1;min-width:0;">
-        <div style="font-size:15px;white-space:pre-wrap;line-height:1.4;${n.done ? 'text-decoration:line-through;color:var(--subtext);' : 'color:var(--text);'}">${safe}</div>
+        <div style="font-size:15px;white-space:pre-wrap;line-height:1.4;${titleStyle}">${safe}</div>
         ${thumb}
         <div style="font-size:12px;color:var(--subtext);margin-top:4px;">${meta}</div>
       </div>`;
     if (_inboxSelectMode) {
       const sel = _inboxSelected.has(n.id);
-      return `<div onclick="toggleInboxSelect('${n.id}')" style="display:flex;gap:10px;align-items:flex-start;padding:12px 4px;border-bottom:1px solid var(--border);cursor:pointer;${n.done ? 'opacity:0.55;' : ''}">
+      return `<div onclick="toggleInboxSelect('${n.id}')" style="display:flex;gap:10px;align-items:flex-start;padding:12px 4px;border-bottom:1px solid var(--border);cursor:pointer;${rowDim}">
         <span style="font-size:22px;line-height:1;flex-shrink:0;padding-top:1px;color:${sel ? 'var(--blue)' : 'var(--subtext)'};">${sel ? '☑' : '☐'}</span>
         ${body}
       </div>`;
     }
-    const box = `<span onclick="toggleInboxDone('${n.id}')" style="font-size:22px;line-height:1;cursor:pointer;flex-shrink:0;padding-top:1px;color:${n.done ? 'var(--green)' : 'var(--subtext)'};">${n.done ? '☑' : '☐'}</span>`;
-    const editBtn = n.done ? '' : `<button onclick="openInboxEdit('${n.id}')" title="Edit note" style="background:none;border:none;color:var(--subtext);font-size:16px;cursor:pointer;padding:2px 4px;flex-shrink:0;">✏️</button>`;
-    const assignBtn = n.done ? '' : `<button onclick="openInboxAssign('${n.id}')" title="Add to a task" style="background:none;border:none;color:var(--blue);font-size:18px;cursor:pointer;padding:2px 4px;flex-shrink:0;">📂</button>`;
-    return `<div style="display:flex;gap:10px;align-items:flex-start;padding:12px 4px;border-bottom:1px solid var(--border);${n.done ? 'opacity:0.55;' : ''}">
+    const box = `<span onclick="toggleInboxDone('${n.id}')" style="font-size:22px;line-height:1;cursor:pointer;flex-shrink:0;padding-top:1px;color:${isDone ? 'var(--green)' : 'var(--subtext)'};">${isDone ? '☑' : '☐'}</span>`;
+    const editBtn = isDone ? '' : `<button onclick="openInboxEdit('${n.id}')" title="Edit note" style="background:none;border:none;color:var(--subtext);font-size:16px;cursor:pointer;padding:2px 4px;flex-shrink:0;">✏️</button>`;
+    const assignBtn = isDone ? '' : `<button onclick="openInboxAssign('${n.id}')" title="Add to a task" style="background:none;border:none;color:var(--blue);font-size:18px;cursor:pointer;padding:2px 4px;flex-shrink:0;">📂</button>`;
+    return `<div style="display:flex;gap:10px;align-items:flex-start;padding:12px 4px;border-bottom:1px solid var(--border);${rowDim}">
       ${box}
       ${body}
       ${editBtn}
@@ -6647,8 +6672,8 @@ function toggleInboxDone(id) {
   const arr = getInbox();
   const n = arr.find(x => x.id === id);
   if (!n) return;
-  if (n.done) { n.done = false; delete n.doneTs; delete n.movedTo; } // uncheck — revive
-  else { n.done = true; n.doneTs = new Date().toISOString(); }
+  if (n.done) { n.done = false; delete n.doneTs; delete n.assigned; } // revive → back to "to action", keep its journey
+  else { n.done = true; n.doneTs = new Date().toISOString(); delete n.assigned; } // ticking = completed
   saveInbox(arr);
   renderInbox();
 }
@@ -6796,7 +6821,7 @@ async function assignInboxToTask(mode) {
       const json = await res.json();
       if (!json || !json.success) { showToast('Send failed' + (json && json.error ? ': ' + json.error : '')); return; }
     } catch (e) { showToast('Send failed — check connection'); return; }
-    notes.forEach(note => { note.done = true; note.doneTs = new Date().toISOString(); note.movedTo = tagEarly + ' (pinned · Ethan)'; });
+    notes.forEach(note => { note.assigned = true; note.assignedTs = new Date().toISOString(); note.movedTo = tagEarly + ' (pinned · Ethan)'; });
     saveInbox(arr);
     closeModal('modal-inbox-assign');
     _inboxSelectMode = false; _inboxSelected = new Set(); _syncInboxSelectUI();
@@ -6820,7 +6845,8 @@ async function assignInboxToTask(mode) {
         tn[task].push({ id: 'tn' + (uid++) + Math.random().toString(36).slice(2, 5), text, ts: new Date().toISOString(), caught: note.ts || '', inboxId: note.id, photos: _notePhotos(note) });
       }
     });
-    note.done = true; note.doneTs = new Date().toISOString();
+    if (mode === 'pinned') { note.assigned = true; note.assignedTs = new Date().toISOString(); } // pending until completed in the task
+    else { note.done = true; note.doneTs = new Date().toISOString(); }                            // permanent checklist item = filed/done
     note.movedTo = tag + (mode === 'pinned' ? ' (pinned)' : '');
   });
   if (mode === 'permanent') { localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS)); saveSubtaskOrigin(orig); }
@@ -6876,7 +6902,7 @@ function finalizeDonePins() {
     if (!i2) return;
     if (!Array.isArray(i2.completions)) i2.completions = [];
     i2.completions.push({ task, ts: clockState.pinDone[id] || new Date().toISOString() });
-    i2.done = true;
+    i2.done = true; delete i2.assigned; // completed in a task → struck off, no longer just "assigned"
     if (!i2.doneTs) i2.doneTs = new Date().toISOString();
     saveInbox(arr);
   });
