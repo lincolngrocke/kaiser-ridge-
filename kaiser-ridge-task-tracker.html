@@ -1549,6 +1549,10 @@
         <input type="search" id="planner-task-search" placeholder="Search tasks, equipment, checklists…" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
           style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:15px;background:var(--bg);color:var(--text);outline:none;margin-bottom:8px;"
           oninput="renderPlannerTaskList()" />
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+          <button id="pa-sort-recent" onclick="setPlannerTaskSort('recent')" style="flex:1;border-radius:8px;padding:7px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--text);">🕘 Recent</button>
+          <button id="pa-sort-used" onclick="setPlannerTaskSort('used')" style="flex:1;border-radius:8px;padding:7px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--text);">⭐ Most used</button>
+        </div>
         <div id="planner-task-list" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;"></div>
       </div>
     </div>
@@ -2127,7 +2131,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.35';
+const APP_VERSION = '2026-06-21.36';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -8581,10 +8585,42 @@ function openPlannerAddTask() {
   openModal('modal-planner-add');
 }
 
+// Task list ordering in the Add-to-Planner search: 'recent' (last done) or 'used' (most often).
+let _plannerTaskSort = localStorage.getItem('kr_planner_task_sort') || 'recent';
+function setPlannerTaskSort(mode) {
+  _plannerTaskSort = mode;
+  localStorage.setItem('kr_planner_task_sort', mode);
+  renderPlannerTaskList();
+}
+function _syncPlannerSortButtons() {
+  const r = document.getElementById('pa-sort-recent'), u = document.getElementById('pa-sort-used');
+  if (!r || !u) return;
+  const on = b => { b.style.background = 'var(--blue)'; b.style.color = '#fff'; b.style.borderColor = 'var(--blue)'; };
+  const off = b => { b.style.background = 'var(--card)'; b.style.color = 'var(--text)'; b.style.borderColor = 'var(--border)'; };
+  (_plannerTaskSort === 'recent' ? on : off)(r);
+  (_plannerTaskSort === 'used' ? on : off)(u);
+}
+
 function renderPlannerTaskList() {
+  _syncPlannerSortButtons();
   const query = document.getElementById('planner-task-search').value.toLowerCase();
   const tasks = [...new Map(DIRECTORY.map(r => [r.task, r])).values()];
-  const filtered = query ? tasks.filter(r => taskMatchesQuery(r.task, query)) : tasks;
+  let filtered = query ? tasks.filter(r => taskMatchesQuery(r.task, query)) : tasks;
+  // Rank by usage history: count of completions and most-recent completion per task.
+  const counts = {}, recent = {};
+  entries.forEach(e => {
+    if (!e.task) return;
+    counts[e.task] = (counts[e.task] || 0) + 1;
+    const ep = _entryClockInEpoch(e);
+    if (ep > (recent[e.task] || 0)) recent[e.task] = ep;
+  });
+  filtered = filtered.slice().sort((a, b) => {
+    if (_plannerTaskSort === 'used') {
+      const d = (counts[b.task] || 0) - (counts[a.task] || 0);
+      if (d) return d;
+    }
+    return (recent[b.task] || 0) - (recent[a.task] || 0); // recent mode, and tiebreak for used
+  });
   const list = document.getElementById('planner-task-list');
   if (!filtered.length) {
     list.innerHTML = '<div style="padding:16px;color:var(--subtext);text-align:center;font-size:14px;">No tasks found</div>';
