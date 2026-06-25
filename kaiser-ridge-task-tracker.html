@@ -1615,9 +1615,9 @@
   <div class="modal-sheet" style="max-height:60vh;">
     <div class="modal-handle"></div>
     <div class="modal-header">
-      <button onclick="closeModal('modal-planner-detail')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;">Close</button>
-      <span class="modal-title" id="planner-detail-title">Task</span>
-      <button onclick="deletePlannerBlock()" style="background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;">Delete</button>
+      <button onclick="closeModal('modal-planner-detail')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;flex-shrink:0;">Close</button>
+      <span class="modal-title" id="planner-detail-title" style="flex:1;min-width:0;text-align:center;padding:0 10px;line-height:1.2;">Task</span>
+      <button onclick="deletePlannerBlock()" style="background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;flex-shrink:0;">Delete</button>
     </div>
     <div style="padding:20px;">
       <button onclick="plannerClockIn()" style="width:100%;background:var(--green);color:#fff;border:none;border-radius:14px;padding:14px;font-size:17px;font-weight:700;cursor:pointer;margin-bottom:8px;">▶ Clock In Now</button>
@@ -2135,7 +2135,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.37';
+const APP_VERSION = '2026-06-21.38';
 
 // ════════════════════════════════
 //  DIRECTORY
