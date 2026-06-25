@@ -2127,7 +2127,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.34';
+const APP_VERSION = '2026-06-21.35';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -9048,6 +9048,7 @@ function plannerDragMove(e) {
     if (dx > 50 && dx > Math.abs(dy) * 1.4) {
       e.preventDefault();
       _cancelLongPress();
+      _plannerIsDragging = true; // mark as a gesture so touchend doesn't also open the detail
       const id = _plannerDragId;
       _plannerDragId = null;
       plannerDragEnd(e);   // cleanup listeners/label
