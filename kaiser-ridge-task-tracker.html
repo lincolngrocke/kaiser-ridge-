@@ -1458,10 +1458,11 @@
   </div>
 </div>
 
-<!-- ══════════════ IMAGE VIEWER ══════════════ -->
-<div class="modal-backdrop" id="modal-image-view" style="z-index:700;" onclick="closeModal('modal-image-view')">
-  <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:20px;">
-    <img id="image-view-img" src="" alt="" style="max-width:100%;max-height:100%;border-radius:12px;">
+<!-- ══════════════ IMAGE VIEWER (pinch / double-tap to zoom, drag to pan) ══════════════ -->
+<div class="modal-backdrop" id="modal-image-view" style="z-index:700;" onclick="if(event.target===this)closeImageLightbox()">
+  <button onclick="closeImageLightbox()" style="position:absolute;top:calc(env(safe-area-inset-top) + 12px);right:16px;z-index:2;width:40px;height:40px;border-radius:50%;background:rgba(0,0,0,0.55);color:#fff;border:none;font-size:20px;line-height:1;cursor:pointer;">✕</button>
+  <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:20px;overflow:hidden;" onclick="if(event.target===this)closeImageLightbox()">
+    <img id="image-view-img" src="" alt="" ontouchstart="_ivTouchStart(event)" ontouchmove="_ivTouchMove(event)" ontouchend="_ivTouchEnd(event)" style="max-width:100%;max-height:100%;border-radius:12px;touch-action:none;will-change:transform;transform-origin:center center;">
   </div>
 </div>
 
@@ -2138,7 +2139,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.41';
+const APP_VERSION = '2026-06-21.42';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6474,7 +6475,65 @@ function removeCapturePhoto(i) {
   _capturePhotos.splice(i, 1);
   renderCapturePreview();
 }
-function openImageLightbox(src) { document.getElementById('image-view-img').src = src; openModal('modal-image-view'); }
+// Full-screen photo viewer with pinch / double-tap zoom + drag-to-pan, since the
+// app disables native page zoom (so invoices/receipts can be read close up).
+let _iv = { scale: 1, tx: 0, ty: 0, startDist: 0, startScale: 1, panX: 0, panY: 0, startTx: 0, startTy: 0, mode: null, lastTap: 0 };
+function _ivImg() { return document.getElementById('image-view-img'); }
+function _ivApply() { const img = _ivImg(); if (img) img.style.transform = `translate(${_iv.tx}px,${_iv.ty}px) scale(${_iv.scale})`; }
+function _ivResetState() { _iv.scale = 1; _iv.tx = 0; _iv.ty = 0; _iv.mode = null; }
+function openImageLightbox(src) {
+  const img = _ivImg(); if (!img) return;
+  img.src = src;
+  _ivResetState();
+  img.style.transition = ''; img.style.transform = '';
+  openModal('modal-image-view');
+}
+function closeImageLightbox() {
+  const img = _ivImg();
+  if (img) { img.style.transition = ''; img.style.transform = ''; }
+  _ivResetState();
+  closeModal('modal-image-view');
+}
+function _ivDist(t) { return Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY); }
+function _ivTouchStart(e) {
+  const t = e.touches, img = _ivImg();
+  if (img) img.style.transition = 'none';
+  if (t.length === 2) { _iv.mode = 'pinch'; _iv.startDist = _ivDist(t) || 1; _iv.startScale = _iv.scale; e.preventDefault(); }
+  else if (t.length === 1) {
+    const now = Date.now();
+    if (now - _iv.lastTap < 300) { _iv.lastTap = 0; _ivToggleZoom(); e.preventDefault(); return; } // double-tap
+    _iv.lastTap = now;
+    if (_iv.scale > 1) { _iv.mode = 'pan'; _iv.panX = t[0].clientX; _iv.panY = t[0].clientY; _iv.startTx = _iv.tx; _iv.startTy = _iv.ty; e.preventDefault(); }
+    else _iv.mode = null;
+  }
+}
+function _ivTouchMove(e) {
+  const t = e.touches;
+  if (_iv.mode === 'pinch' && t.length === 2) {
+    e.preventDefault();
+    _iv.scale = Math.max(1, Math.min(6, _iv.startScale * (_ivDist(t) / _iv.startDist)));
+    if (_iv.scale === 1) { _iv.tx = 0; _iv.ty = 0; }
+    _ivApply();
+  } else if (_iv.mode === 'pan' && t.length === 1 && _iv.scale > 1) {
+    e.preventDefault();
+    _iv.tx = _iv.startTx + (t[0].clientX - _iv.panX);
+    _iv.ty = _iv.startTy + (t[0].clientY - _iv.panY);
+    _ivApply();
+  }
+}
+function _ivTouchEnd(e) {
+  if (e.touches.length === 1 && _iv.mode === 'pinch') { // lifted one finger of a pinch → keep panning
+    _iv.mode = 'pan'; _iv.panX = e.touches[0].clientX; _iv.panY = e.touches[0].clientY; _iv.startTx = _iv.tx; _iv.startTy = _iv.ty;
+  } else if (e.touches.length === 0) {
+    _iv.mode = null;
+    if (_iv.scale <= 1.02) { _iv.scale = 1; _iv.tx = 0; _iv.ty = 0; const img = _ivImg(); if (img) { img.style.transition = 'transform 0.2s'; img.style.transform = ''; } }
+  }
+}
+function _ivToggleZoom() {
+  const img = _ivImg(); if (img) img.style.transition = 'transform 0.2s';
+  if (_iv.scale > 1) { _iv.scale = 1; _iv.tx = 0; _iv.ty = 0; } else { _iv.scale = 2.5; }
+  _ivApply();
+}
 
 function openQuickCapture() {
   _editingInboxId = null; _capturePhotos = []; _captureRemovedIds = [];
