@@ -1782,7 +1782,7 @@
           </div>
         </div>
       </div>
-      <div class="form-row">
+      <div class="form-row" id="f-break-row">
         <span class="form-label">Break</span>
         <select class="form-select" id="f-break">
           <option value="0">None</option>
@@ -2139,7 +2139,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.46';
+const APP_VERSION = '2026-06-21.47';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3135,6 +3135,7 @@ function openCreate() {
   populateProjectDropdown('');
   populateStepDropdown('', '');
   document.getElementById('f-break').value = '0';
+  document.getElementById('f-break-row').style.display = '';
   document.getElementById('f-notes').value = '';
   document.getElementById('f-date').value = todayStr('-');
   document.getElementById('f-clockin').value = '';
@@ -3178,6 +3179,7 @@ function openEdit(id) {
   setEquipOptions([...equip, ...selected], selected);
 
   document.getElementById('f-break').value = e.break || '0';
+  document.getElementById('f-break-row').style.display = '';
   populateProjectDropdown(e.projectId || '');
   populateStepDropdown(e.projectId || '', e.projectStepId || '');
   document.getElementById('f-notes').value = e.notes || '';
@@ -3214,11 +3216,8 @@ function openEditActive() {
   const csEquip = DIRECTORY.filter(r => r.frequency === clockState.frequency && r.group === clockState.group && r.task === clockState.task).map(r => r.equipment);
   const csSelected = splitEquip(clockState.tool);
   setEquipOptions([...csEquip, ...csSelected], csSelected);
-  // Show current accumulated break time rounded to nearest option
-  const currentBreakH = (clockState.breakTotal || 0) / 3600000;
-  const breakOptions = [0, 0.0833333333, 0.1666666667, 0.25, 0.5, 0.75, 1];
-  const nearest = breakOptions.reduce((a, b) => Math.abs(b - currentBreakH) < Math.abs(a - currentBreakH) ? b : a);
-  document.getElementById('f-break').value = nearest.toString();
+  // Break is managed live via Start/End Break on the clock — hide the manual field here.
+  document.getElementById('f-break-row').style.display = 'none';
   populateProjectDropdown(clockState.projectId || '');
   populateStepDropdown(clockState.projectId || '', clockState.projectStepId || '');
   document.getElementById('f-notes').value = clockState.notes || '';
@@ -3265,8 +3264,7 @@ function saveEntry() {
     clockState.notes     = notes;
     if (currentPin) clockState.pin = currentPin;
     if (clockIn) clockState.startTime = clockIn;
-    // Save manual break selection — convert hours to ms and store in breakTotal
-    if (breakH > 0) clockState.breakTotal = breakH * 3600000;
+    // Break is managed live via Start/End Break — don't overwrite breakTotal here.
     localStorage.setItem('kr_clock', JSON.stringify(clockState));
     renderClockState();
     closeModal('modal-task');
