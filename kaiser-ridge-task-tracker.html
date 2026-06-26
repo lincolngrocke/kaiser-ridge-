@@ -1453,6 +1453,7 @@
       <textarea id="quick-capture-text" placeholder="What needs doing? Just jot it…" autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true" style="width:100%;min-height:140px;padding:12px;border:1px solid var(--border);border-radius:12px;font-size:16px;color:var(--text);background:var(--bg);font-family:inherit;resize:vertical;outline:none;line-height:1.5;"></textarea>
       <input type="file" accept="image/*" multiple id="capture-photo-input" style="display:none;" onchange="onCapturePhoto(event)">
       <button onclick="document.getElementById('capture-photo-input').click()" style="margin-top:10px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:9px 14px;font-size:14px;color:var(--blue);font-weight:600;cursor:pointer;">📷 Add photo</button>
+      <button id="capture-scan-btn" onclick="scanReceiptPhoto()" title="Read a receipt/invoice photo and add the details to this note" style="display:none;margin-top:10px;margin-left:8px;background:var(--card);border:1px solid var(--blue);border-radius:10px;padding:9px 14px;font-size:14px;color:var(--blue);font-weight:600;cursor:pointer;">✨ Scan receipt</button>
       <div id="capture-photo-preview"></div>
     </div>
   </div>
@@ -2139,7 +2140,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.42';
+const APP_VERSION = '2026-06-21.43';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6455,9 +6456,37 @@ async function onCapturePhoto(ev) {
   }
   renderCapturePreview();
 }
+// Scan the first photo as a receipt/invoice (via the Apps Script → Claude vision
+// backend) and append the extracted details to the note text for review.
+async function scanReceiptPhoto() {
+  if (!_capturePhotos.length) { showToast('Add a photo first'); return; }
+  const url = localStorage.getItem('kr_sheet_url');
+  if (!url) { showToast('Add your Apps Script URL in Settings first'); return; }
+  const p = _capturePhotos[0];
+  const btn = document.getElementById('capture-scan-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '✨ Scanning…'; btn.style.opacity = '0.6'; }
+  try {
+    const dataUrl = p.data || (p.id ? await _fetchPhoto(p.id) : null);
+    if (!dataUrl) { showToast('Could not read that photo'); return; }
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'extractReceipt', dataUrl }) });
+    const json = await res.json();
+    if (!json || !json.success || !json.data) { showToast(json && json.error ? 'Scan failed: ' + json.error : 'Scan failed'); return; }
+    const d = json.data;
+    if (d.is_receipt === false) { showToast('No receipt/invoice details found in that photo'); return; }
+    const head = [d.vendor, d.date, d.total].filter(Boolean).join(' · ');
+    const block = [head ? '🧾 ' + head : '', d.summary || ''].filter(Boolean).join('\n');
+    if (!block) { showToast('Nothing to add'); return; }
+    const ta = document.getElementById('quick-capture-text');
+    ta.value = ta.value.trim() ? (ta.value.trimEnd() + '\n' + block) : block;
+    showToast('Scanned ✓ — review and Save');
+  } catch (e) { showToast('Scan failed — check connection'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = '✨ Scan receipt'; btn.style.opacity = ''; } }
+}
 function renderCapturePreview() {
   const el = document.getElementById('capture-photo-preview');
   if (!el) return;
+  const scanBtn = document.getElementById('capture-scan-btn');
+  if (scanBtn) scanBtn.style.display = _capturePhotos.length ? '' : 'none';
   if (!_capturePhotos.length) { el.innerHTML = ''; return; }
   el.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">` + _capturePhotos.map((p, i) => {
     const drive = !p.data && p.id;

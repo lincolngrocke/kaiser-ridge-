@@ -196,6 +196,10 @@ function doPost(e) {
       props.setProperty(key, JSON.stringify(arr));
       return jsonResponse({ success: true, count: (data.pins || []).length });
     }
+    // Read a receipt/invoice photo with Claude vision → {vendor,date,total,summary}
+    if (data.action === 'extractReceipt') {
+      return handleExtractReceipt(data);
+    }
 
     const ss    = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = ss.getSheetByName(SHEET_NAME);
@@ -485,6 +489,60 @@ function getKrPhotosFolder() {
   const NAME = 'KR App Photos';
   const it = DriveApp.getFoldersByName(NAME);
   return it.hasNext() ? it.next() : DriveApp.createFolder(NAME);
+}
+
+// ── Receipt / invoice extraction via Claude vision ──────────────────────────
+// Reads a photo and pulls out vendor / date / total / summary.
+// SETUP (one-time): Project Settings → Script Properties → add a property
+//   ANTHROPIC_API_KEY = your Anthropic API key (console.anthropic.com, needs billing).
+// Uses claude-opus-4-8 with structured JSON output. ~1–2c per scan.
+function handleExtractReceipt(data) {
+  const key = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY');
+  if (!key) return jsonResponse({ success: false, error: 'No ANTHROPIC_API_KEY set in Script Properties' });
+  const m = String(data.dataUrl || '').match(/^data:(image\/\w+);base64,(.*)$/);
+  if (!m) return jsonResponse({ success: false, error: 'Bad image data' });
+  const mediaType = m[1], b64 = m[2];
+  const schema = {
+    type: 'object',
+    properties: {
+      is_receipt: { type: 'boolean' },
+      vendor: { type: 'string' },
+      date: { type: 'string' },
+      total: { type: 'string' },
+      summary: { type: 'string' }
+    },
+    required: ['is_receipt', 'vendor', 'date', 'total', 'summary'],
+    additionalProperties: false
+  };
+  const prompt = 'This image is a photo of a receipt or invoice (or possibly something else). '
+    + 'Extract: vendor (the business it is from), date (as printed on it), total (the total amount paid, including the currency symbol), '
+    + 'and summary (a short one-line plain-English description of what it was for). '
+    + 'If the image is clearly NOT a receipt or invoice, set is_receipt to false and leave the other fields as empty strings.';
+  const body = {
+    model: 'claude-opus-4-8',
+    max_tokens: 1024,
+    output_config: { format: { type: 'json_schema', schema: schema } },
+    messages: [{ role: 'user', content: [
+      { type: 'image', source: { type: 'base64', media_type: mediaType, data: b64 } },
+      { type: 'text', text: prompt }
+    ] }]
+  };
+  try {
+    const res = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+      payload: JSON.stringify(body),
+      muteHttpExceptions: true
+    });
+    const json = JSON.parse(res.getContentText());
+    if (json.type === 'error') return jsonResponse({ success: false, error: (json.error && json.error.message) || 'API error' });
+    if (json.stop_reason === 'refusal') return jsonResponse({ success: false, error: 'Could not read that image' });
+    const text = (json.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+    return jsonResponse({ success: true, data: JSON.parse(text) });
+  } catch (err) {
+    return jsonResponse({ success: false, error: String(err) });
+  }
 }
 
 // ── ONE-TIME manual sort ─────────────────────────────────────────────────────
