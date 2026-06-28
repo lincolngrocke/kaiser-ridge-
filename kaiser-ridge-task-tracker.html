@@ -2139,7 +2139,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.47';
+const APP_VERSION = '2026-06-21.48';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2379,6 +2379,7 @@ window.addEventListener('load', () => {
   pullAssignments();                       // worker: fetch the day the manager planned
   pullPins();                              // worker: fetch pinned notes from the manager
   fetchSharedLastDone();                   // shared "last done per task" from the sheet
+  rolloverParkedTasks();                    // carry stranded holding-bay tasks forward (10pm cutoff)
   setInterval(pullAssignments, 60000);     // worker: keep the plan live (time changes/deletes) without reopening
   checkForUpdate();
   checkLibraryUpdate();
@@ -2390,6 +2391,7 @@ window.addEventListener('load', () => {
     if (!document.hidden) pullAssignments();
     if (!document.hidden) pullPins();
     if (!document.hidden) fetchSharedLastDone();
+    if (!document.hidden) rolloverParkedTasks();
   });
 
   // After a Force-Update reload, return to the screen the user was on.
@@ -8042,6 +8044,33 @@ function plannerDateStr(d) {
   // DD/MM/YYYY
   return [String(d.getDate()).padStart(2,'0'), String(d.getMonth()+1).padStart(2,'0'), d.getFullYear()].join('/');
 }
+function _plannerDateNumFromStr(s) {            // "DD/MM/YYYY" → YYYYMMDD for comparison
+  const p = String(s).split('/').map(Number);
+  return (p[2] || 0) * 10000 + (p[1] || 0) * 100 + (p[0] || 0);
+}
+// Holding-bay carry-over: a parked task not placed on the timeline by 10pm rolls
+// into the next day's holding bay. Targets today's bay before 10pm, tomorrow's
+// after. Cascades day-by-day (runs on launch, foreground, and planner render),
+// so stranded tasks always surface in the current bay even if the app was shut.
+function rolloverParkedTasks() {
+  const now = new Date();
+  const target = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (now.getHours() >= 22) target.setDate(target.getDate() + 1); // past 10pm → next day
+  const targetStr = plannerDateStr(target);
+  const targetNum = _plannerDateNumFromStr(targetStr);
+  let changed = 0;
+  ['kr_planner', 'kr_planner_ethan'].forEach(key => {
+    let arr;
+    try { arr = JSON.parse(localStorage.getItem(key) || '[]'); } catch (e) { return; }
+    let dirty = false;
+    arr.forEach(p => {
+      if (p && p.parked && _plannerDateNumFromStr(p.date) < targetNum) { p.date = targetStr; dirty = true; changed++; }
+    });
+    if (dirty) localStorage.setItem(key, JSON.stringify(arr));
+  });
+  if (changed) _plannerPlans = JSON.parse(localStorage.getItem(plannerStoreKey()) || '[]');
+  return changed;
+}
 
 function plannerChangeDay(delta) {
   _plannerDate = new Date(_plannerDate);
@@ -8239,6 +8268,8 @@ function renderPlannerScreen() {
   // Ensure no stuck modal backdrops
   document.getElementById('modal-planner-add').classList.remove('open');
   document.getElementById('modal-planner-detail').classList.remove('open');
+  const _rolled = rolloverParkedTasks();
+  if (_rolled) showToast('↪ ' + _rolled + ' holding task' + (_rolled === 1 ? '' : 's') + ' carried over');
 
   // Update header
   const today = new Date();
