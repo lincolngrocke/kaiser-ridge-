@@ -2139,7 +2139,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.55';
+const APP_VERSION = '2026-06-21.56';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2824,7 +2824,7 @@ function renderRunChecklist() {
     const thumb = _photoThumbHtml(p, 80);
     const durStr = (done && dur['pin:' + p.id] != null)
       ? `<span style="font-size:13px;color:var(--green);font-weight:700;white-space:nowrap;flex-shrink:0;">${fmtMin(dur['pin:' + p.id])}</span>` : '';
-    return `<div data-pin-id="${p.id}" data-pin-task="${pinTaskAttr}" onclick="togglePinnedNote('${p.id}')" ontouchstart="pinSwipeStart(event)" ontouchmove="pinSwipeMove(event)" ontouchend="pinSwipeEnd(event)" style="display:flex;align-items:flex-start;gap:8px;padding:9px 8px;border-bottom:1px solid var(--border);border-radius:6px;cursor:pointer;${p.flagged && !done ? 'background:rgba(255,214,10,0.10);' : ''}${done ? 'opacity:0.5;' : ''}">
+    return `<div data-pin-id="${p.id}" data-pin-task="${pinTaskAttr}" data-pin-flagged="${p.flagged && !done ? '1' : ''}" onclick="togglePinnedNote('${p.id}')" ontouchstart="pinSwipeStart(event)" ontouchmove="pinSwipeMove(event)" ontouchend="pinSwipeEnd(event)" style="display:flex;align-items:flex-start;gap:8px;padding:9px 8px;border-bottom:1px solid var(--border);border-radius:6px;cursor:pointer;${p.flagged && !done ? 'background:rgba(255,214,10,0.10);' : ''}${done ? 'opacity:0.5;' : ''}">
       <span style="font-size:18px;flex-shrink:0;color:${done ? 'var(--green)' : 'var(--subtext)'};">${done ? '☑' : '☐'}</span>
       <div style="flex:1;min-width:0;"><span style="font-size:14px;${done ? 'color:var(--subtext);text-decoration:line-through;' : 'color:#FFD60A;'}">${p.flagged ? '🚩 ' : ''}📌 ${safe}</span>${caughtLine}${thumb}</div>${durStr}</div>`;
   }).join('');
@@ -8944,27 +8944,39 @@ function _pinnedNotesHtml(task) {
   const taskAttr = _attr(task);
   return `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">
     <div style="font-size:12px;color:#FFD60A;margin-bottom:2px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">📌 Pinned notes</div>
-    <div style="font-size:11px;color:var(--subtext);margin-bottom:8px;">Swipe a note right to 🚩 flag it to the top</div>
+    <div style="font-size:11px;color:var(--subtext);margin-bottom:8px;">Swipe a note right to 🚩 flag it to the top · hold &amp; drag a 🚩 note to reorder</div>
     ${pins.map(p => {
       const safe = p.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const caught = (p.caught || p.ts) ? `<div style="font-size:11px;color:var(--subtext);margin-top:2px;">Caught ${_inboxStamp(p.caught || p.ts)}</div>` : '';
       const thumb = _photosHtml(p, 90);
-      return `<div data-pin-id="${p.id}" data-pin-task="${taskAttr}" ontouchstart="pinSwipeStart(event)" ontouchmove="pinSwipeMove(event)" ontouchend="pinSwipeEnd(event)" style="margin-bottom:8px;padding:8px;border-radius:8px;${p.flagged ? 'background:rgba(255,214,10,0.12);' : ''}"><span style="font-size:14px;color:#FFD60A;">${p.flagged ? '🚩 ' : ''}📌 ${safe}</span>${caught}${thumb}</div>`;
+      return `<div data-pin-id="${p.id}" data-pin-task="${taskAttr}" data-pin-flagged="${p.flagged ? '1' : ''}" ontouchstart="pinSwipeStart(event)" ontouchmove="pinSwipeMove(event)" ontouchend="pinSwipeEnd(event)" style="margin-bottom:8px;padding:8px;border-radius:8px;${p.flagged ? 'background:rgba(255,214,10,0.12);' : ''}"><span style="font-size:14px;color:#FFD60A;">${p.flagged ? '🚩 ' : ''}📌 ${safe}</span>${caught}${thumb}</div>`;
     }).join('')}
   </div>`;
 }
 
-// ── Swipe a pinned note right → 🚩 flag it to the top (works on the running
-// clock, planner detail, and the Task Directory 📌 preview) ──
-let _pinSwipe = null, _pinSwipeBlockClickUntil = 0;
+// ── Pinned-note gestures (run on the running clock, planner detail, and the
+// Task Directory 📌 preview) ──
+//   • Swipe right            → 🚩 flag the note to the top
+//   • Press-and-hold + drag  → reorder among the 🚩 flagged notes (flagged only)
+let _pinSwipe = null, _pinSwipeBlockClickUntil = 0, _pinLongPressTimer = null, _pinDrag = null;
+const _PIN_HOLD_MS = 280;
 function pinSwipeStart(e) {
   const row = e.currentTarget;
-  _pinSwipe = { row, id: row.dataset.pinId, task: row.dataset.pinTask, x: e.touches[0].clientX, y: e.touches[0].clientY, moved: false };
+  const y = e.touches[0].clientY;
+  _pinSwipe = { row, id: row.dataset.pinId, task: row.dataset.pinTask, x: e.touches[0].clientX, y, moved: false };
+  // Only flagged notes can be picked up and reordered.
+  clearTimeout(_pinLongPressTimer); _pinLongPressTimer = null;
+  if (row.dataset.pinFlagged === '1') {
+    _pinLongPressTimer = setTimeout(() => { _pinLongPressTimer = null; _startPinDrag(row, row.dataset.pinTask); }, _PIN_HOLD_MS);
+  }
 }
 function pinSwipeMove(e) {
+  if (_pinDrag) { e.preventDefault(); _pinDragMove(e.touches[0].clientY); return; }
   if (!_pinSwipe) return;
   const dx = e.touches[0].clientX - _pinSwipe.x, dy = e.touches[0].clientY - _pinSwipe.y;
-  if (!_pinSwipe.moved && (Math.abs(dy) > Math.abs(dx) || dx < 0)) { _pinSwipe = null; return; } // vertical scroll / left-swipe → let it be
+  // Any real movement before the hold fires means it's a swipe or scroll, not a pickup.
+  if (_pinLongPressTimer && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) { clearTimeout(_pinLongPressTimer); _pinLongPressTimer = null; }
+  if (!_pinSwipe.moved && !_pinLongPressTimer && (Math.abs(dy) > Math.abs(dx) || dx < 0)) { _pinSwipe = null; return; } // vertical scroll / left-swipe → let it be
   if (dx > 6) {
     _pinSwipe.moved = true;
     e.preventDefault();
@@ -8974,6 +8986,8 @@ function pinSwipeMove(e) {
   }
 }
 function pinSwipeEnd(e) {
+  clearTimeout(_pinLongPressTimer); _pinLongPressTimer = null;
+  if (_pinDrag) { _endPinDrag(); _pinSwipe = null; return; }
   if (!_pinSwipe) return;
   const s = _pinSwipe; _pinSwipe = null;
   const dx = (e.changedTouches[0] ? e.changedTouches[0].clientX : s.x) - s.x;
@@ -8981,6 +8995,49 @@ function pinSwipeEnd(e) {
   s.row.style.transform = ''; s.row.style.opacity = '';
   if (s.moved) _pinSwipeBlockClickUntil = Date.now() + 400; // any horizontal drag suppresses the tap-to-tick
   if (s.moved && dx > 48) togglePinFlag(s.task, s.id);
+}
+// Pick a flagged note up — lift it and stop scroll/tap from firing.
+function _startPinDrag(row, task) {
+  _pinSwipe = null;
+  _pinDrag = { row, task };
+  _pinSwipeBlockClickUntil = Date.now() + 600;
+  row.style.transition = 'transform 0.12s, box-shadow 0.12s, opacity 0.12s';
+  row.style.transform = 'scale(1.03)';
+  row.style.opacity = '0.92';
+  row.style.boxShadow = '0 6px 16px rgba(0,0,0,0.45)';
+  row.style.position = 'relative';
+  row.style.zIndex = '5';
+  if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
+}
+// As the finger moves, slot the lifted row among its flagged siblings.
+function _pinDragMove(clientY) {
+  const dragged = _pinDrag.row, parent = dragged.parentNode;
+  const others = [...parent.children].filter(c => c.dataset && c.dataset.pinFlagged === '1' && c !== dragged);
+  const target = others.find(r => { const b = r.getBoundingClientRect(); return clientY < b.top + b.height / 2; });
+  if (target) { parent.insertBefore(dragged, target); }
+  else { const last = others[others.length - 1]; if (last) parent.insertBefore(dragged, last.nextSibling); }
+}
+// Release — read the new on-screen order and persist it (top = newest flaggedAt).
+function _endPinDrag() {
+  const dragged = _pinDrag.row, task = _pinDrag.task, parent = dragged.parentNode;
+  _pinDrag = null;
+  dragged.style.transition = 'transform 0.15s, box-shadow 0.15s, opacity 0.15s';
+  dragged.style.transform = ''; dragged.style.opacity = ''; dragged.style.boxShadow = '';
+  dragged.style.position = ''; dragged.style.zIndex = '';
+  const order = [...parent.children].filter(c => c.dataset && c.dataset.pinFlagged === '1').map(c => c.dataset.pinId);
+  _applyFlagOrder(task, order);
+}
+// Encode a manual order of flagged notes into flaggedAt so _sortPins keeps it.
+function _applyFlagOrder(task, orderedIds) {
+  const tn = getTaskNotes();
+  const arr = tn[task]; if (!arr) return;
+  const base = Date.now();
+  orderedIds.forEach((id, i) => {
+    const note = arr.find(n => n.id === id);
+    if (note && note.flagged) note.flaggedAt = base - i * 1000; // first listed = highest = top
+  });
+  saveTaskNotes(tn);
+  _refreshPinSurfaces(task);
 }
 function togglePinFlag(task, id) {
   const tn = getTaskNotes();
@@ -8990,7 +9047,10 @@ function togglePinFlag(task, id) {
   note.flaggedAt = note.flagged ? Date.now() : 0;
   saveTaskNotes(tn);
   showToast(note.flagged ? '🚩 Flagged to top' : 'Flag removed');
-  // Refresh whichever surface is showing these notes.
+  _refreshPinSurfaces(task);
+}
+// Re-render whichever surface is currently showing this task's pinned notes.
+function _refreshPinSurfaces(task) {
   if (clockState && clockState.running && clockState.task === task) renderRunChecklist();
   const det = document.getElementById('modal-planner-detail');
   if (det && det.classList.contains('open') && _plannerDetailId) openPlannerDetail(_plannerDetailId);
