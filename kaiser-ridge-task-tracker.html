@@ -1402,17 +1402,17 @@
 
 <!-- ══════════════ BOTTOM NAV ══════════════ -->
 <nav class="bottom-nav">
+  <button class="nav-tab" onclick="openInbox()">
+    <span class="nav-icon">📥</span>Inbox<span id="inbox-count"></span>
+  </button>
+  <button class="nav-tab" onclick="showScreen('planner',this)">
+    <span class="nav-icon">🗓</span>Planner
+  </button>
   <button class="nav-tab active" onclick="showScreen('clock',this)">
     <span class="nav-icon">⏱</span>Clock
   </button>
   <button class="nav-tab" onclick="showScreen('timesheets',this)">
     <span class="nav-icon">📋</span>Timesheets
-  </button>
-  <button class="nav-tab" onclick="showScreen('dashboard',this)">
-    <span class="nav-icon">📊</span>Dashboard
-  </button>
-  <button class="nav-tab" onclick="showScreen('planner',this)">
-    <span class="nav-icon">🗓</span>Planner
   </button>
   <button class="nav-tab" id="nav-more-tab" onclick="openMoreMenu()">
     <span class="nav-icon">☰</span>More
@@ -1424,8 +1424,8 @@
   <div class="modal-sheet" style="padding:8px 0 calc(24px + env(safe-area-inset-bottom));">
     <div class="modal-handle"></div>
     <div style="font-size:13px;font-weight:600;color:var(--subtext);padding:4px 20px 8px;">MORE</div>
-    <button onclick="closeModal('modal-more-menu'); openInbox();" class="more-row">
-      <span style="font-size:22px;width:30px;text-align:center;">📥</span><span>Inbox<span id="inbox-count"></span></span>
+    <button onclick="moreMenuGo('dashboard')" class="more-row">
+      <span style="font-size:22px;width:30px;text-align:center;">📊</span><span>Dashboard</span>
     </button>
     <button onclick="moreMenuGo('directory')" class="more-row">
       <span style="font-size:22px;width:30px;text-align:center;">📁</span><span>Task Directory</span>
@@ -2139,7 +2139,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.54';
+const APP_VERSION = '2026-06-21.55';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -7468,7 +7468,7 @@ const _origShowScreen = showScreen;
 showScreen = function(id, tab) {
   _origShowScreen(id, tab);
   // Screens that live behind the ☰ More menu keep that tab highlighted
-  if (['directory', 'equipment', 'settings'].includes(id)) {
+  if (['dashboard', 'directory', 'equipment', 'settings'].includes(id)) {
     const more = document.getElementById('nav-more-tab');
     if (more) more.classList.add('active');
   }
