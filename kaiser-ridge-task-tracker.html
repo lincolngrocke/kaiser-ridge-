@@ -2139,7 +2139,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.49';
+const APP_VERSION = '2026-06-21.50';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -8499,24 +8499,45 @@ function _pzTransform() {
   if (grid) grid.style.transform = 'scaleY(' + (_pzTargetPx() / _pz.px0) + ')';
 }
 
-// Keep every task readable: walk blocks top-to-bottom and, whenever one would
-// overlap the previous, push it down to just below it. Blocks that don't collide
-// stay at their true time position, so quiet parts of the day are unchanged.
+// Keep every block at its TRUE time position (so the left hour column always
+// lines up) and lay overlapping blocks side-by-side in equal-width columns,
+// Google-Calendar style — instead of cascading them downward, which used to
+// drift busy stretches out of alignment with the time axis.
 function reflowPlannerBlocks(grid) {
-  const GAP = 3;
-  const blocks = Array.from(grid.querySelectorAll('.pl-task-block'));
-  // Stable sort by natural (time-based) top; equal tops keep insertion order
-  blocks.sort((a, b) => (parseFloat(a.dataset.natTop) || 0) - (parseFloat(b.dataset.natTop) || 0));
-  let lastBottom = -Infinity, maxBottom = 0;
-  blocks.forEach(b => {
-    const natTop = parseFloat(b.dataset.natTop) || 0;
-    const h = parseFloat(b.dataset.h) || 30;
-    const top = natTop < lastBottom + GAP ? lastBottom + GAP : natTop;
-    b.style.top = top + 'px';
-    lastBottom = top + h;
-    if (lastBottom > maxBottom) maxBottom = lastBottom;
-  });
-  // Grow the grid if the cascade pushed past its original height
+  const items = Array.from(grid.querySelectorAll('.pl-task-block')).map(el => {
+    const top = parseFloat(el.dataset.natTop) || 0;
+    const h = parseFloat(el.dataset.h) || 30;
+    return { el, top, bottom: top + h };
+  }).sort((a, b) => a.top - b.top || a.bottom - b.bottom);
+  if (!items.length) return;
+
+  let maxBottom = 0, i = 0;
+  while (i < items.length) {
+    // Build a collision cluster: blocks that transitively overlap in time.
+    let clusterEnd = items[i].bottom, j = i + 1;
+    while (j < items.length && items[j].top < clusterEnd) {
+      if (items[j].bottom > clusterEnd) clusterEnd = items[j].bottom;
+      j++;
+    }
+    const cluster = items.slice(i, j);
+    // Greedy column packing: place each block in the first free column.
+    const colEnds = [];
+    cluster.forEach(it => {
+      let c = 0;
+      while (c < colEnds.length && it.top < colEnds[c]) c++;
+      it.col = c;
+      colEnds[c] = it.bottom;
+    });
+    const n = colEnds.length;
+    cluster.forEach(it => {
+      it.el.style.top = it.top + 'px';
+      it.el.style.left = `calc(56px + (100% - 60px) * ${it.col} / ${n})`;
+      it.el.style.width = `calc((100% - 60px) / ${n} - 3px)`;
+      it.el.style.right = 'auto';
+      if (it.bottom > maxBottom) maxBottom = it.bottom;
+    });
+    i = j;
+  }
   const needed = maxBottom + 40;
   if (needed > (parseFloat(grid.style.height) || 0)) grid.style.height = needed + 'px';
 }
