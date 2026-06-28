@@ -2139,7 +2139,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.53';
+const APP_VERSION = '2026-06-21.54';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2840,7 +2840,7 @@ function renderRunChecklist() {
     + `</div>`;
   // Preserve scroll position across re-render so ticking/expanding doesn't jump to top.
   const prevScroll = (document.getElementById('run-checklist-scroll') || {}).scrollTop || 0;
-  el.innerHTML = headerHtml + `<div id="run-checklist-scroll" style="flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;">${pinnedRows}${rows}</div>`;
+  el.innerHTML = headerHtml + `<div id="run-checklist-scroll" style="flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;">${pinnedRows}${rows}</div>`;
   const sc = document.getElementById('run-checklist-scroll');
   if (sc) sc.scrollTop = prevScroll;
   _loadPhotoThumbs();
