@@ -2139,7 +2139,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.50';
+const APP_VERSION = '2026-06-21.51';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2725,11 +2725,18 @@ function _orderedChecklistItems(task, items) {
   return items.slice().sort((a, b) => (a in avg ? avg[a] : Infinity) - (b in avg ? avg[b] : Infinity));  // stable: no-data keep manual order
 }
 function _checklistDurations() {
-  const done = (clockState && Array.isArray(clockState.checklistDone)) ? clockState.checklistDone : [];
-  const breaks = (clockState && Array.isArray(clockState.breaks)) ? clockState.breaks.slice() : [];
-  if (clockState && clockState.onBreak && clockState.breakStartMs) breaks.push({ start: clockState.breakStartMs, end: Date.now() });
-  const sorted = done.slice().sort((a, b) => new Date(a.at) - new Date(b.at));
-  return _computeChecklistDurations(sorted, _clockInEpoch(), breaks);
+  if (!clockState) return {};
+  const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
+  const pinDone = clockState.pinDone || {};
+  const breaks = Array.isArray(clockState.breaks) ? clockState.breaks.slice() : [];
+  if (clockState.onBreak && clockState.breakStartMs) breaks.push({ start: clockState.breakStartMs, end: Date.now() });
+  // Merge checklist items + pinned-note completions into one timeline so each is
+  // timed by the gap from the previous completion. Pins are keyed 'pin:<id>'; the
+  // checklist keys stay the item text, so existing readers are unaffected.
+  const events = done.map(d => ({ item: d.item, at: d.at }))
+    .concat(Object.keys(pinDone).map(id => ({ item: 'pin:' + id, at: pinDone[id] })))
+    .sort((a, b) => new Date(a.at) - new Date(b.at));
+  return _computeChecklistDurations(events, _clockInEpoch(), breaks);
 }
 let _expandedChecklistItems = new Set();
 function markChecklistItemDone(item) {
@@ -2815,9 +2822,11 @@ function renderRunChecklist() {
     const caughtTs = p.caught || p.ts;
     const caughtLine = caughtTs ? `<div style="font-size:11px;color:var(--subtext);margin-top:2px;">Caught ${_inboxStamp(caughtTs)}</div>` : '';
     const thumb = _photoThumbHtml(p, 80);
+    const durStr = (done && dur['pin:' + p.id] != null)
+      ? `<span style="font-size:13px;color:var(--green);font-weight:700;white-space:nowrap;flex-shrink:0;">${fmtMin(dur['pin:' + p.id])}</span>` : '';
     return `<div data-pin-id="${p.id}" data-pin-task="${pinTaskAttr}" onclick="togglePinnedNote('${p.id}')" ontouchstart="pinSwipeStart(event)" ontouchmove="pinSwipeMove(event)" ontouchend="pinSwipeEnd(event)" style="display:flex;align-items:flex-start;gap:8px;padding:9px 8px;border-bottom:1px solid var(--border);border-radius:6px;cursor:pointer;${p.flagged && !done ? 'background:rgba(255,214,10,0.10);' : ''}${done ? 'opacity:0.5;' : ''}">
       <span style="font-size:18px;flex-shrink:0;color:${done ? 'var(--green)' : 'var(--subtext)'};">${done ? '☑' : '☐'}</span>
-      <div style="flex:1;min-width:0;"><span style="font-size:14px;${done ? 'color:var(--subtext);text-decoration:line-through;' : 'color:#FFD60A;'}">${p.flagged ? '🚩 ' : ''}📌 ${safe}</span>${caughtLine}${thumb}</div></div>`;
+      <div style="flex:1;min-width:0;"><span style="font-size:14px;${done ? 'color:var(--subtext);text-decoration:line-through;' : 'color:#FFD60A;'}">${p.flagged ? '🚩 ' : ''}📌 ${safe}</span>${caughtLine}${thumb}</div>${durStr}</div>`;
   }).join('');
   const pinnedHeader = (pinned.length && items.length)
     ? `<div style="padding:6px 0 2px;font-size:11px;font-weight:700;color:#FFD60A;letter-spacing:.04em;">📌 NOTES — tap to tick · swipe → flag</div>` : '';
@@ -6965,14 +6974,16 @@ function finalizeDonePins() {
   if (!doneIds.length) return;
   const tn = getTaskNotes();
   const list = tn[task] || [];
+  const dur = _checklistDurations();                 // includes pin completions (keyed 'pin:<id>')
   doneIds.forEach(id => {
     const note = list.find(p => p.id === id);
     if (!note) return;
     const at = clockState.pinDone[id];
     const t = new Date(at).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true });
+    const mins = dur['pin:' + id] != null ? ' (' + fmtMin(dur['pin:' + id]) + ')' : '';
     const inb = note.inboxId ? getInbox().find(x => x.id === note.inboxId) : null;
     const caughtTs = (inb && inb.ts) || note.ts || '';
-    const line = '[' + t + '] 📌 ' + note.text + (caughtTs ? ' (caught ' + _inboxStamp(caughtTs) + ')' : '');
+    const line = '[' + t + ']' + mins + ' 📌 ' + note.text + (caughtTs ? ' (caught ' + _inboxStamp(caughtTs) + ')' : '');
     clockState.notes = clockState.notes ? clockState.notes + '\n' + line : line;
   });
   // Remove the done pins from the task
