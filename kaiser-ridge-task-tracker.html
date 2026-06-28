@@ -2139,7 +2139,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.51';
+const APP_VERSION = '2026-06-21.52';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2828,11 +2828,12 @@ function renderRunChecklist() {
       <span style="font-size:18px;flex-shrink:0;color:${done ? 'var(--green)' : 'var(--subtext)'};">${done ? '☑' : '☐'}</span>
       <div style="flex:1;min-width:0;"><span style="font-size:14px;${done ? 'color:var(--subtext);text-decoration:line-through;' : 'color:#FFD60A;'}">${p.flagged ? '🚩 ' : ''}📌 ${safe}</span>${caughtLine}${thumb}</div>${durStr}</div>`;
   }).join('');
+  const pinsDone = pinned.filter(p => pinDone[p.id]).length;
   const pinnedHeader = (pinned.length && items.length)
-    ? `<div style="padding:6px 0 2px;font-size:11px;font-weight:700;color:#FFD60A;letter-spacing:.04em;">📌 NOTES — tap to tick · swipe → flag</div>` : '';
+    ? `<div style="padding:6px 0 2px;font-size:11px;font-weight:700;color:#FFD60A;letter-spacing:.04em;">📌 NOTES · ${pinsDone}/${pinned.length} done · tap to tick · swipe → flag</div>` : '';
   const headText = items.length
     ? `CHECKLIST · ${completedCount}/${items.length} done · tap ○ to time, item to expand`
-    : '📌 TASK NOTES — tap to tick · swipe → flag';
+    : `📌 TASK NOTES · ${pinsDone}/${pinned.length} done · tap to tick · swipe → flag`;
   // Preserve scroll position across re-render so ticking/expanding doesn't jump to top.
   const prevScroll = (document.getElementById('run-checklist-scroll') || {}).scrollTop || 0;
   el.innerHTML = `<div style="background:#000;padding:6px 0;font-size:12px;font-weight:700;color:var(--subtext);letter-spacing:.04em;border-bottom:1px solid var(--border);">${headText}</div><div id="run-checklist-scroll" style="flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;">${pinnedHeader}${pinnedRows}${rows}</div>`;
