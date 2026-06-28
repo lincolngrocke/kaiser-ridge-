@@ -2139,7 +2139,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.48';
+const APP_VERSION = '2026-06-21.49';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -9370,11 +9370,32 @@ function renderPlannerHolding(dateStr) {
       const dur = Number(p.durationHours) || 1;
       const durStr = dur >= 1 ? (Math.round(dur * 10) / 10) + 'h' : Math.round(dur * 60) + 'm';
       const safe = String(p.task || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
-      return `<div data-park-id="${p.id}" ontouchstart="parkedChipTouchStart(event,'${p.id}')" style="background:${plannerColorFor(p.task)};color:#fff;border-radius:8px;padding:6px;margin-bottom:6px;font-size:11px;cursor:grab;touch-action:none;">
-        <div style="font-weight:700;line-height:1.2;">${safe}</div>
+      return `<div data-park-id="${p.id}" ontouchstart="parkedChipTouchStart(event,'${p.id}')" style="position:relative;background:${plannerColorFor(p.task)};color:#fff;border-radius:8px;padding:6px;margin-bottom:6px;font-size:11px;cursor:grab;touch-action:none;">
+        <button onclick="event.stopPropagation();removeParkedBlock('${p.id}')" ontouchstart="event.stopPropagation()" title="Remove from holding" style="position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,0.4);color:#fff;border:none;font-size:11px;line-height:1;cursor:pointer;padding:0;">✕</button>
+        <div style="font-weight:700;line-height:1.2;padding-right:14px;">${safe}</div>
         <div style="opacity:0.9;margin-top:2px;">${durStr}</div>
       </div>`;
     }).join('');
+}
+// Remove a parked chip from the holding bay (deletes the planner block, not the
+// task in the directory). Undoable for a few seconds; restores to the same store.
+function removeParkedBlock(id) {
+  const idx = _plannerPlans.findIndex(p => p.id === id);
+  if (idx === -1) return;
+  const removed = _plannerPlans[idx];
+  const key = plannerStoreKey();
+  if (removed.calEventId) deletePlannerCalendarEvent(removed); // defensive — parked blocks normally have none
+  _plannerPlans.splice(idx, 1);
+  savePlanner();
+  renderPlannerScreen();
+  showUndoToast('Removed from holding', () => {
+    const arr = JSON.parse(localStorage.getItem(key) || '[]');
+    arr.push(removed);
+    localStorage.setItem(key, JSON.stringify(arr));
+    if (plannerStoreKey() === key) _plannerPlans = arr;
+    renderPlannerScreen();
+    showToast('Restored to holding');
+  });
 }
 let _parkDragId = null, _parkClone = null;
 function _moveParkClone(x, y) {
