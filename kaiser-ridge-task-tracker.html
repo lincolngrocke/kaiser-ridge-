@@ -2139,7 +2139,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.52';
+const APP_VERSION = '2026-06-21.53';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2829,14 +2829,18 @@ function renderRunChecklist() {
       <div style="flex:1;min-width:0;"><span style="font-size:14px;${done ? 'color:var(--subtext);text-decoration:line-through;' : 'color:#FFD60A;'}">${p.flagged ? '🚩 ' : ''}📌 ${safe}</span>${caughtLine}${thumb}</div>${durStr}</div>`;
   }).join('');
   const pinsDone = pinned.filter(p => pinDone[p.id]).length;
-  const pinnedHeader = (pinned.length && items.length)
-    ? `<div style="padding:6px 0 2px;font-size:11px;font-weight:700;color:#FFD60A;letter-spacing:.04em;">📌 NOTES · ${pinsDone}/${pinned.length} done · tap to tick · swipe → flag</div>` : '';
-  const headText = items.length
-    ? `CHECKLIST · ${completedCount}/${items.length} done · tap ○ to time, item to expand`
-    : `📌 TASK NOTES · ${pinsDone}/${pinned.length} done · tap to tick · swipe → flag`;
+  const checklistLine = items.length
+    ? `CHECKLIST · ${completedCount}/${items.length} done · tap ○ to time, item to expand` : '';
+  const notesLine = pinned.length
+    ? `📌 NOTES · ${pinsDone}/${pinned.length} done · tap to tick · swipe → flag` : '';
+  // Fixed header — stays put while the list scrolls, so both tallies are always visible.
+  const headerHtml = `<div style="background:#000;padding:6px 0;border-bottom:1px solid var(--border);letter-spacing:.04em;">`
+    + (checklistLine ? `<div style="font-size:12px;font-weight:700;color:var(--subtext);">${checklistLine}</div>` : '')
+    + (notesLine ? `<div style="font-size:11px;font-weight:700;color:#FFD60A;${checklistLine ? 'margin-top:3px;' : ''}">${notesLine}</div>` : '')
+    + `</div>`;
   // Preserve scroll position across re-render so ticking/expanding doesn't jump to top.
   const prevScroll = (document.getElementById('run-checklist-scroll') || {}).scrollTop || 0;
-  el.innerHTML = `<div style="background:#000;padding:6px 0;font-size:12px;font-weight:700;color:var(--subtext);letter-spacing:.04em;border-bottom:1px solid var(--border);">${headText}</div><div id="run-checklist-scroll" style="flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;">${pinnedHeader}${pinnedRows}${rows}</div>`;
+  el.innerHTML = headerHtml + `<div id="run-checklist-scroll" style="flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;">${pinnedRows}${rows}</div>`;
   const sc = document.getElementById('run-checklist-scroll');
   if (sc) sc.scrollTop = prevScroll;
   _loadPhotoThumbs();
