@@ -1592,17 +1592,19 @@
 
 <!-- ══════════════ PLANNER MOVE-TO-DAY MODAL ══════════════ -->
 <div class="modal-backdrop" id="modal-planner-move" style="z-index:340;" onclick="if(event.target===this){closeModal('modal-planner-move');_quickMove=false;}">
-  <div class="modal-sheet" style="padding:16px 0 24px;">
+  <div class="modal-sheet" style="padding:22px 0 38px;">
     <div class="modal-handle"></div>
-    <div style="padding:0 20px 4px;display:flex;align-items:center;justify-content:space-between;">
-      <span onclick="closeModal('modal-planner-move');_quickMove=false;" style="color:var(--blue);font-size:16px;cursor:pointer;">Cancel</span>
-      <span style="font-size:17px;font-weight:600;">Move to another day</span>
-      <span onclick="confirmPlannerMove()" style="color:var(--blue);font-size:16px;font-weight:700;cursor:pointer;">Move</span>
+    <div style="padding:0 22px 12px;display:flex;align-items:center;justify-content:space-between;">
+      <span onclick="closeModal('modal-planner-move');_quickMove=false;" style="color:var(--blue);font-size:17px;cursor:pointer;">Cancel</span>
+      <span style="font-size:20px;font-weight:700;">Move to another day</span>
+      <span onclick="confirmPlannerMove()" style="color:var(--blue);font-size:17px;font-weight:700;cursor:pointer;">Move</span>
     </div>
-    <div style="padding:6px 20px 12px;font-size:13px;color:var(--subtext);">Pick a day to move <b id="planner-move-task" style="color:var(--text);"></b> to. It’ll land parked in that day’s holding column, ready to drop onto the timeline.</div>
-    <div style="padding:0 20px;display:flex;align-items:center;gap:10px;">
-      <span style="font-size:14px;color:var(--text);">Date</span>
-      <input type="date" id="planner-move-date" class="form-input" style="flex:1;" onchange="plannerMoveDatePicked()">
+    <div style="padding:8px 22px 20px;font-size:15px;line-height:1.5;color:var(--subtext);">Pick a day to move <b id="planner-move-task" style="color:var(--text);"></b> to. It’ll land parked in that day’s holding column, ready to drop onto the timeline.</div>
+    <div style="padding:0 22px;">
+      <div style="display:flex;align-items:center;gap:12px;background:var(--bg);border:1px solid var(--border);border-radius:14px;padding:18px 18px;">
+        <span style="font-size:17px;font-weight:600;color:var(--text);">Date</span>
+        <input type="date" id="planner-move-date" class="form-input" style="flex:1;font-size:20px;font-weight:600;" onchange="plannerMoveDatePicked()">
+      </div>
     </div>
   </div>
 </div>
@@ -2144,7 +2146,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.60';
+const APP_VERSION = '2026-06-21.61';
 
 // ════════════════════════════════
 //  DIRECTORY
