@@ -1144,7 +1144,7 @@
         <button id="clorder-typical" onclick="setChecklistOrder('typical')" style="flex:1;border-radius:10px;padding:9px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--text);">Typical</button>
       </div>
     </div>
-    <div class="settings-note" style="margin-top:0">Manual = your editor order. Last used = the order you ticked them off the most recent time you did this task. Typical = the average order across recent times. (Display only — doesn’t change the saved checklist.)</div>
+    <div class="settings-note" style="margin-top:0">Manual = your Task Directory editor order. Last used = the average order you ticked them off across your last 3 times doing this task. Typical = the average across all recent times. (Display only — doesn’t change the saved checklist; switch back to Manual any time to revert.)</div>
 
     <div class="settings-section" style="margin-top:16px">
       <div class="settings-row">
@@ -2147,7 +2147,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.68';
+const APP_VERSION = '2026-06-21.69';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2729,14 +2729,22 @@ function _typicalChecklistOrder(task) {
   Object.keys(sums).forEach(it => avg[it] = sums[it] / counts[it]);
   return avg;
 }
-// → { item: completionIndex } from the MOST RECENT entry for the task that has
-// a ticked checklist — i.e. the order you worked through it last time.
+// → { item: avgCompletionIndex } across the LAST 3 sessions of this task — the
+// recent working order, averaged so a single out-of-order day doesn't skew it.
 function _lastUsedChecklistOrder(task) {
   const withCl = entries.filter(e => e.task === task && Array.isArray(e.checklist) && e.checklist.length);
   if (!withCl.length) return {};
   withCl.sort((a, b) => (_entryClockInEpoch(b) || 0) - (_entryClockInEpoch(a) || 0));
+  const recent = withCl.slice(0, 3);
+  const sums = {}, counts = {};
+  recent.forEach(e => {
+    e.checklist.slice().sort((a, b) => new Date(a.at) - new Date(b.at)).forEach((d, idx) => {
+      sums[d.item] = (sums[d.item] || 0) + idx;
+      counts[d.item] = (counts[d.item] || 0) + 1;
+    });
+  });
   const order = {};
-  withCl[0].checklist.slice().sort((a, b) => new Date(a.at) - new Date(b.at)).forEach((d, idx) => { order[d.item] = idx; });
+  Object.keys(sums).forEach(it => order[it] = sums[it] / counts[it]);
   return order;
 }
 function _orderedChecklistItems(task, items) {
