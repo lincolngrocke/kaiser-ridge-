@@ -601,6 +601,11 @@
     font-size: 17px; color: var(--text); text-align: left; cursor: pointer;
   }
   .more-row:active { background: var(--bg); }
+  /* Pinned-note rows: suppress the iOS text-selection callout so press-and-hold
+     drags the note instead of popping up Copy / Look Up / Translate. */
+  .pin-row, .pin-row * {
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  }
 
   /* ── SETTINGS / SYNC SCREEN ── */
   .settings-section {
@@ -2139,7 +2144,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.56';
+const APP_VERSION = '2026-06-21.57';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2824,7 +2829,7 @@ function renderRunChecklist() {
     const thumb = _photoThumbHtml(p, 80);
     const durStr = (done && dur['pin:' + p.id] != null)
       ? `<span style="font-size:13px;color:var(--green);font-weight:700;white-space:nowrap;flex-shrink:0;">${fmtMin(dur['pin:' + p.id])}</span>` : '';
-    return `<div data-pin-id="${p.id}" data-pin-task="${pinTaskAttr}" data-pin-flagged="${p.flagged && !done ? '1' : ''}" onclick="togglePinnedNote('${p.id}')" ontouchstart="pinSwipeStart(event)" ontouchmove="pinSwipeMove(event)" ontouchend="pinSwipeEnd(event)" style="display:flex;align-items:flex-start;gap:8px;padding:9px 8px;border-bottom:1px solid var(--border);border-radius:6px;cursor:pointer;${p.flagged && !done ? 'background:rgba(255,214,10,0.10);' : ''}${done ? 'opacity:0.5;' : ''}">
+    return `<div class="pin-row" data-pin-id="${p.id}" data-pin-task="${pinTaskAttr}" data-pin-flagged="${p.flagged && !done ? '1' : ''}" onclick="togglePinnedNote('${p.id}')" ontouchstart="pinSwipeStart(event)" ontouchmove="pinSwipeMove(event)" ontouchend="pinSwipeEnd(event)" style="display:flex;align-items:flex-start;gap:8px;padding:9px 8px;border-bottom:1px solid var(--border);border-radius:6px;cursor:pointer;${p.flagged && !done ? 'background:rgba(255,214,10,0.10);' : ''}${done ? 'opacity:0.5;' : ''}">
       <span style="font-size:18px;flex-shrink:0;color:${done ? 'var(--green)' : 'var(--subtext)'};">${done ? '☑' : '☐'}</span>
       <div style="flex:1;min-width:0;"><span style="font-size:14px;${done ? 'color:var(--subtext);text-decoration:line-through;' : 'color:#FFD60A;'}">${p.flagged ? '🚩 ' : ''}📌 ${safe}</span>${caughtLine}${thumb}</div>${durStr}</div>`;
   }).join('');
@@ -8949,7 +8954,7 @@ function _pinnedNotesHtml(task) {
       const safe = p.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const caught = (p.caught || p.ts) ? `<div style="font-size:11px;color:var(--subtext);margin-top:2px;">Caught ${_inboxStamp(p.caught || p.ts)}</div>` : '';
       const thumb = _photosHtml(p, 90);
-      return `<div data-pin-id="${p.id}" data-pin-task="${taskAttr}" data-pin-flagged="${p.flagged ? '1' : ''}" ontouchstart="pinSwipeStart(event)" ontouchmove="pinSwipeMove(event)" ontouchend="pinSwipeEnd(event)" style="margin-bottom:8px;padding:8px;border-radius:8px;${p.flagged ? 'background:rgba(255,214,10,0.12);' : ''}"><span style="font-size:14px;color:#FFD60A;">${p.flagged ? '🚩 ' : ''}📌 ${safe}</span>${caught}${thumb}</div>`;
+      return `<div class="pin-row" data-pin-id="${p.id}" data-pin-task="${taskAttr}" data-pin-flagged="${p.flagged ? '1' : ''}" ontouchstart="pinSwipeStart(event)" ontouchmove="pinSwipeMove(event)" ontouchend="pinSwipeEnd(event)" style="margin-bottom:8px;padding:8px;border-radius:8px;${p.flagged ? 'background:rgba(255,214,10,0.12);' : ''}"><span style="font-size:14px;color:#FFD60A;">${p.flagged ? '🚩 ' : ''}📌 ${safe}</span>${caught}${thumb}</div>`;
     }).join('')}
   </div>`;
 }
@@ -8967,7 +8972,7 @@ function pinSwipeStart(e) {
   // Only flagged notes can be picked up and reordered.
   clearTimeout(_pinLongPressTimer); _pinLongPressTimer = null;
   if (row.dataset.pinFlagged === '1') {
-    _pinLongPressTimer = setTimeout(() => { _pinLongPressTimer = null; _startPinDrag(row, row.dataset.pinTask); }, _PIN_HOLD_MS);
+    _pinLongPressTimer = setTimeout(() => { _pinLongPressTimer = null; _startPinDrag(row, row.dataset.pinTask, y); }, _PIN_HOLD_MS);
   }
 }
 function pinSwipeMove(e) {
@@ -8996,26 +9001,33 @@ function pinSwipeEnd(e) {
   if (s.moved) _pinSwipeBlockClickUntil = Date.now() + 400; // any horizontal drag suppresses the tap-to-tick
   if (s.moved && dx > 48) togglePinFlag(s.task, s.id);
 }
-// Pick a flagged note up — lift it and stop scroll/tap from firing.
-function _startPinDrag(row, task) {
+// Pick a flagged note up — lift it and stop scroll/tap from firing. grabOffset
+// is where on the row the finger landed, so the row tracks the finger exactly.
+function _startPinDrag(row, task, startY) {
   _pinSwipe = null;
-  _pinDrag = { row, task };
+  const rect = row.getBoundingClientRect();
+  _pinDrag = { row, task, grabOffset: startY - rect.top };
   _pinSwipeBlockClickUntil = Date.now() + 600;
-  row.style.transition = 'transform 0.12s, box-shadow 0.12s, opacity 0.12s';
-  row.style.transform = 'scale(1.03)';
-  row.style.opacity = '0.92';
+  row.style.transition = 'none';
+  row.style.opacity = '0.95';
   row.style.boxShadow = '0 6px 16px rgba(0,0,0,0.45)';
   row.style.position = 'relative';
   row.style.zIndex = '5';
+  row.style.transform = 'scale(1.03)';
   if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
 }
-// As the finger moves, slot the lifted row among its flagged siblings.
+// Each move: slot the row among its flagged siblings by finger position, then
+// float it under the finger — measured from its (possibly new) natural slot, so
+// the follow stays accurate no matter how the order shifts.
 function _pinDragMove(clientY) {
   const dragged = _pinDrag.row, parent = dragged.parentNode;
   const others = [...parent.children].filter(c => c.dataset && c.dataset.pinFlagged === '1' && c !== dragged);
   const target = others.find(r => { const b = r.getBoundingClientRect(); return clientY < b.top + b.height / 2; });
   if (target) { parent.insertBefore(dragged, target); }
   else { const last = others[others.length - 1]; if (last) parent.insertBefore(dragged, last.nextSibling); }
+  dragged.style.transform = 'none';                       // measure natural slot
+  const ty = clientY - _pinDrag.grabOffset - dragged.getBoundingClientRect().top;
+  dragged.style.transform = 'translateY(' + ty + 'px) scale(1.03)';
 }
 // Release — read the new on-screen order and persist it (top = newest flaggedAt).
 function _endPinDrag() {
