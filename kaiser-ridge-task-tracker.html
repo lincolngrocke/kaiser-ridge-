@@ -2146,7 +2146,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.64';
+const APP_VERSION = '2026-06-21.65';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3801,10 +3801,41 @@ function updateTaskOptions() { onGroupChange(); }
 // ════════════════════════════════
 function openModal(id) {
   document.getElementById(id).classList.add('open');
+  _fitModalsToKeyboard();
 }
 function closeModal(id) {
-  document.getElementById(id).classList.remove('open');
+  const el = document.getElementById(id);
+  el.classList.remove('open');
+  el.style.bottom = '';
+  const sheet = el.querySelector('.modal-sheet');
+  if (sheet && ('kbOrigMax' in sheet.dataset)) { sheet.style.maxHeight = sheet.dataset.kbOrigMax; delete sheet.dataset.kbOrigMax; }
   if (id === 'modal-task') editingId = null;
+}
+// Keep bottom-sheet modals above the on-screen keyboard. iOS anchors fixed
+// elements to the layout viewport, which sits *behind* the keyboard, so a
+// focused input (e.g. the inbox search) slides under it. Use visualViewport to
+// raise the open sheet's base above the keys and cap it to the visible area, so
+// its top (the search field) always stays put.
+function _fitModalsToKeyboard() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+  document.querySelectorAll('.modal-backdrop.open').forEach(b => {
+    b.style.bottom = kb ? kb + 'px' : '';
+    const sheet = b.querySelector('.modal-sheet');
+    if (!sheet) return;
+    if (kb > 0) {
+      if (!('kbOrigMax' in sheet.dataset)) sheet.dataset.kbOrigMax = sheet.style.maxHeight || '';
+      sheet.style.maxHeight = (vv.height - 6) + 'px';
+    } else if ('kbOrigMax' in sheet.dataset) {
+      sheet.style.maxHeight = sheet.dataset.kbOrigMax;
+      delete sheet.dataset.kbOrigMax;
+    }
+  });
+}
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', _fitModalsToKeyboard);
+  window.visualViewport.addEventListener('scroll', _fitModalsToKeyboard);
 }
 
 function openNoteModal() {
