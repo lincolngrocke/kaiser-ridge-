@@ -1611,13 +1611,13 @@
 
 <!-- ══════════════ PINNED-NOTES PREVIEW (tap the 📌 badge) ══════════════ -->
 <div class="modal-backdrop" id="modal-pin-preview" style="z-index:360;" onclick="if(event.target===this)closeModal('modal-pin-preview')">
-  <div class="modal-sheet" style="padding:16px 0 28px;max-height:80vh;display:flex;flex-direction:column;">
+  <div class="modal-sheet" style="padding:16px 0 28px;height:92vh;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;">
     <div class="modal-handle"></div>
     <div style="padding:0 20px 10px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
       <span id="pin-preview-title" style="font-size:16px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:10px;"></span>
       <span onclick="closeModal('modal-pin-preview')" style="color:var(--blue);font-size:16px;cursor:pointer;flex-shrink:0;">Done</span>
     </div>
-    <div id="pin-preview-body" style="padding:0 20px;overflow-y:auto;flex:1;"></div>
+    <div id="pin-preview-body" style="padding:0 20px;overflow-y:auto;overflow-x:hidden;flex:1;"></div>
   </div>
 </div>
 
@@ -2146,7 +2146,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.66';
+const APP_VERSION = '2026-06-21.67';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2843,7 +2843,7 @@ function renderRunChecklist() {
   // Fixed header — stays put while the list scrolls, so both tallies are always visible.
   const headerHtml = `<div style="background:#000;padding:6px 0;border-bottom:1px solid var(--border);letter-spacing:.04em;">`
     + (checklistLine ? `<div style="font-size:12px;font-weight:700;color:var(--subtext);">${checklistLine}</div>` : '')
-    + (notesLine ? `<div style="font-size:11px;font-weight:700;color:#FFD60A;${checklistLine ? 'margin-top:3px;' : ''}">${notesLine}</div>` : '')
+    + (notesLine ? `<div style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;color:#FFD60A;${checklistLine ? 'margin-top:3px;' : ''}"><span style="flex:1;min-width:0;">${notesLine}</span>${pinned.length > 1 ? `<span onclick="openPinOrganise(event)" style="flex-shrink:0;color:var(--blue);cursor:pointer;font-weight:700;">⤢ Organise</span>` : ''}</div>` : '')
     + `</div>`;
   // Preserve scroll position across re-render so ticking/expanding doesn't jump to top.
   const prevScroll = (document.getElementById('run-checklist-scroll') || {}).scrollTop || 0;
@@ -7104,6 +7104,11 @@ async function assignInboxToTask(mode) {
 }
 // Tick a pinned note done IN PLACE (greyed + struck), reversible by tapping
 // again. It isn't removed/folded until clock-out (see finalizeDonePins).
+// Open the current task's pinned notes full-page (roomy drag-reorder).
+function openPinOrganise(e) {
+  if (e) e.stopPropagation();
+  if (clockState && clockState.task) showPinnedNotesPopupTask(clockState.task);
+}
 function togglePinnedNote(id) {
   if (Date.now() < _pinSwipeBlockClickUntil) return; // a swipe just happened — not a tap
   if (!clockState || !clockState.task) return;
@@ -9081,7 +9086,9 @@ function _sortPins(arr) {
   });
 }
 
-function _pinnedNotesHtml(task) {
+// compact=true uses smaller thumbnails so rows stay short — used in the
+// full-page Organise view where notes with photos are otherwise hard to drag.
+function _pinnedNotesHtml(task, compact) {
   const pins = _sortPins(getTaskNotes()[task] || []);
   if (!pins.length) return '';
   const taskAttr = _attr(task);
@@ -9091,7 +9098,7 @@ function _pinnedNotesHtml(task) {
     ${pins.map(p => {
       const safe = p.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const caught = (p.caught || p.ts) ? `<div style="font-size:11px;color:var(--subtext);margin-top:2px;">Caught ${_inboxStamp(p.caught || p.ts)}</div>` : '';
-      const thumb = _photosHtml(p, 90);
+      const thumb = _photosHtml(p, compact ? 54 : 90);
       return `<div class="pin-row" data-pin-id="${p.id}" data-pin-task="${taskAttr}" data-pin-flagged="${p.flagged ? '1' : ''}" ontouchstart="pinSwipeStart(event)" ontouchmove="pinSwipeMove(event)" ontouchend="pinSwipeEnd(event)" style="margin-bottom:8px;padding:8px;border-radius:8px;${p.flagged ? 'background:rgba(255,214,10,0.12);' : ''}"><span style="font-size:14px;color:#FFD60A;">${p.flagged ? '🚩 ' : ''}📌 ${safe}</span>${caught}${thumb}</div>`;
     }).join('')}
   </div>`;
@@ -9217,7 +9224,7 @@ function showPinnedNotesPopup(el) {
 function showPinnedNotesPopupTask(task) {
   if (!task) return;
   document.getElementById('pin-preview-title').textContent = task;
-  const html = _pinnedNotesHtml(task);
+  const html = _pinnedNotesHtml(task, true);
   document.getElementById('pin-preview-body').innerHTML =
     html || '<div style="padding:24px 0;color:var(--subtext);text-align:center;">No pinned notes.</div>';
   openModal('modal-pin-preview');
