@@ -2146,7 +2146,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.62';
+const APP_VERSION = '2026-06-21.63';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6969,6 +6969,12 @@ function backToInboxAssignList() {
   document.getElementById('inbox-assign-search-row').style.display = '';
   renderInboxAssignList();
 }
+// Short label for the list of tasks a note is pinned to (shown in the inbox meta).
+function _pinnedTasksLabel(arr) {
+  if (!arr || !arr.length) return '';
+  if (arr.length <= 3) return arr.join(', ');
+  return arr.slice(0, 2).join(', ') + ' +' + (arr.length - 2) + ' more';
+}
 async function assignInboxToTask(mode) {
   const tasks = [..._inboxAssignSelected];
   const arr = getInbox();
@@ -6988,7 +6994,11 @@ async function assignInboxToTask(mode) {
       const json = await res.json();
       if (!json || !json.success) { showToast('Send failed' + (json && json.error ? ': ' + json.error : '')); return; }
     } catch (e) { showToast('Send failed — check connection'); return; }
-    notes.forEach(note => { note.assigned = true; note.assignedTs = new Date().toISOString(); note.movedTo = tagEarly + ' (pinned · Ethan)'; });
+    notes.forEach(note => {
+      note.assigned = true; note.assignedTs = new Date().toISOString();
+      note.pinnedTasks = [...new Set([...(Array.isArray(note.pinnedTasks) ? note.pinnedTasks : []), ...tasks])];
+      note.movedTo = _pinnedTasksLabel(note.pinnedTasks) + ' (pinned · Ethan)';
+    });
     saveInbox(arr);
     closeModal('modal-inbox-assign');
     _inboxSelectMode = false; _inboxSelected = new Set(); _syncInboxSelectUI();
@@ -7009,12 +7019,21 @@ async function assignInboxToTask(mode) {
         if (!orig[text]) orig[text] = { caught: note.ts || '', added: new Date().toISOString() };
       } else {
         if (!tn[task]) tn[task] = [];
-        tn[task].push({ id: 'tn' + (uid++) + Math.random().toString(36).slice(2, 5), text, ts: new Date().toISOString(), caught: note.ts || '', inboxId: note.id, photos: _notePhotos(note) });
+        // Don't duplicate the pin if this note is already pinned to this task.
+        if (!tn[task].some(p => p.inboxId === note.id)) {
+          tn[task].push({ id: 'tn' + (uid++) + Math.random().toString(36).slice(2, 5), text, ts: new Date().toISOString(), caught: note.ts || '', inboxId: note.id, photos: _notePhotos(note) });
+        }
       }
     });
-    if (mode === 'pinned') { note.assigned = true; note.assignedTs = new Date().toISOString(); } // pending until completed in the task
-    else { note.done = true; note.doneTs = new Date().toISOString(); }                            // permanent checklist item = filed/done
-    note.movedTo = tag + (mode === 'pinned' ? ' (pinned)' : '');
+    if (mode === 'pinned') { // pending until completed in the task
+      note.assigned = true; note.assignedTs = new Date().toISOString();
+      // Accumulate every task this note is pinned to (don't overwrite the last one).
+      note.pinnedTasks = [...new Set([...(Array.isArray(note.pinnedTasks) ? note.pinnedTasks : []), ...tasks])];
+      note.movedTo = _pinnedTasksLabel(note.pinnedTasks) + ' (pinned)';
+    } else {                 // permanent checklist item = filed/done
+      note.done = true; note.doneTs = new Date().toISOString();
+      note.movedTo = tag;
+    }
   });
   if (mode === 'permanent') { localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS)); saveSubtaskOrigin(orig); }
   else saveTaskNotes(tn);
