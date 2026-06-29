@@ -2147,7 +2147,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.69';
+const APP_VERSION = '2026-06-21.70';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2849,7 +2849,7 @@ function renderRunChecklist() {
     const done = !!pinDone[p.id];
     const safe = p.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const caughtTs = p.caught || p.ts;
-    const caughtLine = caughtTs ? `<div style="font-size:11px;color:var(--subtext);margin-top:2px;">Caught ${_inboxStamp(caughtTs)}</div>` : '';
+    const caughtLine = caughtTs ? `<div style="font-size:11px;color:var(--subtext);margin-top:2px;">Caught ${_inboxStamp(caughtTs)}${p.editedTs ? ' · ✏️ Edited ' + _inboxStamp(p.editedTs) : ''}</div>` : '';
     const thumb = _photoThumbHtml(p, 80);
     const durStr = (done && dur['pin:' + p.id] != null)
       ? `<span style="font-size:13px;color:var(--green);font-weight:700;white-space:nowrap;flex-shrink:0;">${fmtMin(dur['pin:' + p.id])}</span>` : '';
@@ -6665,6 +6665,49 @@ function openInboxEdit(id) {
   openModal('modal-quick-capture');
   setTimeout(() => { const t = document.getElementById('quick-capture-text'); if (t) t.focus(); }, 150);
 }
+// When an inbox note is edited, carry the change through to wherever it was
+// pushed: pinned notes (linked by inboxId) and permanent checklist items
+// (matched by the old text, gated on the inbox-origin record). Stamps editedTs.
+function _propagateNoteEdit(note, oldText, photos) {
+  const newText = note.text;
+  // 1) Pinned notes in the task-notes store (also covers the running clock & directory).
+  const tn = getTaskNotes();
+  let tnChanged = false;
+  Object.keys(tn).forEach(task => {
+    (tn[task] || []).forEach(p => {
+      if (p.inboxId === note.id) {
+        p.text = newText;
+        if (photos && photos.length) p.photos = photos.slice(); else delete p.photos;
+        p.editedTs = note.editedTs;
+        tnChanged = true;
+      }
+    });
+  });
+  if (tnChanged) saveTaskNotes(tn);
+  // 2) Permanent checklist items — match the old text across every task's checklist,
+  // gated on the inbox-origin record so we only touch items that came from the inbox.
+  if (oldText && newText !== oldText) {
+    const orig = getSubtaskOrigin();
+    if (orig[oldText]) {
+      let subsChanged = false;
+      Object.keys(SUBTASKS).forEach(task => {
+        const arr = SUBTASKS[task];
+        if (Array.isArray(arr)) arr.forEach((it, i) => { if (it === oldText) { arr[i] = newText; subsChanged = true; } });
+      });
+      if (subsChanged) {
+        localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
+        orig[newText] = Object.assign({}, orig[oldText], { edited: note.editedTs });
+        delete orig[oldText];
+        saveSubtaskOrigin(orig);
+        // Carry any sub-steps across to the new item name.
+        const steps = getSubtaskSteps();
+        if (steps[oldText]) { steps[newText] = steps[oldText]; delete steps[oldText]; saveSubtaskSteps(steps); }
+      }
+    }
+  }
+  // Refresh the running checklist if it's showing this task's notes/items.
+  if (clockState && clockState.running) renderRunChecklist();
+}
 let _savingCapture = false;
 async function saveQuickCapture() {
   if (_savingCapture) return;            // ignore double-taps while a save is in flight
@@ -6701,7 +6744,12 @@ async function saveQuickCapture() {
     let ok;
     if (_editingInboxId) {
       const note = inbox.find(x => x.id === _editingInboxId);
-      if (note) apply(note);
+      if (note) {
+        const oldText = note.text;
+        apply(note);
+        note.editedTs = new Date().toISOString();
+        _propagateNoteEdit(note, oldText, photos);
+      }
       ok = saveInbox(inbox);
       if (ok) showToast('Note updated ✓');
     } else {
@@ -6886,6 +6934,7 @@ function _inboxNoteRow(n) {
   const isDone = st === 'done', isAssigned = st === 'assigned';
   const safe = esc(n.text);
   let meta = 'Caught ' + _inboxStamp(n.ts);
+  if (n.editedTs) meta += '　•　✏️ Edited ' + _inboxStamp(n.editedTs);
   if (n.movedTo) meta += '　•　📂 → ' + esc(n.movedTo);
   if (isDone && n.doneTs) meta += '　•　✓ Done ' + _inboxStamp(n.doneTs);
   (n.completions || []).forEach(c => { meta += '　•　✅ ' + esc(c.task) + ' ' + _inboxStamp(c.ts); });
@@ -9119,7 +9168,7 @@ function _pinnedNotesHtml(task, compact) {
     <div style="font-size:11px;color:var(--subtext);margin-bottom:8px;">Swipe a note right to 🚩 flag it to the top · hold &amp; drag a 🚩 note to reorder</div>
     ${pins.map(p => {
       const safe = p.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      const caught = (p.caught || p.ts) ? `<div style="font-size:11px;color:var(--subtext);margin-top:2px;">Caught ${_inboxStamp(p.caught || p.ts)}</div>` : '';
+      const caught = (p.caught || p.ts) ? `<div style="font-size:11px;color:var(--subtext);margin-top:2px;">Caught ${_inboxStamp(p.caught || p.ts)}${p.editedTs ? ' · ✏️ Edited ' + _inboxStamp(p.editedTs) : ''}</div>` : '';
       const thumb = _photosHtml(p, compact ? 54 : 90);
       return `<div class="pin-row" data-pin-id="${p.id}" data-pin-task="${taskAttr}" data-pin-flagged="${p.flagged ? '1' : ''}" ontouchstart="pinSwipeStart(event)" ontouchmove="pinSwipeMove(event)" ontouchend="pinSwipeEnd(event)" style="margin-bottom:8px;padding:8px;border-radius:8px;${p.flagged ? 'background:rgba(255,214,10,0.12);' : ''}"><span style="font-size:14px;color:#FFD60A;">${p.flagged ? '🚩 ' : ''}📌 ${safe}</span>${caught}${thumb}</div>`;
     }).join('')}
