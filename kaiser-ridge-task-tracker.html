@@ -2146,7 +2146,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.63';
+const APP_VERSION = '2026-06-21.64';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6694,7 +6694,34 @@ function _migrateInboxAssignedOnce() {
   if (changed) saveInbox(arr);
   localStorage.setItem('kr_inbox_assigned_migrated', '1');
 }
-function openInbox() { _migrateInboxAssignedOnce(); _inboxSelectMode = false; _inboxSelected = new Set(); _inboxOpenFolders = new Set(); const s = document.getElementById('inbox-search'); if (s) s.value = ''; _syncInboxSelectUI(); renderInbox(); openModal('modal-inbox'); }
+// One-time backfill: notes pinned before pinnedTasks existed only recorded
+// their last task. Rebuild the full list by scanning the task-notes store for
+// pins that carry each note's inboxId, and refresh the label for live pins.
+function _backfillPinnedTasksOnce() {
+  if (localStorage.getItem('kr_inbox_pinnedtasks_backfilled') === '1') return;
+  const tn = getTaskNotes();
+  const byInbox = {}; // inboxId → Set(task names)
+  Object.keys(tn).forEach(task => {
+    (tn[task] || []).forEach(p => {
+      if (p && p.inboxId) (byInbox[p.inboxId] = byInbox[p.inboxId] || new Set()).add(task);
+    });
+  });
+  const arr = getInbox();
+  let changed = false;
+  arr.forEach(n => {
+    const tasks = byInbox[n.id];
+    if (!tasks || !tasks.size) return;
+    n.pinnedTasks = [...new Set([...(Array.isArray(n.pinnedTasks) ? n.pinnedTasks : []), ...tasks])];
+    // Refresh the label only for still-pinned (pending) notes, and never clobber an Ethan pin.
+    if (n.assigned && !n.done && !/Ethan/.test(n.movedTo || '')) {
+      n.movedTo = _pinnedTasksLabel(n.pinnedTasks) + ' (pinned)';
+    }
+    changed = true;
+  });
+  if (changed) saveInbox(arr);
+  localStorage.setItem('kr_inbox_pinnedtasks_backfilled', '1');
+}
+function openInbox() { _migrateInboxAssignedOnce(); _backfillPinnedTasksOnce(); _inboxSelectMode = false; _inboxSelected = new Set(); _inboxOpenFolders = new Set(); const s = document.getElementById('inbox-search'); if (s) s.value = ''; _syncInboxSelectUI(); renderInbox(); openModal('modal-inbox'); }
 function toggleInboxSelectMode() { _inboxSelectMode = !_inboxSelectMode; _inboxSelected = new Set(); _syncInboxSelectUI(); renderInbox(); }
 function _syncInboxSelectUI() {
   const t = document.getElementById('inbox-select-toggle');
