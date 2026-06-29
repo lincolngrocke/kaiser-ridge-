@@ -1473,7 +1473,7 @@
 
 <!-- ══════════════ INBOX ══════════════ -->
 <div class="modal-backdrop" id="modal-inbox" style="z-index:640;">
-  <div class="modal-sheet" style="padding:16px 0 24px;display:flex;flex-direction:column;max-height:85vh;">
+  <div class="modal-sheet" style="padding:16px 0 24px;display:flex;flex-direction:column;max-height:85vh;overflow:hidden;">
     <div class="modal-handle"></div>
     <div style="padding:0 20px 4px;display:flex;align-items:center;justify-content:space-between;">
       <span onclick="openQuickCapture()" style="color:var(--blue);font-size:16px;cursor:pointer;">＋ New</span>
@@ -1484,7 +1484,7 @@
     <div style="padding:6px 20px 8px;font-size:13px;color:var(--subtext);">Quick notes you caught during the day. Clear each one as you action it.</div>
     <div id="inbox-counts" style="padding:0 20px 8px;display:flex;gap:16px;font-size:13px;font-weight:600;"></div>
     <div style="padding:0 20px 8px;">
-      <input id="inbox-search" type="search" placeholder="Search notes…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="renderInbox()" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;">
+      <input id="inbox-search" type="search" placeholder="Search notes…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="onInboxSearchInput()" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;">
     </div>
     <div id="inbox-list" style="flex:1;overflow-y:auto;overflow-x:hidden;padding:0 16px 8px;"></div>
     <div id="inbox-footer" style="display:none;padding:10px 20px 0;">
@@ -2146,7 +2146,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.61';
+const APP_VERSION = '2026-06-21.62';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6712,6 +6712,13 @@ function toggleInboxSelect(id) {
   if (_inboxSelected.has(id)) _inboxSelected.delete(id);
   else _inboxSelected.add(id);
   renderInbox();
+}
+// Debounce the re-render while typing — the list can be 200+ notes, so
+// rebuilding it on every keystroke makes the field feel laggy/jumpy.
+let _inboxSearchTimer = null;
+function onInboxSearchInput() {
+  clearTimeout(_inboxSearchTimer);
+  _inboxSearchTimer = setTimeout(renderInbox, 140);
 }
 function renderInbox() {
   const list = document.getElementById('inbox-list');
