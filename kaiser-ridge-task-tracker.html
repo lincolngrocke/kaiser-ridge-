@@ -1140,10 +1140,11 @@
       <div class="settings-row"><div class="settings-label">Checklist order (running clock)</div></div>
       <div style="display:flex;gap:8px;padding:4px 0 2px;">
         <button id="clorder-manual" onclick="setChecklistOrder('manual')" style="flex:1;border-radius:10px;padding:9px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid var(--blue);background:var(--blue);color:#fff;">Manual</button>
+        <button id="clorder-lastused" onclick="setChecklistOrder('lastused')" style="flex:1;border-radius:10px;padding:9px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--text);">Last used</button>
         <button id="clorder-typical" onclick="setChecklistOrder('typical')" style="flex:1;border-radius:10px;padding:9px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--text);">Typical</button>
       </div>
     </div>
-    <div class="settings-note" style="margin-top:0">Manual = your editor order. Typical = reordered by the average order you usually complete them (display only; doesn’t change the saved checklist).</div>
+    <div class="settings-note" style="margin-top:0">Manual = your editor order. Last used = the order you ticked them off the most recent time you did this task. Typical = the average order across recent times. (Display only — doesn’t change the saved checklist.)</div>
 
     <div class="settings-section" style="margin-top:16px">
       <div class="settings-row">
@@ -2146,7 +2147,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.67';
+const APP_VERSION = '2026-06-21.68';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2707,11 +2708,13 @@ function setChecklistOrder(mode) {
 }
 function _syncChecklistOrderUI() {
   const mode = localStorage.getItem('kr_checklist_order') || 'manual';
-  const m = document.getElementById('clorder-manual'), t = document.getElementById('clorder-typical');
-  if (!m || !t) return;
+  const m = document.getElementById('clorder-manual'), l = document.getElementById('clorder-lastused'), t = document.getElementById('clorder-typical');
+  if (!m || !t || !l) return;
   const on = b => { b.style.background = 'var(--blue)'; b.style.color = '#fff'; b.style.borderColor = 'var(--blue)'; };
   const off = b => { b.style.background = 'var(--card)'; b.style.color = 'var(--text)'; b.style.borderColor = 'var(--border)'; };
-  (mode === 'typical' ? off : on)(m); (mode === 'typical' ? on : off)(t);
+  (mode === 'manual' ? on : off)(m);
+  (mode === 'lastused' ? on : off)(l);
+  (mode === 'typical' ? on : off)(t);
 }
 // → { item: averageCompletionIndex } over recent entries for the task.
 function _typicalChecklistOrder(task) {
@@ -2726,10 +2729,21 @@ function _typicalChecklistOrder(task) {
   Object.keys(sums).forEach(it => avg[it] = sums[it] / counts[it]);
   return avg;
 }
+// → { item: completionIndex } from the MOST RECENT entry for the task that has
+// a ticked checklist — i.e. the order you worked through it last time.
+function _lastUsedChecklistOrder(task) {
+  const withCl = entries.filter(e => e.task === task && Array.isArray(e.checklist) && e.checklist.length);
+  if (!withCl.length) return {};
+  withCl.sort((a, b) => (_entryClockInEpoch(b) || 0) - (_entryClockInEpoch(a) || 0));
+  const order = {};
+  withCl[0].checklist.slice().sort((a, b) => new Date(a.at) - new Date(b.at)).forEach((d, idx) => { order[d.item] = idx; });
+  return order;
+}
 function _orderedChecklistItems(task, items) {
-  if ((localStorage.getItem('kr_checklist_order') || 'manual') !== 'typical') return items;
-  const avg = _typicalChecklistOrder(task);
-  return items.slice().sort((a, b) => (a in avg ? avg[a] : Infinity) - (b in avg ? avg[b] : Infinity));  // stable: no-data keep manual order
+  const mode = localStorage.getItem('kr_checklist_order') || 'manual';
+  if (mode === 'manual') return items;
+  const order = mode === 'lastused' ? _lastUsedChecklistOrder(task) : _typicalChecklistOrder(task);
+  return items.slice().sort((a, b) => (a in order ? order[a] : Infinity) - (b in order ? order[b] : Infinity));  // stable: no-data keeps manual order
 }
 function _checklistDurations() {
   if (!clockState) return {};
