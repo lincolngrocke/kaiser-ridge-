@@ -2147,7 +2147,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.74';
+const APP_VERSION = '2026-06-21.75';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6934,9 +6934,9 @@ function _inboxNoteRow(n) {
   const st = _inboxState(n);
   const isDone = st === 'done', isAssigned = st === 'assigned';
   const safe = esc(n.text);
+  const taskName = n.movedTo ? esc(n.movedTo.replace(/\s*\(pinned · Ethan\)/, ' · Ethan').replace(/\s*\(pinned\)/, '')) : '';
   let meta = 'Caught ' + _inboxStamp(n.ts);
   if (n.editedTs) meta += '　•　✏️ Edited ' + _inboxStamp(n.editedTs);
-  if (n.movedTo) meta += '　•　📂 → ' + esc(n.movedTo.replace(/\s*\(pinned · Ethan\)/, ' · Ethan').replace(/\s*\(pinned\)/, ''));
   if (isDone && n.doneTs) meta += '　•　✓ Done ' + _inboxStamp(n.doneTs);
   (n.completions || []).forEach(c => { meta += '　•　✅ ' + esc(c.task) + ' ' + _inboxStamp(c.ts); });
   const pinnedLine = n.assignedTs ? '📌 Pinned ' + _inboxStamp(n.assignedTs) : '';
@@ -6946,7 +6946,8 @@ function _inboxNoteRow(n) {
   const body = `<div style="flex:1;min-width:0;">
       <div style="font-size:15px;white-space:pre-wrap;line-height:1.4;${titleStyle}">${safe}</div>
       ${thumb}
-      <div style="font-size:12px;color:var(--subtext);margin-top:4px;">${meta}</div>
+      ${taskName ? `<div style="font-size:13px;color:var(--subtext);margin-top:6px;">📂 <span style="color:var(--text);font-weight:600;">${taskName}</span></div>` : ''}
+      <div style="font-size:12px;color:var(--subtext);margin-top:${taskName ? '2' : '5'}px;">${meta}</div>
       ${pinnedLine ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">${pinnedLine}</div>` : ''}
     </div>`;
   if (_inboxSelectMode) {
