@@ -2147,7 +2147,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.72';
+const APP_VERSION = '2026-06-21.73';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6937,6 +6937,7 @@ function _inboxNoteRow(n) {
   let meta = 'Caught ' + _inboxStamp(n.ts);
   if (n.editedTs) meta += '　•　✏️ Edited ' + _inboxStamp(n.editedTs);
   if (n.movedTo) meta += '　•　📂 → ' + esc(n.movedTo);
+  if (n.assignedTs) meta += '　•　📌 Pinned ' + _inboxStamp(n.assignedTs);
   if (isDone && n.doneTs) meta += '　•　✓ Done ' + _inboxStamp(n.doneTs);
   (n.completions || []).forEach(c => { meta += '　•　✅ ' + esc(c.task) + ' ' + _inboxStamp(c.ts); });
   const thumb = _photoThumbHtml(n);
