@@ -1360,6 +1360,7 @@
     </div>
     <div class="running-task-info" id="run-task-info"></div>
     <div id="run-estimate" style="font-size:13px;color:var(--blue);font-weight:600;margin-top:6px;display:none;"></div>
+    <button id="run-video-btn" onclick="playVideoForTask(clockState&&clockState.task)" style="display:none;margin-top:8px;background:var(--blue);color:#fff;border:none;border-radius:10px;padding:9px 16px;font-size:14px;font-weight:700;cursor:pointer;">▶ Watch how-to</button>
     <div id="run-break-info" style="font-size:13px;color:var(--subtext);margin-top:4px;"></div>
   </div>
   <div id="run-checklist" style="display:none;width:100%;max-width:420px;margin:8px auto 0;padding:0 20px;text-align:left;flex:1000 1 0;min-height:0;flex-direction:column;"></div>
@@ -1622,6 +1623,23 @@
   </div>
 </div>
 
+<!-- ══════════════ HOW-TO VIDEO PLAYER ══════════════ -->
+<div class="modal-backdrop" id="modal-video-player" style="z-index:380;" onclick="if(event.target===this)closeVideoPlayer()">
+  <div class="modal-sheet" style="padding:16px 0 28px;height:92vh;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;">
+    <div class="modal-handle"></div>
+    <div style="padding:0 20px 10px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
+      <span style="font-size:16px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:10px;">🎥 <span id="video-player-title"></span></span>
+      <span onclick="closeVideoPlayer()" style="color:var(--blue);font-size:16px;cursor:pointer;flex-shrink:0;">Done</span>
+    </div>
+    <div style="flex:1;overflow-y:auto;overflow-x:hidden;padding:16px 20px;display:flex;flex-direction:column;">
+      <div style="position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden;">
+        <iframe id="video-player-frame" src="about:blank" style="position:absolute;inset:0;width:100%;height:100%;border:0;" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+      </div>
+      <div id="video-player-meta" style="font-size:12px;color:var(--subtext);margin-top:12px;text-align:center;"></div>
+    </div>
+  </div>
+</div>
+
 <!-- ══════════════ PLANNER BLOCK DETAIL MODAL ══════════════ -->
 <div class="modal-backdrop" id="modal-planner-detail" style="z-index:300;" onclick="if(event.target===this)closeModal('modal-planner-detail')">
   <div class="modal-sheet" style="max-height:60vh;">
@@ -1867,6 +1885,15 @@
         <button onclick="openSubtaskPicker()" style="margin-top:8px;background:none;border:1px dashed var(--border);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">+ Add Checklist Item</button>
         <button id="dir-restore-subtasks-btn" onclick="restoreDefaultSubtasks()" style="display:none;margin-top:8px;background:none;border:1px dashed var(--blue);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">↺ Restore Default Checklist</button>
         <button onclick="openCopyChecklist()" style="margin-top:8px;background:none;border:1px dashed var(--blue);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">⧉ Copy Checklist to Other Tasks…</button>
+      </div>
+
+      <div style="padding:16px 20px 8px;">
+        <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">🎥 HOW-TO VIDEO</div>
+        <input class="form-select" id="dir-video" type="url" placeholder="Paste a YouTube link…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+          inputmode="url" data-lpignore="true" data-1p-ignore oninput="updateDirVideoPreview()"
+          style="font-size:15px;border:1px solid var(--border);border-radius:8px;width:100%;padding:10px;background:var(--bg);color:var(--text);">
+        <div id="dir-video-hint" style="font-size:12px;color:var(--subtext);margin-top:6px;">Record the task, upload to YouTube (unlisted), then paste the link here. Everyone can watch it from the task and the running clock.</div>
+        <button id="dir-video-watch" onclick="playVideoForTask(document.getElementById('dir-task').value.trim())" style="display:none;margin-top:8px;background:none;border:1px solid var(--blue);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">▶ Watch how-to</button>
       </div>
 
       <div style="padding:16px 20px 0;" id="dir-duplicate-wrap">
@@ -2147,7 +2174,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.76';
+const APP_VERSION = '2026-06-21.77';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2625,6 +2652,12 @@ function renderClockState() {
       } else {
         estEl.style.display = 'none';
       }
+    }
+    // ▶ Watch how-to — shown only when this task has a video reference
+    const runVidBtn = document.getElementById('run-video-btn');
+    if (runVidBtn) {
+      const hasVid = !!(getTaskVideos()[clockState.task] || {}).id;
+      runVidBtn.style.display = hasVid ? '' : 'none';
     }
     const now = new Date();
     const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay()); weekStart.setHours(0,0,0,0);
@@ -4572,7 +4605,7 @@ const KR_BACKUP_KEYS = [
   'kr_task_order', 'kr_entries', 'kr_user_name', 'kr_weekly_target',
   'kr_sheet_url', 'kr_gmaps_key', 'kr_dark_mode',
   'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
-  'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_subtask_origin', 'kr_pins_applied'
+  'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_task_videos', 'kr_subtask_origin', 'kr_pins_applied'
 ];
 
 function buildBackupSnapshot() {
@@ -4718,7 +4751,7 @@ const KR_LIBRARY_KEYS = [
   'kr_equipment_notes', 'kr_equipment_links',
   'kr_equipment_master', 'kr_extra_frequencies', 'kr_extra_locations',
   'kr_task_order', 'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
-  'kr_projects'
+  'kr_projects', 'kr_task_videos'
 ];
 
 function exportTaskLibrary() {
@@ -5295,6 +5328,7 @@ function renderDirectory() {
 
   const taskOrder = JSON.parse(localStorage.getItem('kr_task_order') || '{}');
   const taskNotes = getTaskNotes();   // pinned notes per task, for the 📌 indicator
+  const taskVideos = getTaskVideos(); // how-to videos per task, for the 🎥 indicator
   // Last time each task was clocked (most recent entry date) + days since.
   const _today0 = new Date(); _today0.setHours(0, 0, 0, 0);
   const lastUsed = {};
@@ -5338,6 +5372,8 @@ function renderDirectory() {
             const autoBadge = auto ? `<span style="display:inline-block;background:#5856D6;color:#fff;font-size:9px;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;">AUTO</span>` : '';
             const nPins = (taskNotes[task] || []).length;
             const pinBadge = nPins ? `<span onclick="event.stopPropagation();showPinnedNotesPopup(this)" ontouchstart="event.stopPropagation()" title="View ${nPins} pinned note${nPins === 1 ? '' : 's'}" style="display:inline-block;background:#FFD60A;color:#000;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;cursor:pointer;">📌 ${nPins}</span>` : '';
+            const hasVideo = !!(taskVideos[task] || {}).id;
+            const videoBadge = hasVideo ? `<span onclick="event.stopPropagation();playVideoForTask('${task.replace(/'/g, "\\'")}')" ontouchstart="event.stopPropagation()" title="Watch how-to video" style="display:inline-block;background:var(--blue);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;cursor:pointer;">🎥</span>` : '';
             const lu = lastUsed[task];
             let usedLine;
             if (lu) {
@@ -5355,7 +5391,7 @@ function renderDirectory() {
               onclick="dirTaskClick(event,this)"
               style="padding:12px 16px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none;-webkit-user-select:none;">
               <div style="flex:1;min-width:0;">
-                <div style="font-size:15px;font-weight:500;color:var(--text);">${task}${autoBadge}${pinBadge}</div>
+                <div style="font-size:15px;font-weight:500;color:var(--text);">${task}${autoBadge}${pinBadge}${videoBadge}</div>
                 ${autoSub}
                 ${usedLine}
                 ${meta.location ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">📍 ${meta.location}</div>` : ''}
@@ -5660,6 +5696,8 @@ function openDirAddTask() {
   renderDirEquipmentList([]);
   renderDirSubtaskList([]);
   updateRestoreSubtasksBtn('');
+  document.getElementById('dir-video').value = '';
+  updateDirVideoPreview();
   openModal('modal-dir-task');
   requestAnimationFrame(_sizeDirSubtaskInputs);
 }
@@ -5689,6 +5727,9 @@ function openDirEditTask(encodedKey) {
   renderDirEquipmentList(equip);
   renderDirSubtaskList(SUBTASKS[task] || []);
   updateRestoreSubtasksBtn(task);
+  const vid = getTaskVideos()[task];
+  document.getElementById('dir-video').value = (vid && vid.id) ? ('https://youtu.be/' + vid.id) : '';
+  updateDirVideoPreview();
   openModal('modal-dir-task');
   requestAnimationFrame(_sizeDirSubtaskInputs);
 }
@@ -6999,6 +7040,70 @@ function deleteInboxItem(id) {
 function getTaskNotes() { return JSON.parse(localStorage.getItem('kr_task_notes') || '{}'); }
 function saveTaskNotes(o) { localStorage.setItem('kr_task_notes', JSON.stringify(o)); }
 
+// ── How-to videos per task (kr_task_videos) — a tiny reference only, never bytes.
+// { provider:'youtube', id, addedBy, addedAt }. Rides the Task Library publish so
+// everyone can watch; the video itself streams from YouTube (unlisted).
+function getTaskVideos() { return JSON.parse(localStorage.getItem('kr_task_videos') || '{}'); }
+function saveTaskVideos(o) { localStorage.setItem('kr_task_videos', JSON.stringify(o)); }
+
+// Pull an 11-char YouTube video id out of any common link shape (youtu.be/…,
+// watch?v=…, /shorts/…, /embed/…, /live/…), with or without timestamps/params,
+// or accept a bare id. Returns '' if nothing video-like is found.
+function parseYouTubeId(input) {
+  if (!input) return '';
+  const s = String(input).trim();
+  if (/^[A-Za-z0-9_-]{11}$/.test(s)) return s;
+  const pats = [
+    /[?&]v=([A-Za-z0-9_-]{11})/,
+    /youtu\.be\/([A-Za-z0-9_-]{11})/,
+    /\/shorts\/([A-Za-z0-9_-]{11})/,
+    /\/embed\/([A-Za-z0-9_-]{11})/,
+    /\/live\/([A-Za-z0-9_-]{11})/,
+  ];
+  for (const p of pats) { const m = s.match(p); if (m) return m[1]; }
+  // Last resort: any 11-char token that looks like an id (only if it came in a youtube url)
+  if (/youtu/i.test(s)) { const m = s.match(/([A-Za-z0-9_-]{11})/); if (m) return m[1]; }
+  return '';
+}
+
+// Open the full-page how-to player for a task. Everyone (manager + worker) can watch.
+let _videoPlayerTask = '';
+function playVideoForTask(task) {
+  const v = task && getTaskVideos()[task];
+  if (!v || !v.id) { showToast('No how-to video for this task'); return; }
+  _videoPlayerTask = task;
+  document.getElementById('video-player-title').textContent = task;
+  const meta = document.getElementById('video-player-meta');
+  if (meta) meta.textContent = v.addedBy ? ('Added by ' + v.addedBy + (v.addedAt ? ' · ' + new Date(v.addedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : '')) : '';
+  const frame = document.getElementById('video-player-frame');
+  frame.src = 'https://www.youtube.com/embed/' + v.id + '?rel=0&playsinline=1&modestbranding=1';
+  openModal('modal-video-player');
+}
+function closeVideoPlayer() {
+  const frame = document.getElementById('video-player-frame');
+  if (frame) frame.src = 'about:blank'; // stop playback / audio
+  closeModal('modal-video-player');
+}
+
+// Editor: live-validate the pasted link and toggle the inline ▶ Watch button.
+function updateDirVideoPreview() {
+  const input = document.getElementById('dir-video');
+  const hint = document.getElementById('dir-video-hint');
+  const watch = document.getElementById('dir-video-watch');
+  if (!input) return;
+  const raw = input.value.trim();
+  const id = parseYouTubeId(raw);
+  // Only show the inline Watch button when the CURRENTLY-SAVED video matches what's typed.
+  const task = (document.getElementById('dir-task').value || '').trim();
+  const saved = (getTaskVideos()[task] || {}).id;
+  if (watch) watch.style.display = (saved && saved === id) ? 'block' : 'none';
+  if (hint) {
+    if (!raw) hint.textContent = 'Record the task, upload to YouTube (unlisted), then paste the link here. Everyone can watch it from the task and the running clock.';
+    else if (id) hint.innerHTML = '✓ YouTube video recognised — <span style="color:var(--green);">tap Save</span> to attach it to this task.';
+    else hint.innerHTML = '<span style="color:var(--red);">Not a YouTube link.</span> Paste a youtube.com or youtu.be URL.';
+  }
+}
+
 // Triage: route a note to ONE OR MORE tasks — permanent checklist item or pinned.
 let _inboxAssignNoteIds = [], _inboxAssignSelected = new Set();
 function openInboxAssign(id) {
@@ -7632,6 +7737,9 @@ function saveDirTask() {
       // Pinned notes keyed by task name
       const tnotes = getTaskNotes();
       if (tnotes[oldTask]) { tnotes[task] = (tnotes[task] || []).concat(tnotes[oldTask]); delete tnotes[oldTask]; saveTaskNotes(tnotes); }
+      // How-to video keyed by task name
+      const tvids = getTaskVideos();
+      if (tvids[oldTask]) { if (!tvids[task]) tvids[task] = tvids[oldTask]; delete tvids[oldTask]; saveTaskVideos(tvids); }
       // Planner blocks (my day + Ethan's day)
       ['kr_planner', 'kr_planner_ethan'].forEach(k => {
         const arr = JSON.parse(localStorage.getItem(k) || '[]');
@@ -7664,6 +7772,23 @@ function saveDirTask() {
     delete SUBTASKS[task];
   }
 
+  // Save / clear the how-to video reference (keyed by the final task name).
+  const vidInput = (document.getElementById('dir-video').value || '').trim();
+  const vidId = parseYouTubeId(vidInput);
+  const tvids = getTaskVideos();
+  if (!vidInput) {
+    delete tvids[task];
+  } else if (vidId) {
+    const prev = tvids[task];
+    tvids[task] = {
+      provider: 'youtube',
+      id: vidId,
+      addedBy: (prev && prev.id === vidId && prev.addedBy) ? prev.addedBy : getUserName(),
+      addedAt: (prev && prev.id === vidId && prev.addedAt) ? prev.addedAt : new Date().toISOString(),
+    };
+  } // else: unparseable text — leave any existing video untouched
+  saveTaskVideos(tvids);
+
   localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
   localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
   closeModal('modal-dir-task');
@@ -7677,8 +7802,12 @@ function deleteDirTask() {
   if (!confirm('Delete this task?')) return;
   const [freq, grp, task] = _dirEditingKey.split('||');
   DIRECTORY = DIRECTORY.filter(r => !_dirKeyMatches(r, freq, grp, task));
-  // Only drop the checklist if no other task still uses this name
-  if (!DIRECTORY.some(r => r.task === task)) delete SUBTASKS[task];
+  // Only drop the checklist / video if no other task still uses this name
+  if (!DIRECTORY.some(r => r.task === task)) {
+    delete SUBTASKS[task];
+    const tvids = getTaskVideos();
+    if (tvids[task]) { delete tvids[task]; saveTaskVideos(tvids); }
+  }
   localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
   localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
   closeModal('modal-dir-task');
