@@ -2147,7 +2147,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.73';
+const APP_VERSION = '2026-06-21.74';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6936,10 +6936,10 @@ function _inboxNoteRow(n) {
   const safe = esc(n.text);
   let meta = 'Caught ' + _inboxStamp(n.ts);
   if (n.editedTs) meta += '　•　✏️ Edited ' + _inboxStamp(n.editedTs);
-  if (n.movedTo) meta += '　•　📂 → ' + esc(n.movedTo);
-  if (n.assignedTs) meta += '　•　📌 Pinned ' + _inboxStamp(n.assignedTs);
+  if (n.movedTo) meta += '　•　📂 → ' + esc(n.movedTo.replace(/\s*\(pinned · Ethan\)/, ' · Ethan').replace(/\s*\(pinned\)/, ''));
   if (isDone && n.doneTs) meta += '　•　✓ Done ' + _inboxStamp(n.doneTs);
   (n.completions || []).forEach(c => { meta += '　•　✅ ' + esc(c.task) + ' ' + _inboxStamp(c.ts); });
+  const pinnedLine = n.assignedTs ? '📌 Pinned ' + _inboxStamp(n.assignedTs) : '';
   const thumb = _photoThumbHtml(n);
   const titleStyle = isDone ? 'text-decoration:line-through;color:var(--subtext);' : (isAssigned ? 'color:var(--subtext);' : 'color:var(--text);');
   const rowDim = isDone ? 'opacity:0.55;' : (isAssigned ? 'opacity:0.8;' : '');
@@ -6947,6 +6947,7 @@ function _inboxNoteRow(n) {
       <div style="font-size:15px;white-space:pre-wrap;line-height:1.4;${titleStyle}">${safe}</div>
       ${thumb}
       <div style="font-size:12px;color:var(--subtext);margin-top:4px;">${meta}</div>
+      ${pinnedLine ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">${pinnedLine}</div>` : ''}
     </div>`;
   if (_inboxSelectMode) {
     const sel = _inboxSelected.has(n.id);
