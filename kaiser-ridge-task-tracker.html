@@ -1362,6 +1362,7 @@
     <div id="run-estimate" style="font-size:13px;color:var(--blue);font-weight:600;margin-top:6px;display:none;"></div>
     <button id="run-video-btn" onclick="playVideoForTask(clockState&&clockState.task)" style="display:none;margin-top:8px;background:var(--blue);color:#fff;border:none;border-radius:10px;padding:9px 16px;font-size:14px;font-weight:700;cursor:pointer;">▶ Watch how-to</button>
     <div id="run-break-info" style="font-size:13px;color:var(--subtext);margin-top:4px;"></div>
+    <div id="run-location" style="font-size:13px;margin-top:4px;display:none;"></div>
   </div>
   <div id="run-checklist" style="display:none;width:100%;max-width:420px;margin:8px auto 0;padding:0 20px;text-align:left;flex:1000 1 0;min-height:0;flex-direction:column;"></div>
   <div class="running-buttons">
@@ -2174,7 +2175,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.78';
+const APP_VERSION = '2026-06-21.79';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2534,12 +2535,45 @@ function startClock(taskInfo) {
     projectId: taskInfo.projectId || '',
     projectStepId: taskInfo.projectStepId || '',
     notes: taskInfo.notes,
+    pin: (taskInfo.pin && taskInfo.pin.url) ? taskInfo.pin : null,
     tempId: Date.now().toString(),
   };
   localStorage.removeItem('kr_clock_trash'); // fresh session supersedes any discarded one
   localStorage.setItem('kr_clock', JSON.stringify(clockState));
   renderClockState();
   startTimerTick();
+  captureClockInLocation();
+}
+
+// Auto-capture the device's GPS location at clock-in and stamp it on the live
+// session as `pin = {lat,lng,url}`. Best-effort + async: it never blocks or
+// fails the clock-in, and a pin already set by hand (Drop Pin) is left alone.
+// The pin rides into the timesheet entry at clock-out and syncs to the Sheet's
+// hyperlink column (no backend change).
+function captureClockInLocation() {
+  if (!clockState || !clockState.running) return;
+  if (clockState.pin && clockState.pin.url) return;        // already pinned (manual)
+  if (!navigator.geolocation) return;
+  clockState._pinPending = true;
+  localStorage.setItem('kr_clock', JSON.stringify(clockState));
+  renderClockState();
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      if (!clockState || !clockState.running) return;       // clocked out meanwhile
+      const lat = pos.coords.latitude.toFixed(6), lng = pos.coords.longitude.toFixed(6);
+      clockState.pin = { lat, lng, url: 'https://maps.google.com/?q=' + lat + ',' + lng, auto: true, at: new Date().toISOString() };
+      delete clockState._pinPending;
+      localStorage.setItem('kr_clock', JSON.stringify(clockState));
+      renderClockState();
+    },
+    () => {                                                 // denied / unavailable — quietly skip
+      if (!clockState) return;
+      delete clockState._pinPending;
+      localStorage.setItem('kr_clock', JSON.stringify(clockState));
+      renderClockState();
+    },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
+  );
 }
 
 function clockOut(overrideTime) {
@@ -2658,6 +2692,21 @@ function renderClockState() {
     if (runVidBtn) {
       const hasVid = !!(getTaskVideos()[clockState.task] || {}).id;
       runVidBtn.style.display = hasVid ? '' : 'none';
+    }
+    // 📍 Location auto-pinned at clock-in — tap to open in Maps
+    const runLoc = document.getElementById('run-location');
+    if (runLoc) {
+      const pin = clockState.pin;
+      if (pin && pin.url) {
+        runLoc.innerHTML = `<a href="${pin.url}" target="_blank" rel="noopener" style="color:var(--green);text-decoration:none;">📍 Location pinned${pin.lat ? ' · ' + pin.lat + ', ' + pin.lng : ''}</a>`;
+        runLoc.style.display = '';
+      } else if (clockState._pinPending) {
+        runLoc.textContent = '📍 Pinning location…';
+        runLoc.style.color = 'var(--subtext)';
+        runLoc.style.display = '';
+      } else {
+        runLoc.style.display = 'none';
+      }
     }
     const now = new Date();
     const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay()); weekStart.setHours(0,0,0,0);
@@ -3175,6 +3224,7 @@ function renderTimesheets() {
       ${projLabel ? `<div style="font-size:12px;color:var(--blue);margin-top:2px;">📁 ${hl(projLabel)}</div>` : ''}
       ${e.tool ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${hl(e.tool)}</div>` : ''}
       ${e.break > 0 ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☕ ${(e.break * 60).toFixed(0)}min break</div>` : ''}
+      ${e.pin && e.pin.url ? `<a href="${e.pin.url}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="display:inline-block;font-size:12px;color:var(--blue);text-decoration:none;margin-top:4px;">📍 View location</a>` : ''}
       ${e.notes ? `<div class="ts-entry-note">${hl(e.notes)}</div>` : ''}
     </div>`;
   }).join('');
@@ -4160,6 +4210,7 @@ function confirmTime(choice) {
     localStorage.setItem('kr_clock', JSON.stringify(clockState));
     renderClockState();
     startTimerTick();
+    captureClockInLocation();
     if (taskInfo._planId != null) {
       // Came from a planner block — consume it and jump to the Clock screen.
       _plannerPlans = _plannerPlans.filter(p => p.id !== taskInfo._planId);
