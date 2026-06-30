@@ -603,7 +603,7 @@
   .more-row:active { background: var(--bg); }
   /* Pinned-note rows: suppress the iOS text-selection callout so press-and-hold
      drags the note instead of popping up Copy / Look Up / Translate. */
-  .pin-row, .pin-row * {
+  .pin-row, .pin-row *, .cl-row, .cl-row * {
     -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
   }
 
@@ -1624,6 +1624,18 @@
   </div>
 </div>
 
+<!-- ══════════════ ORGANISE CHECKLIST (drag-reorder flagged items) ══════════════ -->
+<div class="modal-backdrop" id="modal-cl-organise" style="z-index:360;" onclick="if(event.target===this)closeModal('modal-cl-organise')">
+  <div class="modal-sheet" style="padding:16px 0 28px;height:92vh;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;">
+    <div class="modal-handle"></div>
+    <div style="padding:0 20px 10px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
+      <span id="cl-organise-title" style="font-size:16px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:10px;"></span>
+      <span onclick="closeModal('modal-cl-organise')" style="color:var(--blue);font-size:16px;cursor:pointer;flex-shrink:0;">Done</span>
+    </div>
+    <div id="cl-organise-body" style="padding:0 20px;overflow-y:auto;overflow-x:hidden;flex:1;"></div>
+  </div>
+</div>
+
 <!-- ══════════════ HOW-TO VIDEO PLAYER ══════════════ -->
 <div class="modal-backdrop" id="modal-video-player" style="z-index:380;" onclick="if(event.target===this)closeVideoPlayer()">
   <div class="modal-sheet" style="padding:16px 0 28px;height:92vh;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;">
@@ -2175,7 +2187,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.79';
+const APP_VERSION = '2026-06-21.80';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2831,10 +2843,26 @@ function _lastUsedChecklistOrder(task) {
 }
 function _orderedChecklistItems(task, items) {
   const mode = localStorage.getItem('kr_checklist_order') || 'manual';
-  if (mode === 'manual') return items;
-  const order = mode === 'lastused' ? _lastUsedChecklistOrder(task) : _typicalChecklistOrder(task);
-  return items.slice().sort((a, b) => (a in order ? order[a] : Infinity) - (b in order ? order[b] : Infinity));  // stable: no-data keeps manual order
+  let base = items;
+  if (mode !== 'manual') {
+    const order = mode === 'lastused' ? _lastUsedChecklistOrder(task) : _typicalChecklistOrder(task);
+    base = items.slice().sort((a, b) => (a in order ? order[a] : Infinity) - (b in order ? order[b] : Infinity));  // stable: no-data keeps manual order
+  }
+  // 🚩 Flagged items float to the top (most-recently-flagged first), the rest keep
+  // their mode order. Mirrors how flagged pinned notes behave. Device-local.
+  const flags = getChecklistFlags()[task] || {};
+  const pos = {}; base.forEach((it, i) => { pos[it] = i; });
+  return base.slice().sort((a, b) => {
+    const fa = flags[a] ? 1 : 0, fb = flags[b] ? 1 : 0;
+    if (fa !== fb) return fb - fa;
+    if (fa) return flags[b] - flags[a];   // both flagged → newer flag on top
+    return pos[a] - pos[b];               // both unflagged → keep mode order
+  });
 }
+// Per-task checklist-item flags — { task: { itemText: flaggedAtMs } }. Device-local
+// (like pinned-note flags), never written to SUBTASKS or synced.
+function getChecklistFlags() { return JSON.parse(localStorage.getItem('kr_checklist_flags') || '{}'); }
+function saveChecklistFlags(o) { localStorage.setItem('kr_checklist_flags', JSON.stringify(o)); }
 function _checklistDurations() {
   if (!clockState) return {};
   const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
@@ -2851,6 +2879,7 @@ function _checklistDurations() {
 }
 let _expandedChecklistItems = new Set();
 function markChecklistItemDone(item) {
+  if (Date.now() < _clSwipeBlockClickUntil) return;   // a swipe/drag just happened — not a tap
   if (!clockState || !clockState.running) return;
   if (!Array.isArray(clockState.checklistDone)) clockState.checklistDone = [];
   const i = clockState.checklistDone.findIndex(d => d.item === item);
@@ -2860,6 +2889,7 @@ function markChecklistItemDone(item) {
   renderRunChecklist();
 }
 function toggleChecklistExpand(item) {
+  if (Date.now() < _clSwipeBlockClickUntil) return;   // a swipe/drag just happened — not a tap
   if (_expandedChecklistItems.has(item)) _expandedChecklistItems.delete(item);
   else _expandedChecklistItems.add(item);
   renderRunChecklist();
@@ -2890,6 +2920,9 @@ function renderRunChecklist() {
   const stepsMap = getSubtaskSteps();
   const stepChecks = (clockState && clockState.stepChecks) || {};
   const completedCount = items.filter(s => done.some(d => d.item === s) || carried.has(s)).length;
+  const taskAttr = (clockState && clockState.task) ? _attr(clockState.task) : '';
+  const clFlags = getChecklistFlags()[clockState.task] || {};
+  const clFlaggedCount = items.filter(s => clFlags[s]).length;
   const rows = items.map(s => {
     const enc = s.replace(/'/g, "\\'");
     // Carried over from an earlier session — show ticked, not re-timed, not tappable
@@ -2907,11 +2940,15 @@ function renderRunChecklist() {
     const circle = `<span onclick="markChecklistItemDone('${enc}')" style="font-size:18px;cursor:pointer;flex-shrink:0;color:${isDone ? 'var(--green)' : 'var(--text)'};">${isDone ? '✓' : '○'}</span>`;
     const textTap = steps.length ? `toggleChecklistExpand('${enc}')` : `markChecklistItemDone('${enc}')`;
     const stepBadge = steps.length ? ` <span style="color:var(--subtext);font-size:12px;">(${checkedCount}/${steps.length})</span>` : '';
-    const textSpan = `<span onclick="${textTap}" style="flex:1;font-size:14px;cursor:pointer;${isDone ? 'color:var(--subtext);text-decoration:line-through;' : 'color:var(--text);'}">${s}${stepBadge}</span>`;
+    const flagged = !!clFlags[s];
+    const flagMark = flagged ? '🚩 ' : '';
+    const textSpan = `<span onclick="${textTap}" style="flex:1;font-size:14px;cursor:pointer;${isDone ? 'color:var(--subtext);text-decoration:line-through;' : 'color:var(--text);'}">${flagMark}${s}${stepBadge}</span>`;
     const right = isDone
       ? `<span style="font-size:13px;color:var(--green);font-weight:700;white-space:nowrap;">${fmtMin(dur[s])}</span>`
       : (steps.length ? `<span onclick="toggleChecklistExpand('${enc}')" style="color:var(--subtext);font-size:13px;cursor:pointer;padding:0 4px;flex-shrink:0;">${expanded ? '▾' : '▸'}</span>` : '');
-    let html = `<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--border);">${circle}${textSpan}${right}</div>`;
+    const clFlagAttr = (flagged && !isDone) ? '1' : '';
+    const clRowBg = (flagged && !isDone) ? 'background:rgba(255,214,10,0.10);' : '';
+    let html = `<div class="cl-row" data-cl-item="${_attr(s)}" data-cl-task="${taskAttr}" data-cl-flagged="${clFlagAttr}" ontouchstart="clSwipeStart(event)" ontouchmove="clSwipeMove(event)" ontouchend="clSwipeEnd(event)" style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--border);border-radius:6px;${clRowBg}">${circle}${textSpan}${right}</div>`;
     if (expanded && steps.length && !isDone) {
       html += steps.map(st => {
         const encStep = st.replace(/'/g, "\\'");
@@ -2942,12 +2979,12 @@ function renderRunChecklist() {
   }).join('');
   const pinsDone = pinned.filter(p => pinDone[p.id]).length;
   const checklistLine = items.length
-    ? `CHECKLIST · ${completedCount}/${items.length} done · tap ○ to time, item to expand` : '';
+    ? `CHECKLIST · ${completedCount}/${items.length} done · tap ○ to time · swipe → flag` : '';
   const notesLine = pinned.length
     ? `📌 NOTES · ${pinsDone}/${pinned.length} done · tap to tick · swipe → flag` : '';
   // Fixed header — stays put while the list scrolls, so both tallies are always visible.
   const headerHtml = `<div style="background:#000;padding:6px 0;border-bottom:1px solid var(--border);letter-spacing:.04em;">`
-    + (checklistLine ? `<div style="font-size:12px;font-weight:700;color:var(--subtext);">${checklistLine}</div>` : '')
+    + (checklistLine ? `<div style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--subtext);"><span style="flex:1;min-width:0;">${checklistLine}</span>${clFlaggedCount > 1 ? `<span onclick="openChecklistOrganise(event)" style="flex-shrink:0;color:var(--blue);cursor:pointer;font-weight:700;">⤢ Organise</span>` : ''}</div>` : '')
     + (notesLine ? `<div style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;color:#FFD60A;${checklistLine ? 'margin-top:3px;' : ''}"><span style="flex:1;min-width:0;">${notesLine}</span>${pinned.length > 1 ? `<span onclick="openPinOrganise(event)" style="flex-shrink:0;color:var(--blue);cursor:pointer;font-weight:700;">⤢ Organise</span>` : ''}</div>` : '')
     + `</div>`;
   // Preserve scroll position across re-render so ticking/expanding doesn't jump to top.
@@ -4743,7 +4780,7 @@ const KR_BACKUP_KEYS = [
   'kr_task_order', 'kr_entries', 'kr_user_name', 'kr_weekly_target',
   'kr_sheet_url', 'kr_gmaps_key', 'kr_dark_mode',
   'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
-  'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_task_videos', 'kr_subtask_origin', 'kr_pins_applied'
+  'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_task_videos', 'kr_checklist_flags', 'kr_subtask_origin', 'kr_pins_applied'
 ];
 
 function buildBackupSnapshot() {
@@ -7881,6 +7918,9 @@ function saveDirTask() {
       // How-to video keyed by task name
       const tvids = getTaskVideos();
       if (tvids[oldTask]) { if (!tvids[task]) tvids[task] = tvids[oldTask]; delete tvids[oldTask]; saveTaskVideos(tvids); }
+      // Checklist-item flags keyed by task name
+      const cflags = getChecklistFlags();
+      if (cflags[oldTask]) { cflags[task] = Object.assign(cflags[task] || {}, cflags[oldTask]); delete cflags[oldTask]; saveChecklistFlags(cflags); }
       // Planner blocks (my day + Ethan's day)
       ['kr_planner', 'kr_planner_ethan'].forEach(k => {
         const arr = JSON.parse(localStorage.getItem(k) || '[]');
@@ -7948,6 +7988,8 @@ function deleteDirTask() {
     delete SUBTASKS[task];
     const tvids = getTaskVideos();
     if (tvids[task]) { delete tvids[task]; saveTaskVideos(tvids); }
+    const cflags = getChecklistFlags();
+    if (cflags[task]) { delete cflags[task]; saveChecklistFlags(cflags); }
   }
   localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
   localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
@@ -9596,6 +9638,139 @@ function showPinnedNotesPopupTask(task) {
     html || '<div style="padding:24px 0;color:var(--subtext);text-align:center;">No pinned notes.</div>';
   openModal('modal-pin-preview');
   _loadPhotoThumbs();
+}
+
+// ── Checklist-item flagging (mirror of the pinned-note gestures) ──
+//   • Swipe right            → 🚩 flag the item to the top
+//   • Press-and-hold + drag  → reorder among the 🚩 flagged items (flagged only)
+// Flags are device-local (kr_checklist_flags), never touch SUBTASKS or sync.
+let _clSwipe = null, _clSwipeBlockClickUntil = 0, _clLongPressTimer = null, _clDrag = null;
+const _CL_HOLD_MS = 280;
+function clSwipeStart(e) {
+  const row = e.currentTarget;
+  const y = e.touches[0].clientY;
+  _clSwipe = { row, item: row.dataset.clItem, task: row.dataset.clTask, x: e.touches[0].clientX, y, moved: false };
+  clearTimeout(_clLongPressTimer); _clLongPressTimer = null;
+  if (row.dataset.clFlagged === '1') {
+    _clLongPressTimer = setTimeout(() => { _clLongPressTimer = null; _startClDrag(row, row.dataset.clTask, y); }, _CL_HOLD_MS);
+  }
+}
+function clSwipeMove(e) {
+  if (_clDrag) { e.preventDefault(); _clDragMove(e.touches[0].clientY); return; }
+  if (!_clSwipe) return;
+  const dx = e.touches[0].clientX - _clSwipe.x, dy = e.touches[0].clientY - _clSwipe.y;
+  if (_clLongPressTimer && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) { clearTimeout(_clLongPressTimer); _clLongPressTimer = null; }
+  if (!_clSwipe.moved && !_clLongPressTimer && (Math.abs(dy) > Math.abs(dx) || dx < 0)) { _clSwipe = null; return; } // vertical scroll / left-swipe → let it be
+  if (dx > 6) {
+    _clSwipe.moved = true;
+    e.preventDefault();
+    _clSwipe.row.style.transition = 'none';
+    _clSwipe.row.style.transform = 'translateX(' + Math.min(dx, 90) + 'px)';
+    _clSwipe.row.style.opacity = String(Math.max(0.45, 1 - dx / 220));
+  }
+}
+function clSwipeEnd(e) {
+  clearTimeout(_clLongPressTimer); _clLongPressTimer = null;
+  if (_clDrag) { _endClDrag(); _clSwipe = null; return; }
+  if (!_clSwipe) return;
+  const s = _clSwipe; _clSwipe = null;
+  const dx = (e.changedTouches[0] ? e.changedTouches[0].clientX : s.x) - s.x;
+  s.row.style.transition = 'transform 0.16s, opacity 0.16s';
+  s.row.style.transform = ''; s.row.style.opacity = '';
+  if (s.moved) _clSwipeBlockClickUntil = Date.now() + 400; // any horizontal drag suppresses the tap-to-tick
+  if (s.moved && dx > 48) toggleChecklistFlag(s.task, s.item);
+}
+function _startClDrag(row, task, startY) {
+  _clSwipe = null;
+  const rect = row.getBoundingClientRect();
+  _clDrag = { row, task, grabOffset: startY - rect.top };
+  _clSwipeBlockClickUntil = Date.now() + 600;
+  row.style.transition = 'none';
+  row.style.opacity = '0.95';
+  row.style.boxShadow = '0 6px 16px rgba(0,0,0,0.45)';
+  row.style.position = 'relative';
+  row.style.zIndex = '5';
+  row.style.transform = 'scale(1.03)';
+  if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
+}
+function _clDragMove(clientY) {
+  const dragged = _clDrag.row, parent = dragged.parentNode;
+  const others = [...parent.children].filter(c => c.dataset && c.dataset.clFlagged === '1' && c !== dragged);
+  const target = others.find(r => { const b = r.getBoundingClientRect(); return clientY < b.top + b.height / 2; });
+  if (target) { parent.insertBefore(dragged, target); }
+  else { const last = others[others.length - 1]; if (last) parent.insertBefore(dragged, last.nextSibling); }
+  dragged.style.transform = 'none';
+  const ty = clientY - _clDrag.grabOffset - dragged.getBoundingClientRect().top;
+  dragged.style.transform = 'translateY(' + ty + 'px) scale(1.03)';
+}
+function _endClDrag() {
+  const dragged = _clDrag.row, task = _clDrag.task, parent = dragged.parentNode;
+  _clDrag = null;
+  dragged.style.transition = 'transform 0.15s, box-shadow 0.15s, opacity 0.15s';
+  dragged.style.transform = ''; dragged.style.opacity = ''; dragged.style.boxShadow = '';
+  dragged.style.position = ''; dragged.style.zIndex = '';
+  const order = [...parent.children].filter(c => c.dataset && c.dataset.clFlagged === '1').map(c => c.dataset.clItem);
+  _applyChecklistFlagOrder(task, order);
+}
+// Encode a manual order of flagged items into flaggedAt (top = newest).
+function _applyChecklistFlagOrder(task, orderedItems) {
+  const all = getChecklistFlags();
+  const f = all[task]; if (!f) return;
+  const base = Date.now();
+  orderedItems.forEach((item, i) => { if (f[item]) f[item] = base - i * 1000; }); // first listed = highest = top
+  saveChecklistFlags(all);
+  _refreshChecklistSurfaces(task);
+}
+function toggleChecklistFlag(task, item) {
+  const all = getChecklistFlags();
+  const f = all[task] || (all[task] = {});
+  let nowFlagged;
+  if (f[item]) { delete f[item]; nowFlagged = false; }
+  else { f[item] = Date.now(); nowFlagged = true; }
+  if (!Object.keys(all[task]).length) delete all[task];
+  saveChecklistFlags(all);
+  showToast(nowFlagged ? '🚩 Flagged to top' : 'Flag removed');
+  _refreshChecklistSurfaces(task);
+}
+function _refreshChecklistSurfaces(task) {
+  if (clockState && clockState.running && clockState.task === task) renderRunChecklist();
+  const org = document.getElementById('modal-cl-organise');
+  if (org && org.classList.contains('open') && _clOrganiseTask === task) _renderClOrganiseBody();
+}
+let _clOrganiseTask = null;
+function openChecklistOrganise(e) {
+  if (e) e.stopPropagation();
+  if (!clockState || !clockState.task) return;
+  _clOrganiseTask = clockState.task;
+  document.getElementById('cl-organise-title').textContent = clockState.task;
+  _renderClOrganiseBody();
+  openModal('modal-cl-organise');
+}
+function _renderClOrganiseBody() {
+  const task = _clOrganiseTask;
+  const body = document.getElementById('cl-organise-body');
+  if (!body) return;
+  const all = SUBTASKS[task] || [];
+  const ordered = _orderedChecklistItems(task, all);
+  const flags = getChecklistFlags()[task] || {};
+  const taskAttr = _attr(task);
+  const flagged = ordered.filter(s => flags[s]);
+  const intro = `<div style="font-size:11px;color:var(--subtext);margin:12px 0 8px;">Swipe an item right to 🚩 flag it to the top · hold &amp; drag a 🚩 item to set the order it’s done in.</div>`;
+  const rowHtml = (s) => {
+    const isFlagged = !!flags[s];
+    return `<div class="cl-row" data-cl-item="${_attr(s)}" data-cl-task="${taskAttr}" data-cl-flagged="${isFlagged ? '1' : ''}" ontouchstart="clSwipeStart(event)" ontouchmove="clSwipeMove(event)" ontouchend="clSwipeEnd(event)" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:11px 10px;border-radius:8px;border:1px solid var(--border);${isFlagged ? 'background:rgba(255,214,10,0.12);' : 'background:var(--card);'}">
+      <span style="font-size:16px;flex-shrink:0;">${isFlagged ? '🚩' : '▫️'}</span>
+      <span style="flex:1;font-size:15px;color:var(--text);">${s}</span>
+      ${isFlagged ? '<span style="font-size:12px;color:var(--subtext);flex-shrink:0;">⠿ hold to drag</span>' : ''}</div>`;
+  };
+  const flaggedBlock = flagged.length
+    ? `<div style="font-size:12px;color:#FFD60A;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;margin:4px 0 8px;">🚩 Flagged · done first</div>${flagged.map(rowHtml).join('')}`
+    : `<div style="padding:18px 0;color:var(--subtext);text-align:center;font-size:14px;">No flagged items yet — swipe one right to flag it.</div>`;
+  const rest = ordered.filter(s => !flags[s]);
+  const restBlock = rest.length
+    ? `<div style="font-size:12px;color:var(--subtext);font-weight:700;text-transform:uppercase;letter-spacing:0.4px;margin:16px 0 8px;">Rest of checklist</div>${rest.map(rowHtml).join('')}`
+    : '';
+  body.innerHTML = intro + flaggedBlock + restBlock;
 }
 
 function openPlannerDetail(planId) {
