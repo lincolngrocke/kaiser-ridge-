@@ -2147,7 +2147,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.70';
+const APP_VERSION = '2026-06-21.71';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -9147,14 +9147,25 @@ function confirmPlannerAdd() {
 function _attr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
 // Chronological key for a pinned note (oldest→newest), by when it was caught/created.
 function _pinTime(p) { return new Date(p.caught || p.ts || 0).getTime() || 0; }
-// 🚩 Flagged notes float to the top (newest flag first); the rest stay oldest→newest.
+// 🚩 Flagged notes float to the top (manual flag order); the rest are oldest→newest
+// or newest→oldest per the kr_pin_sort toggle (flagged notes are unaffected).
+function _pinSortLabel() { return (localStorage.getItem('kr_pin_sort') === 'newest') ? 'Newest first' : 'Oldest first'; }
 function _sortPins(arr) {
+  const dir = (localStorage.getItem('kr_pin_sort') === 'newest') ? -1 : 1;
   return arr.slice().sort((a, b) => {
     const fa = a.flagged ? 1 : 0, fb = b.flagged ? 1 : 0;
     if (fa !== fb) return fb - fa;
     if (fa) return (b.flaggedAt || 0) - (a.flaggedAt || 0);
-    return _pinTime(a) - _pinTime(b);
+    return (_pinTime(a) - _pinTime(b)) * dir;
   });
+}
+function togglePinSort() {
+  localStorage.setItem('kr_pin_sort', (localStorage.getItem('kr_pin_sort') === 'newest') ? 'oldest' : 'newest');
+  if (clockState && clockState.running) renderRunChecklist();
+  const det = document.getElementById('modal-planner-detail');
+  if (det && det.classList.contains('open') && _plannerDetailId) openPlannerDetail(_plannerDetailId);
+  const pop = document.getElementById('modal-pin-preview');
+  if (pop && pop.classList.contains('open') && _pinPreviewTask) showPinnedNotesPopupTask(_pinPreviewTask);
 }
 
 // compact=true uses smaller thumbnails so rows stay short — used in the
@@ -9166,6 +9177,7 @@ function _pinnedNotesHtml(task, compact) {
   return `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">
     <div style="font-size:12px;color:#FFD60A;margin-bottom:2px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">📌 Pinned notes</div>
     <div style="font-size:11px;color:var(--subtext);margin-bottom:8px;">Swipe a note right to 🚩 flag it to the top · hold &amp; drag a 🚩 note to reorder</div>
+    ${compact ? `<div onclick="togglePinSort()" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:10px;padding:6px 12px;border:1px solid var(--border);border-radius:999px;font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;">↕ ${_pinSortLabel()}</div>` : ''}
     ${pins.map(p => {
       const safe = p.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const caught = (p.caught || p.ts) ? `<div style="font-size:11px;color:var(--subtext);margin-top:2px;">Caught ${_inboxStamp(p.caught || p.ts)}${p.editedTs ? ' · ✏️ Edited ' + _inboxStamp(p.editedTs) : ''}</div>` : '';
@@ -9292,8 +9304,10 @@ function showPinnedNotesPopup(el) {
   const row = el.closest('.dir-task-row');
   showPinnedNotesPopupTask(row ? row.dataset.task : '');
 }
+let _pinPreviewTask = null;
 function showPinnedNotesPopupTask(task) {
   if (!task) return;
+  _pinPreviewTask = task;
   document.getElementById('pin-preview-title').textContent = task;
   const html = _pinnedNotesHtml(task, true);
   document.getElementById('pin-preview-body').innerHTML =
