@@ -2174,7 +2174,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.77';
+const APP_VERSION = '2026-06-21.78';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3851,6 +3851,93 @@ function confirmSubtasks() {
 }
 
 function updateTaskOptions() { onGroupChange(); }
+
+// ════════════════════════════════
+//  PULL-TO-REFRESH
+// ════════════════════════════════
+// Re-sync the in-memory globals from localStorage (like a fresh reopen) and
+// re-render whichever screen is showing. Fixes the "had to close & reopen"
+// staleness — e.g. a note/checklist item assigned from the Inbox to the task
+// you're clocked in on now appears straight away.
+function refreshCurrentScreen() {
+  try {
+    DIRECTORY = JSON.parse(localStorage.getItem('kr_directory') || 'null') || DIRECTORY;
+    entries   = JSON.parse(localStorage.getItem('kr_entries')   || '[]');
+    SUBTASKS  = JSON.parse(localStorage.getItem('kr_subtasks')  || 'null') || SUBTASKS;
+    const cs  = localStorage.getItem('kr_clock');
+    clockState = cs ? JSON.parse(cs) : null;
+  } catch (e) { /* keep whatever's in memory if a store is corrupt */ }
+  const active = document.querySelector('.screen.active');
+  const id = active ? active.id.replace('screen-', '') : 'clock';
+  if (id === 'clock') { renderClockState(); renderRunChecklist(); updateBackupBanner(); }
+  else if (id === 'timesheets') renderTimesheets();
+  else if (id === 'directory') renderDirScreen();
+  else if (id === 'equipment') renderEquipmentScreen();
+  else if (id === 'planner') renderPlannerScreen();
+  else if (id === 'dashboard') renderDashboard();
+  else if (id === 'settings') { updateStats(); updateLastBackupLabel(); updateBackupReminder(); }
+}
+
+// Pull down from the top of any screen to refresh. Passive listeners only —
+// they measure the drag but never preventDefault, so native scroll, pin-swipes
+// and planner drags are untouched.
+let _ptrStartY = 0, _ptrStartX = 0, _ptrTracking = false, _ptrReady = false, _ptrScroller = null;
+const _PTR_THRESHOLD = 70;
+const _ptrInd = document.createElement('div');
+_ptrInd.id = 'ptr-indicator';
+_ptrInd.style.cssText = 'position:fixed;top:env(safe-area-inset-top,0px);left:50%;transform:translateX(-50%) translateY(-44px);z-index:760;background:var(--card,#1c1c1e);color:var(--text,#fff);border:1px solid var(--border,#38383A);border-radius:999px;padding:7px 16px;font-size:13px;font-weight:600;box-shadow:0 2px 10px rgba(0,0,0,0.25);opacity:0;pointer-events:none;transition:opacity .15s,transform .15s;';
+_ptrInd.textContent = '↓ Pull to refresh';
+document.addEventListener('DOMContentLoaded', () => { document.body.appendChild(_ptrInd); });
+
+function _ptrHide() { _ptrInd.style.opacity = '0'; _ptrInd.style.transform = 'translateX(-50%) translateY(-44px)'; }
+function _ptrFindScroller(node, screen) {
+  while (node && node !== screen && node !== document.body) {
+    if (node.scrollHeight > node.clientHeight + 1) {
+      const oy = getComputedStyle(node).overflowY;
+      if (oy === 'auto' || oy === 'scroll') return node;
+    }
+    node = node.parentElement;
+  }
+  return null;
+}
+document.addEventListener('touchstart', e => {
+  _ptrTracking = false; _ptrReady = false;
+  if (!e.touches || e.touches.length !== 1) return;
+  if (document.querySelector('.modal-backdrop.open')) return;      // a sheet is up
+  if (_plannerIsDragging) return;
+  if (e.target.closest && e.target.closest('.pl-task-block, [data-park-id]')) return; // planner drag handles
+  const screen = document.querySelector('.screen.active');
+  if (!screen) return;
+  const scroller = _ptrFindScroller(e.target, screen);
+  if (scroller && scroller.scrollTop > 0) return;                  // only when already at the top
+  _ptrScroller = scroller;
+  _ptrStartY = e.touches[0].clientY;
+  _ptrStartX = e.touches[0].clientX;
+  _ptrTracking = true;
+}, { passive: true });
+document.addEventListener('touchmove', e => {
+  if (!_ptrTracking || !e.touches || e.touches.length !== 1) return;
+  const dy = e.touches[0].clientY - _ptrStartY;
+  const dx = e.touches[0].clientX - _ptrStartX;
+  if (Math.abs(dx) > Math.abs(dy)) { _ptrTracking = false; _ptrHide(); return; }   // horizontal → let swipes win
+  if (_ptrScroller && _ptrScroller.scrollTop > 0) { _ptrTracking = false; _ptrHide(); return; }
+  if (dy <= 0) { _ptrHide(); _ptrReady = false; return; }
+  const pull = Math.min(dy, 140);
+  _ptrInd.style.opacity = String(Math.min(1, pull / _PTR_THRESHOLD));
+  _ptrInd.style.transform = 'translateX(-50%) translateY(' + Math.min(pull - 44, 22) + 'px)';
+  _ptrReady = pull >= _PTR_THRESHOLD;
+  _ptrInd.textContent = _ptrReady ? '↻ Release to refresh' : '↓ Pull to refresh';
+}, { passive: true });
+document.addEventListener('touchend', () => {
+  if (!_ptrTracking) return;
+  _ptrTracking = false;
+  if (!_ptrReady) { _ptrHide(); return; }
+  _ptrReady = false;
+  _ptrInd.textContent = '↻ Refreshing…';
+  _ptrInd.style.opacity = '1';
+  _ptrInd.style.transform = 'translateX(-50%) translateY(22px)';
+  setTimeout(() => { try { refreshCurrentScreen(); } finally { _ptrHide(); } }, 220);
+}, { passive: true });
 
 // ════════════════════════════════
 //  MODAL HELPERS
@@ -7279,6 +7366,9 @@ async function assignInboxToTask(mode) {
   closeModal('modal-inbox-assign');
   _inboxSelectMode = false; _inboxSelected = new Set(); _syncInboxSelectUI();
   renderInbox();
+  // If we just assigned to the task that's currently clocked in, reflect it on
+  // the running clock straight away (no app reopen / pull needed).
+  if (clockState && clockState.running && tasks.includes(clockState.task)) renderRunChecklist();
   const nc = notes.length;
   showToast((mode === 'permanent' ? 'Added ' : 'Pinned ') + nc + ' note' + (nc === 1 ? '' : 's') + ' to ' + tag + ' ✓' + (mode === 'permanent' ? ' — Publish to share' : ''));
 }
