@@ -1187,15 +1187,17 @@
         <div class="settings-label" style="font-weight:600;">Backup &amp; Restore</div>
         <div style="font-size:13px; color:var(--subtext); line-height:1.6;">
           Your directory, checklists, guides, settings, and entries are saved only on this device.
-          The app keeps a fresh backup snapshot automatically every time you save a task or clock out —
-          export it regularly (especially before reinstalling the app or switching phones) and store it
-          somewhere safe like Google Drive, Files, or email it to yourself.
+          Every clock-out automatically sends a full backup to Google Drive (“KR App Backups” folder) —
+          notes, pins, timesheets, settings, the lot. Lost or wiped phone? Install the app, set Your Name
+          and the Apps Script URL, then tap “Restore from Drive Backup”. Manual file export still works
+          as an extra copy.
         </div>
         <div id="last-backup-label" style="font-size:13px; color:var(--subtext);">No backup yet — tap "Export Backup" below to create one.</div>
         <div id="backup-reminder" style="font-size:13px; line-height:1.5; padding:8px 10px; border-radius:8px; width:100%; box-sizing:border-box;"></div>
       </div>
     </div>
     <button class="btn-sync" style="background:var(--blue); margin-top:8px;" onclick="exportBackup()">⬇ Export Backup</button>
+    <button class="btn-sync" style="background:var(--green); margin-top:8px;" onclick="restoreFromDriveBackup()">☁️ Restore from Drive Backup</button>
     <button class="btn-sync" style="background:var(--subtext); margin-top:8px;" onclick="triggerRestoreBackup()">⟲ Restore from Backup File</button>
     <input type="file" id="restore-file-input" accept="application/json,.json" style="display:none;" onchange="restoreBackupFromFile(event)">
 
@@ -2226,7 +2228,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.83';
+const APP_VERSION = '2026-06-21.84';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2690,6 +2692,7 @@ function clockOut(overrideTime) {
   localStorage.removeItem('kr_clock');
   renderClockState();
   autoBackup();
+  autoBackupToDrive();   // silent ☁️ safety net — full snapshot to Drive
   // If calendar sync is in use, silently refresh that day so the ▶ live
   // event becomes the ✓ completed one (clockState is now null, so the live
   // item drops out and the new entry is included).
@@ -5067,24 +5070,28 @@ function updateBackupReminder() {
   if (!el) return;
   const today = new Date();
   const todayStr = today.toLocaleDateString(undefined, { weekday:'short', day:'numeric', month:'short', year:'numeric' });
-  const at = localStorage.getItem('kr_last_export_at');
+  // Manual file export OR the automatic Drive push — whichever is newest.
+  const atExp = localStorage.getItem('kr_last_export_at');
+  const atDrv = localStorage.getItem('kr_last_drive_backup_at');
+  const at = (atDrv && (!atExp || atDrv > atExp)) ? atDrv : atExp;
+  const viaDrive = at && at === atDrv;
   let lastStr = 'never', backedUpToday = false;
   if (at) {
     const d = new Date(at);
     backedUpToday = d.toDateString() === today.toDateString();
-    lastStr = d.toLocaleDateString(undefined, { day:'numeric', month:'short', year:'numeric' }) +
+    lastStr = (viaDrive ? '☁️ to Drive ' : '📄 file export ') + d.toLocaleDateString(undefined, { day:'numeric', month:'short', year:'numeric' }) +
       ' at ' + d.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' });
   }
   if (backedUpToday) {
     el.style.background = 'rgba(52,199,89,0.12)';
     el.style.border = '1px solid rgba(52,199,89,0.35)';
     el.style.color = 'var(--green)';
-    el.innerHTML = '✓ Backed up today (' + todayStr + ') — last export ' + lastStr + '.';
+    el.innerHTML = '✓ Backed up today (' + todayStr + ') — ' + lastStr + '.';
   } else {
     el.style.background = 'rgba(255,149,0,0.12)';
     el.style.border = '1px solid rgba(255,149,0,0.4)';
     el.style.color = '#FF9500';
-    el.innerHTML = '⚠ No backup exported today.<br>Today: ' + todayStr + ' · Last export: ' + lastStr + '. Tap “Export Backup” below.';
+    el.innerHTML = '⚠ No backup yet today — it happens automatically at your next clock-out.<br>Today: ' + todayStr + ' · Last backup: ' + lastStr + '.';
   }
 }
 
@@ -5096,14 +5103,19 @@ function updateBackupBanner() {
                document.getElementById('backup-banner-running')];
   if (!els[0] && !els[1]) return;
   const now = new Date();
-  const at = localStorage.getItem('kr_last_export_at');
+  // A backup is a backup — manual file export OR the automatic Drive push
+  // at clock-out, whichever is newest (ISO strings compare correctly).
+  const atExp = localStorage.getItem('kr_last_export_at');
+  const atDrv = localStorage.getItem('kr_last_drive_backup_at');
+  const at = (atDrv && (!atExp || atDrv > atExp)) ? atDrv : atExp;
+  const viaDrive = at && at === atDrv;
   let backedToday = false, ref = '';
   if (at) {
     const d = new Date(at);
     backedToday = d.toDateString() === now.toDateString();
     const t = d.toLocaleTimeString(undefined, { hour:'numeric', minute:'2-digit' });
-    ref = backedToday ? ('today at ' + t)
-      : (d.toLocaleDateString(undefined, { day:'numeric', month:'short' }) + ' at ' + t);
+    ref = (viaDrive ? '☁️ to Drive ' : '') + (backedToday ? ('today at ' + t)
+      : (d.toLocaleDateString(undefined, { day:'numeric', month:'short' }) + ' at ' + t));
   }
   const due = now.getHours() >= BACKUP_DUE_HOUR;
 
@@ -5112,7 +5124,7 @@ function updateBackupBanner() {
     cls = 'ok';  html = '✓ Backed up ' + ref;
   } else if (due) {
     cls = 'warn';
-    html = at ? ('⚠ Daily backup due — tap to export. Last backup ' + ref + '.')
+    html = at ? ('⚠ No backup yet today — it happens automatically at your next clock-out. Last backup ' + ref + '.')
               : '⚠ No backup yet — tap to export your data.';
   } else if (at) {
     cls = 'ok';  html = 'Last backup ' + ref;
@@ -5154,6 +5166,45 @@ function exportBackup() {
   updateBackupReminder();
   updateBackupBanner();
   showToast('Backup ready — save it somewhere safe (Drive, Files, email)');
+}
+
+// ── Automatic backup to Google Drive (runs after every clock-out) ──
+// Pushes the full backup snapshot to Drive ("KR App Backups", one file per
+// person per day) via the Apps Script. Silent: offline or an old backend
+// just means the next clock-out retries. Lost/wiped phone → ☁️ Restore.
+let _driveBackupBusy = false;
+async function autoBackupToDrive() {
+  if (_driveBackupBusy) return;
+  const url = localStorage.getItem('kr_sheet_url');
+  if (!url) return;
+  _driveBackupBusy = true;
+  try {
+    const snapshot = buildBackupSnapshot();
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'saveBackup', who: getUserName(), json: JSON.stringify(snapshot) }) });
+    const json = await res.json();
+    if (json && json.success) {
+      localStorage.setItem('kr_last_drive_backup_at', new Date().toISOString());
+      updateBackupBanner();
+      updateBackupReminder();
+    }
+  } catch (e) { /* offline — retried at the next clock-out */ }
+  finally { _driveBackupBusy = false; }
+}
+// Pull the newest Drive backup for this person and restore it (new phone flow).
+async function restoreFromDriveBackup() {
+  const url = localStorage.getItem('kr_sheet_url');
+  if (!url) { showToast('Add your Apps Script URL in Settings first'); return; }
+  showToast('Fetching latest Drive backup…');
+  try {
+    const res = await fetch(url + (url.includes('?') ? '&' : '?') + 'backup=1&who=' + encodeURIComponent(getUserName()), { cache: 'no-store' });
+    const json = await res.json();
+    if (!json || !json.success || !json.json) { showToast((json && json.error) || 'No Drive backup found — check Your Name matches the old phone'); return; }
+    const snapshot = JSON.parse(json.json);
+    if (!snapshot || !snapshot.data || snapshot.app !== 'kaiser-ridge-task-tracker') { showToast('That Drive file isn’t a valid backup'); return; }
+    const when = json.savedAt ? new Date(json.savedAt).toLocaleString() : new Date(snapshot.createdAt).toLocaleString();
+    if (!confirm('Restore from the Drive backup saved ' + when + '?\n\nThis will overwrite this phone’s data with that backup.')) return;
+    _applyBackupSnapshot(snapshot);
+  } catch (e) { showToast('Could not reach Drive — check connection'); }
 }
 
 // ── Task Library sharing (multi-device) ──
@@ -5325,6 +5376,16 @@ function triggerRestoreBackup() {
   document.getElementById('restore-file-input').click();
 }
 
+// Write every key from a backup snapshot through the storage layer
+// (big keys → IndexedDB, rest → localStorage), then reload fresh.
+function _applyBackupSnapshot(snapshot) {
+  Object.entries(snapshot.data).forEach(([key, raw]) => {
+    _storeSet(key, raw);
+  });
+  showToast('Backup restored — reloading…');
+  setTimeout(() => location.reload(), 900);
+}
+
 function restoreBackupFromFile(event) {
   const file = event.target.files && event.target.files[0];
   if (!file) return;
@@ -5339,11 +5400,7 @@ function restoreBackupFromFile(event) {
       const count = Object.keys(snapshot.data).length;
       if (!confirm(`Restore from this backup (made ${new Date(snapshot.createdAt).toLocaleString()})?\n\nThis will overwrite your current directory, checklists, guides, settings, and entries (${count} items) with what's in the backup.`)) return;
 
-      Object.entries(snapshot.data).forEach(([key, raw]) => {
-        _storeSet(key, raw);   // big keys → IndexedDB, rest → localStorage
-      });
-      showToast('Backup restored — reloading…');
-      setTimeout(() => location.reload(), 900);
+      _applyBackupSnapshot(snapshot);
     } catch (err) {
       console.error('Restore failed:', err);
       alert('Could not read that file — make sure it\'s a Kaiser Ridge backup JSON file.');

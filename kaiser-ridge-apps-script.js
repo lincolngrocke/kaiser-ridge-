@@ -30,6 +30,21 @@ function doGet(e) {
       for (let i = 0; i < count; i++) lib += (props.getProperty('kr_lib_' + i) || '');
       return jsonResponse({ success: true, version: props.getProperty('kr_lib_version') || '', library: lib });
     }
+    // Latest Drive auto-backup for a person — restore on a new/wiped phone.
+    // Date is in the file name, so newest sorts last lexicographically.
+    if (p.backup === '1') {
+      const who = String(p.who || '').trim();
+      const prefix = 'kr-backup-' + (who ? who + '-' : '');
+      const files = getKrBackupsFolder().getFiles();
+      let best = null;
+      while (files.hasNext()) {
+        const f = files.next();
+        if (f.getName().indexOf(prefix) === 0 && (!best || f.getName() > best.getName())) best = f;
+      }
+      if (!best) return jsonResponse({ success: false, error: 'No Drive backup found' + (who ? ' for ' + who : '') });
+      return jsonResponse({ success: true, name: best.getName(), savedAt: best.getLastUpdated().toISOString(), json: best.getBlob().getDataAsString() });
+    }
+
     // Current sheet rows (date/time/task only), so the app's "Re-push Missing
     // Entries" recovery can tell which local entries are already in the sheet.
     // Matching is purely by content — there is no Task ID column any more.
@@ -199,6 +214,19 @@ function doPost(e) {
     // Read a receipt/invoice photo with Claude vision → {vendor,date,total,summary}
     if (data.action === 'extractReceipt') {
       return handleExtractReceipt(data);
+    }
+    // Auto-backup: save a device's full backup JSON to Drive ("KR App Backups").
+    // One file per person per day (overwritten within the day), named
+    // kr-backup-<who>-<YYYY-MM-DD>.json — daily history accumulates, never pruned.
+    if (data.action === 'saveBackup') {
+      const who = String(data.who || 'Unknown').trim() || 'Unknown';
+      const day = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+      const name = 'kr-backup-' + who + '-' + day + '.json';
+      const folder = getKrBackupsFolder();
+      const existing = folder.getFilesByName(name);
+      if (existing.hasNext()) existing.next().setContent(String(data.json || ''));
+      else folder.createFile(name, String(data.json || ''), 'application/json');
+      return jsonResponse({ success: true, file: name });
     }
 
     const ss    = SpreadsheetApp.getActiveSpreadsheet();
@@ -487,6 +515,13 @@ function formatVersion(v) {
 // Find (or create) the Drive folder where captured note photos are stored.
 function getKrPhotosFolder() {
   const NAME = 'KR App Photos';
+  const it = DriveApp.getFoldersByName(NAME);
+  return it.hasNext() ? it.next() : DriveApp.createFolder(NAME);
+}
+
+// Find (or create) the Drive folder where device auto-backups are stored.
+function getKrBackupsFolder() {
+  const NAME = 'KR App Backups';
   const it = DriveApp.getFoldersByName(NAME);
   return it.hasNext() ? it.next() : DriveApp.createFolder(NAME);
 }
