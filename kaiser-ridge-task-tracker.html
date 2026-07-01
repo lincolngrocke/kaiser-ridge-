@@ -1201,6 +1201,18 @@
 
     <div class="settings-section" style="margin-top:16px">
       <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
+        <div class="settings-label" style="font-weight:600;">Storage</div>
+        <div style="font-size:13px; color:var(--subtext); line-height:1.6;">
+          The phone gives the app ~5&nbsp;MB. Photos saved on-device (when Drive couldn’t be reached)
+          are the usual space hog — move them to Drive to free room.
+        </div>
+        <div id="storage-usage" style="font-size:13px; color:var(--subtext); line-height:1.7; width:100%;"></div>
+      </div>
+    </div>
+    <button class="btn-sync" style="background:var(--blue); margin-top:8px;" onclick="movePhotosToDrive()" id="btn-move-photos">⬆️ Move On-Device Photos to Drive</button>
+
+    <div class="settings-section" style="margin-top:16px">
+      <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
         <div class="settings-label" style="font-weight:600;">Share Task Library</div>
         <div style="font-size:13px; color:var(--subtext); line-height:1.6;">
           Publish your task list to the Sheet so other phones (e.g. Ethan's) auto-update — they'll see
@@ -2213,7 +2225,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.81';
+const APP_VERSION = '2026-06-21.82';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2495,7 +2507,7 @@ function showScreen(id, tab) {
   document.getElementById('screen-' + id).classList.add('active');
   if (tab) tab.classList.add('active');
   if (id === 'timesheets') renderTimesheets();
-  if (id === 'settings') { updateStats(); updateLastBackupLabel(); updateBackupReminder(); }
+  if (id === 'settings') { updateStats(); updateLastBackupLabel(); updateBackupReminder(); updateStorageUsage(); }
   if (id === 'planner') { _plannerDate = new Date(); renderPlannerScreen(); }
   else document.body.classList.remove('kr-wide');
   if (id === 'clock') updateBackupBanner();
@@ -2577,7 +2589,7 @@ function startClock(taskInfo) {
     tempId: Date.now().toString(),
   };
   localStorage.removeItem('kr_clock_trash'); // fresh session supersedes any discarded one
-  localStorage.setItem('kr_clock', JSON.stringify(clockState));
+  _safeSetItem('kr_clock', JSON.stringify(clockState));
   renderClockState();
   startTimerTick();
   captureClockInLocation();
@@ -2593,7 +2605,7 @@ function captureClockInLocation() {
   if (clockState.pin && clockState.pin.url) return;        // already pinned (manual)
   if (!navigator.geolocation) return;
   clockState._pinPending = true;
-  localStorage.setItem('kr_clock', JSON.stringify(clockState));
+  _safeSetItem('kr_clock', JSON.stringify(clockState));
   renderClockState();
   navigator.geolocation.getCurrentPosition(
     pos => {
@@ -2601,13 +2613,13 @@ function captureClockInLocation() {
       const lat = pos.coords.latitude.toFixed(6), lng = pos.coords.longitude.toFixed(6);
       clockState.pin = { lat, lng, url: 'https://maps.google.com/?q=' + lat + ',' + lng, auto: true, at: new Date().toISOString() };
       delete clockState._pinPending;
-      localStorage.setItem('kr_clock', JSON.stringify(clockState));
+      _safeSetItem('kr_clock', JSON.stringify(clockState));
       renderClockState();
     },
     () => {                                                 // denied / unavailable — quietly skip
       if (!clockState) return;
       delete clockState._pinPending;
-      localStorage.setItem('kr_clock', JSON.stringify(clockState));
+      _safeSetItem('kr_clock', JSON.stringify(clockState));
       renderClockState();
     },
     { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
@@ -2888,7 +2900,7 @@ function _orderedChecklistItems(task, items) {
 // Per-task checklist-item flags — { task: { itemText: flaggedAtMs } }. Device-local
 // (like pinned-note flags), never written to SUBTASKS or synced.
 function getChecklistFlags() { return JSON.parse(localStorage.getItem('kr_checklist_flags') || '{}'); }
-function saveChecklistFlags(o) { localStorage.setItem('kr_checklist_flags', JSON.stringify(o)); }
+function saveChecklistFlags(o) { return _safeSetItem('kr_checklist_flags', JSON.stringify(o)); }
 function _checklistDurations() {
   if (!clockState) return {};
   const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
@@ -2911,7 +2923,7 @@ function markChecklistItemDone(item) {
   const i = clockState.checklistDone.findIndex(d => d.item === item);
   if (i >= 0) clockState.checklistDone.splice(i, 1);          // tap again to untick
   else { clockState.checklistDone.push({ item, at: new Date().toISOString() }); _expandedChecklistItems.delete(item); }
-  localStorage.setItem('kr_clock', JSON.stringify(clockState));
+  _safeSetItem('kr_clock', JSON.stringify(clockState));
   renderRunChecklist();
 }
 function toggleChecklistExpand(item) {
@@ -2928,7 +2940,7 @@ function toggleChecklistStep(item, step) {
   if (!clockState.stepChecks[item]) clockState.stepChecks[item] = {};
   if (clockState.stepChecks[item][step]) delete clockState.stepChecks[item][step];
   else clockState.stepChecks[item][step] = true;
-  localStorage.setItem('kr_clock', JSON.stringify(clockState));
+  _safeSetItem('kr_clock', JSON.stringify(clockState));
   renderRunChecklist();
 }
 function renderRunChecklist() {
@@ -3457,7 +3469,7 @@ function saveEntry() {
     if (currentPin) clockState.pin = currentPin;
     if (clockIn) clockState.startTime = clockIn;
     // Break is managed live via Start/End Break — don't overwrite breakTotal here.
-    localStorage.setItem('kr_clock', JSON.stringify(clockState));
+    _safeSetItem('kr_clock', JSON.stringify(clockState));
     renderClockState();
     closeModal('modal-task');
     showToast('Active entry updated');
@@ -3952,7 +3964,7 @@ function confirmSubtasks() {
   if (clockState && clockState.running) {
     // Called from running screen — save directly to clockState
     clockState.notes = clockState.notes ? clockState.notes + '\n' + note : note;
-    localStorage.setItem('kr_clock', JSON.stringify(clockState));
+    _safeSetItem('kr_clock', JSON.stringify(clockState));
     renderClockState();
     showToast('Checklist added');
   } else {
@@ -3988,7 +4000,7 @@ function refreshCurrentScreen() {
   else if (id === 'equipment') renderEquipmentScreen();
   else if (id === 'planner') renderPlannerScreen();
   else if (id === 'dashboard') renderDashboard();
-  else if (id === 'settings') { updateStats(); updateLastBackupLabel(); updateBackupReminder(); }
+  else if (id === 'settings') { updateStats(); updateLastBackupLabel(); updateBackupReminder(); updateStorageUsage(); }
 }
 
 // Pull down from the top of any screen to refresh. Passive listeners only —
@@ -4108,7 +4120,7 @@ function saveNote() {
   const stamped = `[${time}] ${text}`;
   if (clockState) {
     clockState.notes = clockState.notes ? clockState.notes + '\n' + stamped : stamped;
-    localStorage.setItem('kr_clock', JSON.stringify(clockState));
+    _safeSetItem('kr_clock', JSON.stringify(clockState));
   }
   closeModal('modal-note');
   showToast('Note saved');
@@ -4270,7 +4282,7 @@ function confirmTime(choice) {
       tempId: Date.now().toString(),
     };
     localStorage.removeItem('kr_clock_trash'); // fresh session supersedes any discarded one
-    localStorage.setItem('kr_clock', JSON.stringify(clockState));
+    _safeSetItem('kr_clock', JSON.stringify(clockState));
     renderClockState();
     startTimerTick();
     captureClockInLocation();
@@ -4786,8 +4798,28 @@ function renderDashboard() {
   if (th) th.textContent = total.toFixed(2) + 'h';
 }
 
+// Quota-safe localStorage write. iPhone web apps get ~5MB; the auto-backup
+// snapshot (kr_last_backup) is a full DUPLICATE of all data, so the store can
+// "fill" at half capacity. If a write fails, drop that duplicate (it's a
+// convenience copy — file export still works) and retry, so real data always
+// wins over the snapshot. Never fails silently.
+function _safeSetItem(key, val) {
+  try { localStorage.setItem(key, val); return true; }
+  catch (e) {
+    try {
+      localStorage.removeItem('kr_last_backup');
+      localStorage.setItem(key, val);
+      showToast('⚠️ Storage was full — saved after freeing space. See Settings → Storage.');
+      return true;
+    } catch (e2) {
+      showToast('🛑 STORAGE FULL — could NOT save! Go to Settings → Storage to free space.');
+      return false;
+    }
+  }
+}
+
 function saveEntries() {
-  localStorage.setItem('kr_entries', JSON.stringify(entries));
+  _safeSetItem('kr_entries', JSON.stringify(entries));
   updateSummary();
 }
 
@@ -4832,7 +4864,89 @@ function autoBackup() {
     localStorage.setItem('kr_last_backup_at', snapshot.createdAt);
     updateLastBackupLabel();
   } catch (err) {
+    // Not enough room for the in-app snapshot copy — real data takes priority.
+    // Surface it in Settings rather than failing silently.
     console.error('Auto-backup failed:', err);
+    localStorage.removeItem('kr_last_backup');
+    const el = document.getElementById('last-backup-label');
+    if (el) el.textContent = '⚠️ Auto-snapshot skipped — storage is tight. Export a backup file below, then free space (Settings → Storage).';
+  }
+}
+
+// ── Storage meter + recovery (Settings → Storage) ──
+function _fmtKB(bytes) { return bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + ' MB' : Math.round(bytes / 1024) + ' KB'; }
+// Count photos still stored as base64 on this device (in inbox notes + task pins).
+function _localPhotoCount() {
+  let n = 0;
+  getInbox().forEach(x => (x.photos || []).forEach(p => { if (p.data) n++; }));
+  const tn = getTaskNotes();
+  Object.keys(tn).forEach(t => tn[t].forEach(x => (x.photos || []).forEach(p => { if (p.data) n++; })));
+  return n;
+}
+function updateStorageUsage() {
+  const el = document.getElementById('storage-usage');
+  if (!el) return;
+  const sizes = [];
+  let total = 0;
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    const bytes = ((localStorage.getItem(k) || '').length + k.length) * 2; // UTF-16
+    total += bytes;
+    sizes.push([k, bytes]);
+  }
+  sizes.sort((a, b) => b[1] - a[1]);
+  const label = { kr_inbox: '📥 Inbox notes', kr_task_notes: '📌 Pinned notes', kr_entries: '🕐 Timesheets', kr_last_backup: '💾 Auto-snapshot copy', kr_subtasks: '☑️ Checklists', kr_directory: '📂 Task directory' };
+  const top = sizes.slice(0, 5).map(([k, b]) => `<div style="display:flex;justify-content:space-between;"><span>${label[k] || k}</span><span>${_fmtKB(b)}</span></div>`).join('');
+  const pct = Math.min(100, Math.round(total / 5242880 * 100));
+  const barColor = pct > 85 ? 'var(--red)' : pct > 60 ? '#FF9500' : 'var(--green)';
+  const nLocal = _localPhotoCount();
+  el.innerHTML = `<div style="display:flex;justify-content:space-between;font-weight:600;color:var(--text);"><span>Used</span><span>${_fmtKB(total)} · ~${pct}%</span></div>
+    <div style="height:6px;border-radius:3px;background:var(--border);margin:4px 0 8px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${barColor};"></div></div>
+    ${top}
+    <div style="margin-top:6px;">📷 On-device photos: <b style="color:${nLocal ? 'var(--red)' : 'var(--green)'};">${nLocal}</b>${nLocal ? ' — move them to Drive below' : ' — all photos are on Drive ✓'}</div>`;
+}
+// Retry uploading every base64 photo (saved on-device when Drive was
+// unreachable) to Drive, swapping each for its tiny file id. The big fix
+// when storage fills up.
+let _movingPhotos = false;
+async function movePhotosToDrive() {
+  if (_movingPhotos) return;
+  if (!localStorage.getItem('kr_sheet_url')) { showToast('Add your Apps Script URL in Settings first'); return; }
+  const btn = document.getElementById('btn-move-photos');
+  _movingPhotos = true;
+  if (btn) { btn.textContent = '⏳ Uploading…'; btn.style.opacity = '0.6'; }
+  let moved = 0, failed = 0;
+  try {
+    const inbox = getInbox();
+    for (const note of inbox) {
+      for (const p of (note.photos || [])) {
+        if (!p.data) continue;
+        const id = await _uploadPhoto(p.data);
+        if (id) { delete p.data; p.id = id; moved++; saveInbox(inbox); }
+        else failed++;
+        if (btn) btn.textContent = '⏳ Uploading… ' + moved + ' moved';
+      }
+    }
+    const tn = getTaskNotes();
+    for (const task of Object.keys(tn)) {
+      for (const note of tn[task]) {
+        for (const p of (note.photos || [])) {
+          if (!p.data) continue;
+          const id = await _uploadPhoto(p.data);
+          if (id) { delete p.data; p.id = id; moved++; saveTaskNotes(tn); }
+          else failed++;
+          if (btn) btn.textContent = '⏳ Uploading… ' + moved + ' moved';
+        }
+      }
+    }
+  } finally {
+    _movingPhotos = false;
+    if (btn) { btn.textContent = '⬆️ Move On-Device Photos to Drive'; btn.style.opacity = ''; }
+    updateStorageUsage();
+    if (moved && !failed) { showToast('✓ Moved ' + moved + ' photo' + (moved === 1 ? '' : 's') + ' to Drive — space freed'); autoBackup(); }
+    else if (moved) showToast('Moved ' + moved + ', ' + failed + ' failed — try again on better signal');
+    else if (failed) showToast('Couldn’t reach Drive — check connection and try again');
+    else showToast('No on-device photos — nothing to move');
   }
 }
 
@@ -5233,7 +5347,7 @@ function applyBreakStart(timeStr) {
   clockState.breakStartMs = ms;
   clockState.breakStartTime = new Date(ms).toTimeString().slice(0, 5);
   clockState.breakTotal = clockState.breakTotal || 0;
-  localStorage.setItem('kr_clock', JSON.stringify(clockState));
+  _safeSetItem('kr_clock', JSON.stringify(clockState));
   _breakBtnUI();
   showToast('Break started @ ' + formatTimeAmPm(clockState.breakStartTime));
 }
@@ -5250,7 +5364,7 @@ function applyBreakEnd(timeStr) {
   clockState.onBreak = false;
   clockState.breakStartMs = null;
   clockState.breakStartTime = null;
-  localStorage.setItem('kr_clock', JSON.stringify(clockState));
+  _safeSetItem('kr_clock', JSON.stringify(clockState));
   _breakBtnUI();
   showToast('Break ended — ' + Math.round((ms - start) / 60000) + ' min deducted');
 }
@@ -5276,7 +5390,7 @@ function restoreDiscardedClock() {
     const t = JSON.parse(raw);
     delete t.discardedAt;
     clockState = t;
-    localStorage.setItem('kr_clock', JSON.stringify(clockState));
+    _safeSetItem('kr_clock', JSON.stringify(clockState));
     localStorage.removeItem('kr_clock_trash');
     renderClockState();
     startTimerTick();
@@ -6013,7 +6127,7 @@ function duplicateDirTask() {
 // (kr_task_merges) snapshots B so the whole thing can be un-merged later.
 // Timesheet history is NOT re-assigned (each entry keeps its original task name).
 function getTaskMerges() { return JSON.parse(localStorage.getItem('kr_task_merges') || '[]'); }
-function saveTaskMerges(a) { localStorage.setItem('kr_task_merges', JSON.stringify(a)); }
+function saveTaskMerges(a) { return _safeSetItem('kr_task_merges', JSON.stringify(a)); }
 function _uniqueDirTaskNames() { return [...new Set(DIRECTORY.map(r => r.task).filter(Boolean))]; }
 function _escTxt(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
@@ -6080,7 +6194,7 @@ function mergeTasks(primary, secondary) {
     if (!haveLower.has(s.trim().toLowerCase())) { primList.push(s); haveLower.add(s.trim().toLowerCase()); rec.addedChecklistItems.push(s); }
   });
   delete SUBTASKS[secondary];
-  localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
+  _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
   // Video — move only if primary has none of its own
   if (!vids[primary] && vids[secondary]) { vids[primary] = vids[secondary]; rec.movedVideo = true; }
   if (vids[secondary]) delete vids[secondary];
@@ -6140,7 +6254,7 @@ function unmergeTask(id) {
     SUBTASKS[primary] = (SUBTASKS[primary] || []).filter(s => !addedLower.has(s.trim().toLowerCase()));
     if (!SUBTASKS[primary].length) delete SUBTASKS[primary];
   }
-  localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
+  _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
   // Notes — pull the tagged notes back to secondary
   const notes = getTaskNotes();
   const prim = notes[primary] || [];
@@ -6827,7 +6941,7 @@ function selectSubtask(name, isNew) {
     if (!SUBTASKS[_subtaskPickerTask]) SUBTASKS[_subtaskPickerTask] = [];
     if (!SUBTASKS[_subtaskPickerTask].includes(formatted)) {
       SUBTASKS[_subtaskPickerTask].push(formatted);
-      localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
+      _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
     }
   }
   if (!_subtaskItems.includes(formatted)) {
@@ -6856,7 +6970,7 @@ function saveSubtaskSteps(steps) {
 // Origin of a checklist item that came from the Inbox — keyed by item text.
 // { caught, added } so the item's history is viewable (ℹ️ in the task editor).
 function getSubtaskOrigin() { return JSON.parse(localStorage.getItem('kr_subtask_origin') || '{}'); }
-function saveSubtaskOrigin(o) { localStorage.setItem('kr_subtask_origin', JSON.stringify(o)); }
+function saveSubtaskOrigin(o) { return _safeSetItem('kr_subtask_origin', JSON.stringify(o)); }
 function openItemOrigin(encText) {
   const text = encText.replace(/\\'/g, "'");
   const o = getSubtaskOrigin()[text];
@@ -6870,8 +6984,7 @@ function openItemOrigin(encText) {
 // ── Quick-capture Inbox: catch a thought fast, review/clear it later ──────────
 function getInbox() { return JSON.parse(localStorage.getItem('kr_inbox') || '[]'); }
 function saveInbox(arr) {
-  try { localStorage.setItem('kr_inbox', JSON.stringify(arr)); }
-  catch (e) { showToast('Storage full — couldn’t save. Try removing some photos.'); return false; }
+  if (!_safeSetItem('kr_inbox', JSON.stringify(arr))) return false;
   updateInboxCount();
   return true;
 }
@@ -7109,7 +7222,7 @@ function _propagateNoteEdit(note, oldText, photos) {
         if (Array.isArray(arr)) arr.forEach((it, i) => { if (it === oldText) { arr[i] = newText; subsChanged = true; } });
       });
       if (subsChanged) {
-        localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
+        _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
         orig[newText] = Object.assign({}, orig[oldText], { edited: note.editedTs });
         delete orig[oldText];
         saveSubtaskOrigin(orig);
@@ -7410,13 +7523,13 @@ function deleteInboxItem(id) {
 // Per-task "pinned notes" — sticky reminders that show at the top of a task each
 // time it's started, until ticked off (then gone). Device-local (not synced).
 function getTaskNotes() { return JSON.parse(localStorage.getItem('kr_task_notes') || '{}'); }
-function saveTaskNotes(o) { localStorage.setItem('kr_task_notes', JSON.stringify(o)); }
+function saveTaskNotes(o) { return _safeSetItem('kr_task_notes', JSON.stringify(o)); }
 
 // ── How-to videos per task (kr_task_videos) — a tiny reference only, never bytes.
 // { provider:'youtube', id, addedBy, addedAt }. Rides the Task Library publish so
 // everyone can watch; the video itself streams from YouTube (unlisted).
 function getTaskVideos() { return JSON.parse(localStorage.getItem('kr_task_videos') || '{}'); }
-function saveTaskVideos(o) { localStorage.setItem('kr_task_videos', JSON.stringify(o)); }
+function saveTaskVideos(o) { return _safeSetItem('kr_task_videos', JSON.stringify(o)); }
 
 // Pull an 11-char YouTube video id out of any common link shape (youtu.be/…,
 // watch?v=…, /shorts/…, /embed/…, /live/…), with or without timestamps/params,
@@ -7645,8 +7758,12 @@ async function assignInboxToTask(mode) {
       note.movedTo = tag;
     }
   });
-  if (mode === 'permanent') { localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS)); saveSubtaskOrigin(orig); }
-  else saveTaskNotes(tn);
+  // Persist — quota-safe; if storage is genuinely full the toast says so and we
+  // stop here (leaving the sheet open) instead of silently half-applying.
+  let saved;
+  if (mode === 'permanent') { saved = _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS)); if (saved) saveSubtaskOrigin(orig); }
+  else saved = saveTaskNotes(tn);
+  if (!saved) return;
   saveInbox(arr);
   closeModal('modal-inbox-assign');
   _inboxSelectMode = false; _inboxSelected = new Set(); _syncInboxSelectUI();
@@ -7670,7 +7787,7 @@ function togglePinnedNote(id) {
   if (!clockState.pinDone) clockState.pinDone = {};
   if (clockState.pinDone[id]) delete clockState.pinDone[id];
   else clockState.pinDone[id] = new Date().toISOString();
-  localStorage.setItem('kr_clock', JSON.stringify(clockState));
+  _safeSetItem('kr_clock', JSON.stringify(clockState));
   renderRunChecklist();
 }
 // At clock-out: for each pinned note ticked done this session, fold it into the
@@ -8020,7 +8137,7 @@ function renameSubtaskGlobally(oldName, newName) {
       return s;
     });
   });
-  if (changed) localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
+  if (changed) _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
   // Rename guide key if exists
   const guides = getSubtaskGuides();
   if (guides[oldName]) { guides[newName] = guides[oldName]; delete guides[oldName]; saveSubtaskGuides(guides); }
@@ -8069,7 +8186,7 @@ function confirmCopyChecklist() {
   const targets = [...document.querySelectorAll('.copy-cl-target:checked')].map(c => c.value);
   if (!targets.length) { showToast('Pick at least one task to copy to'); return; }
   targets.forEach(t => { SUBTASKS[t] = [...items]; });
-  localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
+  _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
   closeModal('modal-copy-checklist');
   showToast('Checklist copied to ' + targets.length + ' task' + (targets.length === 1 ? '' : 's') + ' ✓ — Publish Library to share');
 }
@@ -8176,7 +8293,7 @@ function saveDirTask() {
   saveTaskVideos(tvids);
 
   localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
-  localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
+  _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
   closeModal('modal-dir-task');
   renderDirectory();
   autoBackup();
@@ -8201,7 +8318,7 @@ function deleteDirTask() {
     if (kept.length !== mg.length) saveTaskMerges(kept);
   }
   localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
-  localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
+  _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
   closeModal('modal-dir-task');
   renderDirectory();
   showToast('Task deleted');
@@ -8653,7 +8770,7 @@ function plannerColorFor(task) {
 }
 
 function savePlanner() {
-  localStorage.setItem(plannerStoreKey(), JSON.stringify(_plannerPlans));
+  _safeSetItem(plannerStoreKey(), JSON.stringify(_plannerPlans));
 }
 
 // Switch the planner between the manager's own day and the worker's planned day.
@@ -9484,7 +9601,7 @@ function plannerResume() {
     task: entry.task, subtask: entry.subtask || '', tool: entry.tool || '', notes: '',
   });
   clockState.checklistCarried = carried;
-  localStorage.setItem('kr_clock', JSON.stringify(clockState));
+  _safeSetItem('kr_clock', JSON.stringify(clockState));
   renderClockState();
   showToast('Resumed ' + entry.task + (carried.length ? ' — ' + carried.length + ' already done' : ''));
 }
