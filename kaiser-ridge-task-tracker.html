@@ -1909,6 +1909,11 @@
         <button id="dir-video-watch" onclick="playVideoForTask(document.getElementById('dir-task').value.trim())" style="display:none;margin-top:8px;background:none;border:1px solid var(--blue);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">▶ Watch how-to</button>
       </div>
 
+      <div style="padding:16px 20px 0;" id="dir-merge-wrap">
+        <div id="dir-merged-list"></div>
+        <button onclick="openMergePicker()" style="width:100%;padding:14px;background:none;border:1px solid var(--blue);border-radius:12px;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">🔗 Merge another task into this one…</button>
+      </div>
+
       <div style="padding:16px 20px 0;" id="dir-duplicate-wrap">
         <button onclick="duplicateDirTask()" style="width:100%;padding:14px;background:none;border:1px solid var(--blue);border-radius:12px;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">⎘ Duplicate Task</button>
       </div>
@@ -1917,6 +1922,27 @@
         <button onclick="deleteDirTask()" style="width:100%;padding:14px;background:none;border:1px solid var(--red);border-radius:12px;color:var(--red);font-size:16px;font-weight:600;cursor:pointer;">Delete Task</button>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- ══════════════ MERGE PICKER ══════════════ -->
+<div class="modal-backdrop" id="modal-merge-picker" style="z-index:320;">
+  <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:85vh;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;padding:16px 20px 4px;">
+      <button onclick="closeModal('modal-merge-picker')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:0;margin-right:12px;">‹ Back</button>
+      <span style="font-size:17px;font-weight:600;flex:1;text-align:center;">Merge into “<span id="merge-primary-name"></span>”</span>
+      <span style="width:44px;"></span>
+    </div>
+    <div style="padding:0 20px 8px;font-size:12px;color:var(--subtext);">Pick the task to fold in. Its 📌 notes, checklist, 🎥 video &amp; 🚩 flags move here and it’s removed from the directory. You can un-merge later.</div>
+    <div style="padding:8px 16px 12px;">
+      <div style="display:flex;align-items:center;background:var(--bg);border-radius:12px;padding:0 12px;">
+        <span style="font-size:16px;color:var(--subtext);margin-right:8px;">🔍</span>
+        <input id="merge-picker-search" type="search" placeholder="Find a task to merge in" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"
+          oninput="renderMergePickerList()"
+          style="flex:1;padding:10px 0;border:none;background:transparent;font-size:16px;color:var(--text);outline:none;">
+      </div>
+    </div>
+    <div id="merge-picker-list" style="flex:1;overflow-y:auto;padding:0 16px 24px;"></div>
   </div>
 </div>
 
@@ -2187,7 +2213,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.80';
+const APP_VERSION = '2026-06-21.81';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4780,7 +4806,7 @@ const KR_BACKUP_KEYS = [
   'kr_task_order', 'kr_entries', 'kr_user_name', 'kr_weekly_target',
   'kr_sheet_url', 'kr_gmaps_key', 'kr_dark_mode',
   'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
-  'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_task_videos', 'kr_checklist_flags', 'kr_subtask_origin', 'kr_pins_applied'
+  'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_task_videos', 'kr_checklist_flags', 'kr_task_merges', 'kr_subtask_origin', 'kr_pins_applied'
 ];
 
 function buildBackupSnapshot() {
@@ -5867,6 +5893,7 @@ function openDirAddTask() {
   addNameField.placeholder = 'e.g. Change over tiny house';
   document.getElementById('dir-delete-wrap').style.display = 'none';
   document.getElementById('dir-duplicate-wrap').style.display = 'none';
+  document.getElementById('dir-merge-wrap').style.display = 'none';
   populateDirGroupDropdown('');
   renderDirEquipmentList([]);
   renderDirSubtaskList([]);
@@ -5897,6 +5924,8 @@ function openDirEditTask(encodedKey) {
   editNameField.placeholder = 'e.g. Change over tiny house';
   document.getElementById('dir-delete-wrap').style.display = 'block';
   document.getElementById('dir-duplicate-wrap').style.display = 'block';
+  document.getElementById('dir-merge-wrap').style.display = 'block';
+  renderMergedList(task);
   populateDirGroupDropdown(realGrp);
   const equip = matches.map(r => r.equipment).filter(Boolean);
   renderDirEquipmentList(equip);
@@ -5958,6 +5987,7 @@ function duplicateDirTask() {
   document.getElementById('dir-modal-title').textContent = 'Duplicate Task';
   document.getElementById('dir-delete-wrap').style.display = 'none';
   document.getElementById('dir-duplicate-wrap').style.display = 'none';
+  document.getElementById('dir-merge-wrap').style.display = 'none';
 
   setLocationDisplay(entry && entry.location ? entry.location : '');
   setFrequencyDisplay(realFreq);
@@ -5973,6 +6003,173 @@ function duplicateDirTask() {
   updateRestoreSubtasksBtn('');
 
   showToast('Copied — give it a new name and tweak as needed');
+}
+
+// ══════════════════════════════════════════════
+//  MERGE / UN-MERGE TASKS  (manager only)
+// ══════════════════════════════════════════════
+// Fold task B into task A: its pinned notes, checklist items, how-to video and
+// flags move into A, and B is removed from the directory. A device-local record
+// (kr_task_merges) snapshots B so the whole thing can be un-merged later.
+// Timesheet history is NOT re-assigned (each entry keeps its original task name).
+function getTaskMerges() { return JSON.parse(localStorage.getItem('kr_task_merges') || '[]'); }
+function saveTaskMerges(a) { localStorage.setItem('kr_task_merges', JSON.stringify(a)); }
+function _uniqueDirTaskNames() { return [...new Set(DIRECTORY.map(r => r.task).filter(Boolean))]; }
+function _escTxt(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+let _mergePrimary = null;
+function openMergePicker() {
+  if (isWorker()) return;
+  const primary = (document.getElementById('dir-task').value || '').trim();
+  if (!primary || !_dirEditingKey) { showToast('Save this task first'); return; }
+  _mergePrimary = primary;
+  document.getElementById('merge-primary-name').textContent = primary;
+  document.getElementById('merge-picker-search').value = '';
+  renderMergePickerList();
+  openModal('modal-merge-picker');
+}
+function renderMergePickerList() {
+  const q = (document.getElementById('merge-picker-search').value || '').toLowerCase().trim();
+  const others = _uniqueDirTaskNames()
+    .filter(t => t !== _mergePrimary)
+    .filter(t => !q || t.toLowerCase().includes(q))
+    .sort((a, b) => a.localeCompare(b));
+  const list = document.getElementById('merge-picker-list');
+  if (!others.length) { list.innerHTML = '<div style="padding:24px 0;color:var(--subtext);text-align:center;">No other tasks to merge in.</div>'; return; }
+  const notes = getTaskNotes(), vids = getTaskVideos();
+  list.innerHTML = others.map(t => {
+    const nPins = (notes[t] || []).length, nSubs = (SUBTASKS[t] || []).length;
+    const bits = [nPins ? '📌 ' + nPins : '', nSubs ? '☑️ ' + nSubs : '', vids[t] ? '🎥' : ''].filter(Boolean).join(' · ');
+    return `<div data-merge-task="${_attr(t)}" onclick="confirmMergeRow(this)" style="padding:14px 8px;border-bottom:1px solid var(--border);cursor:pointer;">
+      <div style="font-size:15px;color:var(--text);">${_escTxt(t)}</div>
+      ${bits ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">${bits}</div>` : ''}</div>`;
+  }).join('');
+}
+function confirmMergeRow(el) {
+  const secondary = el.dataset.mergeTask;
+  if (!_mergePrimary || !secondary || secondary === _mergePrimary) return;
+  if (!confirm('Merge “' + secondary + '” into “' + _mergePrimary + '”?\n\nIts notes, checklist, video and flags move into “' + _mergePrimary + '”, and “' + secondary + '” is removed from the directory. You can un-merge later from this task’s editor.')) return;
+  mergeTasks(_mergePrimary, secondary);
+}
+function mergeTasks(primary, secondary) {
+  if (!primary || !secondary || primary === secondary) return;
+  const notes = getTaskNotes(), vids = getTaskVideos(), flags = getChecklistFlags();
+  const rec = {
+    id: 'mg' + Date.now() + Math.random().toString(36).slice(2, 5),
+    mergedAt: new Date().toISOString(),
+    primary, secondary,
+    secondaryRows: DIRECTORY.filter(r => r.task === secondary)
+      .map(r => ({ frequency: r.frequency || '', group: r.group || '', task: secondary, equipment: r.equipment || '', location: r.location || '' })),
+    secondaryChecklist: (SUBTASKS[secondary] || []).slice(),
+    secondaryVideo: vids[secondary] || null,
+    secondaryFlags: flags[secondary] ? JSON.parse(JSON.stringify(flags[secondary])) : null,
+    movedNoteIds: [], addedChecklistItems: [], addedFlagKeys: [], movedVideo: false,
+  };
+  // Notes — tag with the merge id and move into primary
+  const secNotes = notes[secondary] || [];
+  if (secNotes.length) {
+    notes[primary] = notes[primary] || [];
+    secNotes.forEach(n => { n._mergeId = rec.id; rec.movedNoteIds.push(n.id); notes[primary].push(n); });
+    delete notes[secondary];
+    saveTaskNotes(notes);
+  }
+  // Checklist — append items not already present (case-insensitive)
+  const primList = SUBTASKS[primary] || (SUBTASKS[primary] = []);
+  const haveLower = new Set(primList.map(s => s.trim().toLowerCase()));
+  (SUBTASKS[secondary] || []).forEach(s => {
+    if (!haveLower.has(s.trim().toLowerCase())) { primList.push(s); haveLower.add(s.trim().toLowerCase()); rec.addedChecklistItems.push(s); }
+  });
+  delete SUBTASKS[secondary];
+  localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
+  // Video — move only if primary has none of its own
+  if (!vids[primary] && vids[secondary]) { vids[primary] = vids[secondary]; rec.movedVideo = true; }
+  if (vids[secondary]) delete vids[secondary];
+  saveTaskVideos(vids);
+  // Flags — add secondary's for items primary doesn't already flag
+  if (rec.secondaryFlags) {
+    flags[primary] = flags[primary] || {};
+    Object.keys(rec.secondaryFlags).forEach(item => {
+      if (!(item in flags[primary])) { flags[primary][item] = rec.secondaryFlags[item]; rec.addedFlagKeys.push(item); }
+    });
+    if (!Object.keys(flags[primary]).length) delete flags[primary];
+    delete flags[secondary];
+    saveChecklistFlags(flags);
+  }
+  // Planner blocks — re-point to primary (day-scoped/ephemeral; not restored on un-merge)
+  ['kr_planner', 'kr_planner_ethan'].forEach(k => {
+    const arr = JSON.parse(localStorage.getItem(k) || '[]'); let ch = false;
+    arr.forEach(b => { if (b.task === secondary) { b.task = primary; ch = true; } });
+    if (ch) localStorage.setItem(k, JSON.stringify(arr));
+  });
+  // Remove secondary from the directory
+  DIRECTORY = DIRECTORY.filter(r => r.task !== secondary);
+  localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
+  const merges = getTaskMerges(); merges.push(rec); saveTaskMerges(merges);
+  closeModal('modal-merge-picker');
+  renderMergedList(primary);
+  renderDirectory();
+  autoBackup();
+  showToast('Merged “' + secondary + '” into “' + primary + '” — Publish to share');
+}
+function renderMergedList(task) {
+  const el = document.getElementById('dir-merged-list');
+  if (!el) return;
+  const mine = getTaskMerges().filter(m => m.primary === task);
+  el.innerHTML = mine.map(m => `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:11px 12px;border:1px solid var(--border);border-radius:10px;background:var(--bg);">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:14px;color:var(--text);">🔗 Merged in “${_escTxt(m.secondary)}”</div>
+        <div style="font-size:11px;color:var(--subtext);margin-top:2px;">${_inboxStamp(m.mergedAt)}</div>
+      </div>
+      <button onclick="unmergeTask('${m.id}')" style="flex-shrink:0;background:none;border:1px solid var(--blue);color:var(--blue);border-radius:8px;padding:8px 12px;font-size:13px;font-weight:600;cursor:pointer;">Un-merge</button>
+    </div>`).join('');
+}
+function unmergeTask(id) {
+  const merges = getTaskMerges();
+  const rec = merges.find(m => m.id === id);
+  if (!rec) return;
+  if (!confirm('Un-merge “' + rec.secondary + '” back out of “' + rec.primary + '”?')) return;
+  const { primary, secondary } = rec;
+  // Directory — restore secondary's rows (skip any exact duplicate already present)
+  const dup = row => DIRECTORY.some(r => r.task === row.task && (r.frequency || '') === (row.frequency || '') && (r.group || '') === (row.group || '') && (r.equipment || '') === (row.equipment || ''));
+  (rec.secondaryRows || []).forEach(row => { if (!dup(row)) DIRECTORY.push({ ...row }); });
+  localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
+  // Checklist — restore secondary's full list; strip what we added to primary
+  SUBTASKS[secondary] = (rec.secondaryChecklist || []).slice();
+  if (rec.addedChecklistItems && rec.addedChecklistItems.length) {
+    const addedLower = new Set(rec.addedChecklistItems.map(s => s.trim().toLowerCase()));
+    SUBTASKS[primary] = (SUBTASKS[primary] || []).filter(s => !addedLower.has(s.trim().toLowerCase()));
+    if (!SUBTASKS[primary].length) delete SUBTASKS[primary];
+  }
+  localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
+  // Notes — pull the tagged notes back to secondary
+  const notes = getTaskNotes();
+  const prim = notes[primary] || [];
+  const back = prim.filter(n => n._mergeId === id);
+  if (back.length) {
+    notes[primary] = prim.filter(n => n._mergeId !== id);
+    if (!notes[primary].length) delete notes[primary];
+    back.forEach(n => { delete n._mergeId; });
+    notes[secondary] = (notes[secondary] || []).concat(back);
+    saveTaskNotes(notes);
+  }
+  // Video — restore secondary's; if we'd moved it into primary, remove it there
+  const vids = getTaskVideos();
+  if (rec.secondaryVideo) vids[secondary] = rec.secondaryVideo;
+  if (rec.movedVideo) delete vids[primary];
+  saveTaskVideos(vids);
+  // Flags — restore secondary's; remove the keys we added to primary
+  const flags = getChecklistFlags();
+  if (rec.secondaryFlags) flags[secondary] = JSON.parse(JSON.stringify(rec.secondaryFlags));
+  if (rec.addedFlagKeys && rec.addedFlagKeys.length && flags[primary]) {
+    rec.addedFlagKeys.forEach(k => { delete flags[primary][k]; });
+    if (!Object.keys(flags[primary]).length) delete flags[primary];
+  }
+  saveChecklistFlags(flags);
+  saveTaskMerges(merges.filter(m => m.id !== id));
+  renderMergedList(primary);
+  renderDirectory();
+  autoBackup();
+  showToast('Un-merged “' + secondary + '” — Publish to share');
 }
 
 // ── Equipment Master List ──
@@ -7921,6 +8118,14 @@ function saveDirTask() {
       // Checklist-item flags keyed by task name
       const cflags = getChecklistFlags();
       if (cflags[oldTask]) { cflags[task] = Object.assign(cflags[task] || {}, cflags[oldTask]); delete cflags[oldTask]; saveChecklistFlags(cflags); }
+      // Merge records reference tasks by name
+      const _mg = getTaskMerges(); let _mgCh = false;
+      _mg.forEach(m => {
+        if (m.primary === oldTask) { m.primary = task; _mgCh = true; }
+        if (m.secondary === oldTask) { m.secondary = task; _mgCh = true; }
+        (m.secondaryRows || []).forEach(r => { if (r.task === oldTask) { r.task = task; _mgCh = true; } });
+      });
+      if (_mgCh) saveTaskMerges(_mg);
       // Planner blocks (my day + Ethan's day)
       ['kr_planner', 'kr_planner_ethan'].forEach(k => {
         const arr = JSON.parse(localStorage.getItem(k) || '[]');
@@ -7990,6 +8195,10 @@ function deleteDirTask() {
     if (tvids[task]) { delete tvids[task]; saveTaskVideos(tvids); }
     const cflags = getChecklistFlags();
     if (cflags[task]) { delete cflags[task]; saveChecklistFlags(cflags); }
+    // Drop any merge records for this (now-gone) task — can't un-merge into it
+    const mg = getTaskMerges();
+    const kept = mg.filter(m => m.primary !== task && m.secondary !== task);
+    if (kept.length !== mg.length) saveTaskMerges(kept);
   }
   localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
   localStorage.setItem('kr_subtasks', JSON.stringify(SUBTASKS));
