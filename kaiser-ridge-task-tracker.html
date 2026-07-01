@@ -1203,8 +1203,9 @@
       <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
         <div class="settings-label" style="font-weight:600;">Storage</div>
         <div style="font-size:13px; color:var(--subtext); line-height:1.6;">
-          The phone gives the app ~5&nbsp;MB. Photos saved on-device (when Drive couldn’t be reached)
-          are the usual space hog — move them to Drive to free room.
+          Notes, pinned notes and timesheets live in the phone’s big store, which grows as needed —
+          capture forever, delete nothing. Settings and the task library use a separate small store.
+          Photos saved on-device (when Drive couldn’t be reached) still count until moved to Drive.
         </div>
         <div id="storage-usage" style="font-size:13px; color:var(--subtext); line-height:1.7; width:100%;"></div>
       </div>
@@ -2225,7 +2226,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.82';
+const APP_VERSION = '2026-06-21.83';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3987,7 +3988,7 @@ function updateTaskOptions() { onGroupChange(); }
 function refreshCurrentScreen() {
   try {
     DIRECTORY = JSON.parse(localStorage.getItem('kr_directory') || 'null') || DIRECTORY;
-    entries   = JSON.parse(localStorage.getItem('kr_entries')   || '[]');
+    entries   = JSON.parse(_storeGet('kr_entries')   || '[]');
     SUBTASKS  = JSON.parse(localStorage.getItem('kr_subtasks')  || 'null') || SUBTASKS;
     const cs  = localStorage.getItem('kr_clock');
     clockState = cs ? JSON.parse(cs) : null;
@@ -4499,6 +4500,7 @@ const AUTO_SYNC_DELAY_MS = 5 * 60 * 1000;
 let _autoSyncing = false;
 async function autoSyncPending() {
   if (_autoSyncing) return;
+  await _kvReady;   // entries must be fully loaded before judging what's unsynced
   const url = localStorage.getItem('kr_sheet_url');
   if (!url) return;
   const now = Date.now();
@@ -4818,8 +4820,87 @@ function _safeSetItem(key, val) {
   }
 }
 
+// ── Big-store layer (IndexedDB) ──────────────────────────────────────────────
+// localStorage is capped at ~5MB, but notes/photos/timesheets accumulate
+// forever by design — capture a thought, grab a screenshot, never delete.
+// So the ever-growing stores live in IndexedDB instead (hundreds of MB to
+// GBs). A RAM cache (_kv) keeps every read synchronous, so the rest of the
+// app is unchanged; writes update RAM first then persist async. If IndexedDB
+// is unavailable (rare), everything falls back to localStorage as before.
+const KR_IDB_KEYS = ['kr_inbox', 'kr_task_notes', 'kr_entries', 'kr_last_backup'];
+let _kv = {}, _idb = null, _idbOk = false;
+// Resolves once hydration+migration are done. Background jobs that write the
+// big stores (pin pulls, auto-sync) await this so they can never race the
+// boot and write against half-loaded data.
+let _kvReadyResolve; const _kvReady = new Promise(r => { _kvReadyResolve = r; });
+function _idbOpen() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) return reject(new Error('no idb'));
+    const req = indexedDB.open('kaiser-ridge', 1);
+    req.onupgradeneeded = () => { req.result.createObjectStore('kv'); };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+function _idbSet(key, val) {
+  if (!_idbOk) return;
+  try {
+    const tx = _idb.transaction('kv', 'readwrite');
+    tx.objectStore('kv').put(val, key);
+    tx.onerror = () => showToast('⚠️ Could not persist to storage — export a backup to be safe');
+  } catch (e) { showToast('⚠️ Could not persist to storage — export a backup to be safe'); }
+}
+function _idbDel(key) { if (_idbOk) { try { _idb.transaction('kv', 'readwrite').objectStore('kv').delete(key); } catch (e) {} } }
+// Synchronous read/write facade — RAM cache first, localStorage for the rest.
+function _storeGet(key) { return (key in _kv) ? _kv[key] : localStorage.getItem(key); }
+function _storeSet(key, val) {
+  if (_idbOk && KR_IDB_KEYS.includes(key)) { _kv[key] = val; _idbSet(key, val); return true; }
+  return _safeSetItem(key, val);
+}
+function _storeRemove(key) { delete _kv[key]; _idbDel(key); localStorage.removeItem(key); }
+async function _krdbBoot() {
+  try { _idb = await _idbOpen(); _idbOk = true; } catch (e) { _kvReadyResolve(); return; } // no IndexedDB → localStorage as before
+  // Ask the OS to protect this app's storage from cleanup eviction.
+  if (navigator.storage && navigator.storage.persist) { try { navigator.storage.persist(); } catch (e) {} }
+  // Hydrate the RAM cache from IndexedDB.
+  await new Promise(resolve => {
+    try {
+      const tx = _idb.transaction('kv', 'readonly'), st = tx.objectStore('kv');
+      const kr = st.getAllKeys(), vr = st.getAll();
+      tx.oncomplete = () => { (kr.result || []).forEach((k, i) => { _kv[k] = vr.result[i]; }); resolve(); };
+      tx.onerror = () => resolve();
+    } catch (e) { resolve(); }
+  });
+  // One-time migration: move the big keys out of localStorage, freeing the
+  // 5MB pool for settings/library. The localStorage copy is deleted only
+  // after IndexedDB confirms the write, so a failure can't lose anything.
+  for (const key of KR_IDB_KEYS) {
+    const ls = localStorage.getItem(key);
+    if (ls === null) continue;
+    if (key in _kv) { localStorage.removeItem(key); continue; } // already migrated — stale duplicate
+    _kv[key] = ls;
+    await new Promise(resolve => {
+      try {
+        const tx = _idb.transaction('kv', 'readwrite');
+        tx.objectStore('kv').put(ls, key);
+        tx.oncomplete = () => { localStorage.removeItem(key); resolve(); };
+        tx.onerror = () => { delete _kv[key]; resolve(); }; // keep the localStorage copy
+      } catch (e) { delete _kv[key]; resolve(); }
+    });
+  }
+  // Re-read the globals now the real data is in the cache, and repaint.
+  entries = JSON.parse(_storeGet('kr_entries') || '[]');
+  _kvReadyResolve();
+  renderClockState();
+  updateInboxCount();
+  updateSummary();
+  const ts = document.getElementById('screen-timesheets');
+  if (ts && ts.classList.contains('active')) renderTimesheets();
+}
+_krdbBoot(); // async — completes after the script finishes loading
+
 function saveEntries() {
-  _safeSetItem('kr_entries', JSON.stringify(entries));
+  _storeSet('kr_entries', JSON.stringify(entries));
   updateSummary();
 }
 
@@ -4844,7 +4925,7 @@ const KR_BACKUP_KEYS = [
 function buildBackupSnapshot() {
   const data = {};
   KR_BACKUP_KEYS.forEach(key => {
-    const raw = localStorage.getItem(key);
+    const raw = _storeGet(key);   // big keys live in IndexedDB, rest in localStorage
     if (raw !== null) data[key] = raw;
   });
   return {
@@ -4860,7 +4941,7 @@ function buildBackupSnapshot() {
 function autoBackup() {
   try {
     const snapshot = buildBackupSnapshot();
-    localStorage.setItem('kr_last_backup', JSON.stringify(snapshot));
+    _storeSet('kr_last_backup', JSON.stringify(snapshot));
     localStorage.setItem('kr_last_backup_at', snapshot.createdAt);
     updateLastBackupLabel();
   } catch (err) {
@@ -4886,24 +4967,41 @@ function _localPhotoCount() {
 function updateStorageUsage() {
   const el = document.getElementById('storage-usage');
   if (!el) return;
-  const sizes = [];
-  let total = 0;
+  const label = { kr_inbox: '📥 Inbox notes', kr_task_notes: '📌 Pinned notes', kr_entries: '🕐 Timesheets', kr_last_backup: '💾 Auto-snapshot copy', kr_subtasks: '☑️ Checklists', kr_directory: '📂 Task directory' };
+  const row = ([k, b]) => `<div style="display:flex;justify-content:space-between;"><span>${label[k] || k}</span><span>${_fmtKB(b)}</span></div>`;
+  // Big store (IndexedDB) — where the ever-growing data lives; effectively unlimited.
+  let bigHtml = '';
+  if (_idbOk) {
+    let bigTotal = 0;
+    const bigSizes = Object.keys(_kv).map(k => { const b = ((_kv[k] || '').length + k.length) * 2; bigTotal += b; return [k, b]; }).sort((a, b) => b[1] - a[1]);
+    bigHtml = `<div style="display:flex;justify-content:space-between;font-weight:600;color:var(--text);"><span>Notes &amp; timesheets (big store)</span><span>${_fmtKB(bigTotal)}</span></div>
+      <div style="font-size:12px;margin:2px 0 6px;" id="storage-quota-line">Grows as needed — no practical limit on this phone.</div>
+      ${bigSizes.slice(0, 4).map(row).join('')}`;
+  }
+  // Small store (localStorage, ~5MB) — settings, library, live clock.
+  let lsTotal = 0; const lsSizes = [];
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i);
     const bytes = ((localStorage.getItem(k) || '').length + k.length) * 2; // UTF-16
-    total += bytes;
-    sizes.push([k, bytes]);
+    lsTotal += bytes;
+    lsSizes.push([k, bytes]);
   }
-  sizes.sort((a, b) => b[1] - a[1]);
-  const label = { kr_inbox: '📥 Inbox notes', kr_task_notes: '📌 Pinned notes', kr_entries: '🕐 Timesheets', kr_last_backup: '💾 Auto-snapshot copy', kr_subtasks: '☑️ Checklists', kr_directory: '📂 Task directory' };
-  const top = sizes.slice(0, 5).map(([k, b]) => `<div style="display:flex;justify-content:space-between;"><span>${label[k] || k}</span><span>${_fmtKB(b)}</span></div>`).join('');
-  const pct = Math.min(100, Math.round(total / 5242880 * 100));
+  lsSizes.sort((a, b) => b[1] - a[1]);
+  const pct = Math.min(100, Math.round(lsTotal / 5242880 * 100));
   const barColor = pct > 85 ? 'var(--red)' : pct > 60 ? '#FF9500' : 'var(--green)';
   const nLocal = _localPhotoCount();
-  el.innerHTML = `<div style="display:flex;justify-content:space-between;font-weight:600;color:var(--text);"><span>Used</span><span>${_fmtKB(total)} · ~${pct}%</span></div>
+  el.innerHTML = `${bigHtml}
+    <div style="display:flex;justify-content:space-between;font-weight:600;color:var(--text);margin-top:${_idbOk ? '10px' : '0'};"><span>Settings &amp; library (5&nbsp;MB store)</span><span>${_fmtKB(lsTotal)} · ~${pct}%</span></div>
     <div style="height:6px;border-radius:3px;background:var(--border);margin:4px 0 8px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${barColor};"></div></div>
-    ${top}
+    ${lsSizes.slice(0, 3).map(row).join('')}
     <div style="margin-top:6px;">📷 On-device photos: <b style="color:${nLocal ? 'var(--red)' : 'var(--green)'};">${nLocal}</b>${nLocal ? ' — move them to Drive below' : ' — all photos are on Drive ✓'}</div>`;
+  // Fill in the phone's real quota for the big store when the browser can tell us.
+  if (_idbOk && navigator.storage && navigator.storage.estimate) {
+    navigator.storage.estimate().then(est => {
+      const q = document.getElementById('storage-quota-line');
+      if (q && est && est.quota) q.textContent = 'This phone allows up to ~' + (est.quota >= 1073741824 ? (est.quota / 1073741824).toFixed(1) + ' GB' : Math.round(est.quota / 1048576) + ' MB') + ' — grows as needed.';
+    }).catch(() => {});
+  }
 }
 // Retry uploading every base64 photo (saved on-device when Drive was
 // unreachable) to Drive, swapping each for its tiny file id. The big fix
@@ -5034,7 +5132,7 @@ function updateBackupBanner() {
 function exportBackup() {
   // Make sure the snapshot is bang up to date before exporting
   autoBackup();
-  const snapshot = JSON.parse(localStorage.getItem('kr_last_backup'));
+  const snapshot = JSON.parse(_storeGet('kr_last_backup'));
   const json = JSON.stringify(snapshot, null, 2);
   const stamp = new Date().toISOString().slice(0,10);
   const filename = `kaiser-ridge-backup-${stamp}.json`;
@@ -5242,7 +5340,7 @@ function restoreBackupFromFile(event) {
       if (!confirm(`Restore from this backup (made ${new Date(snapshot.createdAt).toLocaleString()})?\n\nThis will overwrite your current directory, checklists, guides, settings, and entries (${count} items) with what's in the backup.`)) return;
 
       Object.entries(snapshot.data).forEach(([key, raw]) => {
-        localStorage.setItem(key, raw);
+        _storeSet(key, raw);   // big keys → IndexedDB, rest → localStorage
       });
       showToast('Backup restored — reloading…');
       setTimeout(() => location.reload(), 900);
@@ -5259,7 +5357,7 @@ function confirmClear() {
   if (!confirm('Clear all local data? This cannot be undone.')) return;
   entries = [];
   clockState = null;
-  localStorage.removeItem('kr_entries');
+  _storeRemove('kr_entries');
   localStorage.removeItem('kr_clock');
   renderClockState();
   renderTimesheets();
@@ -6982,9 +7080,9 @@ function openItemOrigin(encText) {
   openModal('modal-item-origin');
 }
 // ── Quick-capture Inbox: catch a thought fast, review/clear it later ──────────
-function getInbox() { return JSON.parse(localStorage.getItem('kr_inbox') || '[]'); }
+function getInbox() { return JSON.parse(_storeGet('kr_inbox') || '[]'); }
 function saveInbox(arr) {
-  if (!_safeSetItem('kr_inbox', JSON.stringify(arr))) return false;
+  if (!_storeSet('kr_inbox', JSON.stringify(arr))) return false;
   updateInboxCount();
   return true;
 }
@@ -7522,8 +7620,8 @@ function deleteInboxItem(id) {
 
 // Per-task "pinned notes" — sticky reminders that show at the top of a task each
 // time it's started, until ticked off (then gone). Device-local (not synced).
-function getTaskNotes() { return JSON.parse(localStorage.getItem('kr_task_notes') || '{}'); }
-function saveTaskNotes(o) { return _safeSetItem('kr_task_notes', JSON.stringify(o)); }
+function getTaskNotes() { return JSON.parse(_storeGet('kr_task_notes') || '{}'); }
+function saveTaskNotes(o) { return _storeSet('kr_task_notes', JSON.stringify(o)); }
 
 // ── How-to videos per task (kr_task_videos) — a tiny reference only, never bytes.
 // { provider:'youtube', id, addedBy, addedAt }. Rides the Task Library publish so
@@ -8816,6 +8914,7 @@ async function sendPlannerToEthan() {
 // Worker: pull pinned notes the manager sent me, into my task notes (dedup by id).
 async function pullPins() {
   if (!isWorker()) return;
+  await _kvReady;   // never write pinned notes against half-loaded data
   const url = localStorage.getItem('kr_sheet_url');
   if (!url) return;
   const who = getUserName().trim();
