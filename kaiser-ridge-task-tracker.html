@@ -59,7 +59,7 @@
   body.kr-wide { max-width: none; }
 
   /* ── SCREENS ── */
-  .screen { display: none; flex-direction: column; height: 100vh; height: 100dvh; padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom)); }
+  .screen { display: none; flex-direction: column; height: 100vh; height: 100dvh; padding-top: env(safe-area-inset-top); padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom)); }
   .screen.active { display: flex; }
 
   /* ── HEADER ── */
@@ -209,6 +209,7 @@
     z-index: 40;
     flex-direction: column;
     pointer-events: none;
+    padding-top: env(safe-area-inset-top);
   }
   .clock-running-overlay.active { display: flex; }
   .clock-running-overlay > * { pointer-events: auto; }
@@ -219,7 +220,7 @@
 
   .run-toolbar {
     display: flex; justify-content: space-between; align-items: center;
-    padding: calc(14px + env(safe-area-inset-top)) 22px 2px; flex-shrink: 0;
+    padding: 14px 22px 2px; flex-shrink: 0;
   }
   .run-week { font-size: 13px; color: #6d7488; font-variant-numeric: tabular-nums; }
   .run-tools { display: flex; gap: 20px; }
@@ -2265,7 +2266,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.91';
+const APP_VERSION = '2026-06-21.92';
 
 // ════════════════════════════════
 //  DIRECTORY
