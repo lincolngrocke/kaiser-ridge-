@@ -2270,7 +2270,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.87';
+const APP_VERSION = '2026-06-21.88';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2552,6 +2552,7 @@ window.addEventListener('load', () => {
   autoSyncPending();                       // catch up anything pending from a previous session
   setInterval(autoSyncPending, 60000);     // push entries ~5 min after clock-out, no manual sync needed
   updateHeaderDate();
+  migrateLegacyLocations();       // existing users keep old locations; fresh installs start empty
   populateLocationDropdown();
   populateTsLocationChips();
   renderClockState();
@@ -6143,11 +6144,28 @@ function selectFrequency(name, isNew) {
   closeModal('modal-frequency-picker');
 }
 
-const LOCATIONS = ['Property','Heritage','Serene','Kaiser','Shed','BESS#2'];
+// No built-in locations — a fresh app starts with none, and the user adds their
+// own via the "find or add a location" picker (stored in kr_extra_locations).
+const LOCATIONS = [];
+// The old Kaiser Ridge built-ins, folded into existing users' saved list once
+// (see migrateLegacyLocations) so they aren't lost now that LOCATIONS is empty.
+const _LEGACY_LOCATIONS = ['Property','Heritage','Serene','Kaiser','Shed','BESS#2'];
 
 function getAllLocations() {
   const extras = JSON.parse(localStorage.getItem('kr_extra_locations') || '[]');
   return [...new Set([...LOCATIONS, ...extras])];
+}
+// One-time: existing users (who have jobs) keep the old built-in locations by
+// folding them into their saved list; a genuinely fresh install (no jobs) skips
+// this and starts with a clean, empty location picker.
+function migrateLegacyLocations() {
+  if (localStorage.getItem('kr_locations_migrated') === '1') return;
+  if (DIRECTORY.length) {
+    const extras = JSON.parse(localStorage.getItem('kr_extra_locations') || '[]');
+    const merged = [...new Set([..._LEGACY_LOCATIONS, ...extras])];
+    localStorage.setItem('kr_extra_locations', JSON.stringify(merged));
+  }
+  localStorage.setItem('kr_locations_migrated', '1');
 }
 
 function populateLocationDropdown(selectedVal) {
