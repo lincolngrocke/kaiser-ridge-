@@ -2270,7 +2270,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.88';
+const APP_VERSION = '2026-06-21.89';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6155,17 +6155,26 @@ function getAllLocations() {
   const extras = JSON.parse(localStorage.getItem('kr_extra_locations') || '[]');
   return [...new Set([...LOCATIONS, ...extras])];
 }
-// One-time: existing users (who have jobs) keep the old built-in locations by
-// folding them into their saved list; a genuinely fresh install (no jobs) skips
-// this and starts with a clean, empty location picker.
+// Keep the old built-in locations ONLY for installs that actually use them (real
+// Kaiser Ridge users, whose jobs reference Property/Serene/etc.). Keyed off real
+// usage, not "has any jobs" — a fresh starter-pack user's jobs carry no location,
+// so they get none. The _v2 flag re-runs this to undo an earlier bug that added
+// the legacy locations to fresh Groovework installs.
 function migrateLegacyLocations() {
-  if (localStorage.getItem('kr_locations_migrated') === '1') return;
-  if (DIRECTORY.length) {
-    const extras = JSON.parse(localStorage.getItem('kr_extra_locations') || '[]');
-    const merged = [...new Set([..._LEGACY_LOCATIONS, ...extras])];
-    localStorage.setItem('kr_extra_locations', JSON.stringify(merged));
+  if (localStorage.getItem('kr_locations_migrated_v2') === '1') return;
+  const used = new Set();
+  DIRECTORY.forEach(r => { if (r.location) used.add(r.location); });
+  let extras = JSON.parse(localStorage.getItem('kr_extra_locations') || '[]');
+  const usesLegacy = _LEGACY_LOCATIONS.some(l => used.has(l));
+  if (usesLegacy) {
+    // A real Kaiser Ridge install — keep ALL the old built-ins.
+    _LEGACY_LOCATIONS.forEach(l => { if (!extras.includes(l)) extras.push(l); });
+  } else {
+    // Fresh Groovework install — drop any legacy built-ins that slipped in.
+    extras = extras.filter(l => !_LEGACY_LOCATIONS.includes(l));
   }
-  localStorage.setItem('kr_locations_migrated', '1');
+  localStorage.setItem('kr_extra_locations', JSON.stringify(extras));
+  localStorage.setItem('kr_locations_migrated_v2', '1');
 }
 
 function populateLocationDropdown(selectedVal) {
