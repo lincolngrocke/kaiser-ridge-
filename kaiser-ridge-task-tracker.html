@@ -4,8 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<title>Kaiser Ridge Task Tracker</title>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Groovework">
+<meta name="theme-color" content="#0B0B0C">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Groovework</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
@@ -869,7 +873,7 @@
 <div class="screen active" id="screen-clock">
   <div class="header">
     <div>
-      <div class="header-title">Kaiser Ridge</div>
+      <div class="header-title">Groovework</div>
       <div class="header-sub" id="header-date"></div>
     </div>
     <div class="header-right" id="header-week-hours">0.00h this week</div>
@@ -1106,7 +1110,7 @@
         <div class="settings-label">Your Name</div>
       </div>
       <div class="settings-row">
-        <input class="settings-input" id="user-name" type="text" placeholder="e.g. Lincoln" oninput="saveName()" autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false" />
+        <input class="settings-input" id="user-name" type="text" placeholder="e.g. Alex" oninput="saveName()" autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false" />
       </div>
     </div>
     <div class="settings-note" style="margin-top:0">
@@ -1114,6 +1118,21 @@
     </div>
 
     <div class="settings-section" style="margin-top:16px;">
+      <div class="settings-row" style="justify-content:space-between;align-items:center;">
+        <div class="settings-label" style="font-weight:600;">Team features</div>
+        <label style="position:relative;display:inline-block;width:51px;height:31px;flex-shrink:0;">
+          <input type="checkbox" id="team-toggle" onchange="setTeamEnabled(this.checked)" style="opacity:0;width:0;height:0;">
+          <span id="team-toggle-track" style="position:absolute;cursor:pointer;inset:0;background:#E5E5EA;border-radius:31px;transition:.3s;">
+            <span id="team-toggle-thumb" style="position:absolute;height:27px;width:27px;left:2px;bottom:2px;background:#fff;border-radius:50%;transition:.3s;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></span>
+          </span>
+        </label>
+      </div>
+      <div class="settings-note" style="margin-top:8px">
+        Turn on if someone else works from their own device. Adds a Manager/Worker role and lets you plan and pin jobs to their phone. Leave off if it's just you.
+      </div>
+    </div>
+
+    <div class="settings-section" style="margin-top:16px;display:none;" id="settings-role-section">
       <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
         <div class="settings-label" style="font-weight:600;">Device Role</div>
         <div style="display:flex;gap:6px;width:100%;">
@@ -1121,8 +1140,8 @@
           <button id="role-seg-worker" class="dir-seg" onclick="setRole('worker')">Worker</button>
         </div>
         <div style="font-size:13px; color:var(--subtext); line-height:1.6;">
-          <strong>Manager</strong> can edit everything. <strong>Worker</strong> (e.g. Ethan) can clock in/out, add notes,
-          tag time to a project step, and view the planner — but can't add or edit tasks, equipment, projects or
+          <strong>Manager</strong> can edit everything. <strong>Worker</strong> can clock in/out, add notes,
+          tag time to a project step, and view the planner — but can't add or edit jobs, equipment, projects or
           planner blocks. It's a tidiness guardrail, not a security lock.
         </div>
       </div>
@@ -1385,6 +1404,27 @@
   <div class="running-buttons">
 <button class="btn-pause" id="btn-pause" onclick="breakButtonTap()">☕ Start Break</button>
 <button class="btn-clock-out" style="flex:1" onclick="openTimeModal('out')">Clock Out</button>
+  </div>
+</div>
+
+<!-- ══════════════ FIRST-RUN ONBOARDING ══════════════ -->
+<div class="modal-backdrop" id="modal-onboard" style="z-index:900;background:var(--bg);align-items:stretch;">
+  <div style="position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;padding:calc(env(safe-area-inset-top) + 44px) 24px calc(env(safe-area-inset-bottom) + 32px);">
+    <div style="text-align:center;font-size:44px;line-height:1;margin-bottom:10px;">👋</div>
+    <div style="text-align:center;font-size:24px;font-weight:700;color:var(--text);">Welcome to Groovework</div>
+    <div style="text-align:center;font-size:15px;color:var(--subtext);line-height:1.6;margin:10px 0 26px;">Capture the jobs you do, time your tasks, and watch the app get smarter about how long things take — and the best order to do them in.</div>
+
+    <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:6px;">WHAT SHOULD WE CALL YOU?</div>
+    <input id="onboard-name" type="text" placeholder="Your name" autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false" style="width:100%;padding:14px;border:1px solid var(--border);border-radius:12px;background:var(--card);color:var(--text);font-size:16px;margin-bottom:26px;">
+
+    <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:10px;">PICK A STARTING POINT</div>
+    <button onclick="onboardPick('household')" style="display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:10px;cursor:pointer;color:var(--text);font-size:16px;font-weight:600;">🏠 Household
+      <div style="font-weight:400;font-size:13px;color:var(--subtext);margin-top:4px;">A few home routines to get going — morning reset, cleaning, washing.</div></button>
+    <button onclick="onboardPick('trades')" style="display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:10px;cursor:pointer;color:var(--text);font-size:16px;font-weight:600;">🔧 Trade / Work
+      <div style="font-weight:400;font-size:13px;color:var(--subtext);margin-top:4px;">Start-of-day, pack-down, tool maintenance and a vehicle check.</div></button>
+    <button onclick="onboardPick('empty')" style="display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;cursor:pointer;color:var(--text);font-size:16px;font-weight:600;">✨ Start empty
+      <div style="font-weight:400;font-size:13px;color:var(--subtext);margin-top:4px;">Build your own jobs from scratch.</div></button>
+    <div style="font-size:12px;color:var(--subtext);text-align:center;margin-top:16px;">You can add, edit or delete anything later.</div>
   </div>
 </div>
 
@@ -2230,7 +2270,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.86';
+const APP_VERSION = '2026-06-21.87';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2295,7 +2335,10 @@ const DIRECTORY_FALLBACK = [
 ];
 
 // Load from localStorage first so local additions survive app restarts
-let DIRECTORY = JSON.parse(localStorage.getItem('kr_directory') || 'null') || [...DIRECTORY_FALLBACK];
+// Fresh installs start EMPTY (onboarding seeds a starter pack). Existing users
+// keep their stored data; the Kaiser Ridge DIRECTORY_FALLBACK is no longer the
+// default seed (kept defined only for restoreDefaultSubtasks lookups).
+let DIRECTORY = JSON.parse(localStorage.getItem('kr_directory') || 'null') || [];
 
 // Remove malformed directory rows — every real task has both a frequency and a
 // group (the editor requires them), so rows missing either are orphan/rogue
@@ -2419,12 +2462,65 @@ function initDarkMode() {
 //  INIT
 // ════════════════════════════════
 function getUserName() {
-  return localStorage.getItem('kr_user_name') || 'Lincoln';
+  return localStorage.getItem('kr_user_name') || '';
 }
 
 function saveName() {
   const val = document.getElementById('user-name').value.trim();
-  localStorage.setItem('kr_user_name', val || 'Lincoln');
+  localStorage.setItem('kr_user_name', val);
+}
+
+// ── First-run onboarding + starter packs ──
+// A brand-new install opens empty; onboarding sets the user's name and seeds one
+// of these small starter libraries (or nothing). Jobs → Tasks → optional Steps,
+// using the "one timer's worth of work" model (moment-anchored jobs).
+const STARTER_PACKS = {
+  household: {
+    jobs: [
+      { frequency:'Daily',  group:'Home',     task:'Morning Reset',            tasks:['Unload dishwasher','Wipe kitchen benches','Empty bins','Quick tidy living room'] },
+      { frequency:'Daily',  group:'Home',     task:'After-Dinner Close-down',  tasks:['Pack dishwasher','Wipe benches & stovetop','Set up coffee for the morning','Take out food scraps'] },
+      { frequency:'Weekly', group:'Bathroom', task:'Weekly Bathroom Clean',    tasks:['Clean toilet','Wipe basin & mirror','Scrub shower','Mop floor'] },
+      { frequency:'Weekly', group:'Laundry',  task:'Weekly Washing',           tasks:['Strip the beds','Wash a load','Hang out / dryer','Fold & put away'] },
+    ],
+    steps: { 'Scrub shower': ['Spray cleaner on tiles & screen','Leave 2 minutes','Scrub','Rinse down'] },
+  },
+  trades: {
+    jobs: [
+      { frequency:'Daily',  group:'Setup',       task:'Start of Day',              tasks:['Load & check tools','Fuel & water','Check today’s schedule'] },
+      { frequency:'Daily',  group:'Setup',       task:'End of Day',                tasks:['Clean up the site','Load tools','Log hours & photos'] },
+      { frequency:'Weekly', group:'Workshop',    task:'Weekly Tool Maintenance',   tasks:['Clean tools','Check for damage','Service & sharpen','Restock consumables'] },
+      { frequency:'Weekly', group:'Vehicle',     task:'Vehicle Check',             tasks:['Tyres & fluids','Fuel up','Tidy the cab'] },
+    ],
+    steps: {},
+  },
+};
+function seedStarterPack(key) {
+  const pack = STARTER_PACKS[key];
+  if (!pack) return;
+  const dir = [], subs = {};
+  pack.jobs.forEach(j => { dir.push({ frequency:j.frequency, group:j.group, task:j.task, equipment:'' }); subs[j.task] = j.tasks.slice(); });
+  DIRECTORY = dir; SUBTASKS = subs;
+  localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
+  _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
+  if (pack.steps && Object.keys(pack.steps).length) { const st = getSubtaskSteps(); Object.assign(st, pack.steps); saveSubtaskSteps(st); }
+}
+function onboardPick(key) {
+  const name = (document.getElementById('onboard-name').value || '').trim();
+  if (name) { localStorage.setItem('kr_user_name', name); const ni = document.getElementById('user-name'); if (ni) ni.value = name; }
+  if (key !== 'empty') seedStarterPack(key);
+  localStorage.setItem('kr_onboarded', '1');
+  closeModal('modal-onboard');
+  renderDirectory();
+  renderClockState();
+  showToast(name ? ('Welcome, ' + name + '! 👋') : 'Welcome to Groovework 👋');
+}
+// Show the welcome only on a genuinely fresh install (no data, never onboarded).
+function maybeShowOnboarding() {
+  if (localStorage.getItem('kr_onboarded') === '1') return;
+  if (DIRECTORY && DIRECTORY.length) { localStorage.setItem('kr_onboarded', '1'); return; } // existing user — skip
+  const nameEl = document.getElementById('onboard-name');
+  if (nameEl) nameEl.value = getUserName();
+  openModal('modal-onboard');
 }
 
 window.addEventListener('load', () => {
@@ -2462,6 +2558,7 @@ window.addEventListener('load', () => {
   renderTimesheets();
   updateStats();
   startTimerTick();
+  initTeamUI();
   applyRoleUI();
   initSearchClears();
   _syncChecklistOrderUI();
@@ -2495,6 +2592,7 @@ window.addEventListener('load', () => {
     showScreen(resumeScreen, tab);
   }
   // Directory is app-managed — no longer loaded from Google Sheet
+  maybeShowOnboarding();   // fresh install → welcome + starter pack
 });
 
 function updateHeaderDate() {
@@ -3907,7 +4005,7 @@ const SUBTASKS_FALLBACK = {
     'Empty out vehicle with changeover materials back at shed',
   ],
 };
-let SUBTASKS = JSON.parse(localStorage.getItem('kr_subtasks') || 'null') || SUBTASKS_FALLBACK;
+let SUBTASKS = JSON.parse(localStorage.getItem('kr_subtasks') || 'null') || {};
 
 function onTaskChange() {
   const freq  = document.getElementById('f-frequency').value;
@@ -5153,7 +5251,7 @@ function exportBackup() {
   const file = new File([json], filename, { type: 'application/json' });
 
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    navigator.share({ files: [file], title: 'Kaiser Ridge Backup', text: 'Kaiser Ridge task tracker backup — ' + stamp })
+    navigator.share({ files: [file], title: 'Groovework Backup', text: 'Groovework task tracker backup — ' + stamp })
       .catch(err => { if (err.name !== 'AbortError') showToast('Could not share — try Save instead'); });
   } else {
     // Fallback: trigger a download
@@ -5230,7 +5328,7 @@ function exportTaskLibrary() {
   const file = new File([json], filename, { type: 'application/json' });
 
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    navigator.share({ files: [file], title: 'Kaiser Ridge Job Library', text: 'Kaiser Ridge job library — ' + stamp })
+    navigator.share({ files: [file], title: 'Groovework Job Library', text: 'Groovework job library — ' + stamp })
       .catch(err => { if (err.name !== 'AbortError') showToast('Could not share — try Save instead'); });
   } else {
     const blob = new Blob([json], { type: 'application/json' });
@@ -5255,7 +5353,7 @@ function importTaskLibraryFromFile(event) {
     try {
       const payload = JSON.parse(reader.result);
       if (!payload || payload.app !== 'kaiser-ridge-task-tracker' || payload.kind !== 'task-library' || !payload.data) {
-        alert('This doesn\'t look like a Kaiser Ridge Job Library file.');
+        alert('This doesn\'t look like a Groovework Job Library file.');
         return;
       }
       if (!confirm(`Import this job library (made ${new Date(payload.createdAt).toLocaleString()})?\n\nThis REPLACES this phone's jobs, tasks, guides, equipment and locations with the shared list.\n\nYour timesheets, projects and settings are NOT affected.`)) return;
@@ -5267,7 +5365,7 @@ function importTaskLibraryFromFile(event) {
       setTimeout(() => location.reload(), 900);
     } catch (err) {
       console.error('Library import failed:', err);
-      alert('Could not read that file — make sure it\'s a Kaiser Ridge Job Library JSON file.');
+      alert('Could not read that file — make sure it\'s a Groovework Job Library JSON file.');
     }
   };
   reader.readAsText(file);
@@ -5396,7 +5494,7 @@ function restoreBackupFromFile(event) {
     try {
       const snapshot = JSON.parse(reader.result);
       if (!snapshot || !snapshot.data || snapshot.app !== 'kaiser-ridge-task-tracker') {
-        alert('This doesn\'t look like a Kaiser Ridge backup file.');
+        alert('This doesn\'t look like a Groovework backup file.');
         return;
       }
       const count = Object.keys(snapshot.data).length;
@@ -5405,7 +5503,7 @@ function restoreBackupFromFile(event) {
       _applyBackupSnapshot(snapshot);
     } catch (err) {
       console.error('Restore failed:', err);
-      alert('Could not read that file — make sure it\'s a Kaiser Ridge backup JSON file.');
+      alert('Could not read that file — make sure it\'s a Groovework backup JSON file.');
     }
   };
   reader.readAsText(file);
@@ -7833,13 +7931,13 @@ function chooseInboxAssignType() {
     <div style="padding:4px 4px 14px;font-size:14px;color:var(--subtext);">Add to <b style="color:var(--text);">${safe}</b> as…</div>
     <button onclick="assignInboxToTask('permanent')" style="display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px;cursor:pointer;color:var(--text);">
       <div style="font-size:15px;font-weight:600;">📋 Permanent task</div>
-      <div style="font-size:13px;color:var(--subtext);margin-top:3px;">Part of each task’s checklist every time it’s done.</div>
+      <div style="font-size:13px;color:var(--subtext);margin-top:3px;">Part of the job’s tasks every time it’s done.</div>
     </button>
     <button onclick="assignInboxToTask('pinned')" style="display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px;cursor:pointer;color:var(--text);">
       <div style="font-size:15px;font-weight:600;">📌 Pin for me (until checked off)</div>
-      <div style="font-size:13px;color:var(--subtext);margin-top:3px;">Shows at the top of the task on <b>this</b> phone until you tick it off.</div>
+      <div style="font-size:13px;color:var(--subtext);margin-top:3px;">Shows at the top of the job on <b>this</b> phone until you tick it off.</div>
     </button>
-    ${isWorker() ? '' : `<button onclick="assignInboxToTask('pinned-ethan')" style="display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;cursor:pointer;color:var(--text);">
+    ${(isWorker() || !teamEnabled()) ? '' : `<button onclick="assignInboxToTask('pinned-ethan')" style="display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;cursor:pointer;color:var(--text);">
       <div style="font-size:15px;font-weight:600;">📌 Pin for Ethan (until checked off)</div>
       <div style="font-size:13px;color:var(--subtext);margin-top:3px;">Sends it to Ethan’s phone — shows at the top of the task there until he ticks it off.</div>
     </button>`}
@@ -8520,10 +8618,41 @@ function dirAddButtonClick() {
 // tagging and read-only viewing only — no editing tasks/equipment/projects/planner.
 function getRole() { return localStorage.getItem('kr_role') || 'manager'; }
 function isWorker() { return getRole() === 'worker'; }
+// Team features (Manager/Worker role, worker's-day planner, pin-to-worker) are
+// OFF by default for fresh solo installs, and hidden until turned on. Existing
+// team setups (a worker device, or a manager who's assigned a worker's day) are
+// auto-migrated ON so they're never disrupted — see the boot migration.
+function teamEnabled() { return localStorage.getItem('kr_team_enabled') === '1'; }
+function setTeamEnabled(on) {
+  localStorage.setItem('kr_team_enabled', on ? '1' : '0');
+  if (!on) setRole('manager');   // solo devices are always the manager of their own data
+  applyRoleUI();
+  const rs = document.getElementById('settings-role-section');
+  if (rs) rs.style.display = on ? '' : 'none';
+  const tt = document.getElementById('team-toggle-thumb'), tk = document.getElementById('team-toggle-track');
+  if (tt) tt.style.transform = on ? 'translateX(20px)' : 'translateX(0)';
+  if (tk) tk.style.background = on ? '#34C759' : '#E5E5EA';
+  if (document.getElementById('screen-planner').classList.contains('active')) renderPlannerScreen();
+}
 function setRole(role) {
   localStorage.setItem('kr_role', role);
   applyRoleUI();
   showToast(role === 'worker' ? 'Worker mode — editing locked' : 'Manager mode — full access');
+}
+// One-time migration + sync the Team toggle UI. Existing team setups (a worker
+// device, or a manager who has planned a worker's day) flip ON automatically so
+// nothing changes for them; brand-new solo installs default OFF.
+function initTeamUI() {
+  if (localStorage.getItem('kr_team_enabled') === null) {
+    const hadTeam = localStorage.getItem('kr_planner_ethan') !== null || getRole() === 'worker';
+    localStorage.setItem('kr_team_enabled', hadTeam ? '1' : '0');
+  }
+  const on = teamEnabled();
+  const cb = document.getElementById('team-toggle'); if (cb) cb.checked = on;
+  const tt = document.getElementById('team-toggle-thumb'), tk = document.getElementById('team-toggle-track');
+  if (tt) tt.style.transform = on ? 'translateX(20px)' : 'translateX(0)';
+  if (tk) tk.style.background = on ? '#34C759' : '#E5E5EA';
+  const rs = document.getElementById('settings-role-section'); if (rs) rs.style.display = on ? '' : 'none';
 }
 function applyRoleUI() {
   const isW = isWorker();
@@ -9328,7 +9457,7 @@ function renderPlannerScreen() {
   // (their planner just receives assignments) and show the assignment banner.
   const pasteBtn = document.getElementById('planner-paste-btn');
   if (pasteBtn) pasteBtn.style.display = _plannerClipboard ? '' : 'none';
-  const manager = !isWorker();
+  const manager = !isWorker() && teamEnabled();   // worker's-day tools only when team is on
   const switchEl = document.getElementById('planner-view-switch');
   const sendRow = document.getElementById('planner-send-row');
   if (switchEl) switchEl.style.display = manager ? 'flex' : 'none';
