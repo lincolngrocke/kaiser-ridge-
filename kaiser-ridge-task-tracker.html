@@ -874,7 +874,7 @@
   </div>
 
   <div class="update-banner" id="update-banner" onclick="forceAppUpdate()" style="display:none;">🔄 New version available — tap to update</div>
-  <div class="update-banner" id="library-banner" onclick="pullLibrary()" style="display:none;background:var(--green);">📋 New task list available — tap to update</div>
+  <div class="update-banner" id="library-banner" onclick="pullLibrary()" style="display:none;background:var(--green);">📋 New job library available — tap to update</div>
   <div class="update-banner" id="restore-clock-banner" onclick="restoreDiscardedClock()" style="display:none;background:var(--green);"></div>
   <div class="backup-banner" id="backup-banner-clock" onclick="exportBackup()" style="display:none;"></div>
   <div class="update-banner" id="assign-banner-clock" onclick="ackAssignmentBanner()" style="display:none;background:var(--green);"></div>
@@ -950,8 +950,8 @@
 
     <!-- Timesheet filter chips -->
     <div id="ts-filter-bar" style="display:flex;gap:8px;padding:8px 12px;overflow-x:auto;background:var(--card);border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch;scrollbar-width:none;">
-      <button id="ts-chip-freq"     onclick="openTsFilter('freq')"     class="dir-chip">Frequency ▾</button>
-      <button id="ts-chip-group"    onclick="openTsFilter('group')"    class="dir-chip">Group ▾</button>
+      <button id="ts-chip-freq"     onclick="openTsFilter('freq')"     class="dir-chip">Repeats ▾</button>
+      <button id="ts-chip-group"    onclick="openTsFilter('group')"    class="dir-chip">Area ▾</button>
       <button id="ts-chip-location" onclick="openTsFilter('location')" class="dir-chip">Location ▾</button>
       <button id="ts-chip-equip"    onclick="openTsFilter('equip')"    class="dir-chip">Equipment ▾</button>
     </div>
@@ -973,21 +973,21 @@
 <div class="screen" id="screen-directory">
   <div class="header">
     <div style="display:flex;align-items:center;gap:8px;">
-      <div class="header-title" id="dir-header-title">Task Directory</div>
+      <div class="header-title" id="dir-header-title">Jobs</div>
       <div id="dir-freq-badge" style="display:none;background:var(--blue);color:#fff;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;letter-spacing:0.3px;text-transform:uppercase;"></div>
     </div>
     <button id="dir-add-btn" onclick="dirAddButtonClick()" style="background:var(--blue);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:14px;font-weight:600;cursor:pointer;">+ Add</button>
   </div>
   <!-- Tasks / Projects toggle -->
   <div style="display:flex;gap:6px;padding:8px 12px 0;background:var(--card);">
-    <button id="dir-seg-tasks" class="dir-seg active" onclick="setDirMode('tasks')">Tasks</button>
+    <button id="dir-seg-tasks" class="dir-seg active" onclick="setDirMode('tasks')">Jobs</button>
     <button id="dir-seg-projects" class="dir-seg" onclick="setDirMode('projects')">Projects</button>
   </div>
   <!-- Search bar -->
   <div id="dir-search-wrap" style="padding:8px 12px 0;background:var(--card);">
     <div style="position:relative;">
       <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--subtext);">🔍</span>
-      <input id="dir-search" type="search" placeholder="Search tasks, equipment, checklists…" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
+      <input id="dir-search" type="search" placeholder="Search jobs, tasks, equipment…" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
         oninput="onDirSearchInput()"
         style="width:100%;padding:9px 38px 9px 36px;border-radius:10px;border:1px solid var(--border);background:var(--bg);font-size:14px;color:var(--text);outline:none;-webkit-appearance:none;">
       <button id="dir-search-clear" onclick="clearDirSearch()" type="button"
@@ -996,8 +996,8 @@
   </div>
   <!-- Filter chips -->
   <div id="dir-filter-bar" style="display:flex;gap:8px;padding:8px 12px;overflow-x:auto;background:var(--card);border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch;scrollbar-width:none;">
-    <button id="chip-freq"     onclick="openDirFilter('freq')"     class="dir-chip">Frequency ▾</button>
-    <button id="chip-group"    onclick="openDirFilter('group')"    class="dir-chip">Group ▾</button>
+    <button id="chip-freq"     onclick="openDirFilter('freq')"     class="dir-chip">Repeats ▾</button>
+    <button id="chip-group"    onclick="openDirFilter('group')"    class="dir-chip">Area ▾</button>
     <button id="chip-location" onclick="openDirFilter('location')" class="dir-chip">Location ▾</button>
     <button id="chip-equip"    onclick="openDirFilter('equip')"    class="dir-chip">Equipment ▾</button>
   </div>
@@ -1050,7 +1050,7 @@
   </div>
   <div style="padding:0 16px 8px;display:flex;gap:8px;align-items:center;">
     <span id="planner-day-actions" style="display:contents;">
-      <button id="planner-add-btn" onclick="openPlannerAddTask()" style="flex:1;background:var(--blue);color:#fff;border:none;border-radius:12px;padding:10px;font-size:15px;font-weight:600;cursor:pointer;">+ Add Task</button>
+      <button id="planner-add-btn" onclick="openPlannerAddTask()" style="flex:1;background:var(--blue);color:#fff;border:none;border-radius:12px;padding:10px;font-size:15px;font-weight:600;cursor:pointer;">+ Add Job</button>
       <button id="planner-paste-btn" onclick="pastePlannerBlock()" title="Paste copied task into this day" style="display:none;background:var(--green);color:#fff;border:none;border-radius:12px;padding:10px 12px;font-size:15px;font-weight:600;cursor:pointer;">📋 Paste</button>
     </span>
     <button onclick="plannerGoToday()" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-size:13px;color:var(--blue);cursor:pointer;">Today</button>
@@ -1137,14 +1137,14 @@
     <div class="settings-note" style="margin-top:0">Used on the dashboard progress bar.</div>
 
     <div class="settings-section" style="margin-top:16px">
-      <div class="settings-row"><div class="settings-label">Checklist order (running clock)</div></div>
+      <div class="settings-row"><div class="settings-label">Task order (running clock)</div></div>
       <div style="display:flex;gap:8px;padding:4px 0 2px;">
         <button id="clorder-manual" onclick="setChecklistOrder('manual')" style="flex:1;border-radius:10px;padding:9px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid var(--blue);background:var(--blue);color:#fff;">Manual</button>
         <button id="clorder-lastused" onclick="setChecklistOrder('lastused')" style="flex:1;border-radius:10px;padding:9px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--text);">Last used</button>
         <button id="clorder-typical" onclick="setChecklistOrder('typical')" style="flex:1;border-radius:10px;padding:9px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--text);">Typical</button>
       </div>
     </div>
-    <div class="settings-note" style="margin-top:0">Manual = your Task Directory editor order. Last used = the average order you ticked them off across your last 3 times doing this task. Typical = the average across all recent times. (Display only — doesn’t change the saved checklist; switch back to Manual any time to revert.)</div>
+    <div class="settings-note" style="margin-top:0">Manual = the job editor's order. Last used = the average order you ticked tasks off across your last 3 times doing this job. Typical = the average across all recent times. (Display only — doesn’t change the saved tasks; switch back to Manual any time to revert.)</div>
 
     <div class="settings-section" style="margin-top:16px">
       <div class="settings-row">
@@ -1186,7 +1186,7 @@
       <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
         <div class="settings-label" style="font-weight:600;">Backup &amp; Restore</div>
         <div style="font-size:13px; color:var(--subtext); line-height:1.6;">
-          Your directory, checklists, guides, settings, and entries are saved only on this device.
+          Your jobs, tasks, guides, settings, and entries are saved only on this device.
           Every clock-out automatically sends a full backup to Google Drive (“KR App Backups” folder) —
           notes, pins, timesheets, settings, the lot. Lost or wiped phone? Install the app, set Your Name
           and the Apps Script URL, then tap “Restore from Drive Backup”. Manual file export still works
@@ -1206,7 +1206,7 @@
         <div class="settings-label" style="font-weight:600;">Storage</div>
         <div style="font-size:13px; color:var(--subtext); line-height:1.6;">
           Notes, pinned notes and timesheets live in the phone’s big store, which grows as needed —
-          capture forever, delete nothing. Settings and the task library use a separate small store.
+          capture forever, delete nothing. Settings and the job library use a separate small store.
           Photos saved on-device (when Drive couldn’t be reached) still count until moved to Drive.
         </div>
         <div id="storage-usage" style="font-size:13px; color:var(--subtext); line-height:1.7; width:100%;"></div>
@@ -1216,17 +1216,17 @@
 
     <div class="settings-section" style="margin-top:16px">
       <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
-        <div class="settings-label" style="font-weight:600;">Share Task Library</div>
+        <div class="settings-label" style="font-weight:600;">Share Job Library</div>
         <div style="font-size:13px; color:var(--subtext); line-height:1.6;">
-          Publish your task list to the Sheet so other phones (e.g. Ethan's) auto-update — they'll see
-          “New task list available” and pull it with one tap. Or pass a file manually with Export/Import below.
+          Publish your jobs to the Sheet so other phones (e.g. Ethan's) auto-update — they'll see
+          “New job library available” and pull it with one tap. Or pass a file manually with Export/Import below.
           Either way, the other device's timesheets, projects-in-progress and settings stay untouched.
         </div>
       </div>
     </div>
-    <button id="lib-publish-btn" class="btn-sync" style="background:#34C759; margin-top:8px;" onclick="publishLibraryToSheet()">☁️ Publish Task Library to Sheet</button>
-    <button class="btn-sync" style="background:var(--blue); margin-top:8px;" onclick="exportTaskLibrary()">📤 Export Task Library (file)</button>
-    <button class="btn-sync" style="background:var(--subtext); margin-top:8px;" onclick="triggerImportTaskLibrary()">📥 Import Task Library (file)</button>
+    <button id="lib-publish-btn" class="btn-sync" style="background:#34C759; margin-top:8px;" onclick="publishLibraryToSheet()">☁️ Publish Job Library to Sheet</button>
+    <button class="btn-sync" style="background:var(--blue); margin-top:8px;" onclick="exportTaskLibrary()">📤 Export Job Library (file)</button>
+    <button class="btn-sync" style="background:var(--subtext); margin-top:8px;" onclick="triggerImportTaskLibrary()">📥 Import Job Library (file)</button>
     <input type="file" id="library-file-input" accept="application/json,.json" style="display:none;" onchange="importTaskLibraryFromFile(event)">
 
 
@@ -1282,14 +1282,14 @@
   </div>
   <!-- Dimension filter -->
   <div style="display:flex;gap:8px;padding:8px 16px 10px;background:var(--card);border-bottom:1px solid var(--border);">
-    <button onclick="setChartDimension('group',this)"     class="chart-period-btn active" style="flex:1;">Group</button>
-    <button onclick="setChartDimension('frequency',this)" class="chart-period-btn" style="flex:1;">Frequency</button>
+    <button onclick="setChartDimension('group',this)"     class="chart-period-btn active" style="flex:1;">Area</button>
+    <button onclick="setChartDimension('frequency',this)" class="chart-period-btn" style="flex:1;">Repeats</button>
     <button onclick="setChartDimension('location',this)"  class="chart-period-btn" style="flex:1;">Location</button>
     <button onclick="setChartDimension('equipment',this)" class="chart-period-btn" style="flex:1;">Equipment</button>
   </div>
   <!-- Checklist item-times entry point -->
   <div style="padding:8px 16px;background:var(--card);border-bottom:1px solid var(--border);">
-    <button onclick="openChecklistAvg()" style="width:100%;background:none;border:1px solid var(--blue);border-radius:8px;padding:9px;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">⏱ Checklist Item Times</button>
+    <button onclick="openChecklistAvg()" style="width:100%;background:none;border:1px solid var(--blue);border-radius:8px;padding:9px;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">⏱ Task Times</button>
   </div>
   <!-- Chart fills remaining space -->
   <div style="flex:1;display:flex;flex-direction:column;padding:16px;overflow:hidden;">
@@ -1315,10 +1315,10 @@
   <div class="modal-sheet" style="padding:16px 0 24px;" onclick="event.stopPropagation()">
     <div class="modal-handle"></div>
     <div style="padding:0 20px 4px;display:flex;align-items:center;justify-content:space-between;">
-      <span style="font-size:17px;font-weight:600;">Checklist Item Times</span>
+      <span style="font-size:17px;font-weight:600;">Task Times</span>
       <span onclick="closeModal('modal-checklist-avg')" style="color:var(--blue);font-size:16px;cursor:pointer;">Done</span>
     </div>
-    <div style="padding:0 20px 10px;font-size:13px;color:var(--subtext);">Average time per checklist item, across every job where you timed it on the running clock.</div>
+    <div style="padding:0 20px 10px;font-size:13px;color:var(--subtext);">Average time per task, across every job where you timed it on the running clock.</div>
     <div id="checklist-avg-list" style="max-height:62vh;overflow-y:auto;"></div>
   </div>
 </div>
@@ -1329,7 +1329,7 @@
     <div class="modal-handle"></div>
     <div style="padding:0 20px 4px;display:flex;align-items:center;justify-content:space-between;">
       <span onclick="closeModal('modal-copy-checklist')" style="color:var(--blue);font-size:16px;cursor:pointer;">Cancel</span>
-      <span style="font-size:17px;font-weight:600;">Copy Checklist To…</span>
+      <span style="font-size:17px;font-weight:600;">Copy Tasks To…</span>
       <span onclick="confirmCopyChecklist()" style="color:var(--blue);font-size:16px;font-weight:700;cursor:pointer;">Copy</span>
     </div>
     <div style="padding:6px 20px 10px;font-size:13px;color:var(--subtext);">Replaces the checklist on each selected task with the <b><span id="copy-cl-count">0</span> items</b> from this one. Guides follow each item automatically.</div>
@@ -1359,7 +1359,7 @@
     <div class="running-hours" id="run-week-hours"></div>
   </div>
   <div class="update-banner" id="update-banner-running" onclick="forceAppUpdate()" style="display:none;">🔄 New version available — tap to update</div>
-  <div class="update-banner" id="library-banner-running" onclick="pullLibrary()" style="display:none;background:var(--green);">📋 New task list available — tap to update</div>
+  <div class="update-banner" id="library-banner-running" onclick="pullLibrary()" style="display:none;background:var(--green);">📋 New job library available — tap to update</div>
   <div class="backup-banner" id="backup-banner-running" onclick="exportBackup()" style="display:none;"></div>
   <div class="update-banner" id="assign-banner-running" onclick="ackAssignmentBanner()" style="display:none;background:var(--green);"></div>
   <div class="running-meta">
@@ -1451,7 +1451,7 @@
       <span style="font-size:22px;width:30px;text-align:center;">📊</span><span>Dashboard</span>
     </button>
     <button onclick="moreMenuGo('directory')" class="more-row">
-      <span style="font-size:22px;width:30px;text-align:center;">📁</span><span>Task Directory</span>
+      <span style="font-size:22px;width:30px;text-align:center;">📁</span><span>Jobs</span>
     </button>
     <button onclick="moreMenuGo('equipment')" class="more-row">
       <span style="font-size:22px;width:30px;text-align:center;">🧰</span><span>Equipment</span>
@@ -1506,7 +1506,7 @@
     </div>
     <div id="inbox-list" style="flex:1;overflow-y:auto;overflow-x:hidden;padding:0 16px 8px;"></div>
     <div id="inbox-footer" style="display:none;padding:10px 20px 0;">
-      <button id="inbox-footer-btn" onclick="openInboxAssignMulti()" style="width:100%;background:var(--blue);color:#fff;border:none;border-radius:12px;padding:12px;font-size:15px;font-weight:700;cursor:pointer;">📂 Add to a task</button>
+      <button id="inbox-footer-btn" onclick="openInboxAssignMulti()" style="width:100%;background:var(--blue);color:#fff;border:none;border-radius:12px;padding:12px;font-size:15px;font-weight:700;cursor:pointer;">📂 Add to a job</button>
     </div>
   </div>
 </div>
@@ -1517,10 +1517,10 @@
     <div class="modal-handle"></div>
     <div style="padding:0 20px 4px;display:flex;align-items:center;justify-content:space-between;">
       <span onclick="closeModal('modal-inbox-assign')" style="color:var(--blue);font-size:16px;cursor:pointer;">Cancel</span>
-      <span style="font-size:17px;font-weight:600;">Add to a task</span>
+      <span style="font-size:17px;font-weight:600;">Add to a job</span>
       <span style="width:48px;"></span>
     </div>
-    <div style="padding:6px 20px 8px;font-size:13px;color:var(--subtext);">Pick a task — the note is added to its checklist, then filed as done with a “moved to” tag.</div>
+    <div style="padding:6px 20px 8px;font-size:13px;color:var(--subtext);">Pick a job — the note is added to its tasks, then filed as done with a “moved to” tag.</div>
     <div id="inbox-assign-note" style="margin:0 20px 10px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:10px;font-size:14px;color:var(--text);white-space:pre-wrap;line-height:1.4;max-height:22vh;overflow-y:auto;"></div>
     <div id="inbox-assign-search-row" style="padding:0 20px 10px;">
       <input id="inbox-assign-search" type="search" placeholder="Find tasks…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="renderInboxAssignList()" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;">
@@ -1576,8 +1576,8 @@
         <div id="planner-add-avg-note" style="font-size:11px;color:var(--subtext);margin-top:4px;"></div>
       </div>
       <div style="margin-bottom:8px;">
-        <div style="font-size:12px;color:var(--subtext);margin-bottom:6px;">Task</div>
-        <input type="search" id="planner-task-search" placeholder="Search tasks, equipment, checklists…" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
+        <div style="font-size:12px;color:var(--subtext);margin-bottom:6px;">Job</div>
+        <input type="search" id="planner-task-search" placeholder="Search jobs, tasks, equipment…" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
           style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:15px;background:var(--bg);color:var(--text);outline:none;margin-bottom:8px;"
           oninput="renderPlannerTaskList()" />
         <div style="display:flex;gap:8px;margin-bottom:8px;">
@@ -1674,13 +1674,13 @@
     <div class="modal-handle"></div>
     <div class="modal-header">
       <button onclick="closeModal('modal-planner-detail')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;flex-shrink:0;">Close</button>
-      <span class="modal-title" id="planner-detail-title" style="flex:1;min-width:0;text-align:center;padding:0 10px;line-height:1.2;">Task</span>
+      <span class="modal-title" id="planner-detail-title" style="flex:1;min-width:0;text-align:center;padding:0 10px;line-height:1.2;">Job</span>
       <button onclick="deletePlannerBlock()" style="background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;flex-shrink:0;">Delete</button>
     </div>
     <div style="padding:20px;">
       <button onclick="plannerClockIn()" style="width:100%;background:var(--green);color:#fff;border:none;border-radius:14px;padding:14px;font-size:17px;font-weight:700;cursor:pointer;margin-bottom:8px;">▶ Clock In</button>
       <button id="planner-resume-btn" onclick="plannerResume()" style="display:none;width:100%;background:var(--blue);color:#fff;border:none;border-radius:14px;padding:14px;font-size:17px;font-weight:700;cursor:pointer;margin-bottom:8px;">▶ Resume This Task</button>
-      <div id="planner-resume-note" style="display:none;font-size:12px;color:var(--subtext);text-align:center;margin:0 0 14px;">Starts a new session now and keeps the checklist items you already finished ticked off, so you can work through the rest.</div>
+      <div id="planner-resume-note" style="display:none;font-size:12px;color:var(--subtext);text-align:center;margin:0 0 14px;">Starts a new session now and keeps the tasks you already finished ticked off, so you can work through the rest.</div>
       <div id="planner-detail-info" style="font-size:14px;color:var(--subtext);margin-bottom:16px;"></div>
       <div id="planner-detail-edit" style="margin-bottom:18px;">
         <div style="font-size:12px;color:var(--subtext);margin-bottom:6px;">Adjust time for this day</div>
@@ -1721,7 +1721,7 @@
   <div class="modal-sheet" style="padding:16px 20px 24px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
       <button onclick="closeModal('modal-subtask')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;">Skip</button>
-      <span style="font-size:17px;font-weight:600;">Checklist</span>
+      <span style="font-size:17px;font-weight:600;">Tasks</span>
       <button onclick="confirmSubtasks()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Add</button>
     </div>
     <div id="subtask-list" style="display:flex;flex-direction:column;gap:2px;max-height:60vh;overflow-y:auto;"></div>
@@ -1753,7 +1753,7 @@
     <div id="task-search-wrap" style="padding:14px 16px 0;position:relative;">
       <div style="position:relative;">
         <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--subtext);">🔍</span>
-        <input id="task-search-input" type="search" placeholder="Search tasks, equipment, checklists…" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
+        <input id="task-search-input" type="search" placeholder="Search jobs, tasks, equipment…" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
           autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
           oninput="onTaskSearchInput()" onfocus="onTaskSearchInput()"
           style="width:100%;padding:11px 36px 11px 36px;border-radius:12px;border:1px solid var(--border);background:var(--card);font-size:15px;color:var(--text);outline:none;-webkit-appearance:none;">
@@ -1777,7 +1777,7 @@
         <button type="button" id="pin-btn" onclick="openPinMap()" style="flex:1;text-align:right;background:none;border:none;color:var(--blue);font-size:15px;font-weight:500;cursor:pointer;">📍 Drop Pin</button>
       </div>
       <div class="form-row">
-        <span class="form-label">Frequency</span>
+        <span class="form-label">Repeats</span>
         <select class="form-select" id="f-frequency" onchange="onFrequencyChange()">
           <option value="">Select…</option>
           <option>Daily</option>
@@ -1790,14 +1790,14 @@
         <span class="form-chevron">›</span>
       </div>
       <div class="form-row">
-        <span class="form-label">Group</span>
+        <span class="form-label">Area</span>
         <select class="form-select" id="f-group" onchange="onGroupChange()">
           <option value="">Select…</option>
         </select>
         <span class="form-chevron">›</span>
       </div>
       <div class="form-row">
-        <span class="form-label">Task</span>
+        <span class="form-label">Job</span>
         <select class="form-select" id="f-task" onchange="onTaskChange()">
           <option value="">Select…</option>
         </select>
@@ -1871,7 +1871,7 @@
   <div class="modal-sheet" style="max-height:90vh;overflow-y:auto;">
     <div class="modal-header">
       <button class="modal-cancel" onclick="closeModal('modal-dir-task')">Cancel</button>
-      <span class="modal-title" id="dir-modal-title">Add Task</span>
+      <span class="modal-title" id="dir-modal-title">Add Job</span>
       <button class="modal-save" onclick="saveDirTask()">Save</button>
     </div>
     <div style="padding:0 0 24px;">
@@ -1883,18 +1883,18 @@
       </div>
 
       <div class="form-row" onclick="openFrequencyPicker()" style="cursor:pointer;">
-        <div class="form-label">Frequency</div>
+        <div class="form-label">Repeats</div>
         <div id="dir-frequency-display" style="flex:1;text-align:right;font-size:16px;color:var(--subtext);">Select…</div>
         <div style="color:var(--subtext);margin-left:6px;">›</div>
       </div>
 
       <div class="form-row" onclick="openGroupPicker()" style="cursor:pointer;">
-        <div class="form-label">Group</div>
+        <div class="form-label">Area</div>
         <div id="dir-group-display" style="flex:1;text-align:right;font-size:16px;color:var(--subtext);">Select…</div>
         <div style="color:var(--subtext);margin-left:6px;">›</div>
       </div>
 
-      <div class="form-row"><div class="form-label">Task Name</div>
+      <div class="form-row"><div class="form-label">Job Name</div>
         <input class="form-select" id="dir-task" type="text" placeholder="e.g. Change over tiny house" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
           autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true" name="kr-label-text" data-lpignore="true" data-1p-ignore
           oninput="updateRestoreSubtasksBtn(this.value.trim())"
@@ -1908,11 +1908,11 @@
       </div>
 
       <div style="padding:16px 20px 8px;">
-        <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">CHECKLIST</div>
+        <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">TASKS</div>
         <div id="dir-subtask-list"></div>
-        <button onclick="openSubtaskPicker()" style="margin-top:8px;background:none;border:1px dashed var(--border);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">+ Add Checklist Item</button>
-        <button id="dir-restore-subtasks-btn" onclick="restoreDefaultSubtasks()" style="display:none;margin-top:8px;background:none;border:1px dashed var(--blue);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">↺ Restore Default Checklist</button>
-        <button onclick="openCopyChecklist()" style="margin-top:8px;background:none;border:1px dashed var(--blue);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">⧉ Copy Checklist to Other Tasks…</button>
+        <button onclick="openSubtaskPicker()" style="margin-top:8px;background:none;border:1px dashed var(--border);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">+ Add Task</button>
+        <button id="dir-restore-subtasks-btn" onclick="restoreDefaultSubtasks()" style="display:none;margin-top:8px;background:none;border:1px dashed var(--blue);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">↺ Restore Default Tasks</button>
+        <button onclick="openCopyChecklist()" style="margin-top:8px;background:none;border:1px dashed var(--blue);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">⧉ Copy Tasks to Other Jobs…</button>
       </div>
 
       <div style="padding:16px 20px 8px;">
@@ -1920,21 +1920,21 @@
         <input class="form-select" id="dir-video" type="url" placeholder="Paste a YouTube link…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
           inputmode="url" data-lpignore="true" data-1p-ignore oninput="updateDirVideoPreview()"
           style="font-size:15px;border:1px solid var(--border);border-radius:8px;width:100%;padding:10px;background:var(--bg);color:var(--text);">
-        <div id="dir-video-hint" style="font-size:12px;color:var(--subtext);margin-top:6px;">Record the task, upload to YouTube (unlisted), then paste the link here. Everyone can watch it from the task and the running clock.</div>
+        <div id="dir-video-hint" style="font-size:12px;color:var(--subtext);margin-top:6px;">Record the job, upload to YouTube (unlisted), then paste the link here. Everyone can watch it from the job and the running clock.</div>
         <button id="dir-video-watch" onclick="playVideoForTask(document.getElementById('dir-task').value.trim())" style="display:none;margin-top:8px;background:none;border:1px solid var(--blue);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">▶ Watch how-to</button>
       </div>
 
       <div style="padding:16px 20px 0;" id="dir-merge-wrap">
         <div id="dir-merged-list"></div>
-        <button onclick="openMergePicker()" style="width:100%;padding:14px;background:none;border:1px solid var(--blue);border-radius:12px;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">🔗 Merge another task into this one…</button>
+        <button onclick="openMergePicker()" style="width:100%;padding:14px;background:none;border:1px solid var(--blue);border-radius:12px;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">🔗 Merge another job into this one…</button>
       </div>
 
       <div style="padding:16px 20px 0;" id="dir-duplicate-wrap">
-        <button onclick="duplicateDirTask()" style="width:100%;padding:14px;background:none;border:1px solid var(--blue);border-radius:12px;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">⎘ Duplicate Task</button>
+        <button onclick="duplicateDirTask()" style="width:100%;padding:14px;background:none;border:1px solid var(--blue);border-radius:12px;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">⎘ Duplicate Job</button>
       </div>
 
       <div style="padding:16px 20px 0;" id="dir-delete-wrap">
-        <button onclick="deleteDirTask()" style="width:100%;padding:14px;background:none;border:1px solid var(--red);border-radius:12px;color:var(--red);font-size:16px;font-weight:600;cursor:pointer;">Delete Task</button>
+        <button onclick="deleteDirTask()" style="width:100%;padding:14px;background:none;border:1px solid var(--red);border-radius:12px;color:var(--red);font-size:16px;font-weight:600;cursor:pointer;">Delete Job</button>
       </div>
     </div>
   </div>
@@ -1948,11 +1948,11 @@
       <span style="font-size:17px;font-weight:600;flex:1;text-align:center;">Merge into “<span id="merge-primary-name"></span>”</span>
       <span style="width:44px;"></span>
     </div>
-    <div style="padding:0 20px 8px;font-size:12px;color:var(--subtext);">Pick the task to fold in. Its 📌 notes, checklist, 🎥 video &amp; 🚩 flags move here and it’s removed from the directory. You can un-merge later.</div>
+    <div style="padding:0 20px 8px;font-size:12px;color:var(--subtext);">Pick the job to fold in. Its 📌 notes, tasks, 🎥 video &amp; 🚩 flags move here and it’s removed from your jobs. You can un-merge later.</div>
     <div style="padding:8px 16px 12px;">
       <div style="display:flex;align-items:center;background:var(--bg);border-radius:12px;padding:0 12px;">
         <span style="font-size:16px;color:var(--subtext);margin-right:8px;">🔍</span>
-        <input id="merge-picker-search" type="search" placeholder="Find a task to merge in" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"
+        <input id="merge-picker-search" type="search" placeholder="Find a job to merge in" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"
           oninput="renderMergePickerList()"
           style="flex:1;padding:10px 0;border:none;background:transparent;font-size:16px;color:var(--text);outline:none;">
       </div>
@@ -1966,13 +1966,13 @@
   <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:85vh;display:flex;flex-direction:column;">
     <div style="display:flex;align-items:center;padding:16px 20px 8px;">
       <button onclick="closeModal('modal-group-picker')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:0;margin-right:12px;">‹ Back</button>
-      <span style="font-size:17px;font-weight:600;flex:1;text-align:center;">Group</span>
+      <span style="font-size:17px;font-weight:600;flex:1;text-align:center;">Area</span>
       <span style="width:60px;"></span>
     </div>
     <div style="padding:8px 16px 12px;">
       <div style="display:flex;align-items:center;background:var(--bg);border-radius:12px;padding:0 12px;">
         <span style="font-size:16px;color:var(--subtext);margin-right:8px;">🔍</span>
-        <input id="group-picker-search" type="search" placeholder="Find or add a group" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
+        <input id="group-picker-search" type="search" placeholder="Find or add an area" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
           autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
           oninput="renderGroupPickerList()"
           style="flex:1;padding:10px 0;border:none;background:transparent;font-size:16px;color:var(--text);outline:none;">
@@ -1987,7 +1987,7 @@
   <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:85vh;display:flex;flex-direction:column;">
     <div style="display:flex;align-items:center;padding:16px 20px 8px;">
       <button onclick="closeModal('modal-frequency-picker')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:0;margin-right:12px;">‹ Back</button>
-      <span style="font-size:17px;font-weight:600;flex:1;text-align:center;">Frequency</span>
+      <span style="font-size:17px;font-weight:600;flex:1;text-align:center;">Repeats</span>
       <span style="width:60px;"></span>
     </div>
     <div style="padding:8px 16px 12px;">
@@ -2113,13 +2113,13 @@
   <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:85vh;display:flex;flex-direction:column;">
     <div style="display:flex;align-items:center;padding:16px 20px 8px;">
       <button onclick="closeModal('modal-subtask-picker')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:0;margin-right:12px;">‹ Back</button>
-      <span style="font-size:17px;font-weight:600;flex:1;text-align:center;">Checklist Item</span>
+      <span style="font-size:17px;font-weight:600;flex:1;text-align:center;">Task</span>
       <span style="width:60px;"></span>
     </div>
     <div style="padding:8px 16px 12px;">
       <div style="display:flex;align-items:flex-start;background:var(--bg);border-radius:12px;padding:8px 12px;">
         <span style="font-size:16px;color:var(--subtext);margin-right:8px;padding-top:2px;">🔍</span>
-        <textarea id="subtask-picker-search" rows="1" placeholder="Find or add checklist item"
+        <textarea id="subtask-picker-search" rows="1" placeholder="Find or add a task"
           autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
           oninput="renderSubtaskPickerList(); this.style.height='auto'; this.style.height=this.scrollHeight+'px';"
           onkeydown="if(event.key==='Enter'){event.preventDefault();}"
@@ -2228,7 +2228,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.84';
+const APP_VERSION = '2026-06-21.85';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3021,7 +3021,7 @@ function renderRunChecklist() {
   }).join('');
   const pinsDone = pinned.filter(p => pinDone[p.id]).length;
   const checklistLine = items.length
-    ? `CHECKLIST · ${completedCount}/${items.length} done · tap ○ to time · swipe → flag` : '';
+    ? `TASKS · ${completedCount}/${items.length} done · tap ○ to time · swipe → flag` : '';
   const notesLine = pinned.length
     ? `📌 NOTES · ${pinsDone}/${pinned.length} done · tap to tick · swipe → flag` : '';
   // Fixed header — stays put while the list scrolls, so both tallies are always visible.
@@ -3082,7 +3082,7 @@ function renderChecklistAvg() {
   if (!list) return;
   const rows = _aggregateChecklistTimes();
   if (!rows.length) {
-    list.innerHTML = '<div style="padding:32px 24px;text-align:center;color:var(--subtext);line-height:1.6;">No checklist timings yet.<br>On the running clock, tap each checklist item as you finish it — those times build this list.</div>';
+    list.innerHTML = '<div style="padding:32px 24px;text-align:center;color:var(--subtext);line-height:1.6;">No task timings yet.<br>On the running clock, tap each task as you finish it — those times build this list.</div>';
     return;
   }
   list.innerHTML = rows.map(r => `
@@ -3495,7 +3495,7 @@ function saveEntry() {
     }
   } else if (_creatingManual) {
     // Manual completed entry built straight from the form's times
-    if (!task) { showToast('Pick a task first'); return; }
+    if (!task) { showToast('Pick a job first'); return; }
     entries.unshift({
       id: Date.now().toString(),
       date: dateFormatted,
@@ -3930,11 +3930,11 @@ function openSubtaskModal() {
   const remaining = taskSubtasks.filter(s => !existingNotes.includes(s));
 
   if (taskSubtasks.length === 0) {
-    showToast('No checklist items found — add them in the Task Directory');
+    showToast('No tasks found — add them in Jobs');
     return;
   }
   if (remaining.length === 0) {
-    showToast('All checklist items completed!');
+    showToast('All tasks completed!');
     return;
   }
 
@@ -3970,7 +3970,7 @@ function confirmSubtasks() {
     clockState.notes = clockState.notes ? clockState.notes + '\n' + note : note;
     _safeSetItem('kr_clock', JSON.stringify(clockState));
     renderClockState();
-    showToast('Checklist added');
+    showToast('Tasks added');
   } else {
     // Called from new entry form — write to textarea then save
     const textarea = document.getElementById('f-notes');
@@ -5228,7 +5228,7 @@ function exportTaskLibrary() {
   const file = new File([json], filename, { type: 'application/json' });
 
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    navigator.share({ files: [file], title: 'Kaiser Ridge Task Library', text: 'Kaiser Ridge task library — ' + stamp })
+    navigator.share({ files: [file], title: 'Kaiser Ridge Job Library', text: 'Kaiser Ridge job library — ' + stamp })
       .catch(err => { if (err.name !== 'AbortError') showToast('Could not share — try Save instead'); });
   } else {
     const blob = new Blob([json], { type: 'application/json' });
@@ -5238,7 +5238,7 @@ function exportTaskLibrary() {
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
   }
-  showToast('Task library ready — send it to the other phone');
+  showToast('Job library ready — send it to the other phone');
 }
 
 function triggerImportTaskLibrary() {
@@ -5253,19 +5253,19 @@ function importTaskLibraryFromFile(event) {
     try {
       const payload = JSON.parse(reader.result);
       if (!payload || payload.app !== 'kaiser-ridge-task-tracker' || payload.kind !== 'task-library' || !payload.data) {
-        alert('This doesn\'t look like a Kaiser Ridge Task Library file.');
+        alert('This doesn\'t look like a Kaiser Ridge Job Library file.');
         return;
       }
-      if (!confirm(`Import this task library (made ${new Date(payload.createdAt).toLocaleString()})?\n\nThis REPLACES this phone's tasks, checklists, guides, equipment and locations with the shared list.\n\nYour timesheets, projects and settings are NOT affected.`)) return;
+      if (!confirm(`Import this job library (made ${new Date(payload.createdAt).toLocaleString()})?\n\nThis REPLACES this phone's jobs, tasks, guides, equipment and locations with the shared list.\n\nYour timesheets, projects and settings are NOT affected.`)) return;
 
       localStorage.setItem('kr_lib_prepull_backup', JSON.stringify({ when: new Date().toISOString(), data: buildLibraryPayload().data }));
       applyLibraryPayload(payload);
       localStorage.setItem('kr_lib_synced', _currentLibraryDataJson());
-      showToast('Task library imported — reloading…');
+      showToast('Job library imported — reloading…');
       setTimeout(() => location.reload(), 900);
     } catch (err) {
       console.error('Library import failed:', err);
-      alert('Could not read that file — make sure it\'s a Kaiser Ridge Task Library JSON file.');
+      alert('Could not read that file — make sure it\'s a Kaiser Ridge Job Library JSON file.');
     }
   };
   reader.readAsText(file);
@@ -5309,7 +5309,7 @@ async function publishLibraryToSheet() {
   const url = localStorage.getItem('kr_sheet_url');
   if (!url) { showToast('Add your Apps Script URL in Settings first'); return; }
   const payload = buildLibraryPayload();
-  showToast('Publishing task list…');
+  showToast('Publishing job library…');
   try {
     const res = await fetch(url, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
@@ -5349,14 +5349,14 @@ async function pullLibrary() {
   // Guard against wiping unpublished local work with a wrong tap.
   const unsaved = _hasUnpublishedLibraryEdits();
   const msg = unsaved
-    ? '⚠️ This device has task-list changes that haven’t been published yet — for example checklist steps you’ve been editing.\n\nUpdating from the sheet REPLACES the whole task list (tasks, checklists, steps, guides) with the published version, so those unpublished changes would be lost.\n\nIf this is the manager device, tap Cancel and use “Publish Task Library” instead.\n\n(A local backup is saved first either way.) Update anyway?'
-    : 'Update this device’s task list with the published version from the sheet?\n\nThis replaces tasks, checklists, steps and guides. Your timesheets and settings are not affected.';
+    ? '⚠️ This device has job-library changes that haven’t been published yet — for example steps you’ve been editing.\n\nUpdating from the sheet REPLACES the whole job library (jobs, tasks, steps, guides) with the published version, so those unpublished changes would be lost.\n\nIf this is the manager device, tap Cancel and use “Publish Job Library” instead.\n\n(A local backup is saved first either way.) Update anyway?'
+    : 'Update this device’s jobs with the published version from the sheet?\n\nThis replaces jobs, tasks, steps and guides. Your timesheets and settings are not affected.';
   if (!confirm(msg)) return;
-  showToast('Updating task list…');
+  showToast('Updating job library…');
   try {
     const res = await fetch(url + (url.includes('?') ? '&' : '?') + 'library=1', { cache: 'no-store' });
     const json = await res.json();
-    if (!json || !json.success || !json.library) { showToast('Could not fetch task list'); return; }
+    if (!json || !json.success || !json.library) { showToast('Could not fetch the job library'); return; }
     let payload;
     try { payload = JSON.parse(json.library); } catch (e) { showToast('Task list data was invalid'); return; }
     if (!payload || payload.kind !== 'task-library' || !payload.data) { showToast('Task list data was invalid'); return; }
@@ -5398,7 +5398,7 @@ function restoreBackupFromFile(event) {
         return;
       }
       const count = Object.keys(snapshot.data).length;
-      if (!confirm(`Restore from this backup (made ${new Date(snapshot.createdAt).toLocaleString()})?\n\nThis will overwrite your current directory, checklists, guides, settings, and entries (${count} items) with what's in the backup.`)) return;
+      if (!confirm(`Restore from this backup (made ${new Date(snapshot.createdAt).toLocaleString()})?\n\nThis will overwrite your current jobs, tasks, guides, settings, and entries (${count} items) with what's in the backup.`)) return;
 
       _applyBackupSnapshot(snapshot);
     } catch (err) {
@@ -5833,7 +5833,7 @@ function renderDirectory() {
             const matchingSubs = searchTerm ? subtaskList.filter(s => s.toLowerCase().includes(searchTerm)) : [];
             const checklistHtml = matchingSubs.length
               ? matchingSubs.map(s => `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☑️ ${highlightMatch(s, searchTerm)}</div>`).join('')
-              : (subtaskList.length ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☑️ ${subtaskList.length} checklist item${subtaskList.length > 1 ? 's' : ''}</div>` : '');
+              : (subtaskList.length ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☑️ ${subtaskList.length} task${subtaskList.length > 1 ? 's' : ''}</div>` : '');
             const origFreq = taskOrigFreq[grp + '||' + task] || freq;
             const key = encodeURIComponent(origFreq + '||' + grp + '||' + task);
             const meta = taskMeta[freq + '||' + grp + '||' + task] || {};
@@ -6154,7 +6154,7 @@ function selectGroup(name) {
 
 function openDirAddTask() {
   _dirEditingKey = null;
-  document.getElementById('dir-modal-title').textContent = 'Add Task';
+  document.getElementById('dir-modal-title').textContent = 'Add Job';
   setLocationDisplay('');
   setFrequencyDisplay('');
   const addNameField = document.getElementById('dir-task');
@@ -6174,11 +6174,11 @@ function openDirAddTask() {
 }
 
 function openDirEditTask(encodedKey) {
-  if (isWorker()) { showToast('Worker mode — tasks are managed on the manager device'); return; }
+  if (isWorker()) { showToast('Worker mode — jobs are managed on the manager device'); return; }
   const key = decodeURIComponent(encodedKey);
   const [keyFreq, keyGrp, task] = key.split('||');
   _dirEditingKey = key;
-  document.getElementById('dir-modal-title').textContent = 'Edit Task';
+  document.getElementById('dir-modal-title').textContent = 'Edit Job';
 
   const matches = DIRECTORY.filter(r => _dirKeyMatches(r, keyFreq, keyGrp, task));
   const entry = matches[0];
@@ -6220,7 +6220,7 @@ function restoreDefaultSubtasks() {
   const task = document.getElementById('dir-task').value.trim();
   const defaults = SUBTASKS_FALLBACK[task];
   if (!defaults || defaults.length === 0) {
-    showToast('No default checklist items found for this task');
+    showToast('No default tasks found for this job');
     return;
   }
   // Merge — keep anything already there, add back any missing defaults, no duplicates
@@ -6235,8 +6235,8 @@ function restoreDefaultSubtasks() {
     }
   });
   renderDirSubtaskList(restored);
-  if (addedCount > 0) showToast(`Restored ${addedCount} checklist item${addedCount > 1 ? 's' : ''}`);
-  else showToast('All default checklist items are already here');
+  if (addedCount > 0) showToast(`Restored ${addedCount} task${addedCount > 1 ? 's' : ''}`);
+  else showToast('All default tasks are already here');
 }
 
 // Clone the currently-open task into a new "Add Task" form — everything
@@ -6253,7 +6253,7 @@ function duplicateDirTask() {
   const subtasks = SUBTASKS[task] || [];
 
   _dirEditingKey = null; // Saving will create a new entry, not overwrite the source
-  document.getElementById('dir-modal-title').textContent = 'Duplicate Task';
+  document.getElementById('dir-modal-title').textContent = 'Duplicate Job';
   document.getElementById('dir-delete-wrap').style.display = 'none';
   document.getElementById('dir-duplicate-wrap').style.display = 'none';
   document.getElementById('dir-merge-wrap').style.display = 'none';
@@ -6290,7 +6290,7 @@ let _mergePrimary = null;
 function openMergePicker() {
   if (isWorker()) return;
   const primary = (document.getElementById('dir-task').value || '').trim();
-  if (!primary || !_dirEditingKey) { showToast('Save this task first'); return; }
+  if (!primary || !_dirEditingKey) { showToast('Save this job first'); return; }
   _mergePrimary = primary;
   document.getElementById('merge-primary-name').textContent = primary;
   document.getElementById('merge-picker-search').value = '';
@@ -6317,7 +6317,7 @@ function renderMergePickerList() {
 function confirmMergeRow(el) {
   const secondary = el.dataset.mergeTask;
   if (!_mergePrimary || !secondary || secondary === _mergePrimary) return;
-  if (!confirm('Merge “' + secondary + '” into “' + _mergePrimary + '”?\n\nIts notes, checklist, video and flags move into “' + _mergePrimary + '”, and “' + secondary + '” is removed from the directory. You can un-merge later from this task’s editor.')) return;
+  if (!confirm('Merge “' + secondary + '” into “' + _mergePrimary + '”?\n\nIts notes, tasks, video and flags move into “' + _mergePrimary + '”, and “' + secondary + '” is removed from your jobs. You can un-merge later from this job’s editor.')) return;
   mergeTasks(_mergePrimary, secondary);
 }
 function mergeTasks(primary, secondary) {
@@ -7086,7 +7086,7 @@ function renderSubtaskPickerList() {
       </div>
       <button onclick="openSubtaskGuide('${enc}')" style="background:none;border:none;color:var(--subtext);font-size:18px;cursor:pointer;padding:4px 6px;flex-shrink:0;">✎</button>
     </div>`;
-  }).join('') || (!addRow ? '<div style="padding:24px;text-align:center;color:var(--subtext);">No subtasks for this task yet — type above to add one</div>' : ''));
+  }).join('') || (!addRow ? '<div style="padding:24px;text-align:center;color:var(--subtext);">No tasks for this job yet — type above to add one</div>' : ''));
 }
 
 function selectSubtask(name, isNew) {
@@ -7132,7 +7132,7 @@ function openItemOrigin(encText) {
   const el = document.getElementById('item-origin-body');
   if (el) el.innerHTML = o
     ? `<div style="font-size:15px;color:var(--text);margin-bottom:12px;white-space:pre-wrap;">${text.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</div>
-       <div style="font-size:13px;color:var(--subtext);line-height:1.7;">📝 From the Inbox<br>• Caught ${o.caught ? _inboxStamp(o.caught) : '—'}<br>• Added to checklist ${o.added ? _inboxStamp(o.added) : '—'}</div>`
+       <div style="font-size:13px;color:var(--subtext);line-height:1.7;">📝 From the Inbox<br>• Caught ${o.caught ? _inboxStamp(o.caught) : '—'}<br>• Added as a task ${o.added ? _inboxStamp(o.added) : '—'}</div>`
     : '<div style="color:var(--subtext);">No history for this item.</div>';
   openModal('modal-item-origin');
 }
@@ -7516,7 +7516,7 @@ function _updateInboxFooter() {
   const btn = document.getElementById('inbox-footer-btn');
   const c = _inboxSelected.size;
   if (footer) footer.style.display = (_inboxSelectMode && c) ? 'block' : 'none';
-  if (btn) btn.textContent = '📂 Add ' + c + ' note' + (c === 1 ? '' : 's') + ' to a task';
+  if (btn) btn.textContent = '📂 Add ' + c + ' note' + (c === 1 ? '' : 's') + ' to a job';
 }
 function toggleInboxSelect(id) {
   if (_inboxSelected.has(id)) _inboxSelected.delete(id);
@@ -7640,7 +7640,7 @@ function _inboxNoteRow(n) {
   }
   const box = `<span onclick="toggleInboxDone('${n.id}')" style="font-size:22px;line-height:1;cursor:pointer;flex-shrink:0;padding-top:1px;color:${isDone ? 'var(--green)' : 'var(--subtext)'};">${isDone ? '☑' : '☐'}</span>`;
   const editBtn = isDone ? '' : `<button onclick="openInboxEdit('${n.id}')" title="Edit note" style="background:none;border:none;color:var(--subtext);font-size:16px;cursor:pointer;padding:2px 4px;flex-shrink:0;">✏️</button>`;
-  const assignBtn = isDone ? '' : `<button onclick="openInboxAssign('${n.id}')" title="Add to a task" style="background:none;border:none;color:var(--blue);font-size:18px;cursor:pointer;padding:2px 4px;flex-shrink:0;">📂</button>`;
+  const assignBtn = isDone ? '' : `<button onclick="openInboxAssign('${n.id}')" title="Add to a job" style="background:none;border:none;color:var(--blue);font-size:18px;cursor:pointer;padding:2px 4px;flex-shrink:0;">📂</button>`;
   return `<div style="display:flex;gap:10px;align-items:flex-start;padding:12px 4px;border-bottom:1px solid var(--border);${rowDim}">
     ${box}
     ${body}
@@ -7710,7 +7710,7 @@ function parseYouTubeId(input) {
 let _videoPlayerTask = '';
 function playVideoForTask(task) {
   const v = task && getTaskVideos()[task];
-  if (!v || !v.id) { showToast('No how-to video for this task'); return; }
+  if (!v || !v.id) { showToast('No how-to video for this job'); return; }
   _videoPlayerTask = task;
   document.getElementById('video-player-title').textContent = task;
   const meta = document.getElementById('video-player-meta');
@@ -7738,8 +7738,8 @@ function updateDirVideoPreview() {
   const saved = (getTaskVideos()[task] || {}).id;
   if (watch) watch.style.display = (saved && saved === id) ? 'block' : 'none';
   if (hint) {
-    if (!raw) hint.textContent = 'Record the task, upload to YouTube (unlisted), then paste the link here. Everyone can watch it from the task and the running clock.';
-    else if (id) hint.innerHTML = '✓ YouTube video recognised — <span style="color:var(--green);">tap Save</span> to attach it to this task.';
+    if (!raw) hint.textContent = 'Record the job, upload to YouTube (unlisted), then paste the link here. Everyone can watch it from the job and the running clock.';
+    else if (id) hint.innerHTML = '✓ YouTube video recognised — <span style="color:var(--green);">tap Save</span> to attach it to this job.';
     else hint.innerHTML = '<span style="color:var(--red);">Not a YouTube link.</span> Paste a youtube.com or youtu.be URL.';
   }
 }
@@ -7830,7 +7830,7 @@ function chooseInboxAssignType() {
   document.getElementById('inbox-assign-list').innerHTML = `
     <div style="padding:4px 4px 14px;font-size:14px;color:var(--subtext);">Add to <b style="color:var(--text);">${safe}</b> as…</div>
     <button onclick="assignInboxToTask('permanent')" style="display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px;cursor:pointer;color:var(--text);">
-      <div style="font-size:15px;font-weight:600;">📋 Permanent checklist item</div>
+      <div style="font-size:15px;font-weight:600;">📋 Permanent task</div>
       <div style="font-size:13px;color:var(--subtext);margin-top:3px;">Part of each task’s checklist every time it’s done.</div>
     </button>
     <button onclick="assignInboxToTask('pinned')" style="display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px;cursor:pointer;color:var(--text);">
@@ -8299,7 +8299,7 @@ function renameSubtaskGlobally(oldName, newName) {
   // Update picker list
   const idx = _subtaskItems.indexOf(oldName);
   if (idx !== -1) { _subtaskItems[idx] = newName; renderDirSubtaskList(); }
-  if (changed) showToast('Checklist item renamed everywhere');
+  if (changed) showToast('Task renamed everywhere');
   renderSubtaskPickerList();
 }
 
@@ -8343,7 +8343,7 @@ function confirmCopyChecklist() {
   targets.forEach(t => { SUBTASKS[t] = [...items]; });
   _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
   closeModal('modal-copy-checklist');
-  showToast('Checklist copied to ' + targets.length + ' task' + (targets.length === 1 ? '' : 's') + ' ✓ — Publish Library to share');
+  showToast('Tasks copied to ' + targets.length + ' job' + (targets.length === 1 ? '' : 's') + ' ✓ — Publish Library to share');
 }
 
 function saveDirTask() {
@@ -8457,7 +8457,7 @@ function saveDirTask() {
 
 function deleteDirTask() {
   if (!_dirEditingKey) return;
-  if (!confirm('Delete this task?')) return;
+  if (!confirm('Delete this job?')) return;
   const [freq, grp, task] = _dirEditingKey.split('||');
   DIRECTORY = DIRECTORY.filter(r => !_dirKeyMatches(r, freq, grp, task));
   // Only drop the checklist / video if no other task still uses this name
@@ -8476,7 +8476,7 @@ function deleteDirTask() {
   _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
   closeModal('modal-dir-task');
   renderDirectory();
-  showToast('Task deleted');
+  showToast('Job deleted');
 }
 
 // Render directory when switching to that screen
@@ -8538,7 +8538,7 @@ function setDirMode(mode) {
   const isProjects = mode === 'projects';
   document.getElementById('dir-seg-tasks').classList.toggle('active', !isProjects);
   document.getElementById('dir-seg-projects').classList.toggle('active', isProjects);
-  document.getElementById('dir-header-title').textContent = isProjects ? 'Projects' : 'Task Directory';
+  document.getElementById('dir-header-title').textContent = isProjects ? 'Projects' : 'Jobs';
   // Tasks-only chrome
   document.getElementById('dir-search-wrap').style.display = isProjects ? 'none' : '';
   document.getElementById('dir-filter-bar').style.display = isProjects ? 'none' : '';
@@ -10250,7 +10250,7 @@ function _renderClOrganiseBody() {
     : `<div style="padding:18px 0;color:var(--subtext);text-align:center;font-size:14px;">No flagged items yet — swipe one right to flag it.</div>`;
   const rest = ordered.filter(s => !flags[s]);
   const restBlock = rest.length
-    ? `<div style="font-size:12px;color:var(--subtext);font-weight:700;text-transform:uppercase;letter-spacing:0.4px;margin:16px 0 8px;">Rest of checklist</div>${rest.map(rowHtml).join('')}`
+    ? `<div style="font-size:12px;color:var(--subtext);font-weight:700;text-transform:uppercase;letter-spacing:0.4px;margin:16px 0 8px;">Rest of the tasks</div>${rest.map(rowHtml).join('')}`
     : '';
   body.innerHTML = intro + flaggedBlock + restBlock;
 }
