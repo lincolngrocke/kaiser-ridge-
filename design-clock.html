@@ -107,6 +107,36 @@
   .d3 .btn { flex:1; height:52px; border-radius:15px; font-size:16px; font-weight:600; display:flex; align-items:center; justify-content:center; }
   .d3 .brk { background:#1e1e25; color:#fbbf24; border:1px solid #2a2a33; }
   .d3 .out { background:#8b5cf6; color:#fff; }
+
+  /* ============ DIRECTION 4 — FOCUS RING w/ REAL DENSITY ============ */
+  .d4 { background: radial-gradient(120% 80% at 50% 0%, #17233a 0%, #0a0e17 55%, #05070c 100%); color:#fff; }
+  .d4 .statusbar { color:#fff; }
+  .d4 .toolbar { display:flex; justify-content:flex-end; gap:20px; padding: 2px 24px 0; color:#6d7488; }
+  .d4 .toolbar i { font-size:20px; }
+  .d4 .ringwrap { display:flex; flex-direction:column; align-items:center; padding: 4px 0 0; }
+  .d4 .rc { position:relative; width:196px; height:196px; }
+  .d4 .rc .ctr { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  .d4 .rc .timer { font-size:38px; font-weight:300; letter-spacing:-1px; font-variant-numeric:tabular-nums; }
+  .d4 .rc .cin { font-size:12px; color:#8b93a7; margin-top:3px; }
+  .d4 .rc .pct { font-size:11px; color:#5ac8fa; font-weight:600; margin-top:6px; }
+  .d4 .job { text-align:center; margin-top:14px; }
+  .d4 .job .jt { font-size:19px; font-weight:600; letter-spacing:-0.3px; }
+  .d4 .job .jm { font-size:13px; color:#8b93a7; margin-top:3px; display:flex; align-items:center; justify-content:center; gap:6px; }
+  .d4 .job .jm .loc { color:#30d158; }
+  .d4 .seg { display:flex; gap:6px; margin: 18px 16px 0; background:rgba(255,255,255,0.06); border-radius:14px; padding:4px; }
+  .d4 .seg div { flex:1; text-align:center; padding:9px; font-size:14px; font-weight:600; color:#8b93a7; border-radius:11px; }
+  .d4 .seg div.on { background:rgba(255,255,255,0.12); color:#fff; }
+  .d4 .notes { flex:1; margin: 14px 16px 0; overflow:hidden; }
+  .d4 .note { display:flex; gap:12px; padding:14px 0; border-top:0.5px solid rgba(255,255,255,0.08); }
+  .d4 .note:first-child { border-top:none; }
+  .d4 .note .box { width:20px;height:20px;border-radius:6px;border:1.5px solid rgba(255,255,255,0.28);flex-shrink:0;margin-top:1px; }
+  .d4 .note .body { flex:1; min-width:0; }
+  .d4 .note .nt { font-size:15px; line-height:1.4; color:#dfe3ec; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .d4 .note .nm { font-size:12px; color:#616a7e; margin-top:5px; }
+  .d4 .btns { display:flex; gap:12px; padding: 14px 16px 28px; flex-shrink:0; }
+  .d4 .btn { flex:1; height:54px; border-radius:27px; font-size:16px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:7px; }
+  .d4 .brk { background:rgba(255,255,255,0.1); color:#ffd60a; border:0.5px solid rgba(255,255,255,0.12); }
+  .d4 .out { background:#ff453a; color:#fff; }
 </style>
 </head>
 <body>
@@ -189,6 +219,39 @@
       <div class="row done"><span class="ck"></span><span class="tx">Unload dishwasher</span></div>
       <div class="row"><span class="ck"></span><span class="tx">Wipe kitchen benches</span></div>
       <div class="row"><span class="ck"></span><span class="tx">Empty bins</span></div>
+    </div>
+    <div class="btns"><div class="btn brk">Start break</div><div class="btn out">Clock out</div></div>
+  </div></div>
+
+  <!-- DIRECTION 4 -->
+  <div class="cap"><span class="n">4</span><div><h2>Focus ring, your real density</h2><p>Same calm ring, but with your actual job (6 tasks, 12 notes). Tasks and Notes get a segmented toggle; notes become quiet 2-line cards. Nothing lost — nothing shouting.</p></div></div>
+  <div class="phone"><div class="scr d4">
+    <div class="statusbar"><span class="tabnum">10:42</span><span>􀙇 􀹥 42%</span></div>
+    <div class="toolbar">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M4 20l1-4 11-11 3 3-11 11z"/></svg>
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/><circle cx="5" cy="12" r="1.6"/></svg>
+    </div>
+    <div class="ringwrap">
+      <div class="rc">
+        <svg width="196" height="196" viewBox="0 0 196 196">
+          <circle cx="98" cy="98" r="86" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="12"/>
+          <circle cx="98" cy="98" r="86" fill="none" stroke="url(#g4)" stroke-width="12" stroke-linecap="round" stroke-dasharray="540" stroke-dashoffset="0" transform="rotate(-90 98 98)"/>
+          <defs><linearGradient id="g4" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5ac8fa"/><stop offset="1" stop-color="#ff9f0a"/></linearGradient></defs>
+        </svg>
+        <div class="ctr">
+          <div class="timer tabnum">5:10:54</div>
+          <div class="cin">since 5:32 pm</div>
+          <div class="pct">over ~44 min est.</div>
+        </div>
+      </div>
+    </div>
+    <div class="job"><div class="jt">Items to purchase</div><div class="jm"><span class="loc">◉ Located</span> · Purchase · avg of 5</div></div>
+    <div class="seg"><div>Tasks · 0/6</div><div class="on">Notes · 1/12</div></div>
+    <div class="notes">
+      <div class="note"><span class="box"></span><div class="body"><div class="nt">Look at putting a camera on BESS#2 so we can see guest cars, and another at the shed.</div><div class="nm">1 Jul</div></div></div>
+      <div class="note"><span class="box"></span><div class="body"><div class="nt">Purchase chain and 3 hooks for compost toilet lids to hold them up.</div><div class="nm">29 Jun</div></div></div>
+      <div class="note"><span class="box"></span><div class="body"><div class="nt">Need another 5 garden lights for Serene to finish off the footpath.</div><div class="nm">25 Jun</div></div></div>
+      <div class="note"><span class="box"></span><div class="body"><div class="nt">Need another 5 chrome garden lights for Serene footpath. Need 10 for Kaiser &amp; 10 for Heritage to replace the ones…</div><div class="nm">25 Jun</div></div></div>
     </div>
     <div class="btns"><div class="btn brk">Start break</div><div class="btn out">Clock out</div></div>
   </div></div>
