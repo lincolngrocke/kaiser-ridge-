@@ -205,7 +205,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: #000;
+    background: radial-gradient(120% 75% at 50% 0%, #17233a 0%, #0a0e17 55%, #05070c 100%);
     z-index: 40;
     flex-direction: column;
     pointer-events: none;
@@ -217,68 +217,52 @@
     padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom));
   }
 
-  .running-top-bar {
-    padding: 16px 20px 12px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-bottom: 1px solid #222;
+  .run-toolbar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: calc(14px + env(safe-area-inset-top)) 22px 2px; flex-shrink: 0;
   }
-  .running-period { font-size: 13px; color: #666; }
-  .running-hours { font-size: 13px; color: #666; }
-
-  .running-meta {
-    padding: 12px 20px 0;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+  .run-week { font-size: 13px; color: #6d7488; font-variant-numeric: tabular-nums; }
+  .run-tools { display: flex; gap: 20px; }
+  .run-tools button {
+    background: none; border: none; color: #7c8296; cursor: pointer;
+    padding: 4px; display: flex; align-items: center;
   }
-  .running-add-note {
-    display: flex; align-items: center; gap: 6px;
-    color: var(--blue); font-size: 15px; font-weight: 500;
-    background: none; border: none; cursor: pointer;
+  .run-hero {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 6px 0 0; flex-shrink: 0;
   }
-  .running-tag-btn {
-    display: flex; align-items: center; gap: 6px;
-    color: var(--blue); font-size: 15px; font-weight: 500;
-    background: none; border: none; cursor: pointer;
-  }
-
-  .running-timer-area {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 3px;
-    padding: 6px 0;
+  .run-ring { position: relative; width: 208px; height: 208px; }
+  .run-ring svg { transform: rotate(-90deg); }
+  .run-ring-track { stroke: rgba(255,255,255,0.08); }
+  .run-ring-fg { stroke: url(#run-grad); transition: stroke-dashoffset 0.95s linear; }
+  .run-ring.over .run-ring-fg { stroke: #ff9f0a; }
+  .run-ring-ctr {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
   }
   .running-big-timer {
-    font-size: 64px;
-    font-weight: 200;
-    letter-spacing: -2px;
-    color: white;
-    font-variant-numeric: tabular-nums;
-    line-height: 1.05;
+    font-size: 36px; font-weight: 300; letter-spacing: -1px;
+    color: #fff; font-variant-numeric: tabular-nums; line-height: 1.1;
   }
-  .running-clocked-in {
-    font-size: 15px;
-    color: #666;
+  #run-clockedin-text { font-size: 12.5px; color: #8b93a7; margin-top: 3px; }
+  #run-ring-label { font-size: 11px; color: #5ac8fa; font-weight: 600; margin-top: 7px; letter-spacing: 0.2px; }
+  .run-ring.over ~ .run-ring-ctr #run-ring-label { color: #ff9f0a; }
+  .run-job-title { font-size: 20px; font-weight: 600; color: #fff; letter-spacing: -0.3px; margin-top: 16px; text-align: center; padding: 0 24px; }
+  .run-job-meta { font-size: 13px; color: #8b93a7; margin-top: 5px; text-align: center; padding: 0 20px; }
+  .run-job-meta .loc { color: #30d158; text-decoration: none; }
+  #run-break-info { font-size: 13px; color: #ffd60a; margin-top: 7px; text-align: center; }
+  .run-undo { font-size: 12.5px; color: #6d7488; cursor: pointer; margin-top: 10px; }
+  .run-seg {
+    display: flex; gap: 6px; margin: 16px 16px 0;
+    background: rgba(255,255,255,0.06); border-radius: 14px; padding: 4px; flex-shrink: 0;
   }
-  .running-clocked-in span {
-    color: var(--blue);
-    cursor: pointer;
-    margin-left: 8px;
+  .run-seg div {
+    flex: 1; text-align: center; padding: 9px 6px; font-size: 14px; font-weight: 600;
+    color: #8b93a7; border-radius: 11px; cursor: pointer; font-variant-numeric: tabular-nums;
   }
-  .running-task-info {
-    font-size: 14px;
-    color: #888;
-    text-align: center;
-    padding: 0 30px;
-  }
-
+  .run-seg div.on { background: rgba(255,255,255,0.13); color: #fff; }
   .running-buttons {
-    padding: 0 20px 24px;
+    padding: 14px 16px 0;
     display: flex;
     gap: 12px;
     flex-shrink: 0;
@@ -325,16 +309,17 @@
   }
   .btn-pause {
     flex: 1;
-    height: 56px;
-    border-radius: 28px;
-    border: none;
-    background: #FF9500;
-    color: white;
-    font-size: 18px;
+    height: 54px;
+    border-radius: 27px;
+    border: 0.5px solid rgba(255,255,255,0.14);
+    background: rgba(255,255,255,0.10);
+    color: #ffd60a;
+    font-size: 16px;
     font-weight: 600;
     cursor: pointer;
   }
-  .btn-pause.on-pause { background: var(--green); } /* shows "Resume" */
+  .btn-pause.on-pause { background: rgba(48,209,88,0.16); color: var(--green); border-color: rgba(48,209,88,0.3); } /* on break */
+  .running-buttons .btn-clock-out { height: 54px; border-radius: 27px; font-size: 16px; background: #ff453a; }
   /* While paused: freeze + dim the timer and flag the status line */
   .clock-running-overlay.paused .running-big-timer { opacity: 0.4; }
   .clock-running-overlay.paused #run-clockedin-text { color: #FF9500; font-weight: 600; }
@@ -1375,32 +1360,42 @@
 
 <!-- ══════════════ RUNNING OVERLAY ══════════════ -->
 <div class="clock-running-overlay" id="running-overlay">
-  <div class="running-top-bar">
-    <div class="running-period" id="run-period"></div>
-    <div class="running-hours" id="run-week-hours"></div>
-  </div>
   <div class="update-banner" id="update-banner-running" onclick="forceAppUpdate()" style="display:none;">🔄 New version available — tap to update</div>
   <div class="update-banner" id="library-banner-running" onclick="pullLibrary()" style="display:none;background:var(--green);">📋 New job library available — tap to update</div>
   <div class="backup-banner" id="backup-banner-running" onclick="exportBackup()" style="display:none;"></div>
   <div class="update-banner" id="assign-banner-running" onclick="ackAssignmentBanner()" style="display:none;background:var(--green);"></div>
-  <div class="running-meta">
-    <button class="running-add-note" onclick="openNoteModal()">📋 Add Note</button>
-    <button class="running-tag-btn" onclick="openQuickCapture()">💡 Capture</button>
-    <button class="running-tag-btn" onclick="openEditActive()">🏷 Edit Entry</button>
+  <div class="run-toolbar">
+    <span class="run-week" id="run-week-hours"></span>
+    <span class="run-tools">
+      <button onclick="openQuickCapture()" aria-label="Capture a thought"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 18h6M10 21h4M12 3a6 6 0 00-4 10.5c.8.7 1 1.2 1 2.5h6c0-1.3.2-1.8 1-2.5A6 6 0 0012 3z"/></svg></button>
+      <button onclick="openNoteModal()" aria-label="Add note"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 5v14M5 12h14"/></svg></button>
+      <button onclick="openEditActive()" aria-label="Edit entry"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg></button>
+    </span>
   </div>
-  <div class="running-timer-area">
-    <div class="running-big-timer" id="run-timer">0:00</div>
-    <div class="running-clocked-in">
-      <span id="run-clockedin-text">Clocked In @ --:--</span>
-      <span onclick="undoClockIn()">Undo</span>
+  <div class="run-hero">
+    <div class="run-ring" id="run-ring">
+      <svg width="208" height="208" viewBox="0 0 208 208">
+        <circle class="run-ring-track" cx="104" cy="104" r="92" fill="none" stroke-width="13"/>
+        <circle class="run-ring-fg" id="run-ring-fg" cx="104" cy="104" r="92" fill="none" stroke-width="13" stroke-linecap="round" stroke-dasharray="578.05" stroke-dashoffset="578.05"/>
+        <defs><linearGradient id="run-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5ac8fa"/><stop offset="1" stop-color="#30d158"/></linearGradient></defs>
+      </svg>
+      <div class="run-ring-ctr">
+        <div class="running-big-timer" id="run-timer">0:00</div>
+        <div id="run-clockedin-text">Clocked in --:--</div>
+        <div id="run-ring-label"></div>
+      </div>
     </div>
-    <div class="running-task-info" id="run-task-info"></div>
-    <div id="run-estimate" style="font-size:13px;color:var(--blue);font-weight:600;margin-top:2px;display:none;"></div>
-    <button id="run-video-btn" onclick="playVideoForTask(clockState&&clockState.task)" style="display:none;margin-top:8px;background:var(--blue);color:#fff;border:none;border-radius:10px;padding:9px 16px;font-size:14px;font-weight:700;cursor:pointer;">▶ Watch how-to</button>
-    <div id="run-break-info" style="font-size:13px;color:var(--subtext);margin-top:4px;"></div>
-    <div id="run-location" style="font-size:13px;margin-top:4px;display:none;"></div>
+    <div class="run-job-title" id="run-job-title"></div>
+    <div class="run-job-meta" id="run-job-meta"></div>
+    <div id="run-break-info"></div>
+    <button id="run-video-btn" onclick="playVideoForTask(clockState&&clockState.task)" style="display:none;margin-top:12px;background:rgba(255,255,255,0.1);color:#fff;border:0.5px solid rgba(255,255,255,0.15);border-radius:20px;padding:8px 16px;font-size:14px;font-weight:600;cursor:pointer;">▶ Watch how-to</button>
+    <span class="run-undo" id="run-undo" onclick="undoClockIn()">Undo clock-in</span>
   </div>
-  <div id="run-checklist" style="display:none;width:100%;max-width:420px;margin:8px auto 0;padding:0 20px;text-align:left;flex:1000 1 0;min-height:0;flex-direction:column;"></div>
+  <div class="run-seg" id="run-seg" style="display:none;">
+    <div id="run-seg-tasks" onclick="setRunTab('tasks')">Tasks</div>
+    <div id="run-seg-notes" onclick="setRunTab('notes')">Notes</div>
+  </div>
+  <div id="run-checklist" style="display:none;width:100%;margin:12px auto 0;padding:0 20px;text-align:left;flex:1 1 0;min-height:0;flex-direction:column;"></div>
   <div class="running-buttons">
 <button class="btn-pause" id="btn-pause" onclick="breakButtonTap()">☕ Start Break</button>
 <button class="btn-clock-out" style="flex:1" onclick="openTimeModal('out')">Clock Out</button>
@@ -2270,7 +2265,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.89';
+const APP_VERSION = '2026-06-21.90';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2643,7 +2638,8 @@ function startTimerTick() {
       document.getElementById('run-timer').textContent = fmt;
       // Update break display
       const breakEl = document.getElementById('run-break-info');
-      if (breakEl) breakEl.textContent = breakSecs > 0 ? '⏸ ' + Math.round(breakSecs / 60) + 'min paused (deducted)' : '';
+      if (breakEl) breakEl.textContent = breakSecs > 0 ? '⏸ ' + Math.round(breakSecs / 60) + ' min paused (deducted)' : '';
+      updateRunRing(netElapsed);
       updateAtTimes();
     }
   }, 1000);
@@ -2816,59 +2812,47 @@ function renderClockState() {
 
     // Populate overlay fields
     const clockInFmt = formatTimeAmPm(clockState.startTime);
-    document.getElementById('run-clockedin-text').textContent = 'Clocked In @ ' + clockInFmt;
+    const clEl = document.getElementById('run-clockedin-text');
+    if (clEl) clEl.textContent = 'Clocked in ' + clockInFmt;
     // Restore the paused look if the app was reopened mid-pause
     const pauseBtn = document.getElementById('btn-pause');
     if (clockState.onBreak) {
       overlay.classList.add('paused');
       if (pauseBtn) { pauseBtn.textContent = '☕ End Break'; pauseBtn.classList.add('on-pause'); }
-      document.getElementById('run-clockedin-text').textContent = '☕ On break since ' + formatTimeAmPm(clockState.breakStartTime || clockState.startTime);
+      if (clEl) clEl.textContent = '☕ On break since ' + formatTimeAmPm(clockState.breakStartTime || clockState.startTime);
     } else {
       overlay.classList.remove('paused');
       if (pauseBtn) { pauseBtn.textContent = '☕ Start Break'; pauseBtn.classList.remove('on-pause'); }
     }
-    const taskParts = [clockState.group, clockState.task].filter(Boolean).join(' · ');
-    const locationPart = clockState.location || '';
-    document.getElementById('run-task-info').textContent = [locationPart, taskParts].filter(Boolean).join(' — ');
-    // Estimated time from this task's history (avg of past completed entries)
-    const estEl = document.getElementById('run-estimate');
-    if (estEl) {
+    // Job title (the task) + a quiet meta line: location · group · avg count.
+    const jtEl = document.getElementById('run-job-title');
+    if (jtEl) jtEl.textContent = clockState.task || '';
+    const jmEl = document.getElementById('run-job-meta');
+    if (jmEl) {
+      const parts = [];
+      const pin = clockState.pin;
+      const locName = clockState.location || '';
+      if (pin && pin.url) parts.push(`<a href="${pin.url}" target="_blank" rel="noopener" class="loc">◉ ${_escHtml(locName || 'Located')}</a>`);
+      else if (locName) parts.push(_escHtml(locName));
+      else if (clockState._pinPending) parts.push('<span style="color:#8b93a7;">◉ Locating…</span>');
+      if (clockState.group) parts.push(_escHtml(clockState.group));
       const avg = getTaskAvgDuration(clockState.task);
-      if (avg) {
-        const n = entries.filter(e => e.task === clockState.task && e.durationHours > 0).length;
-        estEl.textContent = '⏱ Est. ~' + fmtEstHours(avg) + ' · avg of ' + n + ' past';
-        estEl.style.display = '';
-      } else {
-        estEl.style.display = 'none';
-      }
+      if (avg) { const n = entries.filter(e => e.task === clockState.task && e.durationHours > 0).length; parts.push('avg of ' + n); }
+      jmEl.innerHTML = parts.join(' <span style="opacity:0.4;">·</span> ');
     }
+    // Progress ring (elapsed vs this job's average)
+    updateRunRing();
     // ▶ Watch how-to — shown only when this task has a video reference
     const runVidBtn = document.getElementById('run-video-btn');
     if (runVidBtn) {
       const hasVid = !!(getTaskVideos()[clockState.task] || {}).id;
       runVidBtn.style.display = hasVid ? '' : 'none';
     }
-    // 📍 Location auto-pinned at clock-in — tap to open in Maps
-    const runLoc = document.getElementById('run-location');
-    if (runLoc) {
-      const pin = clockState.pin;
-      if (pin && pin.url) {
-        runLoc.innerHTML = `<a href="${pin.url}" target="_blank" rel="noopener" style="color:var(--green);text-decoration:none;">📍 Location pinned</a>`;
-        runLoc.style.display = '';
-      } else if (clockState._pinPending) {
-        runLoc.textContent = '📍 Pinning location…';
-        runLoc.style.color = 'var(--subtext)';
-        runLoc.style.display = '';
-      } else {
-        runLoc.style.display = 'none';
-      }
-    }
     const now = new Date();
     const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay()); weekStart.setHours(0,0,0,0);
     let weekH = entries.filter(e => new Date(e.date.split('/').reverse().join('-')) >= weekStart).reduce((s,e) => s+e.durationHours, 0);
-    document.getElementById('run-week-hours').textContent = weekH.toFixed(2) + 'h this week';
-    const opts = { weekday:'short', day:'numeric', month:'short' };
-    document.getElementById('run-period').textContent = now.toLocaleDateString('en-AU', opts);
+    const wkEl = document.getElementById('run-week-hours');
+    if (wkEl) wkEl.textContent = weekH.toFixed(1) + 'h this week';
 
     // Keep background clock screen up to date too
     btn.textContent = 'Clock Out';
@@ -3048,91 +3032,162 @@ function toggleChecklistStep(item, step) {
   _safeSetItem('kr_clock', JSON.stringify(clockState));
   renderRunChecklist();
 }
+// ── Focus-ring clock: tab state + ring helpers ──
+let _runTab = 'tasks';
+let _expandedNotes = new Set();
+function _escHtml(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function setRunTab(tab) { _runTab = tab; renderRunChecklist(); }
+function toggleNoteExpand(id) {
+  if (Date.now() < _pinSwipeBlockClickUntil) return;   // a swipe just happened — not a tap
+  if (_expandedNotes.has(id)) _expandedNotes.delete(id); else _expandedNotes.add(id);
+  renderRunChecklist();
+}
+function _runEstSec() {
+  if (!clockState) return 0;
+  const avg = getTaskAvgDuration(clockState.task);     // hours
+  return avg ? avg * 3600 : 0;
+}
+// Fill the ring: elapsed vs this job's average. Past the average the ring
+// completes and turns amber rather than overflowing.
+function updateRunRing(netElapsedSec) {
+  const fg = document.getElementById('run-ring-fg');
+  const ring = document.getElementById('run-ring');
+  const label = document.getElementById('run-ring-label');
+  if (!fg || !ring) return;
+  const C = 578.05;   // 2π·92
+  let elapsed = netElapsedSec;
+  if (elapsed == null && clockState && clockState.running) {
+    const total = (Date.now() - clockState.startMs) / 1000;
+    const brk = ((clockState.breakTotal || 0) + (clockState.onBreak && clockState.breakStartMs ? Date.now() - clockState.breakStartMs : 0)) / 1000;
+    elapsed = Math.max(0, total - brk);
+  }
+  const est = _runEstSec();
+  if (!est || elapsed == null) {
+    fg.style.strokeDashoffset = C;                      // empty ring — faint track only
+    ring.classList.remove('over');
+    if (label) { label.textContent = 'building your average'; label.style.color = '#8b93a7'; }
+    return;
+  }
+  const frac = elapsed / est;
+  fg.style.strokeDashoffset = C * (1 - Math.max(0, Math.min(1, frac)));
+  const over = frac >= 1;
+  ring.classList.toggle('over', over);
+  if (label) {
+    label.style.color = over ? '#ff9f0a' : '#5ac8fa';
+    label.textContent = over ? ('over ~' + fmtEstHours(est / 3600) + ' est') : (Math.round(frac * 100) + '% of ~' + fmtEstHours(est / 3600));
+  }
+}
 function renderRunChecklist() {
   const el = document.getElementById('run-checklist');
+  const seg = document.getElementById('run-seg');
   if (!el) return;
-  const items = (clockState && clockState.running && SUBTASKS[clockState.task])
-    ? _orderedChecklistItems(clockState.task, SUBTASKS[clockState.task]) : [];
-  const pinned = _sortPins((clockState && clockState.running && getTaskNotes()[clockState.task]) || []); // 🚩 flagged on top, rest oldest→newest
+  const running = clockState && clockState.running;
+  const items = (running && SUBTASKS[clockState.task]) ? _orderedChecklistItems(clockState.task, SUBTASKS[clockState.task]) : [];
+  const pinned = _sortPins((running && getTaskNotes()[clockState.task]) || []); // 🚩 flagged on top
 
-  if (!items.length && !pinned.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
-  el.style.display = 'flex';
+  if (!items.length && !pinned.length) {
+    el.innerHTML = ''; el.style.display = 'none';
+    if (seg) seg.style.display = 'none';
+    return;
+  }
   const done = (clockState && Array.isArray(clockState.checklistDone)) ? clockState.checklistDone : [];
   const carried = new Set((clockState && Array.isArray(clockState.checklistCarried)) ? clockState.checklistCarried : []);
   const dur = _checklistDurations();
-  const stepsMap = getSubtaskSteps();
-  const stepChecks = (clockState && clockState.stepChecks) || {};
-  const completedCount = items.filter(s => done.some(d => d.item === s) || carried.has(s)).length;
-  const taskAttr = (clockState && clockState.task) ? _attr(clockState.task) : '';
-  const clFlags = getChecklistFlags()[clockState.task] || {};
-  const clFlaggedCount = items.filter(s => clFlags[s]).length;
-  const rows = items.map(s => {
-    const enc = s.replace(/'/g, "\\'");
-    // Carried over from an earlier session — show ticked, not re-timed, not tappable
-    if (carried.has(s) && !done.some(d => d.item === s)) {
-      return `<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--border);opacity:0.55;">
-        <span style="font-size:18px;flex-shrink:0;color:var(--green);">✓</span>
-        <span style="flex:1;font-size:14px;color:var(--subtext);text-decoration:line-through;">${s}</span>
-        <span style="font-size:11px;color:var(--subtext);white-space:nowrap;">earlier</span></div>`;
-    }
-    const isDone = done.some(d => d.item === s);
-    const steps = stepsMap[s] || [];
-    const expanded = _expandedChecklistItems.has(s);
-    const checkedCount = steps.filter(st => stepChecks[s] && stepChecks[s][st]).length;
-    // ○/✓ marks the item done (records time); tapping the text expands its steps
-    const circle = `<span onclick="markChecklistItemDone('${enc}')" style="font-size:18px;cursor:pointer;flex-shrink:0;color:${isDone ? 'var(--green)' : 'var(--text)'};">${isDone ? '✓' : '○'}</span>`;
-    const textTap = steps.length ? `toggleChecklistExpand('${enc}')` : `markChecklistItemDone('${enc}')`;
-    const stepBadge = steps.length ? ` <span style="color:var(--subtext);font-size:12px;">(${checkedCount}/${steps.length})</span>` : '';
-    const flagged = !!clFlags[s];
-    const flagMark = flagged ? '🚩 ' : '';
-    const textSpan = `<span onclick="${textTap}" style="flex:1;font-size:14px;cursor:pointer;${isDone ? 'color:var(--subtext);text-decoration:line-through;' : 'color:var(--text);'}">${flagMark}${s}${stepBadge}</span>`;
-    const right = isDone
-      ? `<span style="font-size:13px;color:var(--green);font-weight:700;white-space:nowrap;">${fmtMin(dur[s])}</span>`
-      : (steps.length ? `<span onclick="toggleChecklistExpand('${enc}')" style="color:var(--subtext);font-size:13px;cursor:pointer;padding:0 4px;flex-shrink:0;">${expanded ? '▾' : '▸'}</span>` : '');
-    const clFlagAttr = (flagged && !isDone) ? '1' : '';
-    const clRowBg = (flagged && !isDone) ? 'background:rgba(255,214,10,0.10);' : '';
-    let html = `<div class="cl-row" data-cl-item="${_attr(s)}" data-cl-task="${taskAttr}" data-cl-flagged="${clFlagAttr}" ontouchstart="clSwipeStart(event)" ontouchmove="clSwipeMove(event)" ontouchend="clSwipeEnd(event)" style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--border);border-radius:6px;${clRowBg}">${circle}${textSpan}${right}</div>`;
-    if (expanded && steps.length && !isDone) {
-      html += steps.map(st => {
-        const encStep = st.replace(/'/g, "\\'");
-        const checked = !!(stepChecks[s] && stepChecks[s][st]);
-        return `<div onclick="toggleChecklistStep('${enc}','${encStep}')" style="display:flex;align-items:center;gap:12px;padding:9px 0 9px 30px;border-bottom:1px solid var(--border);cursor:pointer;">
-          <span style="font-size:22px;flex-shrink:0;color:${checked ? 'var(--green)' : 'var(--subtext)'};">${checked ? '☑' : '☐'}</span>
-          <span style="font-size:15px;${checked ? 'color:var(--subtext);text-decoration:line-through;' : 'color:var(--text);'}">${st}</span></div>`;
-      }).join('');
-    }
-    return html;
-  }).join('');
-  // Pinned task-notes ride at the very top. Ticking marks them done in place
-  // (greyed + struck, still untickable); they're removed only at clock-out.
   const pinDone = (clockState && clockState.pinDone) || {};
-  const pinTaskAttr = _attr(clockState.task);
-  const pinnedRows = pinned.map(p => {
-    const done = !!pinDone[p.id];
-    const safe = p.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const caughtTs = p.caught || p.ts;
-    const pinnedTs = (p.caught && p.ts && p.ts !== p.caught) ? p.ts : null;
-    const caughtLine = caughtTs ? `<div style="font-size:11px;color:var(--subtext);margin-top:2px;">Caught ${_inboxStamp(caughtTs)}${pinnedTs ? ' · 📌 Pinned ' + _inboxStamp(pinnedTs) : ''}${p.editedTs ? ' · ✏️ Edited ' + _inboxStamp(p.editedTs) : ''}</div>` : '';
-    const thumb = _photoThumbHtml(p, 80);
-    const durStr = (done && dur['pin:' + p.id] != null)
-      ? `<span style="font-size:13px;color:var(--green);font-weight:700;white-space:nowrap;flex-shrink:0;">${fmtMin(dur['pin:' + p.id])}</span>` : '';
-    return `<div class="pin-row" data-pin-id="${p.id}" data-pin-task="${pinTaskAttr}" data-pin-flagged="${p.flagged && !done ? '1' : ''}" onclick="togglePinnedNote('${p.id}')" ontouchstart="pinSwipeStart(event)" ontouchmove="pinSwipeMove(event)" ontouchend="pinSwipeEnd(event)" style="display:flex;align-items:flex-start;gap:8px;padding:9px 8px;border-bottom:1px solid var(--border);border-radius:6px;cursor:pointer;${p.flagged && !done ? 'background:rgba(255,214,10,0.10);' : ''}${done ? 'opacity:0.5;' : ''}">
-      <span style="font-size:18px;flex-shrink:0;color:${done ? 'var(--green)' : 'var(--subtext)'};">${done ? '☑' : '☐'}</span>
-      <div style="flex:1;min-width:0;"><span style="font-size:14px;${done ? 'color:var(--subtext);text-decoration:line-through;' : 'color:#FFD60A;'}">${p.flagged ? '🚩 ' : ''}📌 ${safe}</span>${caughtLine}${thumb}</div>${durStr}</div>`;
-  }).join('');
-  const pinsDone = pinned.filter(p => pinDone[p.id]).length;
-  const checklistLine = items.length
-    ? `TASKS · ${completedCount}/${items.length} done · tap ○ to time · swipe → flag` : '';
-  const notesLine = pinned.length
-    ? `📌 NOTES · ${pinsDone}/${pinned.length} done · tap to tick · swipe → flag` : '';
-  // Fixed header — stays put while the list scrolls, so both tallies are always visible.
-  const headerHtml = `<div style="background:#000;padding:6px 0;border-bottom:1px solid var(--border);letter-spacing:.04em;">`
-    + (checklistLine ? `<div style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--subtext);"><span style="flex:1;min-width:0;">${checklistLine}</span>${clFlaggedCount > 1 ? `<span onclick="openChecklistOrganise(event)" style="flex-shrink:0;color:var(--blue);cursor:pointer;font-weight:700;">⤢ Organise</span>` : ''}</div>` : '')
-    + (notesLine ? `<div style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;color:#FFD60A;${checklistLine ? 'margin-top:3px;' : ''}"><span style="flex:1;min-width:0;">${notesLine}</span>${pinned.length > 1 ? `<span onclick="openPinOrganise(event)" style="flex-shrink:0;color:var(--blue);cursor:pointer;font-weight:700;">⤢ Organise</span>` : ''}</div>` : '')
-    + `</div>`;
-  // Preserve scroll position across re-render so ticking/expanding doesn't jump to top.
+  const tasksDone = items.filter(s => done.some(d => d.item === s) || carried.has(s)).length;
+  const notesDone = pinned.filter(p => pinDone[p.id]).length;
+
+  // Segmented Tasks / Notes. Only shown when there's both to switch between.
+  let tab = _runTab;
+  if (tab === 'notes' && !pinned.length) tab = 'tasks';
+  if (tab === 'tasks' && !items.length) tab = 'notes';
+  _runTab = tab;
+  if (seg) {
+    const segT = document.getElementById('run-seg-tasks'), segN = document.getElementById('run-seg-notes');
+    if (items.length && pinned.length) {
+      seg.style.display = 'flex';
+      segT.textContent = 'Tasks · ' + tasksDone + '/' + items.length;
+      segN.textContent = 'Notes · ' + notesDone + '/' + pinned.length;
+      segT.classList.toggle('on', tab === 'tasks');
+      segN.classList.toggle('on', tab === 'notes');
+    } else {
+      seg.style.display = 'none';
+    }
+  }
+
+  el.style.display = 'flex';
+  let rows = '', organiseLink = '';
+
+  if (tab === 'tasks') {
+    const stepsMap = getSubtaskSteps();
+    const stepChecks = (clockState && clockState.stepChecks) || {};
+    const taskAttr = (clockState && clockState.task) ? _attr(clockState.task) : '';
+    const clFlags = getChecklistFlags()[clockState.task] || {};
+    if (items.filter(s => clFlags[s]).length > 1) organiseLink = `<span onclick="openChecklistOrganise(event)" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">⤢ Organise</span>`;
+    rows = items.map(s => {
+      const enc = s.replace(/'/g, "\\'");
+      if (carried.has(s) && !done.some(d => d.item === s)) {
+        return `<div style="display:flex;align-items:center;gap:12px;padding:13px 0;border-top:0.5px solid rgba(255,255,255,0.08);opacity:0.5;">
+          <span style="width:24px;height:24px;border-radius:50%;background:#30d158;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#05070c;font-size:14px;">✓</span>
+          <span style="flex:1;font-size:16px;color:#8b93a7;text-decoration:line-through;">${_escHtml(s)}</span>
+          <span style="font-size:12px;color:#616a7e;white-space:nowrap;">earlier</span></div>`;
+      }
+      const isDone = done.some(d => d.item === s);
+      const steps = stepsMap[s] || [];
+      const expanded = _expandedChecklistItems.has(s);
+      const checkedCount = steps.filter(st => stepChecks[s] && stepChecks[s][st]).length;
+      const flagged = !!clFlags[s];
+      const circle = `<span onclick="markChecklistItemDone('${enc}')" style="width:24px;height:24px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;${isDone ? 'background:#30d158;' : 'border:2px solid rgba(255,255,255,0.28);'}">${isDone ? '<span style="color:#05070c;font-size:14px;">✓</span>' : ''}</span>`;
+      const textTap = steps.length ? `toggleChecklistExpand('${enc}')` : `markChecklistItemDone('${enc}')`;
+      const stepBadge = steps.length ? ` <span style="color:#616a7e;font-size:13px;">(${checkedCount}/${steps.length})</span>` : '';
+      const textSpan = `<span onclick="${textTap}" style="flex:1;font-size:16px;cursor:pointer;${isDone ? 'color:#616a7e;text-decoration:line-through;' : 'color:#e7eaf0;'}">${flagged ? '🚩 ' : ''}${_escHtml(s)}${stepBadge}</span>`;
+      const right = isDone
+        ? `<span style="font-size:13px;color:#30d158;font-weight:600;white-space:nowrap;">${fmtMin(dur[s])}</span>`
+        : (steps.length ? `<span onclick="toggleChecklistExpand('${enc}')" style="color:#8b93a7;font-size:14px;cursor:pointer;padding:0 4px;flex-shrink:0;">${expanded ? '▾' : '▸'}</span>` : '');
+      const clFlagAttr = (flagged && !isDone) ? '1' : '';
+      const clRowBg = (flagged && !isDone) ? 'background:rgba(255,214,10,0.08);' : '';
+      let html = `<div class="cl-row" data-cl-item="${_attr(s)}" data-cl-task="${taskAttr}" data-cl-flagged="${clFlagAttr}" ontouchstart="clSwipeStart(event)" ontouchmove="clSwipeMove(event)" ontouchend="clSwipeEnd(event)" style="display:flex;align-items:center;gap:12px;padding:13px 0;border-top:0.5px solid rgba(255,255,255,0.08);${clRowBg}">${circle}${textSpan}${right}</div>`;
+      if (expanded && steps.length && !isDone) {
+        html += steps.map(st => {
+          const encStep = st.replace(/'/g, "\\'");
+          const checked = !!(stepChecks[s] && stepChecks[s][st]);
+          return `<div onclick="toggleChecklistStep('${enc}','${encStep}')" style="display:flex;align-items:center;gap:12px;padding:10px 0 10px 36px;cursor:pointer;">
+            <span style="font-size:20px;flex-shrink:0;color:${checked ? '#30d158' : '#616a7e'};">${checked ? '☑' : '☐'}</span>
+            <span style="font-size:15px;${checked ? 'color:#616a7e;text-decoration:line-through;' : 'color:#c7ccd8;'}">${_escHtml(st)}</span></div>`;
+        }).join('');
+      }
+      return html;
+    }).join('');
+  } else {
+    const pinTaskAttr = _attr(clockState.task);
+    if (pinned.length > 1) organiseLink = `<span onclick="openPinOrganise(event)" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">⤢ Organise</span>`;
+    rows = pinned.map(p => {
+      const isDone = !!pinDone[p.id];
+      const safe = _escHtml(p.text);
+      const expanded = _expandedNotes.has(p.id);
+      const caughtTs = p.caught || p.ts;
+      const pinnedTs = (p.caught && p.ts && p.ts !== p.caught) ? p.ts : null;
+      const shortDate = caughtTs ? new Date(caughtTs).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : '';
+      const fullMeta = (expanded && caughtTs) ? ` · Caught ${_inboxStamp(caughtTs)}${pinnedTs ? ' · 📌 ' + _inboxStamp(pinnedTs) : ''}${p.editedTs ? ' · ✏️ ' + _inboxStamp(p.editedTs) : ''}` : '';
+      const thumb = expanded ? _photoThumbHtml(p, 80) : '';
+      const clamp = expanded ? '' : 'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;';
+      const box = `<span onclick="togglePinnedNote('${p.id}')" style="width:22px;height:22px;border-radius:7px;flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;cursor:pointer;${isDone ? 'background:#30d158;' : 'border:1.5px solid rgba(255,255,255,0.28);'}">${isDone ? '<span style="color:#05070c;font-size:13px;">✓</span>' : ''}</span>`;
+      const durStr = (isDone && dur['pin:' + p.id] != null) ? `<span style="font-size:13px;color:#30d158;font-weight:600;white-space:nowrap;flex-shrink:0;">${fmtMin(dur['pin:' + p.id])}</span>` : '';
+      return `<div class="pin-row" data-pin-id="${p.id}" data-pin-task="${pinTaskAttr}" data-pin-flagged="${p.flagged && !isDone ? '1' : ''}" ontouchstart="pinSwipeStart(event)" ontouchmove="pinSwipeMove(event)" ontouchend="pinSwipeEnd(event)" style="display:flex;gap:12px;padding:14px 0;border-top:0.5px solid rgba(255,255,255,0.08);${p.flagged && !isDone ? 'background:rgba(255,214,10,0.06);' : ''}${isDone ? 'opacity:0.55;' : ''}">
+        ${box}
+        <div onclick="toggleNoteExpand('${p.id}')" style="flex:1;min-width:0;cursor:pointer;">
+          <div style="font-size:15px;line-height:1.4;${isDone ? 'color:#616a7e;text-decoration:line-through;' : 'color:#dfe3ec;'}${clamp}">${p.flagged ? '🚩 ' : ''}${safe}</div>
+          <div style="font-size:12px;color:#616a7e;margin-top:5px;">${shortDate}${fullMeta}</div>
+          ${thumb}
+        </div>
+        ${durStr}
+      </div>`;
+    }).join('');
+  }
+
+  const headerHtml = organiseLink ? `<div style="display:flex;justify-content:flex-end;padding:2px 0 4px;">${organiseLink}</div>` : '';
   const prevScroll = (document.getElementById('run-checklist-scroll') || {}).scrollTop || 0;
-  el.innerHTML = headerHtml + `<div id="run-checklist-scroll" style="flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;">${pinnedRows}${rows}</div>`;
+  el.innerHTML = headerHtml + `<div id="run-checklist-scroll" style="flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;">${rows}</div>`;
   const sc = document.getElementById('run-checklist-scroll');
   if (sc) sc.scrollTop = prevScroll;
   _loadPhotoThumbs();
