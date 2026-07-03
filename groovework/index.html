@@ -2266,7 +2266,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.93';
+const APP_VERSION = '2026-06-21.94';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4255,7 +4255,9 @@ function _fitModalsToKeyboard() {
     if (!sheet) return;
     if (kb > 0) {
       if (!('kbOrigMax' in sheet.dataset)) sheet.dataset.kbOrigMax = sheet.style.maxHeight || '';
-      sheet.style.maxHeight = (vv.height - 6) + 'px';
+      // Subtract the top safe-area inset so a raised sheet's header (Back/Manage)
+      // stays below the status bar instead of sliding under it (untappable).
+      sheet.style.maxHeight = 'calc(' + (vv.height - 6) + 'px - env(safe-area-inset-top))';
     } else if ('kbOrigMax' in sheet.dataset) {
       sheet.style.maxHeight = sheet.dataset.kbOrigMax;
       delete sheet.dataset.kbOrigMax;
