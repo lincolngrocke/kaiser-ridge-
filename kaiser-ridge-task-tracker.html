@@ -2266,7 +2266,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.94';
+const APP_VERSION = '2026-06-21.95';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -10192,7 +10192,10 @@ function togglePinSort() {
 // compact=true uses smaller thumbnails so rows stay short — used in the
 // full-page Organise view where notes with photos are otherwise hard to drag.
 function _pinnedNotesHtml(task, compact) {
-  const pins = _sortPins(getTaskNotes()[task] || []);
+  // Hide notes already ticked done this session — no need to organise a completed
+  // note (they're folded into the entry at clock-out).
+  const pinDone = (clockState && clockState.running && clockState.task === task && clockState.pinDone) ? clockState.pinDone : {};
+  const pins = _sortPins((getTaskNotes()[task] || []).filter(p => !pinDone[p.id]));
   if (!pins.length) return '';
   const taskAttr = _attr(task);
   return `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">
@@ -10333,7 +10336,7 @@ function showPinnedNotesPopupTask(task) {
   document.getElementById('pin-preview-title').textContent = task;
   const html = _pinnedNotesHtml(task, true);
   document.getElementById('pin-preview-body').innerHTML =
-    html || '<div style="padding:24px 0;color:var(--subtext);text-align:center;">No pinned notes.</div>';
+    html || '<div style="padding:24px 0;color:var(--subtext);text-align:center;">No notes to organise.</div>';
   openModal('modal-pin-preview');
   _loadPhotoThumbs();
 }
