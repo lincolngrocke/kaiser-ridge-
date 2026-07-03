@@ -2266,7 +2266,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.92';
+const APP_VERSION = '2026-06-21.93';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4236,7 +4236,7 @@ function closeModal(id) {
   const el = document.getElementById(id);
   el.classList.remove('open');
   el.style.bottom = '';
-  const sheet = el.querySelector('.modal-sheet');
+  const sheet = el.querySelector('.modal-sheet') || el.firstElementChild;   // also covers the bottom-sheet pickers
   if (sheet && ('kbOrigMax' in sheet.dataset)) { sheet.style.maxHeight = sheet.dataset.kbOrigMax; delete sheet.dataset.kbOrigMax; }
   if (id === 'modal-task') editingId = null;
 }
@@ -4251,7 +4251,7 @@ function _fitModalsToKeyboard() {
   const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
   document.querySelectorAll('.modal-backdrop.open').forEach(b => {
     b.style.bottom = kb ? kb + 'px' : '';
-    const sheet = b.querySelector('.modal-sheet');
+    const sheet = b.querySelector('.modal-sheet') || b.firstElementChild;   // .modal-sheet OR a bottom-sheet picker div
     if (!sheet) return;
     if (kb > 0) {
       if (!('kbOrigMax' in sheet.dataset)) sheet.dataset.kbOrigMax = sheet.style.maxHeight || '';
