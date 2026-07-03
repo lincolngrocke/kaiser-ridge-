@@ -2266,7 +2266,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.95';
+const APP_VERSION = '2026-06-21.96';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2853,7 +2853,7 @@ function renderClockState() {
     const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay()); weekStart.setHours(0,0,0,0);
     let weekH = entries.filter(e => new Date(e.date.split('/').reverse().join('-')) >= weekStart).reduce((s,e) => s+e.durationHours, 0);
     const wkEl = document.getElementById('run-week-hours');
-    if (wkEl) wkEl.textContent = weekH.toFixed(1) + 'h this week';
+    if (wkEl) wkEl.innerHTML = weekH.toFixed(1) + 'h this week<br><span style="opacity:0.65;font-size:11px;">v' + APP_VERSION + '</span>';
 
     // Keep background clock screen up to date too
     btn.textContent = 'Clock Out';
