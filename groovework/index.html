@@ -1841,6 +1841,10 @@
       <span id="run-done-title" style="font-size:17px;font-weight:600;color:#fff;">Completed this session</span>
       <button onclick="closeModal('modal-run-done')" style="background:none;border:none;color:#5ac8fa;font-size:16px;font-weight:600;cursor:pointer;padding:8px 14px;margin:-8px 0;">Done</button>
     </div>
+    <div class="run-seg" id="run-done-seg" style="margin:14px 20px 0;">
+      <div id="run-done-seg-tasks" onclick="setRunDoneTab('tasks')">Tasks</div>
+      <div id="run-done-seg-notes" onclick="setRunDoneTab('notes')">To-dos</div>
+    </div>
     <div id="run-done-body" style="flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:6px 20px 28px;"></div>
   </div>
 </div>
@@ -2333,7 +2337,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.106';
+const APP_VERSION = '2026-06-21.107';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3362,31 +3366,53 @@ function _editPinnedNote(task, pinId, newText, photos) {
   saveTaskNotes(tn);
 }
 // ── Completed-this-session view (the ✓ chip beside the dial) ──────────────
-let _runDoneRows = [];
-function openRunDone() {
-  if (!clockState || !clockState.running) return;
-  renderRunDone();
-  openModal('modal-run-done');
-}
-function renderRunDone() {
-  const body = document.getElementById('run-done-body');
-  const titleEl = document.getElementById('run-done-title');
-  if (!body || !clockState) return;
+let _runDoneRows = [];      // rows for the currently-shown tab
+let _runDoneTab = 'tasks';  // 'tasks' | 'notes' — which completed set we're viewing
+function _runDoneAllRows() {
   const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
   const pinDone = clockState.pinDone || {};
   const dur = _checklistDurations();
   const pins = (getTaskNotes()[clockState.task]) || [];
-  // Merge checklist ticks + to-do ticks into one timeline, newest first.
-  const rows = [];
-  done.forEach(d => rows.push({ kind: 'task', text: d.item, at: d.at, dur: dur[d.item] }));
-  Object.keys(pinDone).forEach(id => {
+  const tasks = done.map(d => ({ kind: 'task', text: d.item, at: d.at, dur: dur[d.item] }));
+  const notes = Object.keys(pinDone).map(id => {
     const p = pins.find(x => x.id === id);
-    rows.push({ kind: 'note', id, text: p ? p.text : '(removed to-do)', at: pinDone[id], dur: dur['pin:' + id], missing: !p });
+    return { kind: 'note', id, text: p ? p.text : '(removed to-do)', at: pinDone[id], dur: dur['pin:' + id], missing: !p };
   });
-  rows.sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
+  const byTime = (a, b) => new Date(b.at || 0) - new Date(a.at || 0);
+  return { tasks: tasks.sort(byTime), notes: notes.sort(byTime) };
+}
+function openRunDone() {
+  if (!clockState || !clockState.running) return;
+  // Open on the tab you're viewing on the clock; if that side has nothing
+  // completed but the other does, show the one with items.
+  const all = _runDoneAllRows();
+  _runDoneTab = (_runTab === 'notes') ? 'notes' : 'tasks';
+  if (_runDoneTab === 'tasks' && !all.tasks.length && all.notes.length) _runDoneTab = 'notes';
+  else if (_runDoneTab === 'notes' && !all.notes.length && all.tasks.length) _runDoneTab = 'tasks';
+  renderRunDone();
+  openModal('modal-run-done');
+}
+function setRunDoneTab(tab) { _runDoneTab = (tab === 'notes') ? 'notes' : 'tasks'; renderRunDone(); }
+function renderRunDone() {
+  const body = document.getElementById('run-done-body');
+  const titleEl = document.getElementById('run-done-title');
+  if (!body || !clockState) return;
+  const all = _runDoneAllRows();
+  const rows = _runDoneTab === 'notes' ? all.notes : all.tasks;
   _runDoneRows = rows;
-  if (titleEl) titleEl.textContent = 'Completed this session · ' + rows.length;
-  if (!rows.length) { body.innerHTML = `<div style="padding:44px 0;text-align:center;color:#616a7e;font-size:15px;">Nothing ticked off yet.<br><span style="font-size:13px;">Tick a task or to-do and it lands here.</span></div>`; return; }
+  // Segmented toggle with per-side counts.
+  const segT = document.getElementById('run-done-seg-tasks'), segN = document.getElementById('run-done-seg-notes');
+  if (segT && segN) {
+    segT.textContent = 'Tasks · ' + all.tasks.length;
+    segN.textContent = 'To-dos · ' + all.notes.length;
+    segT.classList.toggle('on', _runDoneTab === 'tasks');
+    segN.classList.toggle('on', _runDoneTab === 'notes');
+  }
+  if (titleEl) titleEl.textContent = (_runDoneTab === 'notes' ? 'To-dos' : 'Tasks') + ' completed this session';
+  if (!rows.length) {
+    body.innerHTML = `<div style="padding:44px 0;text-align:center;color:#616a7e;font-size:15px;">No ${_runDoneTab === 'notes' ? 'to-dos' : 'tasks'} ticked off yet.<br><span style="font-size:13px;">Tap the other tab above, or tick one on the clock.</span></div>`;
+    return;
+  }
   body.innerHTML = rows.map((r, i) => {
     const time = r.at ? _inboxStamp(r.at) : '';
     const durStr = (r.dur != null) ? `<span style="font-size:13px;color:#30d158;font-weight:600;white-space:nowrap;flex-shrink:0;">${fmtMin(r.dur)}</span>` : '';
@@ -3408,8 +3434,9 @@ function reviveDoneItem(i) {
   if (!r) return;
   if (r.kind === 'task') markChecklistItemDone(r.text);   // currently done → toggles it off
   else togglePinnedNote(r.id);                            // currently done → toggles it off
-  renderRunDone();                                         // refresh the list in place
-  if (!_runDoneRows.length) closeModal('modal-run-done');  // nothing left → drop back to the clock
+  renderRunDone();                                         // refresh the list in place (keeps the tab)
+  const all = _runDoneAllRows();
+  if (!all.tasks.length && !all.notes.length) closeModal('modal-run-done');  // nothing left at all → back to the clock
 }
 function toggleNoteExpand(id) {
   if (Date.now() < _pinSwipeBlockClickUntil) return;   // a swipe just happened — not a tap
