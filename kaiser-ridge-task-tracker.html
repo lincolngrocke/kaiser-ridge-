@@ -1801,10 +1801,15 @@
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
       <button onclick="closeModal('modal-run-add')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;">Cancel</button>
       <span id="run-add-title" style="font-size:17px;font-weight:600;">Add</span>
-      <button onclick="confirmRunAdd()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Add</button>
+      <button id="run-add-save" onclick="confirmRunAdd()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Add</button>
     </div>
     <div id="run-add-hint" style="font-size:13px;color:var(--subtext);margin-bottom:10px;"></div>
     <textarea id="run-add-input" rows="2" placeholder="" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmRunAdd();}" style="width:100%;min-height:60px;border:1px solid var(--border);border-radius:12px;padding:12px;font-size:16px;font-family:inherit;resize:none;outline:none;color:var(--text);background:var(--bg);" autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true"></textarea>
+    <label style="display:inline-flex;align-items:center;gap:6px;margin-top:12px;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">
+      📷 Add photo
+      <input type="file" accept="image/*" multiple onchange="onCapturePhoto(event)" style="display:none;">
+    </label>
+    <div id="run-add-photo-preview"></div>
   </div>
 </div>
 
@@ -2296,7 +2301,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.100';
+const APP_VERSION = '2026-06-21.101';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3079,34 +3084,62 @@ function openRunAdd(kind) {
   document.getElementById('run-add-hint').innerHTML = isTask
     ? 'A recurring task on <b>' + _escHtml(clockState.task) + '</b> — part of the job every time. Publish the library to share it.'
     : 'A one-off to-do on <b>' + _escHtml(clockState.task) + '</b> — shows here until you tick it off, then it\'s gone.';
+  _capturePhotos = []; _captureRemovedIds = [];   // fresh photo tray (shared w/ quick-capture)
+  const pv = document.getElementById('run-add-photo-preview'); if (pv) pv.innerHTML = '';
   const inp = document.getElementById('run-add-input');
   inp.value = '';
   inp.placeholder = isTask ? 'e.g. Wipe down the benches' : 'e.g. Order more filters';
   openModal('modal-run-add');
   setTimeout(() => inp.focus(), 120);
 }
-function confirmRunAdd() {
+// Add a Task/To-do from the clock: it's born as an Inbox note, then filed to the
+// job (same as the Inbox assign flow) so the capture ledger stays complete.
+let _savingRunAdd = false;
+async function confirmRunAdd() {
+  if (_savingRunAdd) return;
   const inp = document.getElementById('run-add-input');
   const text = (inp.value || '').trim();
-  if (!clockState || !clockState.task || !text) { closeModal('modal-run-add'); return; }
-  const task = clockState.task;
-  if (_runAddKind === 'tasks') {
-    if (!SUBTASKS[task]) SUBTASKS[task] = [];
-    if (!SUBTASKS[task].some(s => s.trim().toLowerCase() === text.toLowerCase())) SUBTASKS[task].push(text);
-    _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
-    _runTab = 'tasks'; _runTabUserSet = true;
-    showToast('Task added to ' + task + ' ✓ — Publish to share');
-  } else {
-    const tn = getTaskNotes();
-    if (!tn[task]) tn[task] = [];
-    tn[task].push({ id: 'tn' + Date.now() + Math.random().toString(36).slice(2, 5), text, ts: new Date().toISOString(), caught: new Date().toISOString() });
-    saveTaskNotes(tn);
-    _runTab = 'notes'; _runTabUserSet = true;
-    showToast('To-do added to ' + task + ' ✓');
+  if (!clockState || !clockState.task) { closeModal('modal-run-add'); return; }
+  if (!text) { if (!_capturePhotos.length) closeModal('modal-run-add'); else showToast('Give it a name'); return; }
+  _savingRunAdd = true;
+  const btn = document.getElementById('run-add-save');
+  const hasNew = _capturePhotos.some(p => !p.id && p.data);
+  if (btn) { btn.textContent = hasNew ? 'Saving…' : 'Add'; btn.style.opacity = '0.5'; btn.style.pointerEvents = 'none'; }
+  try {
+    const task = clockState.task;
+    const mode = (_runAddKind === 'tasks') ? 'permanent' : 'pinned';
+    // Resolve photos: keep Drive id, upload new ones, or keep on-device if Drive is unreachable.
+    const photos = [];
+    let anyLocal = false;
+    for (const p of _capturePhotos) {
+      if (p.id) photos.push({ id: p.id });
+      else if (p.data) { const id = await _uploadPhoto(p.data); if (id) photos.push({ id }); else { photos.push({ data: p.data }); anyLocal = true; } }
+    }
+    if (anyLocal) showToast('Some photos saved on-device (no connection to Drive)');
+    _captureRemovedIds.forEach(id => _deletePhoto(id));
+    // Born in the Inbox, then filed to the job — identical to capturing it there.
+    const inbox = getInbox();
+    const note = { id: 'n' + Date.now() + Math.random().toString(36).slice(2, 6), ts: new Date().toISOString(), text };
+    if (photos.length) note.photos = photos;
+    inbox.unshift(note);
+    const tn = (mode === 'pinned') ? getTaskNotes() : null;
+    const orig = (mode === 'permanent') ? getSubtaskOrigin() : null;
+    _applyJobItem(note, task, mode, tn, orig, { v: Date.now() });
+    _stampNoteFiled(note, [task], mode);
+    if (mode === 'permanent') { _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS)); saveSubtaskOrigin(orig); }
+    else saveTaskNotes(tn);
+    saveInbox(inbox);
+    _runTab = (mode === 'permanent') ? 'tasks' : 'notes'; _runTabUserSet = true;
+    _capturePhotos = []; _captureRemovedIds = [];
+    closeModal('modal-run-add');
+    renderRunChecklist();
+    updateInboxCount();
+    autoBackup();
+    showToast((mode === 'permanent' ? 'Task' : 'To-do') + ' added to ' + task + ' ✓' + (mode === 'permanent' ? ' — Publish to share' : ''));
+  } finally {
+    _savingRunAdd = false;
+    if (btn) { btn.textContent = 'Add'; btn.style.opacity = ''; btn.style.pointerEvents = ''; }
   }
-  closeModal('modal-run-add');
-  renderRunChecklist();
-  autoBackup();
 }
 function toggleNoteExpand(id) {
   if (Date.now() < _pinSwipeBlockClickUntil) return;   // a swipe just happened — not a tap
@@ -7560,17 +7593,17 @@ async function onCapturePhoto(ev) {
   renderCapturePreview();
 }
 function renderCapturePreview() {
-  const el = document.getElementById('capture-photo-preview');
-  if (!el) return;
-  if (!_capturePhotos.length) { el.innerHTML = ''; return; }
-  el.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">` + _capturePhotos.map((p, i) => {
+  // Shared by the quick-capture modal AND the clock-screen add modal — renders
+  // into whichever preview element is on the page.
+  const html = !_capturePhotos.length ? '' : (`<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">` + _capturePhotos.map((p, i) => {
     const drive = !p.data && p.id;
     return `<div style="position:relative;display:inline-block;">
         <img${drive ? ` data-pid="${p.id}"` : ''} src="${p.data || _PHOTO_PLACEHOLDER}" style="max-height:110px;max-width:120px;border-radius:10px;display:block;${drive ? 'min-height:60px;min-width:60px;background:var(--border);' : ''}">
         <button onclick="removeCapturePhoto(${i})" style="position:absolute;top:-8px;right:-8px;width:24px;height:24px;border-radius:50%;background:var(--red);color:#fff;border:none;font-size:13px;cursor:pointer;">✕</button>
       </div>`;
-  }).join('') + `</div>`;
-  _loadPhotoThumbs(); // fill in any Drive previews being edited
+  }).join('') + `</div>`);
+  ['capture-photo-preview', 'run-add-photo-preview'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = html; });
+  if (_capturePhotos.length) _loadPhotoThumbs(); // fill in any Drive previews
 }
 function removeCapturePhoto(i) {
   const p = _capturePhotos[i];
@@ -8166,6 +8199,33 @@ function _pinnedTasksLabel(arr) {
   if (arr.length <= 3) return arr.join(', ');
   return arr.slice(0, 2).join(', ') + ' +' + (arr.length - 2) + ' more';
 }
+// ── Shared "file an inbox note onto a job" logic (used by the Inbox assign flow
+// AND the clock-screen add). Mutates the passed-in stores; caller persists. ──
+// mode: 'permanent' → a recurring Task in SUBTASKS; 'pinned' → a one-off To-do.
+function _applyJobItem(note, task, mode, tn, orig, uidRef) {
+  const text = note.text.trim();
+  if (mode === 'permanent') {
+    if (!SUBTASKS[task]) SUBTASKS[task] = [];
+    if (!SUBTASKS[task].some(s => s.trim().toLowerCase() === text.toLowerCase())) SUBTASKS[task].push(text);
+    if (!orig[text]) orig[text] = { caught: note.ts || '', added: new Date().toISOString() };
+  } else {
+    if (!tn[task]) tn[task] = [];
+    if (!tn[task].some(p => p.inboxId === note.id)) {
+      tn[task].push({ id: 'tn' + (uidRef.v++) + Math.random().toString(36).slice(2, 5), text, ts: new Date().toISOString(), caught: note.ts || '', inboxId: note.id, photos: _notePhotos(note) });
+    }
+  }
+}
+// Stamp the inbox note with its filed state (the "journey" record).
+function _stampNoteFiled(note, tasks, mode) {
+  if (mode === 'pinned') {
+    note.assigned = true; note.assignedTs = new Date().toISOString();
+    note.pinnedTasks = [...new Set([...(Array.isArray(note.pinnedTasks) ? note.pinnedTasks : []), ...tasks])];
+    note.movedTo = _pinnedTasksLabel(note.pinnedTasks) + ' (pinned)';
+  } else {
+    note.done = true; note.doneTs = new Date().toISOString();
+    note.movedTo = tasks.length === 1 ? tasks[0] : tasks.length + ' tasks';
+  }
+}
 async function assignInboxToTask(mode) {
   const tasks = [..._inboxAssignSelected];
   const arr = getInbox();
@@ -8200,31 +8260,10 @@ async function assignInboxToTask(mode) {
   const tn = (mode === 'pinned') ? getTaskNotes() : null;
   const orig = (mode === 'permanent') ? getSubtaskOrigin() : null;
   const tag = tasks.length === 1 ? tasks[0] : tasks.length + ' tasks';
-  let uid = Date.now();
+  const uidRef = { v: Date.now() };
   notes.forEach(note => {
-    const text = note.text.trim();
-    tasks.forEach(task => {
-      if (mode === 'permanent') {
-        if (!SUBTASKS[task]) SUBTASKS[task] = [];
-        if (!SUBTASKS[task].some(s => s.trim().toLowerCase() === text.toLowerCase())) SUBTASKS[task].push(text);
-        if (!orig[text]) orig[text] = { caught: note.ts || '', added: new Date().toISOString() };
-      } else {
-        if (!tn[task]) tn[task] = [];
-        // Don't duplicate the pin if this note is already pinned to this task.
-        if (!tn[task].some(p => p.inboxId === note.id)) {
-          tn[task].push({ id: 'tn' + (uid++) + Math.random().toString(36).slice(2, 5), text, ts: new Date().toISOString(), caught: note.ts || '', inboxId: note.id, photos: _notePhotos(note) });
-        }
-      }
-    });
-    if (mode === 'pinned') { // pending until completed in the task
-      note.assigned = true; note.assignedTs = new Date().toISOString();
-      // Accumulate every task this note is pinned to (don't overwrite the last one).
-      note.pinnedTasks = [...new Set([...(Array.isArray(note.pinnedTasks) ? note.pinnedTasks : []), ...tasks])];
-      note.movedTo = _pinnedTasksLabel(note.pinnedTasks) + ' (pinned)';
-    } else {                 // permanent checklist item = filed/done
-      note.done = true; note.doneTs = new Date().toISOString();
-      note.movedTo = tag;
-    }
+    tasks.forEach(task => _applyJobItem(note, task, mode, tn, orig, uidRef));
+    _stampNoteFiled(note, tasks, mode);
   });
   // Persist — quota-safe; if storage is genuinely full the toast says so and we
   // stop here (leaving the sheet open) instead of silently half-applying.
