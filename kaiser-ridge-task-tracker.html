@@ -2337,74 +2337,15 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.107';
+const APP_VERSION = '2026-06-21.108';
 
 // ════════════════════════════════
 //  DIRECTORY
 // ════════════════════════════════
-const DIRECTORY_FALLBACK = [
-  {frequency:"Daily",       group:"Routines",             task:"Change over tiny house",                   equipment:"Hands only"},
-  {frequency:"Daily",       group:"Routines",             task:"Cleaning hot tub",                         equipment:"Hands only"},
-  {frequency:"Daily",       group:"Routines",             task:"Cleaning wood heater and firepit",          equipment:"Hands only"},
-  {frequency:"Weekly",      group:"Capital Improvements", task:"Building walking trails",                  equipment:"XCMG XE19U Mini Excavator 2024"},
-  {frequency:"Weekly",      group:"Firewood",             task:"Chainsawing",                              equipment:"Stihl MS 400 Chainsaw 2021"},
-  {frequency:"Weekly",      group:"Firewood",             task:"Chainsawing",                              equipment:"Husqvarna Chainsaw"},
-  {frequency:"Weekly",      group:"Firewood",             task:"Holding logs with thumb grab",             equipment:"XCMG XE19U Mini Excavator 2024"},
-  {frequency:"Weekly",      group:"Firewood",             task:"Splitting firewood",                       equipment:"Forestwest 18 Ton Kinetic Log Splitter 2025"},
-  {frequency:"Weekly",      group:"Maintenance",          task:"Maintaining equipment",                    equipment:"XCMG XE19U Mini Excavator 2024"},
-  {frequency:"Weekly",      group:"Maintenance",          task:"Maintaining equipment",                    equipment:"Stihl MS 400 Chainsaw 2021"},
-  {frequency:"Weekly",      group:"Maintenance",          task:"Maintaining equipment",                    equipment:"Husqvarna Chainsaw"},
-  {frequency:"Weekly",      group:"Maintenance",          task:"Maintaining equipment",                    equipment:"Forestwest 18 Ton Kinetic Log Splitter 2025"},
-  {frequency:"Weekly",      group:"Maintenance",          task:"Maintaining equipment",                    equipment:"Kubota Generator"},
-  {frequency:"Weekly",      group:"Maintenance",          task:"Maintaining equipment",                    equipment:"Karcher S4 Twin Push Sweeper 2025"},
-  {frequency:"Weekly",      group:"Maintenance",          task:"Maintaining equipment",                    equipment:"Beaver Saw Bench 2017"},
-  {frequency:"Weekly",      group:"Maintenance",          task:"Maintaining equipment",                    equipment:"Basic Trailer 8x5 Tipper Trailer 2026"},
-  {frequency:"Weekly",      group:"Maintenance",          task:"Maintaining equipment",                    equipment:"Basic Trailer 8x5 Plant Trailer 2026"},
-  {frequency:"Weekly",      group:"Maintenance",          task:"Maintaining equipment",                    equipment:"Fiskars Xact Weed Puller"},
-  {frequency:"Weekly",      group:"Maintenance",          task:"Maintaining equipment",                    equipment:"Cox Lawn Mower Ride On 52\""},
-  {frequency:"Weekly",      group:"Maintenance",          task:"Maintaining equipment",                    equipment:"Hardi 15L Backpack Sprayer"},
-  {frequency:"Weekly",      group:"Routines",             task:"Fill generator with diesel",               equipment:"Kubota Generator"},
-  {frequency:"Weekly",      group:"Routines",             task:"Swap over compost toilet",                 equipment:"Hands only"},
-  {frequency:"Weekly",      group:"Routines",             task:"Sweep shed",                               equipment:"Karcher S4 Twin Push Sweeper 2025"},
-  {frequency:"Fortnightly", group:"Routines",             task:"Pickup bins after being emptied",          equipment:"Hands only"},
-  {frequency:"Fortnightly", group:"Routines",             task:"Take down bins for emptying",              equipment:"Hands only"},
-  {frequency:"Monthly",     group:"Firewood",             task:"Loading tip trailer with saw bench wood",  equipment:"Beaver Saw Bench 2017"},
-  {frequency:"Monthly",     group:"Firewood",             task:"Loading tip trailer with saw bench wood",  equipment:"Basic Trailer 8x5 Tipper Trailer 2026"},
-  {frequency:"Monthly",     group:"Firewood",             task:"Loading trailer with cut rounds",          equipment:"Basic Trailer 8x5 Tipper Trailer 2026"},
-  {frequency:"Monthly",     group:"Firewood",             task:"Loading trailer with cut rounds",          equipment:"Basic Trailer 8x5 Plant Trailer 2026"},
-  {frequency:"Monthly",     group:"Firewood",             task:"Loading trailer with split firewood",      equipment:"Basic Trailer 8x5 Tipper Trailer 2026"},
-  {frequency:"Monthly",     group:"Firewood",             task:"Loading trailer with split firewood",      equipment:"Basic Trailer 8x5 Plant Trailer 2026"},
-  {frequency:"Monthly",     group:"Maintenance",          task:"Picking up sticks",                        equipment:"Hands only"},
-  {frequency:"Monthly",     group:"Maintenance",          task:"Picking up sticks & stones",               equipment:"Hands only"},
-  {frequency:"Monthly",     group:"Maintenance",          task:"Picking up stones",                        equipment:"Hands only"},
-  {frequency:"Monthly",     group:"Maintenance",          task:"Pulling weeds",                            equipment:"Fiskars Xact Weed Puller"},
-  {frequency:"Monthly",     group:"Maintenance",          task:"Removing box thorns",                      equipment:"Hands only"},
-  {frequency:"Monthly",     group:"Maintenance",          task:"Removing small trees",                     equipment:"XCMG XE19U Mini Excavator 2024"},
-  {frequency:"Monthly",     group:"Maintenance",          task:"Removing tree stumps",                     equipment:"XCMG XE19U Mini Excavator 2024"},
-  {frequency:"Monthly",     group:"Routines",             task:"Take cans and bottles to recyclers",       equipment:"Hands only"},
-  {frequency:"Monthly",     group:"Routines",             task:"Tidy shed",                                equipment:"Hands only"},
-  {frequency:"Monthly",     group:"Routines",             task:"Wash out bins",                            equipment:"Hands only"},
-  {frequency:"Quarterly",   group:"Hiring",               task:"Mowing grass",                             equipment:"Cox Lawn Mower Ride On 52\""},
-  {frequency:"Quarterly",   group:"Maintenance",          task:"Grading driveways",                        equipment:"XCMG XE19U Mini Excavator 2024"},
-  {frequency:"Quarterly",   group:"Maintenance",          task:"Painting",                                 equipment:"Hands only"},
-  {frequency:"Quarterly",   group:"Maintenance",          task:"Spraying weeds",                           equipment:"Hardi 15L Backpack Sprayer"},
-  {frequency:"Quarterly",   group:"Routines",             task:"Change batteries in B-Hyve Timer",         equipment:"Hands only"},
-  {frequency:"Quarterly",   group:"Routines",             task:"Change the batteries in the McGrath TTLock", equipment:"Hands only"},
-  {frequency:"Annually",    group:"Capital Improvements", task:"Installing water drains",                  equipment:"XCMG XE19U Mini Excavator 2024"},
-  {frequency:"Annually",    group:"Maintenance",          task:"Applying gravel",                          equipment:"Basic Trailer 8x5 Tipper Trailer 2026"},
-  {frequency:"Annually",    group:"Maintenance",          task:"Applying gravel",                          equipment:"XCMG XE19U Mini Excavator 2024"},
-  {frequency:"Annually",    group:"Maintenance",          task:"Applying mulch",                           equipment:"Basic Trailer 8x5 Tipper Trailer 2026"},
-  {frequency:"Annually",    group:"Maintenance",          task:"Applying mulch",                           equipment:"XCMG XE19U Mini Excavator 2024"},
-  {frequency:"Annually",    group:"Maintenance",          task:"Cleaning out culvert",                     equipment:"Hands only"},
-  {frequency:"Annually",    group:"Maintenance",          task:"Garden irrigation",                        equipment:"Hands only"},
-  {frequency:"Annually",    group:"Maintenance",          task:"Overseeding lawn",                         equipment:"Hands only"},
-  {frequency:"Annually",    group:"Routines",             task:"Change the codes in the McGrath TTLock",   equipment:"Hands only"},
-];
 
 // Load from localStorage first so local additions survive app restarts
 // Fresh installs start EMPTY (onboarding seeds a starter pack). Existing users
-// keep their stored data; the Kaiser Ridge DIRECTORY_FALLBACK is no longer the
-// default seed (kept defined only for restoreDefaultSubtasks lookups).
+// keep their stored data. Fresh installs start empty (onboarding seeds a pack).
 let DIRECTORY = JSON.parse(localStorage.getItem('kr_directory') || 'null') || [];
 
 // Remove malformed directory rows — every real task has both a frequency and a
@@ -11527,12 +11468,6 @@ async function syncCalendarForDate(dateStr, opts) {
   } catch (err) {
     if (!opts.silent) showToast('Calendar sync failed — check connection & URL');
   }
-}
-
-// 📆 button — pushes the day currently shown in the planner
-function pushPlannerToCalendar() {
-  if (isWorker()) return;
-  return syncCalendarForDate(plannerDateStr(_plannerDate), { requireItems: true });
 }
 
 // ── Auto-push planner changes to Google Calendar (replaces the manual 📆) ──
