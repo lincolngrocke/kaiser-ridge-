@@ -237,6 +237,15 @@
   .run-ring-track { stroke: rgba(255,255,255,0.08); }
   .run-ring-fg { stroke: url(#run-grad); transition: stroke-dashoffset 0.95s linear; }
   .run-ring.over .run-ring-fg { stroke: #ff9f0a; }
+  .run-done-chip {
+    position: absolute; left: -50px; top: 50%; transform: translateY(-50%);
+    min-width: 44px; height: 44px; border-radius: 22px; padding: 0 11px;
+    background: rgba(48,209,88,0.14); border: 1px solid rgba(48,209,88,0.42);
+    color: #30d158; font-size: 15px; font-weight: 700; line-height: 1;
+    display: flex; align-items: center; justify-content: center; gap: 4px;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+  }
   .run-ring-ctr {
     position: absolute; inset: 0;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -1402,6 +1411,7 @@
         <div id="run-clockedin-text">Clocked in --:--</div>
         <div id="run-ring-label"></div>
       </div>
+      <div class="run-done-chip" id="run-done-chip" style="display:none;" onclick="openRunDone()" aria-label="Completed this session"></div>
     </div>
     <div class="run-job-title" id="run-job-title"></div>
     <div class="run-job-meta" id="run-job-meta"></div>
@@ -1810,6 +1820,17 @@
       <input type="file" accept="image/*" multiple onchange="onCapturePhoto(event)" style="display:none;">
     </label>
     <div id="run-add-photo-preview"></div>
+  </div>
+</div>
+
+<!-- ══════════════ COMPLETED THIS SESSION (full page) ══════════════ -->
+<div class="modal-backdrop" id="modal-run-done" style="z-index:360;">
+  <div class="modal-sheet" style="height:92vh;display:flex;flex-direction:column;background:#0b0f17;padding:0;border:0.5px solid rgba(255,255,255,0.08);">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:0.5px solid rgba(255,255,255,0.08);flex-shrink:0;">
+      <span id="run-done-title" style="font-size:17px;font-weight:600;color:#fff;">Completed this session</span>
+      <button onclick="closeModal('modal-run-done')" style="background:none;border:none;color:#5ac8fa;font-size:16px;font-weight:600;cursor:pointer;">Done</button>
+    </div>
+    <div id="run-done-body" style="flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:6px 20px 28px;"></div>
   </div>
 </div>
 
@@ -2301,7 +2322,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.102';
+const APP_VERSION = '2026-06-21.103';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3273,6 +3294,56 @@ function _editPinnedNote(task, pinId, newText, photos) {
   p.editedTs = new Date().toISOString();
   saveTaskNotes(tn);
 }
+// ── Completed-this-session view (the ✓ chip beside the dial) ──────────────
+let _runDoneRows = [];
+function openRunDone() {
+  if (!clockState || !clockState.running) return;
+  renderRunDone();
+  openModal('modal-run-done');
+}
+function renderRunDone() {
+  const body = document.getElementById('run-done-body');
+  const titleEl = document.getElementById('run-done-title');
+  if (!body || !clockState) return;
+  const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
+  const pinDone = clockState.pinDone || {};
+  const dur = _checklistDurations();
+  const pins = (getTaskNotes()[clockState.task]) || [];
+  // Merge checklist ticks + to-do ticks into one timeline, newest first.
+  const rows = [];
+  done.forEach(d => rows.push({ kind: 'task', text: d.item, at: d.at, dur: dur[d.item] }));
+  Object.keys(pinDone).forEach(id => {
+    const p = pins.find(x => x.id === id);
+    rows.push({ kind: 'note', id, text: p ? p.text : '(removed to-do)', at: pinDone[id], dur: dur['pin:' + id], missing: !p });
+  });
+  rows.sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
+  _runDoneRows = rows;
+  if (titleEl) titleEl.textContent = 'Completed this session · ' + rows.length;
+  if (!rows.length) { body.innerHTML = `<div style="padding:44px 0;text-align:center;color:#616a7e;font-size:15px;">Nothing ticked off yet.<br><span style="font-size:13px;">Tick a task or to-do and it lands here.</span></div>`; return; }
+  body.innerHTML = rows.map((r, i) => {
+    const time = r.at ? _inboxStamp(r.at) : '';
+    const durStr = (r.dur != null) ? `<span style="font-size:13px;color:#30d158;font-weight:600;white-space:nowrap;flex-shrink:0;">${fmtMin(r.dur)}</span>` : '';
+    const tag = r.kind === 'task' ? 'Task' : 'To-do';
+    const tick = `<span onclick="reviveDoneItem(${i})" title="Tap to un-tick" style="width:24px;height:24px;border-radius:${r.kind === 'task' ? '50%' : '7px'};background:#30d158;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#05070c;font-size:14px;cursor:pointer;margin-top:1px;">✓</span>`;
+    return `<div style="display:flex;gap:12px;padding:14px 0;border-top:0.5px solid rgba(255,255,255,0.08);">
+      ${tick}
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:15px;line-height:1.4;color:#8b93a7;text-decoration:line-through;">${_escHtml(r.text)}</div>
+        <div style="font-size:12px;color:#616a7e;margin-top:4px;">${tag}${time ? ' · ' + time : ''} · tap ✓ to bring back</div>
+      </div>
+      ${durStr}
+    </div>`;
+  }).join('');
+}
+// Un-tick a completed item — it leaves this view and returns to the active list.
+function reviveDoneItem(i) {
+  const r = _runDoneRows[i];
+  if (!r) return;
+  if (r.kind === 'task') markChecklistItemDone(r.text);   // currently done → toggles it off
+  else togglePinnedNote(r.id);                            // currently done → toggles it off
+  renderRunDone();                                         // refresh the list in place
+  if (!_runDoneRows.length) closeModal('modal-run-done');  // nothing left → drop back to the clock
+}
 function toggleNoteExpand(id) {
   if (Date.now() < _pinSwipeBlockClickUntil) return;   // a swipe just happened — not a tap
   if (_expandedNotes.has(id)) _expandedNotes.delete(id); else _expandedNotes.add(id);
@@ -3326,6 +3397,7 @@ function renderRunChecklist() {
   if (!running) {
     el.innerHTML = ''; el.style.display = 'none';
     if (seg) seg.style.display = 'none';
+    const chip0 = document.getElementById('run-done-chip'); if (chip0) chip0.style.display = 'none';
     return;
   }
   // Reset the tab choice + expanded state when the clocked job changes.
@@ -3351,6 +3423,14 @@ function renderRunChecklist() {
     segN.classList.toggle('on', tab === 'notes');
   }
 
+  // Completed-this-session chip beside the dial (checklist ticks + to-do ticks).
+  const sessionDone = done.length + Object.keys(pinDone).length;
+  const chip = document.getElementById('run-done-chip');
+  if (chip) {
+    if (sessionDone > 0) { chip.style.display = 'flex'; chip.innerHTML = '<span style="font-size:13px;">✓</span>' + sessionDone; }
+    else chip.style.display = 'none';
+  }
+
   el.style.display = 'flex';
   let rows = '', organiseLink = '';
 
@@ -3362,13 +3442,16 @@ function renderRunChecklist() {
     if (items.filter(s => clFlags[s]).length > 1) organiseLink = `<span onclick="openChecklistOrganise(event)" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">⤢ Organise</span>`;
     rows = items.map(s => {
       const enc = s.replace(/'/g, "\\'");
-      if (carried.has(s) && !done.some(d => d.item === s)) {
+      const isDone = done.some(d => d.item === s);
+      // Ticked this session → vanishes from the active list; it lives in the ✓ chip
+      // / "Completed this session" view instead (revive it there).
+      if (isDone) return '';
+      if (carried.has(s)) {
         return `<div style="display:flex;align-items:center;gap:12px;padding:13px 0;border-top:0.5px solid rgba(255,255,255,0.08);opacity:0.5;">
           <span style="width:24px;height:24px;border-radius:50%;background:#30d158;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#05070c;font-size:14px;">✓</span>
           <span style="flex:1;font-size:16px;color:#8b93a7;text-decoration:line-through;">${_escHtml(s)}</span>
           <span style="font-size:12px;color:#616a7e;white-space:nowrap;">earlier</span></div>`;
       }
-      const isDone = done.some(d => d.item === s);
       const steps = stepsMap[s] || [];
       const expanded = _expandedChecklistItems.has(s);
       const checkedCount = steps.filter(st => stepChecks[s] && stepChecks[s][st]).length;
@@ -3400,6 +3483,7 @@ function renderRunChecklist() {
     if (pinned.length > 1) organiseLink = `<span onclick="openPinOrganise(event)" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">⤢ Organise</span>`;
     rows = pinned.map(p => {
       const isDone = !!pinDone[p.id];
+      if (isDone) return '';   // ticked this session → moves to the ✓ chip / Completed view
       const safe = _escHtml(p.text);
       const expanded = _expandedNotes.has(p.id);
       const caughtTs = p.caught || p.ts;
@@ -3423,7 +3507,14 @@ function renderRunChecklist() {
     }).join('');
   }
 
-  if (!rows) rows = `<div style="padding:22px 0;text-align:center;color:#616a7e;font-size:14px;">${tab === 'tasks' ? 'No tasks yet — tap “+ Add task”.' : 'No to-dos yet — tap “+ Add to-do”.'}</div>`;
+  if (!rows) {
+    const total = (tab === 'tasks') ? items.length : pinned.length;
+    const allDone = total > 0;   // rows empty but items exist ⇒ everything's ticked off
+    const msg = allDone
+      ? (tab === 'tasks' ? 'All tasks done 🎉 — tap ✓ to review.' : 'All to-dos done 🎉 — tap ✓ to review.')
+      : (tab === 'tasks' ? 'No tasks yet — tap “+ Add task”.' : 'No to-dos yet — tap “+ Add to-do”.');
+    rows = `<div style="padding:22px 0;text-align:center;color:#616a7e;font-size:14px;">${msg}</div>`;
+  }
   const addLink = `<span onclick="openRunAdd('${tab}')" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">+ Add ${tab === 'tasks' ? 'task' : 'to-do'}</span>`;
   const headerHtml = `<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0 6px;">${addLink}${organiseLink || '<span></span>'}</div>`;
   const prevScroll = (document.getElementById('run-checklist-scroll') || {}).scrollTop || 0;
