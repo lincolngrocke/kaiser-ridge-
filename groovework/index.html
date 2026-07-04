@@ -2301,7 +2301,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.101';
+const APP_VERSION = '2026-06-21.102';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3076,11 +3076,15 @@ function setRunTab(tab) { _runTabUserSet = true; _runTab = tab; renderRunCheckli
 // Add a Task (recurring) or To-do (one-off) to the job you're clocked into,
 // straight from the clock — writes to the same stores the Jobs page reads.
 let _runAddKind = 'tasks';
+let _runAddMode = 'add';          // 'add' | 'edit'
+let _runEditRef = null;           // when editing: { kind, task, pinId, oldText }
 function openRunAdd(kind) {
   if (!clockState || !clockState.running || !clockState.task) return;
+  _runAddMode = 'add'; _runEditRef = null;
   _runAddKind = (kind === 'notes') ? 'notes' : 'tasks';
   const isTask = _runAddKind === 'tasks';
   document.getElementById('run-add-title').textContent = isTask ? 'Add task' : 'Add to-do';
+  const sb = document.getElementById('run-add-save'); if (sb) sb.textContent = 'Add';
   document.getElementById('run-add-hint').innerHTML = isTask
     ? 'A recurring task on <b>' + _escHtml(clockState.task) + '</b> — part of the job every time. Publish the library to share it.'
     : 'A one-off to-do on <b>' + _escHtml(clockState.task) + '</b> — shows here until you tick it off, then it\'s gone.';
@@ -3092,10 +3096,39 @@ function openRunAdd(kind) {
   openModal('modal-run-add');
   setTimeout(() => inp.focus(), 120);
 }
+// Edit an existing Task (checklist item) or To-do (pinned note) straight from the
+// clock — reuses the add sheet. For a task, ref = the item text; for a to-do, the pin id.
+function openRunEdit(kind, ref) {
+  if (!clockState || !clockState.running || !clockState.task) return;
+  const isTask = kind === 'tasks';
+  _runAddMode = 'edit'; _runAddKind = isTask ? 'tasks' : 'notes';
+  _capturePhotos = []; _captureRemovedIds = [];
+  const pv = document.getElementById('run-add-photo-preview'); if (pv) pv.innerHTML = '';
+  document.getElementById('run-add-title').textContent = isTask ? 'Edit task' : 'Edit to-do';
+  const sb = document.getElementById('run-add-save'); if (sb) sb.textContent = 'Save';
+  const inp = document.getElementById('run-add-input');
+  inp.placeholder = '';
+  if (isTask) {
+    _runEditRef = { kind: 'tasks', task: clockState.task, oldText: ref };
+    document.getElementById('run-add-hint').innerHTML = 'Rename this task on <b>' + _escHtml(clockState.task) + '</b>. Publish the library to share the change.';
+    inp.value = ref;
+  } else {
+    const p = ((getTaskNotes()[clockState.task]) || []).find(x => x.id === ref);
+    if (!p) return;
+    _runEditRef = { kind: 'notes', task: clockState.task, pinId: ref, oldText: p.text };
+    document.getElementById('run-add-hint').innerHTML = 'Edit this to-do on <b>' + _escHtml(clockState.task) + '</b>.';
+    inp.value = p.text;
+    _capturePhotos = _notePhotos(p).map(ph => Object.assign({}, ph));   // preload existing photos
+    renderCapturePreview();
+  }
+  openModal('modal-run-add');
+  setTimeout(() => inp.focus(), 120);
+}
 // Add a Task/To-do from the clock: it's born as an Inbox note, then filed to the
 // job (same as the Inbox assign flow) so the capture ledger stays complete.
 let _savingRunAdd = false;
 async function confirmRunAdd() {
+  if (_runAddMode === 'edit') return confirmRunEdit();
   if (_savingRunAdd) return;
   const inp = document.getElementById('run-add-input');
   const text = (inp.value || '').trim();
@@ -3140,6 +3173,105 @@ async function confirmRunAdd() {
     _savingRunAdd = false;
     if (btn) { btn.textContent = 'Add'; btn.style.opacity = ''; btn.style.pointerEvents = ''; }
   }
+}
+// Save an edit made from the clock — either renames a checklist item or updates
+// a pinned to-do's text/photos in place.
+async function confirmRunEdit() {
+  if (_savingRunAdd) return;
+  const ref = _runEditRef;
+  if (!ref || !clockState) { closeModal('modal-run-add'); _runAddMode = 'add'; return; }
+  const inp = document.getElementById('run-add-input');
+  const text = (inp.value || '').trim();
+  if (!text) { showToast('Give it a name'); return; }
+  _savingRunAdd = true;
+  const btn = document.getElementById('run-add-save');
+  const hasNew = _capturePhotos.some(p => !p.id && p.data);
+  if (btn) { btn.textContent = hasNew ? 'Saving…' : 'Save'; btn.style.opacity = '0.5'; btn.style.pointerEvents = 'none'; }
+  try {
+    if (ref.kind === 'tasks') {
+      _renameChecklistItem(ref.task, ref.oldText, text);
+    } else {
+      // Resolve photos the same way the add flow does: keep Drive ids, upload new
+      // ones, or fall back to on-device if Drive is unreachable.
+      const photos = [];
+      let anyLocal = false;
+      for (const p of _capturePhotos) {
+        if (p.id) photos.push({ id: p.id });
+        else if (p.data) { const id = await _uploadPhoto(p.data); if (id) photos.push({ id }); else { photos.push({ data: p.data }); anyLocal = true; } }
+      }
+      if (anyLocal) showToast('Some photos saved on-device (no connection to Drive)');
+      _captureRemovedIds.forEach(id => _deletePhoto(id));
+      _editPinnedNote(ref.task, ref.pinId, text, photos);
+    }
+    _capturePhotos = []; _captureRemovedIds = [];
+    closeModal('modal-run-add');
+    renderRunChecklist();
+    updateInboxCount();
+    autoBackup();
+    showToast(ref.kind === 'tasks' ? 'Task updated ✓ — Publish to share' : 'To-do updated ✓');
+  } finally {
+    _savingRunAdd = false; _runAddMode = 'add'; _runEditRef = null;
+    if (btn) { btn.textContent = 'Add'; btn.style.opacity = ''; btn.style.pointerEvents = ''; }
+  }
+}
+// Rename a recurring checklist item everywhere it appears (matches the app's
+// shared-item model) and carry across its sub-steps, guide, inbox-origin, flags
+// and the current session's ticked/expanded state so nothing is lost.
+function _renameChecklistItem(task, oldName, newName) {
+  if (!newName || newName === oldName) return;
+  // Already on this job under a different case? Just drop the old one, no rename.
+  Object.keys(SUBTASKS).forEach(t => {
+    if (Array.isArray(SUBTASKS[t])) {
+      SUBTASKS[t] = SUBTASKS[t].map(s => (s === oldName ? newName : s));
+      const seen = new Set();   // collapse any duplicate the rename created
+      SUBTASKS[t] = SUBTASKS[t].filter(s => { const k = s.trim().toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+    }
+  });
+  _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
+  const steps = getSubtaskSteps();
+  if (steps[oldName]) { if (!steps[newName]) steps[newName] = steps[oldName]; delete steps[oldName]; saveSubtaskSteps(steps); }
+  const guides = getSubtaskGuides();
+  if (guides[oldName]) { if (!guides[newName]) guides[newName] = guides[oldName]; delete guides[oldName]; saveSubtaskGuides(guides); }
+  const orig = getSubtaskOrigin();
+  if (orig[oldName]) { orig[newName] = Object.assign({}, orig[newName] || {}, orig[oldName], { edited: new Date().toISOString() }); delete orig[oldName]; saveSubtaskOrigin(orig); }
+  const flags = getChecklistFlags(); let flagsChanged = false;
+  Object.keys(flags).forEach(t => { if (flags[t] && flags[t][oldName] != null) { flags[t][newName] = flags[t][oldName]; delete flags[t][oldName]; flagsChanged = true; } });
+  if (flagsChanged) saveChecklistFlags(flags);
+  // Current session: keep a ticked/carried/expanded item ticked under its new name.
+  let clockChanged = false;
+  if (Array.isArray(clockState.checklistDone)) clockState.checklistDone.forEach(d => { if (d.item === oldName) { d.item = newName; clockChanged = true; } });
+  if (Array.isArray(clockState.checklistCarried)) clockState.checklistCarried = clockState.checklistCarried.map(s => { if (s === oldName) { clockChanged = true; return newName; } return s; });
+  if (clockState.stepChecks && clockState.stepChecks[oldName]) { clockState.stepChecks[newName] = clockState.stepChecks[oldName]; delete clockState.stepChecks[oldName]; clockChanged = true; }
+  if (_expandedChecklistItems.has(oldName)) { _expandedChecklistItems.delete(oldName); _expandedChecklistItems.add(newName); }
+  if (clockChanged) _safeSetItem('kr_clock', JSON.stringify(clockState));
+  const pi = _subtaskItems.indexOf(oldName); if (pi !== -1) _subtaskItems[pi] = newName;
+}
+// Edit a pinned to-do's text/photos in place. If it came from the Inbox, edit the
+// source note too so the capture ledger stays truthful (also propagates to any
+// other copies of that note via _propagateNoteEdit).
+function _editPinnedNote(task, pinId, newText, photos) {
+  const tn = getTaskNotes();
+  const p = (tn[task] || []).find(x => x.id === pinId);
+  if (!p) return;
+  if (p.inboxId) {
+    const inbox = getInbox();
+    const note = inbox.find(n => n.id === p.inboxId);
+    if (note) {
+      const oldText = note.text;
+      note.text = newText;
+      if (photos && photos.length) note.photos = photos.slice(); else delete note.photos;
+      delete note.image; delete note.imageId;
+      note.editedTs = new Date().toISOString();
+      _propagateNoteEdit(note, oldText, photos);   // updates this pin + any siblings + checklist
+      saveInbox(inbox);
+      return;
+    }
+  }
+  // Direct pin (no inbox link) — edit it in the task-notes store.
+  p.text = newText;
+  if (photos && photos.length) p.photos = photos.slice(); else delete p.photos;
+  p.editedTs = new Date().toISOString();
+  saveTaskNotes(tn);
 }
 function toggleNoteExpand(id) {
   if (Date.now() < _pinSwipeBlockClickUntil) return;   // a swipe just happened — not a tap
@@ -3250,7 +3382,8 @@ function renderRunChecklist() {
         : (steps.length ? `<span onclick="toggleChecklistExpand('${enc}')" style="color:#8b93a7;font-size:14px;cursor:pointer;padding:0 4px;flex-shrink:0;">${expanded ? '▾' : '▸'}</span>` : '');
       const clFlagAttr = (flagged && !isDone) ? '1' : '';
       const clRowBg = (flagged && !isDone) ? 'background:rgba(255,214,10,0.08);' : '';
-      let html = `<div class="cl-row" data-cl-item="${_attr(s)}" data-cl-task="${taskAttr}" data-cl-flagged="${clFlagAttr}" ontouchstart="clSwipeStart(event)" ontouchmove="clSwipeMove(event)" ontouchend="clSwipeEnd(event)" style="display:flex;align-items:center;gap:12px;padding:13px 0;border-top:0.5px solid rgba(255,255,255,0.08);${clRowBg}">${circle}${textSpan}${right}</div>`;
+      const editIcon = `<span onclick="event.stopPropagation();openRunEdit('tasks','${enc}')" style="flex-shrink:0;color:#5a6274;font-size:14px;cursor:pointer;padding:2px 4px;">✎</span>`;
+      let html = `<div class="cl-row" data-cl-item="${_attr(s)}" data-cl-task="${taskAttr}" data-cl-flagged="${clFlagAttr}" ontouchstart="clSwipeStart(event)" ontouchmove="clSwipeMove(event)" ontouchend="clSwipeEnd(event)" style="display:flex;align-items:center;gap:12px;padding:13px 0;border-top:0.5px solid rgba(255,255,255,0.08);${clRowBg}">${circle}${textSpan}${editIcon}${right}</div>`;
       if (expanded && steps.length && !isDone) {
         html += steps.map(st => {
           const encStep = st.replace(/'/g, "\\'");
@@ -3284,6 +3417,7 @@ function renderRunChecklist() {
           <div style="font-size:12px;color:#616a7e;margin-top:5px;">${shortDate}${fullMeta}</div>
           ${thumb}
         </div>
+        <span onclick="event.stopPropagation();openRunEdit('notes','${p.id}')" style="flex-shrink:0;color:#5a6274;font-size:14px;cursor:pointer;padding:2px 4px;align-self:flex-start;margin-top:1px;">✎</span>
         ${durStr}
       </div>`;
     }).join('');
