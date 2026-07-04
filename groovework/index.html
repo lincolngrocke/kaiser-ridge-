@@ -238,7 +238,7 @@
   .run-ring-fg { stroke: url(#run-grad); transition: stroke-dashoffset 0.95s linear; }
   .run-ring.over .run-ring-fg { stroke: #ff9f0a; }
   .run-done-chip {
-    position: absolute; left: -50px; top: 50%; transform: translateY(-50%);
+    position: absolute; left: -68px; top: 50%; transform: translateY(-50%);
     min-width: 44px; height: 44px; border-radius: 22px; padding: 0 11px;
     background: rgba(48,209,88,0.14); border: 1px solid rgba(48,209,88,0.42);
     color: #30d158; font-size: 15px; font-weight: 700; line-height: 1;
@@ -250,6 +250,14 @@
     position: absolute; inset: 0;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
   }
+  /* Drag the Tasks/To-dos section up to cover the clock for a bigger list. */
+  .run-hero { transition: max-height .3s ease, opacity .25s ease; }
+  .clock-running-overlay.list-expanded .run-hero { opacity: 0; pointer-events: none; }
+  #run-list-top { touch-action: none; }
+  .run-grab { display: none; justify-content: center; align-items: center; padding: 8px 0 4px; cursor: grab; }
+  .run-grab.on { display: flex; }
+  .run-grab-pill { width: 40px; height: 5px; border-radius: 3px; background: rgba(255,255,255,0.22); }
+  .clock-running-overlay.list-expanded .run-grab-pill { background: rgba(90,200,250,0.6); }
   .running-big-timer {
     font-size: 36px; font-weight: 300; letter-spacing: -1px;
     color: #fff; font-variant-numeric: tabular-nums; line-height: 1.1;
@@ -1419,11 +1427,14 @@
     <button id="run-video-btn" onclick="playVideoForTask(clockState&&clockState.task)" style="display:none;margin-top:12px;background:rgba(255,255,255,0.1);color:#fff;border:0.5px solid rgba(255,255,255,0.15);border-radius:20px;padding:8px 16px;font-size:14px;font-weight:600;cursor:pointer;">▶ Watch how-to</button>
     <span class="run-undo" id="run-undo" onclick="undoClockIn()">Undo clock-in</span>
   </div>
-  <div class="run-seg" id="run-seg" style="display:none;">
-    <div id="run-seg-tasks" onclick="setRunTab('tasks')">Tasks</div>
-    <div id="run-seg-notes" onclick="setRunTab('notes')">To-dos</div>
+  <div id="run-list-top" ontouchstart="runGrabStart(event)" ontouchmove="runGrabMove(event)" ontouchend="runGrabEnd(event)">
+    <div class="run-grab" id="run-grab"><span class="run-grab-pill"></span></div>
+    <div class="run-seg" id="run-seg" style="display:none;">
+      <div id="run-seg-tasks" onclick="setRunTab('tasks')">Tasks</div>
+      <div id="run-seg-notes" onclick="setRunTab('notes')">To-dos</div>
+    </div>
   </div>
-  <div id="run-checklist" style="display:none;width:100%;margin:12px auto 0;padding:0 20px;text-align:left;flex:1 1 0;min-height:0;flex-direction:column;"></div>
+  <div id="run-checklist" ontouchstart="runListInteract()" style="display:none;width:100%;margin:12px auto 0;padding:0 20px;text-align:left;flex:1 1 0;min-height:0;flex-direction:column;"></div>
   <div class="running-buttons">
 <button class="btn-pause" id="btn-pause" onclick="breakButtonTap()">☕ Start Break</button>
 <button class="btn-clock-out" style="flex:1" onclick="openTimeModal('out')">Clock Out</button>
@@ -1825,10 +1836,10 @@
 
 <!-- ══════════════ COMPLETED THIS SESSION (full page) ══════════════ -->
 <div class="modal-backdrop" id="modal-run-done" style="z-index:360;">
-  <div class="modal-sheet" style="height:92vh;display:flex;flex-direction:column;background:#0b0f17;padding:0;border:0.5px solid rgba(255,255,255,0.08);">
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:0.5px solid rgba(255,255,255,0.08);flex-shrink:0;">
+  <div class="modal-sheet" style="height:100vh;max-height:100vh;display:flex;flex-direction:column;background:#0b0f17;padding:0;border-radius:0;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:calc(env(safe-area-inset-top) + 14px) 10px 14px 20px;border-bottom:0.5px solid rgba(255,255,255,0.08);flex-shrink:0;">
       <span id="run-done-title" style="font-size:17px;font-weight:600;color:#fff;">Completed this session</span>
-      <button onclick="closeModal('modal-run-done')" style="background:none;border:none;color:#5ac8fa;font-size:16px;font-weight:600;cursor:pointer;">Done</button>
+      <button onclick="closeModal('modal-run-done')" style="background:none;border:none;color:#5ac8fa;font-size:16px;font-weight:600;cursor:pointer;padding:8px 14px;margin:-8px 0;">Done</button>
     </div>
     <div id="run-done-body" style="flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:6px 20px 28px;"></div>
   </div>
@@ -2322,7 +2333,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.103';
+const APP_VERSION = '2026-06-21.104';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3093,7 +3104,63 @@ function toggleChecklistStep(item, step) {
 let _runTab = 'tasks', _runTabUserSet = false, _runLastTask = null;
 let _expandedNotes = new Set();
 function _escHtml(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-function setRunTab(tab) { _runTabUserSet = true; _runTab = tab; renderRunChecklist(); }
+let _runSegBlockTapUntil = 0;
+function setRunTab(tab) { if (Date.now() < _runSegBlockTapUntil) return; _runTabUserSet = true; _runTab = tab; renderRunChecklist(); }
+
+// ── Drag the Tasks/To-dos section up to cover the clock (bigger list). Snaps
+// back ~3s after you stop touching it. The clock ring collapses via max-height.
+let _runListExpanded = false, _runCollapseTimer = null;
+let _runGrabY = null, _runGrabActive = false;
+function _runHeroEl() { const ov = document.getElementById('running-overlay'); return ov ? ov.querySelector('.run-hero') : null; }
+function armRunCollapse() {
+  if (_runCollapseTimer) clearTimeout(_runCollapseTimer);
+  _runCollapseTimer = setTimeout(() => { _runCollapseTimer = null; setRunListExpanded(false); }, 3000);
+}
+function runListInteract() { if (_runListExpanded) armRunCollapse(); }   // reset the snap-back timer while you're using the list
+function setRunListExpanded(on) {
+  const ov = document.getElementById('running-overlay'); const hero = _runHeroEl();
+  if (!ov || !hero) return;
+  if (on === _runListExpanded) { if (on) armRunCollapse(); return; }
+  _runListExpanded = on;
+  if (on) {
+    const h = hero.scrollHeight;
+    hero.style.overflow = 'hidden';
+    hero.style.maxHeight = h + 'px';
+    void hero.offsetHeight;                          // force reflow so the transition runs
+    ov.classList.add('list-expanded');
+    hero.style.maxHeight = '0px'; hero.style.opacity = '0'; hero.style.pointerEvents = 'none';
+    armRunCollapse();
+  } else {
+    if (_runCollapseTimer) { clearTimeout(_runCollapseTimer); _runCollapseTimer = null; }
+    ov.classList.remove('list-expanded');
+    hero.style.maxHeight = hero.scrollHeight + 'px'; hero.style.opacity = ''; hero.style.pointerEvents = '';
+    // Clear the clamp once expanded back, so the resting state is unconstrained (chip visible).
+    setTimeout(() => { if (!_runListExpanded) { hero.style.maxHeight = ''; hero.style.overflow = ''; } }, 320);
+  }
+}
+function resetRunList() {
+  if (_runCollapseTimer) { clearTimeout(_runCollapseTimer); _runCollapseTimer = null; }
+  _runListExpanded = false;
+  const ov = document.getElementById('running-overlay'); const hero = _runHeroEl();
+  if (ov) ov.classList.remove('list-expanded');
+  if (hero) { hero.style.maxHeight = ''; hero.style.opacity = ''; hero.style.overflow = ''; hero.style.pointerEvents = ''; }
+}
+function runGrabStart(e) {
+  if (!clockState || !clockState.running) return;
+  _runGrabActive = true;
+  _runGrabY = (e.touches && e.touches[0]) ? e.touches[0].clientY : e.clientY;
+}
+function runGrabMove(e) {
+  if (!_runGrabActive || _runGrabY == null) return;
+  const y = (e.touches && e.touches[0]) ? e.touches[0].clientY : e.clientY;
+  const dy = y - _runGrabY;
+  if (dy < -24 && !_runListExpanded) { setRunListExpanded(true); _runSegBlockTapUntil = Date.now() + 500; }
+  else if (dy > 24 && _runListExpanded) { setRunListExpanded(false); _runSegBlockTapUntil = Date.now() + 500; }
+}
+function runGrabEnd() {
+  _runGrabActive = false; _runGrabY = null;
+  if (_runListExpanded) armRunCollapse();     // start the ~3s snap-back countdown on release
+}
 // Add a Task (recurring) or To-do (one-off) to the job you're clocked into,
 // straight from the clock — writes to the same stores the Jobs page reads.
 let _runAddKind = 'tasks';
@@ -3397,11 +3464,14 @@ function renderRunChecklist() {
   if (!running) {
     el.innerHTML = ''; el.style.display = 'none';
     if (seg) seg.style.display = 'none';
+    const grab0 = document.getElementById('run-grab'); if (grab0) grab0.classList.remove('on');
     const chip0 = document.getElementById('run-done-chip'); if (chip0) chip0.style.display = 'none';
+    resetRunList();
     return;
   }
-  // Reset the tab choice + expanded state when the clocked job changes.
-  if (_runLastTask !== clockState.task) { _runTabUserSet = false; _expandedNotes.clear(); _runLastTask = clockState.task; }
+  // Reset the tab choice + list-expand when the clocked job changes.
+  if (_runLastTask !== clockState.task) { _runTabUserSet = false; _expandedNotes.clear(); _runLastTask = clockState.task; resetRunList(); }
+  const grab = document.getElementById('run-grab'); if (grab) grab.classList.add('on');
   const done = (clockState && Array.isArray(clockState.checklistDone)) ? clockState.checklistDone : [];
   const carried = new Set((clockState && Array.isArray(clockState.checklistCarried)) ? clockState.checklistCarried : []);
   const dur = _checklistDurations();
