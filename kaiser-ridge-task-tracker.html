@@ -1837,7 +1837,7 @@
 <!-- ══════════════ COMPLETED THIS SESSION (full page) ══════════════ -->
 <div class="modal-backdrop" id="modal-run-done" style="z-index:360;">
   <div class="modal-sheet" style="height:100vh;max-height:100vh;display:flex;flex-direction:column;background:#0b0f17;padding:0;border-radius:0;">
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:calc(env(safe-area-inset-top) + 14px) 10px 14px 20px;border-bottom:0.5px solid rgba(255,255,255,0.08);flex-shrink:0;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:calc(max(env(safe-area-inset-top), 52px) + 16px) 10px 14px 20px;border-bottom:0.5px solid rgba(255,255,255,0.08);flex-shrink:0;">
       <span id="run-done-title" style="font-size:17px;font-weight:600;color:#fff;">Completed this session</span>
       <button onclick="closeModal('modal-run-done')" style="background:none;border:none;color:#5ac8fa;font-size:16px;font-weight:600;cursor:pointer;padding:8px 14px;margin:-8px 0;">Done</button>
     </div>
@@ -2333,7 +2333,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.104';
+const APP_VERSION = '2026-06-21.105';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3114,7 +3114,7 @@ let _runGrabY = null, _runGrabActive = false;
 function _runHeroEl() { const ov = document.getElementById('running-overlay'); return ov ? ov.querySelector('.run-hero') : null; }
 function armRunCollapse() {
   if (_runCollapseTimer) clearTimeout(_runCollapseTimer);
-  _runCollapseTimer = setTimeout(() => { _runCollapseTimer = null; setRunListExpanded(false); }, 3000);
+  _runCollapseTimer = setTimeout(() => { _runCollapseTimer = null; setRunListExpanded(false); }, 5000);
 }
 function runListInteract() { if (_runListExpanded) armRunCollapse(); }   // reset the snap-back timer while you're using the list
 function setRunListExpanded(on) {
@@ -3588,7 +3588,7 @@ function renderRunChecklist() {
   const addLink = `<span onclick="openRunAdd('${tab}')" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">+ Add ${tab === 'tasks' ? 'task' : 'to-do'}</span>`;
   const headerHtml = `<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0 6px;">${addLink}${organiseLink || '<span></span>'}</div>`;
   const prevScroll = (document.getElementById('run-checklist-scroll') || {}).scrollTop || 0;
-  el.innerHTML = headerHtml + `<div id="run-checklist-scroll" style="flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;">${rows}</div>`;
+  el.innerHTML = headerHtml + `<div id="run-checklist-scroll" onscroll="runListInteract()" style="flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;">${rows}</div>`;
   const sc = document.getElementById('run-checklist-scroll');
   if (sc) sc.scrollTop = prevScroll;
   _loadPhotoThumbs();
