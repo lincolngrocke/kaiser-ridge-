@@ -1212,7 +1212,7 @@
       <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
         <div class="settings-label" style="font-weight:600;">Storage</div>
         <div style="font-size:13px; color:var(--subtext); line-height:1.6;">
-          Notes, pinned notes and timesheets live in the phone’s big store, which grows as needed —
+          Notes, to-dos and timesheets live in the phone’s big store, which grows as needed —
           capture forever, delete nothing. Settings and the job library use a separate small store.
           Photos saved on-device (when Drive couldn’t be reached) still count until moved to Drive.
         </div>
@@ -1394,7 +1394,7 @@
   </div>
   <div class="run-seg" id="run-seg" style="display:none;">
     <div id="run-seg-tasks" onclick="setRunTab('tasks')">Tasks</div>
-    <div id="run-seg-notes" onclick="setRunTab('notes')">Notes</div>
+    <div id="run-seg-notes" onclick="setRunTab('notes')">To-dos</div>
   </div>
   <div id="run-checklist" style="display:none;width:100%;margin:12px auto 0;padding:0 20px;text-align:left;flex:1 1 0;min-height:0;flex-direction:column;"></div>
   <div class="running-buttons">
@@ -1558,7 +1558,7 @@
       <span style="font-size:17px;font-weight:600;">Add to a job</span>
       <span style="width:48px;"></span>
     </div>
-    <div style="padding:6px 20px 8px;font-size:13px;color:var(--subtext);">Pick a job — the note is added to its tasks, then filed as done with a “moved to” tag.</div>
+    <div style="padding:6px 20px 8px;font-size:13px;color:var(--subtext);">Pick a job — your note becomes a <b>To-do</b> (one-off) or a permanent <b>Task</b> there.</div>
     <div id="inbox-assign-note" style="margin:0 20px 10px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:10px;font-size:14px;color:var(--text);white-space:pre-wrap;line-height:1.4;max-height:22vh;overflow-y:auto;"></div>
     <div id="inbox-assign-search-row" style="padding:0 20px 10px;">
       <input id="inbox-assign-search" type="search" placeholder="Find tasks…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="renderInboxAssignList()" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;">
@@ -2266,7 +2266,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.97';
+const APP_VERSION = '2026-06-21.98';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3108,7 +3108,7 @@ function renderRunChecklist() {
     if (items.length && pinned.length) {
       seg.style.display = 'flex';
       segT.textContent = 'Tasks · ' + tasksDone + '/' + items.length;
-      segN.textContent = 'Notes · ' + notesDone + '/' + pinned.length;
+      segN.textContent = 'To-dos · ' + notesDone + '/' + pinned.length;
       segT.classList.toggle('on', tab === 'tasks');
       segN.classList.toggle('on', tab === 'notes');
     } else {
@@ -5129,7 +5129,7 @@ function _localPhotoCount() {
 function updateStorageUsage() {
   const el = document.getElementById('storage-usage');
   if (!el) return;
-  const label = { kr_inbox: '📥 Inbox notes', kr_task_notes: '📌 Pinned notes', kr_entries: '🕐 Timesheets', kr_last_backup: '💾 Auto-snapshot copy', kr_subtasks: '☑️ Checklists', kr_directory: '📂 Task directory' };
+  const label = { kr_inbox: '📥 Inbox notes', kr_task_notes: '📌 To-dos', kr_entries: '🕐 Timesheets', kr_last_backup: '💾 Auto-snapshot copy', kr_subtasks: '☑️ Checklists', kr_directory: '📂 Task directory' };
   const row = ([k, b]) => `<div style="display:flex;justify-content:space-between;"><span>${label[k] || k}</span><span>${_fmtKB(b)}</span></div>`;
   // Big store (IndexedDB) — where the ever-growing data lives; effectively unlimited.
   let bigHtml = '';
@@ -6000,7 +6000,7 @@ function renderDirectory() {
             const gapDays = auto ? Math.max(1, Math.round(auto.avgGap)) : 0;
             const autoBadge = auto ? `<span style="display:inline-block;background:#5856D6;color:#fff;font-size:9px;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;">AUTO</span>` : '';
             const nPins = (taskNotes[task] || []).length;
-            const pinBadge = nPins ? `<span onclick="event.stopPropagation();showPinnedNotesPopup(this)" ontouchstart="event.stopPropagation()" title="View ${nPins} pinned note${nPins === 1 ? '' : 's'}" style="display:inline-block;background:#FFD60A;color:#000;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;cursor:pointer;">📌 ${nPins}</span>` : '';
+            const pinBadge = nPins ? `<span onclick="event.stopPropagation();showPinnedNotesPopup(this)" ontouchstart="event.stopPropagation()" title="View ${nPins} to-do${nPins === 1 ? '' : 's'}" style="display:inline-block;background:#FFD60A;color:#000;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;cursor:pointer;">📌 ${nPins}</span>` : '';
             const hasVideo = !!(taskVideos[task] || {}).id;
             const videoBadge = hasVideo ? `<span onclick="event.stopPropagation();playVideoForTask('${task.replace(/'/g, "\\'")}')" ontouchstart="event.stopPropagation()" title="Watch how-to video" style="display:inline-block;background:var(--blue);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;cursor:pointer;">🎥</span>` : '';
             const lu = lastUsed[task];
@@ -8019,12 +8019,12 @@ function chooseInboxAssignType() {
       <div style="font-size:13px;color:var(--subtext);margin-top:3px;">Part of the job’s tasks every time it’s done.</div>
     </button>
     <button onclick="assignInboxToTask('pinned')" style="display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px;cursor:pointer;color:var(--text);">
-      <div style="font-size:15px;font-weight:600;">📌 Pin for me (until checked off)</div>
-      <div style="font-size:13px;color:var(--subtext);margin-top:3px;">Shows at the top of the job on <b>this</b> phone until you tick it off.</div>
+      <div style="font-size:15px;font-weight:600;">📌 To-do (one-off)</div>
+      <div style="font-size:13px;color:var(--subtext);margin-top:3px;">Shows at the top of the job on <b>this</b> phone until you tick it off — then it's gone.</div>
     </button>
     ${(isWorker() || !teamEnabled()) ? '' : `<button onclick="assignInboxToTask('pinned-ethan')" style="display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;cursor:pointer;color:var(--text);">
-      <div style="font-size:15px;font-weight:600;">📌 Pin for Ethan (until checked off)</div>
-      <div style="font-size:13px;color:var(--subtext);margin-top:3px;">Sends it to Ethan’s phone — shows at the top of the task there until he ticks it off.</div>
+      <div style="font-size:15px;font-weight:600;">📌 To-do for Ethan</div>
+      <div style="font-size:13px;color:var(--subtext);margin-top:3px;">Sends it to Ethan’s phone — shows at the top of the job there until he ticks it off.</div>
     </button>`}
     <div onclick="backToInboxAssignList()" style="margin-top:16px;color:var(--blue);font-size:15px;cursor:pointer;">‹ Back to tasks</div>`;
 }
@@ -8066,7 +8066,7 @@ async function assignInboxToTask(mode) {
     closeModal('modal-inbox-assign');
     _inboxSelectMode = false; _inboxSelected = new Set(); _syncInboxSelectUI();
     renderInbox();
-    showToast('Sent ' + notes.length + ' note' + (notes.length === 1 ? '' : 's') + ' to Ethan ✓');
+    showToast('Sent ' + notes.length + ' to-do' + (notes.length === 1 ? '' : 's') + ' to Ethan ✓');
     return;
   }
   const tn = (mode === 'pinned') ? getTaskNotes() : null;
@@ -8112,7 +8112,7 @@ async function assignInboxToTask(mode) {
   // the running clock straight away (no app reopen / pull needed).
   if (clockState && clockState.running && tasks.includes(clockState.task)) renderRunChecklist();
   const nc = notes.length;
-  showToast((mode === 'permanent' ? 'Added ' : 'Pinned ') + nc + ' note' + (nc === 1 ? '' : 's') + ' to ' + tag + ' ✓' + (mode === 'permanent' ? ' — Publish to share' : ''));
+  showToast('Added ' + nc + ' ' + (mode === 'permanent' ? 'task' : 'to-do') + (nc === 1 ? '' : 's') + ' to ' + tag + ' ✓' + (mode === 'permanent' ? ' — Publish to share' : ''));
 }
 // Tick a pinned note done IN PLACE (greyed + struck), reversible by tapping
 // again. It isn't removed/folded until clock-out (see finalizeDonePins).
@@ -9208,7 +9208,7 @@ async function pullPins() {
       saveTaskNotes(tn);
       localStorage.setItem('kr_pins_applied', JSON.stringify([...applied]));
       if (clockState && clockState.running) renderRunChecklist();
-      showToast(added + ' pinned note' + (added === 1 ? '' : 's') + ' from your manager 📌');
+      showToast(added + ' to-do' + (added === 1 ? '' : 's') + ' from your manager 📌');
     }
   } catch (e) { /* offline — try next time */ }
 }
@@ -10199,8 +10199,8 @@ function _pinnedNotesHtml(task, compact) {
   if (!pins.length) return '';
   const taskAttr = _attr(task);
   return `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">
-    <div style="font-size:12px;color:#FFD60A;margin-bottom:2px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">📌 Pinned notes</div>
-    <div style="font-size:11px;color:var(--subtext);margin-bottom:8px;">Swipe a note right to 🚩 flag it to the top · hold &amp; drag a 🚩 note to reorder</div>
+    <div style="font-size:12px;color:#FFD60A;margin-bottom:2px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">📌 To-dos</div>
+    <div style="font-size:11px;color:var(--subtext);margin-bottom:8px;">Swipe a to-do right to 🚩 flag it to the top · hold &amp; drag a 🚩 to-do to reorder</div>
     ${compact ? `<div onclick="togglePinSort()" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:10px;padding:6px 12px;border:1px solid var(--border);border-radius:999px;font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;">↕ ${_pinSortLabel()}</div>` : ''}
     ${pins.map(p => {
       const safe = p.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -10336,7 +10336,7 @@ function showPinnedNotesPopupTask(task) {
   document.getElementById('pin-preview-title').textContent = task;
   const html = _pinnedNotesHtml(task, true);
   document.getElementById('pin-preview-body').innerHTML =
-    html || '<div style="padding:24px 0;color:var(--subtext);text-align:center;">No notes to organise.</div>';
+    html || '<div style="padding:24px 0;color:var(--subtext);text-align:center;">No to-dos to organise.</div>';
   openModal('modal-pin-preview');
   _loadPhotoThumbs();
 }
