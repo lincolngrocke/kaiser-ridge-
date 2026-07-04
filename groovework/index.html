@@ -974,6 +974,7 @@
       </div>
     </div>
 
+    <div id="ts-who" style="padding:0 16px 8px;"></div>
     <div id="ts-list"></div>
   </div>
 </div>
@@ -1499,6 +1500,56 @@
   </div>
 </div>
 
+<!-- ══════════════ ROBOTS SCREEN ══════════════ -->
+<div class="screen" id="screen-robots">
+  <div class="header">
+    <div><div class="header-title">Robots</div></div>
+  </div>
+  <div class="scroll-area" style="padding:12px 16px 24px;">
+    <div style="font-size:13px;color:var(--subtext);margin:0 2px 12px;line-height:1.5;">Time an unattended machine while you get on with other work. Tap a robot to start; Stop logs it to your Timesheets, tagged as the robot. Several can run at once.</div>
+    <div id="robots-body"></div>
+  </div>
+</div>
+
+<!-- Robots: log a past run -->
+<div class="modal-backdrop" id="modal-robot-log" style="z-index:360;">
+  <div class="modal-sheet" style="padding:16px 20px 24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <button onclick="closeModal('modal-robot-log')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;">Cancel</button>
+      <span style="font-size:17px;font-weight:600;">Log a past run</span>
+      <button onclick="saveAgentLog()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Save</button>
+    </div>
+    <label style="font-size:13px;color:var(--subtext);">Robot</label>
+    <select id="robot-log-agent" style="width:100%;margin:4px 0 12px;padding:11px;border:1px solid var(--border);border-radius:10px;font-size:16px;background:var(--bg);color:var(--text);"></select>
+    <label style="font-size:13px;color:var(--subtext);">What it did</label>
+    <input id="robot-log-activity" type="text" placeholder="e.g. Floor 2 / Zone 3" style="width:100%;margin:4px 0 12px;padding:11px;border:1px solid var(--border);border-radius:10px;font-size:16px;background:var(--bg);color:var(--text);" autocorrect="on" autocapitalize="sentences">
+    <label style="font-size:13px;color:var(--subtext);">Date</label>
+    <input id="robot-log-date" type="date" style="width:100%;margin:4px 0 12px;padding:11px;border:1px solid var(--border);border-radius:10px;font-size:16px;background:var(--bg);color:var(--text);">
+    <div style="display:flex;gap:12px;">
+      <div style="flex:1;"><label style="font-size:13px;color:var(--subtext);">Start</label><input id="robot-log-start" type="time" style="width:100%;margin-top:4px;padding:11px;border:1px solid var(--border);border-radius:10px;font-size:16px;background:var(--bg);color:var(--text);"></div>
+      <div style="flex:1;"><label style="font-size:13px;color:var(--subtext);">End</label><input id="robot-log-end" type="time" style="width:100%;margin-top:4px;padding:11px;border:1px solid var(--border);border-radius:10px;font-size:16px;background:var(--bg);color:var(--text);"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Robots: add / edit -->
+<div class="modal-backdrop" id="modal-robot-edit" style="z-index:360;">
+  <div class="modal-sheet" style="padding:16px 20px 24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <button onclick="closeModal('modal-robot-edit')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;">Cancel</button>
+      <span id="robot-edit-title" style="font-size:17px;font-weight:600;">Add robot</span>
+      <button onclick="saveAgentEdit()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Save</button>
+    </div>
+    <div style="display:flex;gap:12px;">
+      <div style="width:72px;"><label style="font-size:13px;color:var(--subtext);">Icon</label><input id="robot-edit-emoji" type="text" maxlength="2" style="width:100%;margin-top:4px;padding:11px;border:1px solid var(--border);border-radius:10px;font-size:22px;text-align:center;background:var(--bg);color:var(--text);"></div>
+      <div style="flex:1;"><label style="font-size:13px;color:var(--subtext);">Name</label><input id="robot-edit-name" type="text" placeholder="e.g. Roborock" style="width:100%;margin-top:4px;padding:11px;border:1px solid var(--border);border-radius:10px;font-size:16px;background:var(--bg);color:var(--text);" autocorrect="on" autocapitalize="words"></div>
+    </div>
+    <label style="font-size:13px;color:var(--subtext);display:block;margin-top:12px;">Zones / floors (one per line)</label>
+    <textarea id="robot-edit-acts" rows="5" placeholder="Floor 1&#10;Floor 2&#10;Floor 3" style="width:100%;margin-top:4px;padding:11px;border:1px solid var(--border);border-radius:10px;font-size:16px;font-family:inherit;resize:none;background:var(--bg);color:var(--text);"></textarea>
+    <button id="robot-edit-delete" onclick="deleteAgent()" style="display:none;width:100%;margin-top:14px;background:none;border:1px solid var(--red);color:var(--red);border-radius:10px;padding:11px;font-size:15px;cursor:pointer;">Delete robot</button>
+  </div>
+</div>
+
 <!-- ══════════════ BOTTOM NAV ══════════════ -->
 <nav class="bottom-nav">
   <button class="nav-tab" onclick="openInbox()">
@@ -1531,6 +1582,9 @@
     </button>
     <button onclick="moreMenuGo('equipment')" class="more-row">
       <span style="font-size:22px;width:30px;text-align:center;">🧰</span><span>Equipment</span>
+    </button>
+    <button onclick="moreMenuGo('robots')" class="more-row">
+      <span style="font-size:22px;width:30px;text-align:center;">🤖</span><span>Robots</span><span id="more-robots-count" style="margin-left:auto;font-size:13px;color:var(--green);font-weight:700;"></span>
     </button>
     <button onclick="moreMenuGo('settings')" class="more-row">
       <span style="font-size:22px;width:30px;text-align:center;">⚙️</span><span>Settings</span>
@@ -2337,7 +2391,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.108';
+const APP_VERSION = '2026-06-21.109';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2623,6 +2677,7 @@ function showScreen(id, tab) {
   if (id === 'planner') { _plannerDate = new Date(); renderPlannerScreen(); }
   else document.body.classList.remove('kr-wide');
   if (id === 'clock') updateBackupBanner();
+  if (id === 'robots') { renderRobotsScreen(); startRobotTick(); } else { stopRobotTick(); }
   // Hide running overlay when not on clock screen; restore it if clock is running
   const overlay = document.getElementById('running-overlay');
   if (overlay) {
@@ -2863,7 +2918,7 @@ function renderClockState() {
     }
     const now = new Date();
     const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay()); weekStart.setHours(0,0,0,0);
-    let weekH = entries.filter(e => new Date(e.date.split('/').reverse().join('-')) >= weekStart).reduce((s,e) => s+e.durationHours, 0);
+    let weekH = entries.filter(e => !e.bot && new Date(e.date.split('/').reverse().join('-')) >= weekStart).reduce((s,e) => s+e.durationHours, 0);
     const wkEl = document.getElementById('run-week-hours');
     if (wkEl) wkEl.innerHTML = weekH.toFixed(1) + 'h this week<br><span style="opacity:0.65;font-size:11px;">v' + APP_VERSION + '</span>';
 
@@ -3808,11 +3863,28 @@ function _entryDateTimeKey(e) {
   return new Date(y, parseInt(dm[2], 10) - 1, parseInt(dm[1], 10), 0, min, 0).getTime();
 }
 
+// Timesheet who-filter: Mine (default, hides robots) / Robots / All. The toggle
+// only appears once there are any robot-logged entries.
+let _tsWho = 'mine';
+function setTsWho(w) { _tsWho = w; renderTimesheets(); }
+function _renderTsWho(hasBots) {
+  const el = document.getElementById('ts-who');
+  if (!el) return;
+  if (!hasBots) { el.innerHTML = ''; return; }
+  const opts = [['mine', 'Mine'], ['robots', '🤖 Robots'], ['all', 'All']];
+  el.innerHTML = `<div style="display:flex;gap:6px;background:rgba(127,127,127,0.12);border-radius:12px;padding:4px;">` +
+    opts.map(([k, label]) => `<div onclick="setTsWho('${k}')" style="flex:1;text-align:center;padding:8px 6px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;${_tsWho === k ? 'background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,0.12);' : 'color:var(--subtext);'}">${label}</div>`).join('') +
+    `</div>`;
+}
 function renderTimesheets() {
   updateRestoreEntryBanner();
   const list = document.getElementById('ts-list');
   const searchTerm = (document.getElementById('ts-search')?.value || '').toLowerCase().trim();
+  const hasBots = entries.some(e => e.bot);
+  _renderTsWho(hasBots);
   let filtered = entries.filter(e => {
+    if (hasBots && _tsWho === 'mine'   &&  e.bot) return false;   // hide robots by default
+    if (hasBots && _tsWho === 'robots' && !e.bot) return false;   // robots only
     if (_tsFilters.freq     && e.frequency !== _tsFilters.freq)     return false;
     if (_tsFilters.group    && e.group     !== _tsFilters.group)    return false;
     if (_tsFilters.location && e.location  !== _tsFilters.location) return false;
@@ -3861,7 +3933,9 @@ function renderTimesheets() {
   filtered.sort((a, b) => _entryDateTimeKey(b) - _entryDateTimeKey(a));
 
   list.innerHTML = filtered.map(e => {
-    const tag = [e.group, e.task].filter(Boolean).join(' · ');
+    const tag = e.bot
+      ? (e.botEmoji || '🤖') + ' ' + [e.personnel, e.task].filter(Boolean).join(' · ')
+      : [e.group, e.task].filter(Boolean).join(' · ');
     const projLabel = entryProjectLabel(e);
     const dateObj = new Date(e.date.split('/').reverse().join('-'));
     const dateStr = dateObj.toLocaleDateString('en-AU', {weekday:'short', day:'numeric', month:'long', year:'numeric'});
@@ -5477,6 +5551,7 @@ async function _krdbBoot() {
   _kvReadyResolve();
   renderClockState();
   updateInboxCount();
+  updateRobotBadge();
   updateSummary();
   const ts = document.getElementById('screen-timesheets');
   if (ts && ts.classList.contains('active')) renderTimesheets();
@@ -5503,7 +5578,8 @@ const KR_BACKUP_KEYS = [
   'kr_task_order', 'kr_entries', 'kr_user_name', 'kr_weekly_target',
   'kr_sheet_url', 'kr_gmaps_key', 'kr_dark_mode',
   'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
-  'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_task_videos', 'kr_checklist_flags', 'kr_task_merges', 'kr_subtask_origin', 'kr_pins_applied'
+  'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_task_videos', 'kr_checklist_flags', 'kr_task_merges', 'kr_subtask_origin', 'kr_pins_applied',
+  'kr_agents', 'kr_agent_runs'
 ];
 
 function buildBackupSnapshot() {
@@ -9112,6 +9188,231 @@ function openMoreMenu() { openModal('modal-more-menu'); }
 function moreMenuGo(id) {
   closeModal('modal-more-menu');
   showScreen(id, null);
+}
+
+// ════════════════════════════════
+//  ROBOTS — operate a timer on an unattended machine's behalf (it can't clock
+//  itself). Stopping a run logs a timesheet entry attributed to the robot
+//  (personnel = robot name). Runs concurrently with the human clock + each
+//  other. Distinct from the worker/assignment model. See plan
+//  wild-foraging-salamander.md.
+// ════════════════════════════════
+const AGENT_SEED = [
+  { id: 'roborock', name: 'Roborock',  emoji: '🤖', activityLabel: 'Floor', activities: ['Floor 1', 'Floor 2', 'Floor 3'] },
+  { id: 'lymow',    name: 'Lymow One', emoji: '🌱', activityLabel: 'Zone',  activities: ['Zone 1', 'Zone 2', 'Zone 3', 'Zone 4'] },
+];
+function getAgents() {
+  let a; try { a = JSON.parse(localStorage.getItem('kr_agents') || 'null'); } catch (e) { a = null; }
+  if (!Array.isArray(a)) { a = AGENT_SEED.map(x => ({ ...x, activities: [...x.activities] })); saveAgents(a); }
+  return a;
+}
+function saveAgents(a) { return _safeSetItem('kr_agents', JSON.stringify(a)); }
+function getAgentRuns() { try { return JSON.parse(localStorage.getItem('kr_agent_runs') || '[]') || []; } catch (e) { return []; } }
+function saveAgentRuns(r) { return _safeSetItem('kr_agent_runs', JSON.stringify(r)); }
+function agentById(id) { return getAgents().find(a => a.id === id) || null; }
+function _agUid(p) { return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function _agDateDMY(d) { return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear(); }
+function _agHM(d) { return d.toTimeString().slice(0, 5); }
+function _agElapsed(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  return (h > 0 ? h + ':' + String(m).padStart(2, '0') : String(m)) + ':' + String(sec).padStart(2, '0');
+}
+
+// Start a run — you kick the robot off. Concurrent with everything else.
+function startAgentRun(agentId, activity) {
+  activity = (activity || '').trim();
+  if (!activity) return;
+  const runs = getAgentRuns();
+  runs.push({ runId: _agUid('run'), agentId, activity, startMs: Date.now() });
+  if (!saveAgentRuns(runs)) return;
+  const a = agentById(agentId);
+  renderRobotsScreen(); updateRobotBadge();
+  showToast((a ? a.emoji + ' ' + a.name : 'Robot') + ' started · ' + activity);
+}
+function startAgentPrompt(agentId) {
+  const a = agentById(agentId);
+  const v = prompt('What is ' + (a ? a.name : 'the robot') + ' doing? (' + ((a && a.activityLabel) || 'Activity') + ')');
+  if (v && v.trim()) startAgentRun(agentId, v.trim());
+}
+// Stop a run → log a timesheet entry attributed to the robot.
+function stopAgentRun(runId) {
+  const runs = getAgentRuns();
+  const i = runs.findIndex(r => r.runId === runId);
+  if (i < 0) return;
+  const run = runs[i];
+  _logAgentEntry({ agentId: run.agentId, activity: run.activity }, run.startMs, Date.now());
+  runs.splice(i, 1); saveAgentRuns(runs);
+  const a = agentById(run.agentId);
+  renderRobotsScreen(); updateRobotBadge();
+  if (document.getElementById('screen-timesheets').classList.contains('active')) renderTimesheets();
+  showToast('Logged ' + (a ? a.name : 'robot') + ' · ' + run.activity + ' ✓');
+}
+function discardAgentRun(runId) {
+  if (!confirm('Discard this run without logging it?')) return;
+  saveAgentRuns(getAgentRuns().filter(r => r.runId !== runId));
+  renderRobotsScreen(); updateRobotBadge();
+}
+// Append a robot run as a normal timesheet entry (syncs via the usual path).
+function _logAgentEntry(run, startMs, endMs, note) {
+  const a = agentById(run.agentId) || { name: 'Robot', emoji: '🤖' };
+  const durationHours = Math.max(0, (endMs - startMs) / 3600000);
+  entries.unshift({
+    id: _agUid('bot'),
+    date: _agDateDMY(new Date(startMs)),
+    personnel: a.name,
+    location: '', frequency: '', group: 'Robots',
+    task: run.activity, subtask: '', tool: '',
+    projectId: '', projectStepId: '',
+    notes: note || '',
+    clockIn: _agHM(new Date(startMs)),
+    clockOut: _agHM(new Date(endMs)),
+    durationHours: parseFloat(durationHours.toFixed(2)),
+    break: 0, pin: null, checklist: [], breaks: [],
+    bot: true, botEmoji: a.emoji,
+    synced: false, createdAt: new Date().toISOString(),
+  });
+  saveEntries();
+}
+
+// Running-count badge on the ☰ More tab so background robots stay visible.
+function updateRobotBadge() {
+  const tab = document.getElementById('nav-more-tab');
+  if (!tab) return;
+  let b = document.getElementById('more-robot-badge');
+  const n = getAgentRuns().length;
+  if (n > 0) {
+    if (!b) {
+      b = document.createElement('span'); b.id = 'more-robot-badge';
+      b.style.cssText = 'position:absolute;top:2px;right:calc(50% - 26px);min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:#30d158;color:#05070c;font-size:10px;font-weight:800;line-height:17px;text-align:center;';
+      tab.style.position = 'relative'; tab.appendChild(b);
+    }
+    b.textContent = '🤖' + n; b.style.display = 'block';
+  } else if (b) { b.style.display = 'none'; }
+  const menuCount = document.getElementById('more-robots-count');
+  if (menuCount) menuCount.textContent = n > 0 ? '● ' + n + ' running' : '';
+}
+
+// Live ticking while the Robots screen is open (does NOT touch the human clock).
+let _robotInterval = null;
+function startRobotTick() {
+  clearInterval(_robotInterval);
+  _robotInterval = setInterval(() => {
+    document.querySelectorAll('.robot-elapsed').forEach(el => {
+      const st = parseInt(el.getAttribute('data-start'), 10);
+      if (st) el.textContent = _agElapsed(Date.now() - st);
+    });
+  }, 1000);
+}
+function stopRobotTick() { clearInterval(_robotInterval); _robotInterval = null; }
+
+function renderRobotsScreen() {
+  const body = document.getElementById('robots-body');
+  if (!body) return;
+  const agents = getAgents();
+  const runs = getAgentRuns();
+  const runHtml = runs.length ? runs.map(r => {
+    const a = agentById(r.agentId) || { name: 'Robot', emoji: '🤖' };
+    return `<div style="display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:10px;">
+      <span style="font-size:26px;flex-shrink:0;">${a.emoji}</span>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:16px;font-weight:600;color:var(--text);">${_escHtml(a.name)}</div>
+        <div style="font-size:13px;color:var(--subtext);">${_escHtml(r.activity)}</div>
+      </div>
+      <span class="robot-elapsed" data-start="${r.startMs}" style="font-size:16px;font-weight:700;color:var(--green);font-variant-numeric:tabular-nums;flex-shrink:0;">${_agElapsed(Date.now() - r.startMs)}</span>
+      <button onclick="stopAgentRun('${r.runId}')" style="background:var(--red);color:#fff;border:none;border-radius:20px;padding:8px 14px;font-size:14px;font-weight:600;cursor:pointer;flex-shrink:0;">Stop</button>
+      <button onclick="discardAgentRun('${r.runId}')" title="Discard" style="background:none;border:none;color:var(--subtext);font-size:17px;cursor:pointer;flex-shrink:0;">✕</button>
+    </div>`;
+  }).join('') : `<div style="color:var(--subtext);font-size:14px;padding:6px 2px 10px;">Nothing running. Tap a robot below to start timing it.</div>`;
+  const rosterHtml = agents.map(a => {
+    const chips = (a.activities || []).map(act =>
+      `<button onclick="startAgentRun('${a.id}', &quot;${_escHtml(act).replace(/"/g, '&quot;')}&quot;)" style="background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:7px 12px;font-size:13px;color:var(--text);cursor:pointer;">▶ ${_escHtml(act)}</button>`
+    ).join('');
+    return `<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:10px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <span style="font-size:22px;">${a.emoji}</span>
+        <span style="flex:1;font-size:16px;font-weight:600;color:var(--text);">${_escHtml(a.name)}</span>
+        <button onclick="openAgentEdit('${a.id}')" style="background:none;border:none;color:var(--blue);font-size:14px;cursor:pointer;">Edit</button>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;">${chips}<button onclick="startAgentPrompt('${a.id}')" style="background:none;border:1px dashed var(--border);border-radius:16px;padding:7px 12px;font-size:13px;color:var(--subtext);cursor:pointer;">＋ Other…</button></div>
+    </div>`;
+  }).join('');
+  body.innerHTML =
+    `<div style="font-size:13px;font-weight:600;color:var(--subtext);margin:4px 2px 8px;">RUNNING NOW</div>${runHtml}` +
+    `<div style="font-size:13px;font-weight:600;color:var(--subtext);margin:18px 2px 8px;">YOUR ROBOTS</div>${rosterHtml}` +
+    `<div style="display:flex;gap:10px;margin-top:12px;">
+       <button onclick="openAgentLog()" style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;font-size:14px;color:var(--text);cursor:pointer;">🕘 Log a past run</button>
+       <button onclick="openAgentEdit('')" style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;font-size:14px;color:var(--text);cursor:pointer;">＋ Add robot</button>
+     </div>`;
+}
+
+// Retro: log a run you forgot to time.
+function openAgentLog() {
+  const agents = getAgents();
+  document.getElementById('robot-log-agent').innerHTML = agents.map(a => `<option value="${a.id}">${a.emoji} ${_escHtml(a.name)}</option>`).join('');
+  document.getElementById('robot-log-activity').value = '';
+  const now = new Date();
+  document.getElementById('robot-log-date').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+  document.getElementById('robot-log-start').value = _agHM(new Date(now.getTime() - 30 * 60000));
+  document.getElementById('robot-log-end').value = _agHM(now);
+  openModal('modal-robot-log');
+}
+function saveAgentLog() {
+  const agentId = document.getElementById('robot-log-agent').value;
+  const activity = document.getElementById('robot-log-activity').value.trim();
+  const dateV = document.getElementById('robot-log-date').value;
+  const startV = document.getElementById('robot-log-start').value;
+  const endV = document.getElementById('robot-log-end').value;
+  if (!activity) { showToast('What did it do?'); return; }
+  if (!dateV || !startV || !endV) { showToast('Fill in the date and times'); return; }
+  const [y, mo, d] = dateV.split('-').map(Number);
+  const [sh, sm] = startV.split(':').map(Number);
+  const [eh, em] = endV.split(':').map(Number);
+  let startMs = new Date(y, mo - 1, d, sh, sm).getTime();
+  let endMs = new Date(y, mo - 1, d, eh, em).getTime();
+  if (endMs <= startMs) endMs += 24 * 3600000;   // crossed midnight
+  _logAgentEntry({ agentId, activity }, startMs, endMs);
+  closeModal('modal-robot-log');
+  renderRobotsScreen();
+  if (document.getElementById('screen-timesheets').classList.contains('active')) renderTimesheets();
+  showToast('Logged ✓');
+}
+
+// Add / edit / delete a robot.
+let _editingAgentId = null;
+function openAgentEdit(id) {
+  _editingAgentId = id || null;
+  const a = id ? agentById(id) : null;
+  document.getElementById('robot-edit-title').textContent = a ? 'Edit robot' : 'Add robot';
+  document.getElementById('robot-edit-name').value = a ? a.name : '';
+  document.getElementById('robot-edit-emoji').value = a ? (a.emoji || '🤖') : '🤖';
+  document.getElementById('robot-edit-acts').value = a ? (a.activities || []).join('\n') : '';
+  document.getElementById('robot-edit-delete').style.display = a ? 'block' : 'none';
+  openModal('modal-robot-edit');
+}
+function saveAgentEdit() {
+  const name = document.getElementById('robot-edit-name').value.trim();
+  const emoji = document.getElementById('robot-edit-emoji').value.trim() || '🤖';
+  const acts = document.getElementById('robot-edit-acts').value.split('\n').map(s => s.trim()).filter(Boolean);
+  if (!name) { showToast('Give it a name'); return; }
+  const agents = getAgents();
+  if (_editingAgentId) {
+    const a = agents.find(x => x.id === _editingAgentId);
+    if (a) { a.name = name; a.emoji = emoji; a.activities = acts; }
+  } else {
+    agents.push({ id: _agUid('a'), name, emoji, activityLabel: 'Activity', activities: acts });
+  }
+  saveAgents(agents);
+  closeModal('modal-robot-edit');
+  renderRobotsScreen();
+  showToast('Saved ✓');
+}
+function deleteAgent() {
+  if (!_editingAgentId) return;
+  if (!confirm('Delete this robot? Its logged history stays in Timesheets.')) return;
+  saveAgents(getAgents().filter(a => a.id !== _editingAgentId));
+  closeModal('modal-robot-edit');
+  renderRobotsScreen();
 }
 
 // ════════════════════════════════
