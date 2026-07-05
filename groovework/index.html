@@ -2394,7 +2394,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.113';
+const APP_VERSION = '2026-06-21.114';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3511,7 +3511,7 @@ function renderRunChecklist() {
   if (!el) return;
   const running = clockState && clockState.running;
   const items = (running && SUBTASKS[clockState.task]) ? _orderedChecklistItems(clockState.task, SUBTASKS[clockState.task]) : [];
-  const pinned = _sortPins((running && getTaskNotes()[clockState.task]) || []); // 🚩 flagged on top
+  const pinned = _sortPins((running && getTaskNotes()[clockState.task]) || [], running ? clockState.task : null); // 🚩 flagged on top
 
   // Hide the whole panel only when NOT clocked in (while running it always shows,
   // even empty, so you can add the first task/to-do straight from the clock).
@@ -5619,7 +5619,7 @@ const KR_BACKUP_KEYS = [
   'kr_sheet_url', 'kr_gmaps_key', 'kr_dark_mode',
   'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
   'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_task_videos', 'kr_checklist_flags', 'kr_task_merges', 'kr_subtask_origin', 'kr_pins_applied',
-  'kr_agents', 'kr_agent_runs', 'kr_planner_checklist'
+  'kr_agents', 'kr_agent_runs', 'kr_planner_checklist', 'kr_pin_order'
 ];
 
 function buildBackupSnapshot() {
@@ -10942,12 +10942,25 @@ function _pinTime(p) { return new Date(p.caught || p.ts || 0).getTime() || 0; }
 // 🚩 Flagged notes float to the top (manual flag order); the rest are oldest→newest
 // or newest→oldest per the kr_pin_sort toggle (flagged notes are unaffected).
 function _pinSortLabel() { return (localStorage.getItem('kr_pin_sort') === 'newest') ? 'Newest first' : 'Oldest first'; }
-function _sortPins(arr) {
+// Drag-set manual order of NON-flagged to-dos, per task — { task: [pinId,...] }.
+// Device-local; when set it overrides the Newest/Oldest time sort for those pins.
+function getPinOrder() { try { return JSON.parse(localStorage.getItem('kr_pin_order') || '{}') || {}; } catch (e) { return {}; } }
+function savePinOrder(o) { return _safeSetItem('kr_pin_order', JSON.stringify(o)); }
+function _sortPins(arr, task) {
   const dir = (localStorage.getItem('kr_pin_sort') === 'newest') ? -1 : 1;
+  const manual = (task && getPinOrder()[task]) || null;   // manual order of non-flagged ids
   return arr.slice().sort((a, b) => {
     const fa = a.flagged ? 1 : 0, fb = b.flagged ? 1 : 0;
     if (fa !== fb) return fb - fa;
     if (fa) return (b.flaggedAt || 0) - (a.flaggedAt || 0);
+    if (manual) {   // non-flagged: manually-ordered ids first (in order), un-ordered by time after
+      const ia = manual.indexOf(a.id), ib = manual.indexOf(b.id);
+      if (ia !== -1 || ib !== -1) {
+        if (ia === -1) return 1;
+        if (ib === -1) return -1;
+        return ia - ib;
+      }
+    }
     return (_pinTime(a) - _pinTime(b)) * dir;
   });
 }
@@ -10966,7 +10979,7 @@ function _pinnedNotesHtml(task, compact, search) {
   // Hide notes already ticked done this session — no need to organise a completed
   // note (they're folded into the entry at clock-out).
   const pinDone = (clockState && clockState.running && clockState.task === task && clockState.pinDone) ? clockState.pinDone : {};
-  let pins = _sortPins((getTaskNotes()[task] || []).filter(p => !pinDone[p.id]));
+  let pins = _sortPins((getTaskNotes()[task] || []).filter(p => !pinDone[p.id]), task);
   if (!pins.length) return '';
   const q = (search || '').trim().toLowerCase();
   if (q) {
@@ -10976,7 +10989,7 @@ function _pinnedNotesHtml(task, compact, search) {
   const taskAttr = _attr(task);
   return `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">
     <div style="font-size:12px;color:#FFD60A;margin-bottom:2px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">📌 To-dos</div>
-    <div style="font-size:11px;color:var(--subtext);margin-bottom:8px;">Swipe a to-do right to 🚩 flag it to the top · hold &amp; drag a 🚩 to-do to reorder</div>
+    <div style="font-size:11px;color:var(--subtext);margin-bottom:8px;">${compact ? 'Hold &amp; drag any to-do to reorder · swipe right to 🚩 flag it to the top' : 'Swipe a to-do right to 🚩 flag it to the top · hold &amp; drag a 🚩 to-do to reorder'}</div>
     ${compact ? `<div onclick="togglePinSort()" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:10px;padding:6px 12px;border:1px solid var(--border);border-radius:999px;font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;">↕ ${_pinSortLabel()}</div>` : ''}
     ${pins.map(p => {
       const safe = p.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -10998,10 +11011,13 @@ function pinSwipeStart(e) {
   const row = e.currentTarget;
   const y = e.touches[0].clientY;
   _pinSwipe = { row, id: row.dataset.pinId, task: row.dataset.pinTask, x: e.touches[0].clientX, y, moved: false };
-  // Only flagged notes can be picked up and reordered.
   clearTimeout(_pinLongPressTimer); _pinLongPressTimer = null;
-  if (row.dataset.pinFlagged === '1') {
-    _pinLongPressTimer = setTimeout(() => { _pinLongPressTimer = null; _startPinDrag(row, row.dataset.pinTask, y); }, _PIN_HOLD_MS);
+  // In the Organise page ANY to-do can be dragged to reorder; elsewhere (running
+  // clock) only 🚩 flagged notes reorder — keeps that gesture unchanged.
+  const inOrganise = !!row.closest('#pin-preview-body');
+  const flagged = row.dataset.pinFlagged === '1';
+  if (flagged || inOrganise) {
+    _pinLongPressTimer = setTimeout(() => { _pinLongPressTimer = null; _startPinDrag(row, row.dataset.pinTask, y, flagged); }, _PIN_HOLD_MS);
   }
 }
 function pinSwipeMove(e) {
@@ -11032,10 +11048,10 @@ function pinSwipeEnd(e) {
 }
 // Pick a flagged note up — lift it and stop scroll/tap from firing. grabOffset
 // is where on the row the finger landed, so the row tracks the finger exactly.
-function _startPinDrag(row, task, startY) {
+function _startPinDrag(row, task, startY, flagged) {
   _pinSwipe = null;
   const rect = row.getBoundingClientRect();
-  _pinDrag = { row, task, grabOffset: startY - rect.top };
+  _pinDrag = { row, task, grabOffset: startY - rect.top, flagged: !!flagged };
   _pinSwipeBlockClickUntil = Date.now() + 600;
   row.style.transition = 'none';
   row.style.opacity = '0.95';
@@ -11049,8 +11065,9 @@ function _startPinDrag(row, task, startY) {
 // float it under the finger — measured from its (possibly new) natural slot, so
 // the follow stays accurate no matter how the order shifts.
 function _pinDragMove(clientY) {
-  const dragged = _pinDrag.row, parent = dragged.parentNode;
-  const others = [...parent.children].filter(c => c.dataset && c.dataset.pinFlagged === '1' && c !== dragged);
+  const dragged = _pinDrag.row, parent = dragged.parentNode, flagged = _pinDrag.flagged;
+  // Reorder only within the same flag-group (flagged stay above the rest).
+  const others = [...parent.children].filter(c => c.classList && c.classList.contains('pin-row') && (c.dataset.pinFlagged === '1') === flagged && c !== dragged);
   const target = others.find(r => { const b = r.getBoundingClientRect(); return clientY < b.top + b.height / 2; });
   if (target) { parent.insertBefore(dragged, target); }
   else { const last = others[others.length - 1]; if (last) parent.insertBefore(dragged, last.nextSibling); }
@@ -11058,15 +11075,25 @@ function _pinDragMove(clientY) {
   const ty = clientY - _pinDrag.grabOffset - dragged.getBoundingClientRect().top;
   dragged.style.transform = 'translateY(' + ty + 'px) scale(1.03)';
 }
-// Release — read the new on-screen order and persist it (top = newest flaggedAt).
+// Release — read the new on-screen order and persist it.
 function _endPinDrag() {
-  const dragged = _pinDrag.row, task = _pinDrag.task, parent = dragged.parentNode;
+  const dragged = _pinDrag.row, task = _pinDrag.task, parent = dragged.parentNode, flagged = _pinDrag.flagged;
   _pinDrag = null;
   dragged.style.transition = 'transform 0.15s, box-shadow 0.15s, opacity 0.15s';
   dragged.style.transform = ''; dragged.style.opacity = ''; dragged.style.boxShadow = '';
   dragged.style.position = ''; dragged.style.zIndex = '';
-  const order = [...parent.children].filter(c => c.dataset && c.dataset.pinFlagged === '1').map(c => c.dataset.pinId);
-  _applyFlagOrder(task, order);
+  if (flagged) {
+    const order = [...parent.children].filter(c => c.dataset && c.dataset.pinFlagged === '1').map(c => c.dataset.pinId);
+    _applyFlagOrder(task, order);   // flagged order → flaggedAt
+  } else {
+    const restIds = [...parent.children].filter(c => c.classList && c.classList.contains('pin-row') && c.dataset.pinFlagged !== '1').map(c => c.dataset.pinId);
+    _applyPinManualOrder(task, restIds);   // non-flagged manual order
+  }
+}
+// Persist the drag-set order of the non-flagged to-dos for this task (device-local).
+function _applyPinManualOrder(task, restIds) {
+  const all = getPinOrder(); all[task] = restIds.slice(); savePinOrder(all);
+  _refreshPinSurfaces(task);
 }
 // Encode a manual order of flagged notes into flaggedAt so _sortPins keeps it.
 function _applyFlagOrder(task, orderedIds) {
