@@ -265,7 +265,7 @@
   #run-clockedin-text { font-size: 12.5px; color: #8b93a7; margin-top: 3px; }
   #run-ring-label { font-size: 11px; color: #5ac8fa; font-weight: 600; margin-top: 7px; letter-spacing: 0.2px; }
   .run-ring.over ~ .run-ring-ctr #run-ring-label { color: #ff9f0a; }
-  .run-job-title { font-size: 20px; font-weight: 600; color: #fff; letter-spacing: -0.3px; margin-top: 16px; text-align: center; padding: 0 24px; }
+  .run-job-title { font-size: 20px; font-weight: 600; color: #fff; letter-spacing: -0.3px; margin-top: 16px; text-align: center; padding: 0 24px; text-wrap: balance; }
   .run-job-meta { font-size: 13px; color: #8b93a7; margin-top: 5px; text-align: center; padding: 0 20px; }
   .run-job-meta .loc { color: #30d158; text-decoration: none; }
   #run-break-info { font-size: 13px; color: #ffd60a; margin-top: 7px; text-align: center; }
@@ -697,28 +697,30 @@
   /* Reusable Undo bar — sits above every modal so it works on any screen. */
   .undo-toast {
     position: fixed;
-    bottom: calc(var(--nav-height) + 12px);
+    bottom: calc(var(--nav-height) + 18px);
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(0,0,0,0.9);
+    background: rgba(0,0,0,0.94);
     color: #fff;
-    padding: 9px 8px 9px 18px;
-    border-radius: 22px;
-    font-size: 14px;
+    padding: 15px 12px 15px 22px;
+    border-radius: 26px;
+    font-size: 17px;
+    font-weight: 600;
     z-index: 720;
     opacity: 0;
     transition: opacity 0.2s;
     pointer-events: none;
     display: flex;
     align-items: center;
-    gap: 12px;
-    max-width: calc(100vw - 32px);
-    box-shadow: 0 4px 16px rgba(0,0,0,0.45);
+    gap: 14px;
+    max-width: calc(100vw - 28px);
+    box-shadow: 0 6px 22px rgba(0,0,0,0.55);
+    border: 1px solid rgba(255,255,255,0.12);
   }
   .undo-toast.show { opacity: 1; pointer-events: auto; }
   .undo-toast button {
-    background: none; border: none; color: #4da3ff; font-size: 14px; font-weight: 700;
-    cursor: pointer; padding: 5px 10px; flex-shrink: 0;
+    background: rgba(77,163,255,0.16); border: none; color: #6bb6ff; font-size: 16px; font-weight: 800;
+    cursor: pointer; padding: 9px 18px; flex-shrink: 0; border-radius: 18px;
   }
 
   .empty-state {
@@ -2394,7 +2396,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.114';
+const APP_VERSION = '2026-06-21.115';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2667,6 +2669,13 @@ function updateHeaderDate() {
   document.getElementById('header-date').textContent = now.toLocaleDateString('en-AU', opts);
 }
 
+// Break/pause time-of-day labels — "2:30pm–3:00pm, 3:15pm–3:20pm" from {start,end} ms.
+function _fmtClock(ms) { return new Date(ms).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true }).replace(/\s/g, '').toLowerCase(); }
+function _breakRangesLabel(breaks) {
+  if (!Array.isArray(breaks)) return '';
+  return breaks.filter(b => b && b.start).map(b => b.end ? (_fmtClock(b.start) + '–' + _fmtClock(b.end)) : ('from ' + _fmtClock(b.start))).join(', ');
+}
+
 // ════════════════════════════════
 //  NAVIGATION
 // ════════════════════════════════
@@ -2709,7 +2718,14 @@ function startTimerTick() {
       document.getElementById('run-timer').textContent = fmt;
       // Update break display
       const breakEl = document.getElementById('run-break-info');
-      if (breakEl) breakEl.textContent = breakSecs > 0 ? '⏸ ' + Math.round(breakSecs / 60) + ' min paused (deducted)' : '';
+      if (breakEl) {
+        if (breakSecs > 0) {
+          const bl = Array.isArray(clockState.breaks) ? clockState.breaks.slice() : [];
+          if (clockState.onBreak && clockState.breakStartMs) bl.push({ start: clockState.breakStartMs });
+          const ranges = _breakRangesLabel(bl);
+          breakEl.textContent = '⏸ ' + (breakSecs / 3600).toFixed(2) + 'h paused' + (ranges ? ' · ' + ranges : '');
+        } else breakEl.textContent = '';
+      }
       updateRunRing(netElapsed);
       updateAtTimes();
     }
@@ -3985,7 +4001,7 @@ function renderTimesheets() {
       <div class="ts-entry-tag" style="margin-top:4px">${hl(tag)}</div>
       ${projLabel ? `<div style="font-size:12px;color:var(--blue);margin-top:2px;">📁 ${hl(projLabel)}</div>` : ''}
       ${e.tool ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${hl(e.tool)}</div>` : ''}
-      ${e.break > 0 ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☕ ${(e.break * 60).toFixed(0)}min break</div>` : ''}
+      ${e.break > 0 ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☕ ${e.break.toFixed(2)}h break${_breakRangesLabel(e.breaks) ? ' · ' + _breakRangesLabel(e.breaks) : ''}</div>` : ''}
       ${e.pin && e.pin.url ? `<a href="${e.pin.url}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="display:inline-block;font-size:12px;color:var(--blue);text-decoration:none;margin-top:4px;">📍 View location</a>` : ''}
       ${e.notes ? `<div class="ts-entry-note">${hl(e.notes)}</div>` : ''}
     </div>`;
@@ -6148,7 +6164,7 @@ function showUndoToast(msg, onUndo, ms) {
   _undoAction = onUndo;
   el.classList.add('show');
   clearTimeout(_undoTimer);
-  _undoTimer = setTimeout(() => { el.classList.remove('show'); _undoAction = null; }, ms || 5000);
+  _undoTimer = setTimeout(() => { el.classList.remove('show'); _undoAction = null; }, ms || 10000);
 }
 function _doUndo() {
   clearTimeout(_undoTimer);
@@ -7974,11 +7990,11 @@ async function onCapturePhoto(ev) {
 function renderCapturePreview() {
   // Shared by the quick-capture modal AND the clock-screen add modal — renders
   // into whichever preview element is on the page.
-  const html = !_capturePhotos.length ? '' : (`<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">` + _capturePhotos.map((p, i) => {
+  const html = !_capturePhotos.length ? '' : (`<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:22px;">` + _capturePhotos.map((p, i) => {
     const drive = !p.data && p.id;
     return `<div style="position:relative;display:inline-block;">
         <img${drive ? ` data-pid="${p.id}"` : ''} src="${p.data || _PHOTO_PLACEHOLDER}" style="max-height:110px;max-width:120px;border-radius:10px;display:block;${drive ? 'min-height:60px;min-width:60px;background:var(--border);' : ''}">
-        <button onclick="removeCapturePhoto(${i})" style="position:absolute;top:-8px;right:-8px;width:24px;height:24px;border-radius:50%;background:var(--red);color:#fff;border:none;font-size:13px;cursor:pointer;">✕</button>
+        <button onclick="removeCapturePhoto(${i})" aria-label="Remove photo" style="position:absolute;top:5px;right:5px;width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,0.62);color:#fff;border:1.5px solid rgba(255,255,255,0.75);font-size:14px;line-height:1;cursor:pointer;">✕</button>
       </div>`;
   }).join('') + `</div>`);
   ['capture-photo-preview', 'run-add-photo-preview'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = html; });
