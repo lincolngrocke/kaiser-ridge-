@@ -1073,10 +1073,14 @@
 <div class="screen" id="screen-planner">
   <div class="header" style="flex-direction:row;align-items:center;justify-content:space-between;padding:12px 16px;">
     <button id="planner-prev" onclick="plannerChangeDay(-1)" style="background:none;border:none;color:var(--blue);font-size:22px;padding:4px 8px;cursor:pointer;">‹</button>
-    <div style="text-align:center;">
-      <div class="header-title" id="planner-date-label">Today</div>
+    <label style="text-align:center;position:relative;cursor:pointer;" title="Tap to pick a date">
+      <div style="display:flex;align-items:center;justify-content:center;gap:6px;">
+        <span class="header-title" id="planner-date-label">Today</span>
+        <span style="font-size:13px;color:var(--blue);">📅</span>
+      </div>
       <div style="font-size:12px;color:var(--subtext);" id="planner-date-sub"></div>
-    </div>
+      <input type="date" id="planner-date-input" onchange="plannerJumpToDate(this.value)" style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;-webkit-appearance:none;">
+    </label>
     <button id="planner-next" onclick="plannerChangeDay(1)" style="background:none;border:none;color:var(--blue);font-size:22px;padding:4px 8px;cursor:pointer;">›</button>
   </div>
   <div style="padding:0 16px 8px;display:flex;gap:8px;align-items:center;">
@@ -1425,7 +1429,7 @@
     <span class="run-week" id="run-week-hours"></span>
     <span class="run-tools">
       <button onclick="openQuickCapture()" aria-label="Capture a thought"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 18h6M10 21h4M12 3a6 6 0 00-4 10.5c.8.7 1 1.2 1 2.5h6c0-1.3.2-1.8 1-2.5A6 6 0 0012 3z"/></svg></button>
-      <button onclick="openNoteModal()" aria-label="Add note"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 5v14M5 12h14"/></svg></button>
+      <button onclick="openNoteModal()" aria-label="Add comment"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 5v14M5 12h14"/></svg></button>
       <button onclick="openEditActive()" aria-label="Edit entry"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg></button>
     </span>
   </div>
@@ -1654,6 +1658,11 @@
     <div id="inbox-counts" style="padding:0 20px 8px;display:flex;gap:16px;font-size:13px;font-weight:600;"></div>
     <div style="padding:0 20px 8px;">
       <input id="inbox-search" type="search" placeholder="Search notes…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="onInboxSearchInput()" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;">
+    </div>
+    <div style="padding:0 20px 8px;display:flex;gap:8px;align-items:center;">
+      <label style="flex:1;display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:13px;color:var(--text);cursor:pointer;">📅 <input type="date" id="inbox-date-input" onchange="applyInboxDate(this.value)" style="flex:1;min-width:0;background:none;border:none;color:var(--text);font-size:13px;outline:none;-webkit-appearance:none;"></label>
+      <button id="inbox-date-clear" onclick="applyInboxDate('')" style="display:none;background:none;border:none;color:var(--blue);font-size:13px;font-weight:600;cursor:pointer;padding:8px 4px;">Clear</button>
+      <button onclick="jumpToInboxHistory()" style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px;font-size:13px;color:var(--text);cursor:pointer;white-space:nowrap;">📁 History</button>
     </div>
     <div id="inbox-list" style="flex:1;overflow-y:auto;overflow-x:hidden;padding:0 16px 8px;"></div>
     <div id="inbox-footer" style="display:none;padding:10px 20px 0;">
@@ -1887,10 +1896,15 @@
   <div class="modal-sheet" style="padding:16px 20px 24px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
       <button onclick="closeModal('modal-note')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;">Cancel</button>
-      <span style="font-size:17px;font-weight:600;">Add Note</span>
+      <span style="font-size:17px;font-weight:600;">Add Comment</span>
       <button onclick="saveNote()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Save</button>
     </div>
-    <textarea id="note-input" placeholder="Type your note…" style="width:100%;min-height:160px;border:1px solid var(--border);border-radius:12px;padding:12px;font-size:16px;font-family:inherit;resize:none;outline:none;" autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true"></textarea>
+    <textarea id="note-input" placeholder="Type your comment…" style="width:100%;min-height:150px;border:1px solid var(--border);border-radius:12px;padding:12px;font-size:16px;font-family:inherit;resize:none;outline:none;color:var(--text);background:var(--bg);" autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true"></textarea>
+    <label style="display:inline-flex;align-items:center;gap:6px;margin-top:12px;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">
+      📷 Add photo
+      <input type="file" accept="image/*" multiple onchange="onCapturePhoto(event)" style="display:none;">
+    </label>
+    <div id="note-photo-preview"></div>
   </div>
 </div>
 
@@ -2416,7 +2430,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.116';
+const APP_VERSION = '2026-06-21.117';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2876,6 +2890,7 @@ function clockOut(overrideTime) {
     pin: clockState.pin || null,
     checklist: (clockState.checklistDone || []),
     breaks: (clockState.breaks || []),
+    commentPhotos: (clockState.commentPhotos || []),
     synced: false,
     createdAt: new Date().toISOString(),
   };
@@ -3319,7 +3334,10 @@ async function confirmRunAdd() {
     const orig = (mode === 'permanent') ? getSubtaskOrigin() : null;
     _applyJobItem(note, task, mode, tn, orig, { v: Date.now() });
     _stampNoteFiled(note, [task], mode);
-    if (mode === 'permanent') { _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS)); saveSubtaskOrigin(orig); }
+    if (mode === 'permanent') {
+      _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS)); saveSubtaskOrigin(orig);
+      if (photos.length) { const sp = getSubtaskPhotos(); sp[text] = (sp[text] || []).concat(photos); saveSubtaskPhotos(sp); }   // reference photo on the task
+    }
     else saveTaskNotes(tn);
     saveInbox(inbox);
     _runTab = (mode === 'permanent') ? 'tasks' : 'notes'; _runTabUserSet = true;
@@ -3601,6 +3619,7 @@ function renderRunChecklist() {
 
   if (tab === 'tasks') {
     const stepsMap = getSubtaskSteps();
+    const subPhotos = getSubtaskPhotos();
     const stepChecks = (clockState && clockState.stepChecks) || {};
     const taskAttr = (clockState && clockState.task) ? _attr(clockState.task) : '';
     const clFlags = _sessionOrGlobalFlags(clockState.task);
@@ -3632,6 +3651,8 @@ function renderRunChecklist() {
       const clRowBg = (flagged && !isDone) ? 'background:rgba(255,214,10,0.08);' : '';
       const editIcon = `<span onclick="event.stopPropagation();openRunEdit('tasks','${enc}')" style="flex-shrink:0;color:#9aa3b7;font-size:23px;line-height:1;cursor:pointer;padding:10px 14px 10px 12px;">✎</span>`;
       let html = `<div class="cl-row" data-cl-item="${_attr(s)}" data-cl-task="${taskAttr}" data-cl-flagged="${clFlagAttr}" ontouchstart="clSwipeStart(event)" ontouchmove="clSwipeMove(event)" ontouchend="clSwipeEnd(event)" style="display:flex;align-items:center;gap:12px;padding:13px 0;border-top:0.5px solid rgba(255,255,255,0.08);${clRowBg}">${circle}${textSpan}${editIcon}${right}</div>`;
+      const refPhotos = subPhotos[s] || [];
+      if (refPhotos.length) html += `<div style="padding:0 0 10px 36px;" onclick="event.stopPropagation();">${_photosHtml({ photos: refPhotos }, 64)}</div>`;   // reference photo
       if (expanded && steps.length && !isDone) {
         html += steps.map(st => {
           const encStep = st.replace(/'/g, "\\'");
@@ -4029,6 +4050,7 @@ function renderTimesheets() {
       ${e.break > 0 ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☕ ${e.break.toFixed(2)}h break${_breakRangesLabel(e.breaks) ? ' · ' + _breakRangesLabel(e.breaks) : ''}</div>` : ''}
       ${e.pin && e.pin.url ? `<a href="${e.pin.url}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="display:inline-block;font-size:12px;color:var(--blue);text-decoration:none;margin-top:4px;">📍 View location</a>` : ''}
       ${e.notes ? `<div class="ts-entry-note">${hl(e.notes)}</div>` : ''}
+      ${(e.commentPhotos && e.commentPhotos.length) ? _photosHtml({ photos: e.commentPhotos }, 80) : ''}
     </div>`;
   }).join('');
 }
@@ -4840,21 +4862,33 @@ if (window.visualViewport) {
 function openNoteModal() {
   const input = document.getElementById('note-input');
   input.value = '';
+  _capturePhotos = []; _captureRemovedIds = [];
+  const pv = document.getElementById('note-photo-preview'); if (pv) pv.innerHTML = '';
   openModal('modal-note');
   setTimeout(() => input.focus(), 100);
 }
 
-function saveNote() {
+let _savingNote = false;
+async function saveNote() {
+  if (_savingNote) return;
   const text = document.getElementById('note-input').value.trim();
-  if (!text) { closeModal('modal-note'); return; }
-  const time = new Date().toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: true });
-  const stamped = `[${time}] ${text}`;
-  if (clockState) {
-    clockState.notes = clockState.notes ? clockState.notes + '\n' + stamped : stamped;
-    _safeSetItem('kr_clock', JSON.stringify(clockState));
-  }
-  closeModal('modal-note');
-  showToast('Note saved');
+  if (!text && !_capturePhotos.length) { closeModal('modal-note'); return; }
+  _savingNote = true;
+  try {
+    const time = new Date().toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: true });
+    if (clockState) {
+      if (text) clockState.notes = clockState.notes ? clockState.notes + '\n' + `[${time}] ${text}` : `[${time}] ${text}`;
+      if (_capturePhotos.length) {   // attach comment photos to the session (fold into the entry at clock-out)
+        const photos = [];
+        for (const p of _capturePhotos) { if (p.id) photos.push({ id: p.id }); else if (p.data) { const id = await _uploadPhoto(p.data); photos.push(id ? { id } : { data: p.data }); } }
+        clockState.commentPhotos = (clockState.commentPhotos || []).concat(photos);
+      }
+      _safeSetItem('kr_clock', JSON.stringify(clockState));
+    }
+    _capturePhotos = []; _captureRemovedIds = [];
+    closeModal('modal-note');
+    showToast('Comment saved');
+  } finally { _savingNote = false; }
 }
 
 // close on backdrop click
@@ -5661,7 +5695,7 @@ const KR_BACKUP_KEYS = [
   'kr_sheet_url', 'kr_gmaps_key', 'kr_dark_mode',
   'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
   'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_task_videos', 'kr_checklist_flags', 'kr_task_merges', 'kr_subtask_origin', 'kr_pins_applied',
-  'kr_agents', 'kr_agent_runs', 'kr_planner_checklist', 'kr_pin_order'
+  'kr_agents', 'kr_agent_runs', 'kr_planner_checklist', 'kr_pin_order', 'kr_subtask_photos'
 ];
 
 function buildBackupSnapshot() {
@@ -5954,7 +5988,7 @@ const KR_LIBRARY_KEYS = [
   'kr_equipment_notes', 'kr_equipment_links',
   'kr_equipment_master', 'kr_extra_frequencies', 'kr_extra_locations',
   'kr_task_order', 'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
-  'kr_projects', 'kr_task_videos'
+  'kr_projects', 'kr_task_videos', 'kr_subtask_photos'
 ];
 
 function exportTaskLibrary() {
@@ -7889,6 +7923,10 @@ function getSubtaskSteps() {
 function saveSubtaskSteps(steps) {
   localStorage.setItem('kr_subtask_steps', JSON.stringify(steps));
 }
+// Reference photos on a recurring checklist item (keyed by item text) — shown on
+// the running clock when that task appears. Rides the library so Ethan gets them.
+function getSubtaskPhotos() { try { return JSON.parse(localStorage.getItem('kr_subtask_photos') || '{}') || {}; } catch (e) { return {}; } }
+function saveSubtaskPhotos(o) { return _safeSetItem('kr_subtask_photos', JSON.stringify(o)); }
 // Origin of a checklist item that came from the Inbox — keyed by item text.
 // { caught, added } so the item's history is viewable (ℹ️ in the task editor).
 function getSubtaskOrigin() { return JSON.parse(localStorage.getItem('kr_subtask_origin') || '{}'); }
@@ -8023,7 +8061,7 @@ function renderCapturePreview() {
         <button onclick="removeCapturePhoto(${i})" aria-label="Remove photo" style="position:absolute;top:5px;right:5px;width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,0.62);color:#fff;border:1.5px solid rgba(255,255,255,0.75);font-size:14px;line-height:1;cursor:pointer;">✕</button>
       </div>`;
   }).join('') + `</div>`);
-  ['capture-photo-preview', 'run-add-photo-preview'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = html; });
+  ['capture-photo-preview', 'run-add-photo-preview', 'note-photo-preview'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = html; });
   if (_capturePhotos.length) _loadPhotoThumbs(); // fill in any Drive previews
 }
 function removeCapturePhoto(i) {
@@ -8275,6 +8313,7 @@ function openInbox(focusId) {
   _migrateInboxAssignedOnce(); _backfillPinnedTasksOnce();
   _inboxSelectMode = false; _inboxSelected = new Set(); _inboxOpenFolders = new Set();
   const s = document.getElementById('inbox-search'); if (s) s.value = '';
+  applyInboxDate('');   // clear any day filter from last time
   _syncInboxSelectUI(); renderInbox(); openModal('modal-inbox');
   if (focusId && typeof focusId === 'string') setTimeout(() => {
     const row = document.querySelector('#inbox-list [data-note-id="' + focusId + '"]');
@@ -8305,6 +8344,22 @@ let _inboxSearchTimer = null;
 function onInboxSearchInput() {
   clearTimeout(_inboxSearchTimer);
   _inboxSearchTimer = setTimeout(renderInbox, 140);
+}
+// Filter the inbox to notes caught on one day (with a count); '' clears it.
+let _inboxDateFilter = '';
+function applyInboxDate(v) {
+  _inboxDateFilter = v || '';
+  const clr = document.getElementById('inbox-date-clear'); if (clr) clr.style.display = _inboxDateFilter ? 'inline' : 'none';
+  const di = document.getElementById('inbox-date-input'); if (di && !v) di.value = '';
+  renderInbox();
+}
+// Jump straight to the monthly history folders (no scrolling to the bottom).
+function jumpToInboxHistory() {
+  const list = document.getElementById('inbox-list');
+  if (!list) return;
+  const marker = list.querySelector('[data-history-folders]');
+  if (marker) marker.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  else list.scrollTo({ top: list.scrollHeight, behavior: 'smooth' });
 }
 function renderInbox() {
   const list = document.getElementById('inbox-list');
@@ -8337,6 +8392,16 @@ function renderInbox() {
     _updateInboxFooter();
     return;
   }
+  // Day filter — show only notes caught on the chosen day, with a count.
+  if (_inboxDateFilter) {
+    const dayNotes = view.filter(n => _ymd(new Date(n.ts)) === _inboxDateFilter);
+    const label = new Date(_inboxDateFilter + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+    if (!dayNotes.length) { list.innerHTML = `<div style="padding:26px 20px;text-align:center;color:var(--subtext);">No notes caught on ${label}.</div>`; _updateInboxFooter(); return; }
+    list.innerHTML = `<div style="padding:8px 4px 10px;font-size:14px;font-weight:700;color:var(--text);">📅 ${dayNotes.length} note${dayNotes.length === 1 ? '' : 's'} caught on ${label}</div>` +
+      dayNotes.sort((a, b) => new Date(b.ts) - new Date(a.ts)).map(_inboxNoteRow).join('');
+    _updateInboxFooter(); _loadPhotoThumbs();
+    return;
+  }
   // To-action first, then assigned (pending), then completed — newest on top in each.
   const rank = n => { const s = _inboxState(n); return s === 'done' ? 2 : s === 'assigned' ? 1 : 0; };
   const byState = (a, b) => {
@@ -8367,7 +8432,7 @@ function renderInbox() {
       groups.get(key).notes.push(n);
     });
     const keys = [...groups.keys()].sort().reverse(); // newest month first
-    html += `<div style="font-size:12px;color:var(--subtext);text-transform:uppercase;letter-spacing:.04em;padding:14px 4px 4px;">✓ Completed · filed by month</div>`;
+    html += `<div data-history-folders="1" style="font-size:12px;color:var(--subtext);text-transform:uppercase;letter-spacing:.04em;padding:14px 4px 4px;">✓ Completed · filed by month</div>`;
     keys.forEach(key => {
       const g = groups.get(key);
       g.notes.sort((a, b) => new Date(b.doneTs || 0) - new Date(a.doneTs || 0));
@@ -10222,6 +10287,14 @@ function plannerGoToday() {
   _plannerDate = new Date();
   renderPlannerScreen();
 }
+// Jump the planner to a date chosen from the calendar picker.
+function plannerJumpToDate(v) {
+  if (!v) return;
+  const p = v.split('-').map(Number);
+  if (p.length !== 3) return;
+  _plannerDate = new Date(p[0], p[1] - 1, p[2]);
+  renderPlannerScreen();
+}
 
 // ── Week (landscape) overview ──
 
@@ -10420,6 +10493,7 @@ function renderPlannerScreen() {
   const label = diff === 0 ? 'Today' : diff === 1 ? 'Tomorrow' : diff === -1 ? 'Yesterday' :
     _plannerDate.toLocaleDateString('en-AU', { weekday: 'long' });
   document.getElementById('planner-date-label').textContent = label;
+  const _pdi = document.getElementById('planner-date-input'); if (_pdi) _pdi.value = _ymd(_plannerDate);
   document.getElementById('planner-date-sub').textContent = _plannerDate.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
 
   // Manager: show the My Day / Ethan's Day switcher + send button. Worker: hide
