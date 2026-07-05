@@ -718,6 +718,25 @@
     border: 1px solid rgba(255,255,255,0.12);
   }
   .undo-toast.show { opacity: 1; pointer-events: auto; }
+  /* "Caught it" thought-bubble pop when you capture a note */
+  @keyframes caughtPop {
+    0%   { transform: translate(-50%,-50%) scale(0.3); opacity: 0; }
+    22%  { transform: translate(-50%,-50%) scale(1.14); opacity: 1; }
+    38%  { transform: translate(-50%,-50%) scale(0.98); opacity: 1; }
+    70%  { transform: translate(-50%,-58%) scale(1); opacity: 1; }
+    100% { transform: translate(-50%,-88%) scale(0.9); opacity: 0; }
+  }
+  .caught-bubble {
+    position: fixed; left: 50%; top: 46%; transform: translate(-50%,-50%);
+    background: #fff; color: #111; font-size: 18px; font-weight: 800;
+    padding: 16px 26px; border-radius: 30px; z-index: 800; display: none;
+    box-shadow: 0 12px 34px rgba(0,0,0,0.45); pointer-events: none; white-space: nowrap;
+  }
+  .caught-bubble::after {   /* thought-bubble tail (two dots) */
+    content: ''; position: absolute; bottom: -10px; left: 26px; width: 13px; height: 13px;
+    background: #fff; border-radius: 50%; box-shadow: -11px 9px 0 -3px #fff;
+  }
+  .caught-bubble.pop { display: block; animation: caughtPop 1.5s ease forwards; }
   .undo-toast button {
     background: rgba(77,163,255,0.16); border: none; color: #6bb6ff; font-size: 16px; font-weight: 800;
     cursor: pointer; padding: 9px 18px; flex-shrink: 0; border-radius: 18px;
@@ -1659,9 +1678,10 @@
     <div style="padding:0 20px 8px;">
       <input id="inbox-search" type="search" placeholder="Search notes…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="onInboxSearchInput()" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;">
     </div>
-    <div style="padding:0 20px 8px;display:flex;gap:8px;align-items:center;">
-      <label style="flex:1;display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:13px;color:var(--text);cursor:pointer;">📅 <input type="date" id="inbox-date-input" onchange="applyInboxDate(this.value)" style="flex:1;min-width:0;background:none;border:none;color:var(--text);font-size:13px;outline:none;-webkit-appearance:none;"></label>
+    <div style="padding:0 20px 8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <label style="flex:1;min-width:130px;display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:13px;color:var(--text);cursor:pointer;">📅 <input type="date" id="inbox-date-input" onchange="applyInboxDate(this.value)" style="flex:1;min-width:0;background:none;border:none;color:var(--text);font-size:13px;outline:none;-webkit-appearance:none;"></label>
       <button id="inbox-date-clear" onclick="applyInboxDate('')" style="display:none;background:none;border:none;color:var(--blue);font-size:13px;font-weight:600;cursor:pointer;padding:8px 4px;">Clear</button>
+      <button id="inbox-reminders-btn" onclick="toggleInboxReminders()" style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px;font-size:13px;color:var(--text);cursor:pointer;white-space:nowrap;">🔔 Reminders</button>
       <button onclick="jumpToInboxHistory()" style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px;font-size:13px;color:var(--text);cursor:pointer;white-space:nowrap;">📁 History</button>
     </div>
     <div id="inbox-list" style="flex:1;overflow-y:auto;overflow-x:hidden;padding:0 16px 8px;"></div>
@@ -2334,9 +2354,9 @@
 
 <!-- ══════════════ SUBTASK GUIDE MODAL ══════════════ -->
 <div class="modal-backdrop" id="modal-subtask-guide" style="z-index:500;">
-  <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:92vh;display:flex;flex-direction:column;">
-    <div style="display:flex;align-items:center;padding:16px 20px 8px;border-bottom:1px solid var(--border);">
-      <button onclick="closeModal('modal-subtask-guide')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:0;margin-right:12px;">‹ Back</button>
+  <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:85vh;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;padding:calc(env(safe-area-inset-top) + 16px) 20px 10px;border-bottom:1px solid var(--border);">
+      <button onclick="closeModal('modal-subtask-guide')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:6px 10px 6px 0;margin-right:8px;">‹ Back</button>
       <span id="guide-modal-title" style="font-size:17px;font-weight:600;flex:1;text-align:center;">Guide</span>
       <button onclick="saveSubtaskGuide()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;padding:0;width:60px;text-align:right;">Save</button>
     </div>
@@ -2425,12 +2445,13 @@
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 <div class="undo-toast" id="undo-toast"><span id="undo-toast-msg"></span><button onclick="_doUndo()">Undo</button></div>
+<div class="caught-bubble" id="caught-bubble">💭 Caught it ✓</div>
 
 <script>
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.117';
+const APP_VERSION = '2026-06-21.118';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6213,6 +6234,12 @@ function showToast(msg) {
   t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 2500);
 }
+// A little thought-bubble that pops when you capture a note.
+function showCaughtBubble() {
+  const b = document.getElementById('caught-bubble');
+  if (!b) { showToast('Caught it ✓'); return; }
+  b.classList.remove('pop'); void b.offsetWidth; b.classList.add('pop');   // restart the animation
+}
 
 // Reusable Undo bar: do the action immediately, then offer ~5s to reverse it.
 // Pass a callback that restores prior state. Drop this onto any delete action.
@@ -8244,7 +8271,7 @@ async function saveQuickCapture() {
       apply(note);
       inbox.unshift(note);
       ok = saveInbox(inbox);
-      if (ok) showToast('Caught it ✓');
+      if (ok) showCaughtBubble();
     }
     _editingInboxId = null; _capturePhotos = []; _captureRemovedIds = [];
     if (ok) closeModal('modal-quick-capture');
@@ -8314,6 +8341,7 @@ function openInbox(focusId) {
   _inboxSelectMode = false; _inboxSelected = new Set(); _inboxOpenFolders = new Set();
   const s = document.getElementById('inbox-search'); if (s) s.value = '';
   applyInboxDate('');   // clear any day filter from last time
+  if (_inboxRemindersOnly) toggleInboxReminders();   // reset the reminders-only view
   _syncInboxSelectUI(); renderInbox(); openModal('modal-inbox');
   if (focusId && typeof focusId === 'string') setTimeout(() => {
     const row = document.querySelector('#inbox-list [data-note-id="' + focusId + '"]');
@@ -8353,6 +8381,14 @@ function applyInboxDate(v) {
   const di = document.getElementById('inbox-date-input'); if (di && !v) di.value = '';
   renderInbox();
 }
+// Show only notes that have a reminder set (soonest first) — one place to see them all.
+let _inboxRemindersOnly = false;
+function toggleInboxReminders() {
+  _inboxRemindersOnly = !_inboxRemindersOnly;
+  const b = document.getElementById('inbox-reminders-btn');
+  if (b) { b.style.background = _inboxRemindersOnly ? 'var(--blue)' : 'var(--card)'; b.style.color = _inboxRemindersOnly ? '#fff' : 'var(--text)'; b.style.borderColor = _inboxRemindersOnly ? 'var(--blue)' : 'var(--border)'; }
+  renderInbox();
+}
 // Jump straight to the monthly history folders (no scrolling to the bottom).
 function jumpToInboxHistory() {
   const list = document.getElementById('inbox-list');
@@ -8390,6 +8426,14 @@ function renderInbox() {
   if (!view.length) {
     list.innerHTML = '<div style="padding:30px 20px;text-align:center;color:var(--subtext);">No notes match “' + (q || '') + '”.</div>';
     _updateInboxFooter();
+    return;
+  }
+  // Reminders view — every note with a reminder set, soonest first.
+  if (_inboxRemindersOnly) {
+    const rems = view.filter(n => n.remindOn && !n.done).sort((a, b) => (a.remindOn < b.remindOn ? -1 : a.remindOn > b.remindOn ? 1 : 0));
+    if (!rems.length) { list.innerHTML = `<div style="padding:26px 20px;text-align:center;color:var(--subtext);">No reminders set.<br><span style="font-size:13px;">Tap 🔔 on a note to set one.</span></div>`; _updateInboxFooter(); return; }
+    list.innerHTML = `<div style="padding:8px 4px 10px;font-size:14px;font-weight:700;color:var(--text);">🔔 ${rems.length} reminder${rems.length === 1 ? '' : 's'}</div>` + rems.map(_inboxNoteRow).join('');
+    _updateInboxFooter(); _loadPhotoThumbs();
     return;
   }
   // Day filter — show only notes caught on the chosen day, with a count.
@@ -10778,7 +10822,12 @@ function renderPlannerBlock(plan, grid) {
   const endStr = formatTimeAmPm(`${String(endH).padStart(2,'0')}:${String(endM).padStart(2,'0')}`);
   const startStr = formatTimeAmPm(plan.startTime);
 
-  block.innerHTML = `<div class="planner-block-title">${plan.task}</div>
+  // 🚩 marker when this planned job has flagged tasks or to-dos (a per-block
+  // arrangement wins over the job's global flags, mirroring the detail view).
+  const _pov = getPlannerChecklist()[plan.id];
+  const _blkFlags = (_pov && _pov.flags && Object.keys(_pov.flags).length) ? _pov.flags : (getChecklistFlags()[plan.task] || {});
+  const _hasFlags = Object.keys(_blkFlags).length > 0 || (getTaskNotes()[plan.task] || []).some(p => p.flagged);
+  block.innerHTML = `<div class="planner-block-title">${_hasFlags ? '🚩 ' : ''}${plan.task}</div>
     <div class="planner-block-meta">${startStr} – ${endStr} · ${plan.durationHours}h</div>`;
 
   let _blockTouchStartTime = 0;
@@ -11610,7 +11659,7 @@ function openPlannerDetail(planId) {
   const subtaskHtml = subtasks.length > 0
     ? `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-          <span style="font-size:12px;color:var(--subtext);font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Checklist${hasPlanArr ? ' · 📅 arranged' : ''}</span>
+          <span style="font-size:12px;color:var(--subtext);font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Tasks${hasPlanArr ? ' · 📅 arranged' : ''}</span>
           ${isWorker() ? '' : `<span onclick="openChecklistOrganiseForPlan('${planId}')" style="font-size:13px;color:var(--blue);font-weight:600;cursor:pointer;">⚙️ Organise</span>`}
         </div>
         ${orderedSubs.map(s => `<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:7px;">
