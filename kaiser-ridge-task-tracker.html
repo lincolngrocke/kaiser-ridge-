@@ -1765,6 +1765,9 @@
       <span id="pin-preview-title" style="font-size:16px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:10px;"></span>
       <span onclick="closeModal('modal-pin-preview')" style="color:var(--blue);font-size:16px;cursor:pointer;flex-shrink:0;">Done</span>
     </div>
+    <div style="padding:10px 20px 6px;flex-shrink:0;">
+      <input id="pin-preview-search" type="search" placeholder="Search to-dos…" oninput="onPinPreviewSearch()" autocomplete="off" autocorrect="on" autocapitalize="none" spellcheck="false" style="width:100%;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:var(--card);font-size:14px;color:var(--text);outline:none;-webkit-appearance:none;">
+    </div>
     <div id="pin-preview-body" style="padding:0 20px;overflow-y:auto;overflow-x:hidden;flex:1;"></div>
   </div>
 </div>
@@ -2391,7 +2394,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.109';
+const APP_VERSION = '2026-06-21.110';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3558,7 +3561,7 @@ function renderRunChecklist() {
         : (steps.length ? `<span onclick="toggleChecklistExpand('${enc}')" style="color:#8b93a7;font-size:14px;cursor:pointer;padding:0 4px;flex-shrink:0;">${expanded ? '▾' : '▸'}</span>` : '');
       const clFlagAttr = (flagged && !isDone) ? '1' : '';
       const clRowBg = (flagged && !isDone) ? 'background:rgba(255,214,10,0.08);' : '';
-      const editIcon = `<span onclick="event.stopPropagation();openRunEdit('tasks','${enc}')" style="flex-shrink:0;color:#5a6274;font-size:14px;cursor:pointer;padding:2px 4px;">✎</span>`;
+      const editIcon = `<span onclick="event.stopPropagation();openRunEdit('tasks','${enc}')" style="flex-shrink:0;color:#8b93a7;font-size:20px;line-height:1;cursor:pointer;padding:9px 6px 9px 12px;">✎</span>`;
       let html = `<div class="cl-row" data-cl-item="${_attr(s)}" data-cl-task="${taskAttr}" data-cl-flagged="${clFlagAttr}" ontouchstart="clSwipeStart(event)" ontouchmove="clSwipeMove(event)" ontouchend="clSwipeEnd(event)" style="display:flex;align-items:center;gap:12px;padding:13px 0;border-top:0.5px solid rgba(255,255,255,0.08);${clRowBg}">${circle}${textSpan}${editIcon}${right}</div>`;
       if (expanded && steps.length && !isDone) {
         html += steps.map(st => {
@@ -3594,7 +3597,7 @@ function renderRunChecklist() {
           <div style="font-size:12px;color:#616a7e;margin-top:5px;">${shortDate}${fullMeta}</div>
           ${thumb}
         </div>
-        <span onclick="event.stopPropagation();openRunEdit('notes','${p.id}')" style="flex-shrink:0;color:#5a6274;font-size:14px;cursor:pointer;padding:2px 4px;align-self:flex-start;margin-top:1px;">✎</span>
+        <span onclick="event.stopPropagation();openRunEdit('notes','${p.id}')" style="flex-shrink:0;color:#8b93a7;font-size:20px;line-height:1;cursor:pointer;padding:9px 6px 9px 12px;align-self:flex-start;">✎</span>
         ${durStr}
       </div>`;
     }).join('');
@@ -10922,12 +10925,17 @@ function togglePinSort() {
 
 // compact=true uses smaller thumbnails so rows stay short — used in the
 // full-page Organise view where notes with photos are otherwise hard to drag.
-function _pinnedNotesHtml(task, compact) {
+function _pinnedNotesHtml(task, compact, search) {
   // Hide notes already ticked done this session — no need to organise a completed
   // note (they're folded into the entry at clock-out).
   const pinDone = (clockState && clockState.running && clockState.task === task && clockState.pinDone) ? clockState.pinDone : {};
-  const pins = _sortPins((getTaskNotes()[task] || []).filter(p => !pinDone[p.id]));
+  let pins = _sortPins((getTaskNotes()[task] || []).filter(p => !pinDone[p.id]));
   if (!pins.length) return '';
+  const q = (search || '').trim().toLowerCase();
+  if (q) {
+    pins = pins.filter(p => (p.text || '').toLowerCase().includes(q));
+    if (!pins.length) return `<div style="margin-top:12px;padding:22px 0;text-align:center;color:var(--subtext);font-size:14px;">No to-dos match “${_escHtml(search.trim())}”.</div>`;
+  }
   const taskAttr = _attr(task);
   return `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">
     <div style="font-size:12px;color:#FFD60A;margin-bottom:2px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">📌 To-dos</div>
@@ -11051,7 +11059,7 @@ function _refreshPinSurfaces(task) {
   const det = document.getElementById('modal-planner-detail');
   if (det && det.classList.contains('open') && _plannerDetailId) openPlannerDetail(_plannerDetailId);
   const pop = document.getElementById('modal-pin-preview');
-  if (pop && pop.classList.contains('open')) showPinnedNotesPopupTask(task);
+  if (pop && pop.classList.contains('open') && _pinPreviewTask === task) _renderPinPreview();   // keep the active search
 }
 
 // Tap a task's 📌 badge in the Task Directory to preview its pinned notes
@@ -11060,16 +11068,27 @@ function showPinnedNotesPopup(el) {
   const row = el.closest('.dir-task-row');
   showPinnedNotesPopupTask(row ? row.dataset.task : '');
 }
-let _pinPreviewTask = null;
+let _pinPreviewTask = null, _pinPreviewSearch = '';
+function _renderPinPreview() {
+  if (!_pinPreviewTask) return;
+  document.getElementById('pin-preview-body').innerHTML =
+    _pinnedNotesHtml(_pinPreviewTask, true, _pinPreviewSearch) ||
+    '<div style="padding:24px 0;color:var(--subtext);text-align:center;">No to-dos to organise.</div>';
+  _loadPhotoThumbs();
+}
+function onPinPreviewSearch() {
+  const si = document.getElementById('pin-preview-search');
+  _pinPreviewSearch = si ? si.value : '';
+  _renderPinPreview();
+}
 function showPinnedNotesPopupTask(task) {
   if (!task) return;
   _pinPreviewTask = task;
+  _pinPreviewSearch = '';
+  const si = document.getElementById('pin-preview-search'); if (si) si.value = '';
   document.getElementById('pin-preview-title').textContent = task;
-  const html = _pinnedNotesHtml(task, true);
-  document.getElementById('pin-preview-body').innerHTML =
-    html || '<div style="padding:24px 0;color:var(--subtext);text-align:center;">No to-dos to organise.</div>';
+  _renderPinPreview();
   openModal('modal-pin-preview');
-  _loadPhotoThumbs();
 }
 
 // ── Checklist-item flagging (mirror of the pinned-note gestures) ──
