@@ -2394,7 +2394,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.110';
+const APP_VERSION = '2026-06-21.111';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3039,7 +3039,7 @@ function _lastUsedChecklistOrder(task) {
   Object.keys(sums).forEach(it => order[it] = sums[it] / counts[it]);
   return order;
 }
-function _orderedChecklistItems(task, items) {
+function _orderedChecklistItems(task, items, flagsArg) {
   const mode = localStorage.getItem('kr_checklist_order') || 'manual';
   let base = items;
   if (mode !== 'manual') {
@@ -3048,7 +3048,8 @@ function _orderedChecklistItems(task, items) {
   }
   // 🚩 Flagged items float to the top (most-recently-flagged first), the rest keep
   // their mode order. Mirrors how flagged pinned notes behave. Device-local.
-  const flags = getChecklistFlags()[task] || {};
+  // flagsArg lets the plan-organise editor render a per-block arrangement.
+  const flags = flagsArg || _sessionOrGlobalFlags(task);
   const pos = {}; base.forEach((it, i) => { pos[it] = i; });
   return base.slice().sort((a, b) => {
     const fa = flags[a] ? 1 : 0, fb = flags[b] ? 1 : 0;
@@ -3061,6 +3062,17 @@ function _orderedChecklistItems(task, items) {
 // (like pinned-note flags), never written to SUBTASKS or synced.
 function getChecklistFlags() { return JSON.parse(localStorage.getItem('kr_checklist_flags') || '{}'); }
 function saveChecklistFlags(o) { return _safeSetItem('kr_checklist_flags', JSON.stringify(o)); }
+// Per-planner-block checklist arrangement (flag+order override) — { planId: { flags:{item:ts} } }.
+// Lets you plan a block's checklist ahead; carried into clockState.flagOverride at
+// clock-in, then reverts (the job's global flags stay untouched). Device-local.
+function getPlannerChecklist() { try { return JSON.parse(localStorage.getItem('kr_planner_checklist') || '{}') || {}; } catch (e) { return {}; } }
+function savePlannerChecklist(m) { return _safeSetItem('kr_planner_checklist', JSON.stringify(m)); }
+// The flags a live/queued run should use: a session override (from a planner block)
+// if present, else the job's global flags. Readers use this; never the plan-edit target.
+function _sessionOrGlobalFlags(task) {
+  if (clockState && clockState.running && clockState.task === task && clockState.flagOverride) return clockState.flagOverride;
+  return getChecklistFlags()[task] || {};
+}
 function _checklistDurations() {
   if (!clockState) return {};
   const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
@@ -3534,7 +3546,7 @@ function renderRunChecklist() {
     const stepsMap = getSubtaskSteps();
     const stepChecks = (clockState && clockState.stepChecks) || {};
     const taskAttr = (clockState && clockState.task) ? _attr(clockState.task) : '';
-    const clFlags = getChecklistFlags()[clockState.task] || {};
+    const clFlags = _sessionOrGlobalFlags(clockState.task);
     if (items.filter(s => clFlags[s]).length > 1) organiseLink = `<span onclick="openChecklistOrganise(event)" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">⤢ Organise</span>`;
     rows = items.map(s => {
       const enc = s.replace(/'/g, "\\'");
@@ -4949,7 +4961,16 @@ function confirmTime(choice) {
     startTimerTick();
     captureClockInLocation();
     if (taskInfo._planId != null) {
-      // Came from a planner block — consume it and jump to the Clock screen.
+      // Carry any per-block checklist arrangement into this session (it reverts after
+      // — the job's global flags stay untouched), then consume the block.
+      const pcm = getPlannerChecklist();
+      const rec = pcm[taskInfo._planId];
+      if (rec && rec.flags && Object.keys(rec.flags).length) {
+        clockState.flagOverride = { ...rec.flags };
+        _safeSetItem('kr_clock', JSON.stringify(clockState));
+        renderRunChecklist();
+      }
+      if (rec) { delete pcm[taskInfo._planId]; savePlannerChecklist(pcm); }
       _plannerPlans = _plannerPlans.filter(p => p.id !== taskInfo._planId);
       savePlanner();
       showScreen('clock', document.querySelector(".nav-tab[onclick*=\"'clock'\"]"));
@@ -5582,7 +5603,7 @@ const KR_BACKUP_KEYS = [
   'kr_sheet_url', 'kr_gmaps_key', 'kr_dark_mode',
   'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
   'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_task_videos', 'kr_checklist_flags', 'kr_task_merges', 'kr_subtask_origin', 'kr_pins_applied',
-  'kr_agents', 'kr_agent_runs'
+  'kr_agents', 'kr_agent_runs', 'kr_planner_checklist'
 ];
 
 function buildBackupSnapshot() {
@@ -11165,21 +11186,49 @@ function _endClDrag() {
 }
 // Encode a manual order of flagged items into flaggedAt (top = newest).
 function _applyChecklistFlagOrder(task, orderedItems) {
-  const all = getChecklistFlags();
-  const f = all[task]; if (!f) return;
   const base = Date.now();
+  const pid = _clTargetPlanId();
+  if (pid) {   // reordering a planner block's arrangement
+    const m = getPlannerChecklist(); const rec = m[pid]; if (!rec || !rec.flags) return;
+    orderedItems.forEach((item, i) => { if (rec.flags[item]) rec.flags[item] = base - i * 1000; });
+    savePlannerChecklist(m); _renderClOrganiseBody();
+    return;
+  }
+  const useSession = clockState && clockState.running && clockState.task === task && clockState.flagOverride;
+  const f = useSession ? clockState.flagOverride : (getChecklistFlags()[task] || null);
+  if (!f) return;
   orderedItems.forEach((item, i) => { if (f[item]) f[item] = base - i * 1000; }); // first listed = highest = top
-  saveChecklistFlags(all);
+  if (useSession) _safeSetItem('kr_clock', JSON.stringify(clockState));
+  else { const all = getChecklistFlags(); all[task] = f; saveChecklistFlags(all); }
   _refreshChecklistSurfaces(task);
 }
 function toggleChecklistFlag(task, item) {
-  const all = getChecklistFlags();
-  const f = all[task] || (all[task] = {});
+  const pid = _clTargetPlanId();
+  if (pid) {   // flagging within a planner block's arrangement
+    const m = getPlannerChecklist(); const rec = m[pid] || (m[pid] = { flags: {} });
+    const f = rec.flags || (rec.flags = {});
+    const nowFlagged = !f[item];
+    if (f[item]) delete f[item]; else f[item] = Date.now();
+    savePlannerChecklist(m);
+    showToast(nowFlagged ? '🚩 Flagged to top' : 'Flag removed');
+    _renderClOrganiseBody();
+    return;
+  }
+  const useSession = clockState && clockState.running && clockState.task === task && clockState.flagOverride;
   let nowFlagged;
-  if (f[item]) { delete f[item]; nowFlagged = false; }
-  else { f[item] = Date.now(); nowFlagged = true; }
-  if (!Object.keys(all[task]).length) delete all[task];
-  saveChecklistFlags(all);
+  if (useSession) {
+    const f = clockState.flagOverride;
+    nowFlagged = !f[item];
+    if (f[item]) delete f[item]; else f[item] = Date.now();
+    _safeSetItem('kr_clock', JSON.stringify(clockState));
+  } else {
+    const all = getChecklistFlags();
+    const f = all[task] || (all[task] = {});
+    nowFlagged = !f[item];
+    if (f[item]) delete f[item]; else f[item] = Date.now();
+    if (!Object.keys(all[task]).length) delete all[task];
+    saveChecklistFlags(all);
+  }
   showToast(nowFlagged ? '🚩 Flagged to top' : 'Flag removed');
   _refreshChecklistSurfaces(task);
 }
@@ -11188,25 +11237,59 @@ function _refreshChecklistSurfaces(task) {
   const org = document.getElementById('modal-cl-organise');
   if (org && org.classList.contains('open') && _clOrganiseTask === task) _renderClOrganiseBody();
 }
-let _clOrganiseTask = null;
+let _clOrganiseTask = null, _clOrganisePlanId = null, _clEditScope = 'plan';
+// Which flags map the open organise editor targets: a planner block (plan scope);
+// else null = the running session's override or the job's global flags.
+function _clTargetPlanId() {
+  const org = document.getElementById('modal-cl-organise');
+  if (org && org.classList.contains('open') && _clOrganisePlanId && _clEditScope === 'plan') return _clOrganisePlanId;
+  return null;
+}
+function _editTargetFlags() {
+  const pid = _clTargetPlanId();
+  if (pid) { const rec = getPlannerChecklist()[pid]; return (rec && rec.flags) || {}; }
+  return _sessionOrGlobalFlags(_clOrganiseTask);
+}
 function openChecklistOrganise(e) {
   if (e) e.stopPropagation();
   if (!clockState || !clockState.task) return;
   _clOrganiseTask = clockState.task;
+  _clOrganisePlanId = null;
   document.getElementById('cl-organise-title').textContent = clockState.task;
   _renderClOrganiseBody();
   openModal('modal-cl-organise');
 }
+// Organise a planned block's checklist before starting it. Seeds the block's
+// arrangement from the job's current flags the first time; edits then diverge.
+function openChecklistOrganiseForPlan(planId) {
+  if (isWorker()) return;
+  const plan = _plannerPlans.find(p => p.id === planId);
+  if (!plan) return;
+  _clOrganiseTask = plan.task;
+  _clOrganisePlanId = planId;
+  _clEditScope = 'plan';
+  const m = getPlannerChecklist();
+  if (!m[planId]) { m[planId] = { flags: { ...(getChecklistFlags()[plan.task] || {}) } }; savePlannerChecklist(m); }
+  document.getElementById('cl-organise-title').textContent = plan.task;
+  _renderClOrganiseBody();
+  openModal('modal-cl-organise');
+}
+function setClEditScope(scope) { _clEditScope = scope; _renderClOrganiseBody(); }
 function _renderClOrganiseBody() {
   const task = _clOrganiseTask;
   const body = document.getElementById('cl-organise-body');
   if (!body) return;
   const all = SUBTASKS[task] || [];
-  const ordered = _orderedChecklistItems(task, all);
-  const flags = getChecklistFlags()[task] || {};
+  const flags = _editTargetFlags();
+  const ordered = _orderedChecklistItems(task, all, flags);
   const taskAttr = _attr(task);
   const flagged = ordered.filter(s => flags[s]);
-  const intro = `<div style="font-size:11px;color:var(--subtext);margin:12px 0 8px;">Swipe an item right to 🚩 flag it to the top · hold &amp; drag a 🚩 item to set the order it’s done in.</div>`;
+  const scopeToggle = _clOrganisePlanId ? `
+    <div style="display:flex;gap:6px;background:rgba(127,127,127,0.12);border-radius:12px;padding:4px;margin:12px 0 4px;">
+      ${[['plan', '📅 This block'], ['job', '🗂 Whole job']].map(([k, l]) => `<div onclick="setClEditScope('${k}')" style="flex:1;text-align:center;padding:8px 6px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;${_clEditScope === k ? 'background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,0.12);' : 'color:var(--subtext);'}">${l}</div>`).join('')}
+    </div>
+    <div style="font-size:11px;color:var(--subtext);margin-bottom:4px;">${_clEditScope === 'plan' ? 'Arranges just this planned run — the job stays as it is.' : 'Changes this job’s checklist everywhere.'}</div>` : '';
+  const intro = `<div style="font-size:11px;color:var(--subtext);margin:${_clOrganisePlanId ? '8px' : '12px'} 0 8px;">Swipe an item right to 🚩 flag it to the top · hold &amp; drag a 🚩 item to set the order it’s done in.</div>`;
   const rowHtml = (s) => {
     const isFlagged = !!flags[s];
     return `<div class="cl-row" data-cl-item="${_attr(s)}" data-cl-task="${taskAttr}" data-cl-flagged="${isFlagged ? '1' : ''}" ontouchstart="clSwipeStart(event)" ontouchmove="clSwipeMove(event)" ontouchend="clSwipeEnd(event)" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:11px 10px;border-radius:8px;border:1px solid var(--border);${isFlagged ? 'background:rgba(255,214,10,0.12);' : 'background:var(--card);'}">
@@ -11221,7 +11304,7 @@ function _renderClOrganiseBody() {
   const restBlock = rest.length
     ? `<div style="font-size:12px;color:var(--subtext);font-weight:700;text-transform:uppercase;letter-spacing:0.4px;margin:16px 0 8px;">Rest of the tasks</div>${rest.map(rowHtml).join('')}`
     : '';
-  body.innerHTML = intro + flaggedBlock + restBlock;
+  body.innerHTML = scopeToggle + intro + flaggedBlock + restBlock;
 }
 
 function openPlannerDetail(planId) {
@@ -11253,11 +11336,18 @@ function openPlannerDetail(planId) {
   const endM = String(Math.round(endMins % 60)).padStart(2,'0');
   const endStr = formatTimeAmPm(`${endH}:${endM}`);
   const subtasks = SUBTASKS[plan.task] || [];
+  const planOv = getPlannerChecklist()[planId];
+  const hasPlanArr = !!(planOv && planOv.flags && Object.keys(planOv.flags).length);
+  const clFlags = hasPlanArr ? planOv.flags : (getChecklistFlags()[plan.task] || {});
+  const orderedSubs = subtasks.length ? _orderedChecklistItems(plan.task, subtasks, clFlags) : [];
   const subtaskHtml = subtasks.length > 0
     ? `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">
-        <div style="font-size:12px;color:var(--subtext);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Checklist</div>
-        ${subtasks.map(s => `<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:7px;">
-          <span style="color:var(--subtext);font-size:14px;margin-top:1px;">☐</span>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <span style="font-size:12px;color:var(--subtext);font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Checklist${hasPlanArr ? ' · 📅 arranged' : ''}</span>
+          ${isWorker() ? '' : `<span onclick="openChecklistOrganiseForPlan('${planId}')" style="font-size:13px;color:var(--blue);font-weight:600;cursor:pointer;">⚙️ Organise</span>`}
+        </div>
+        ${orderedSubs.map(s => `<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:7px;">
+          <span style="color:var(--subtext);font-size:14px;margin-top:1px;">${clFlags[s] ? '🚩' : '☐'}</span>
           <span style="font-size:14px;color:var(--text);">${s}</span>
         </div>`).join('')}
       </div>`
@@ -11295,6 +11385,7 @@ function deletePlannerBlock() {
   if (!confirm('Remove this planned task?')) return;
   const removed = _plannerPlans.find(p => p.id === _plannerDetailId);
   _plannerPlans = _plannerPlans.filter(p => p.id !== _plannerDetailId);
+  const pcm = getPlannerChecklist(); if (pcm[_plannerDetailId]) { delete pcm[_plannerDetailId]; savePlannerChecklist(pcm); }  // drop its arrangement
   savePlanner();
   deletePlannerCalendarEvent(removed);
   closeModal('modal-planner-detail');
