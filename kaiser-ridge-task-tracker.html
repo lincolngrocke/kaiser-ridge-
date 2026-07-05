@@ -2394,7 +2394,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.112';
+const APP_VERSION = '2026-06-21.113';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3039,15 +3039,24 @@ function _lastUsedChecklistOrder(task) {
   Object.keys(sums).forEach(it => order[it] = sums[it] / counts[it]);
   return order;
 }
-function _orderedChecklistItems(task, items, flagsArg) {
+function _orderedChecklistItems(task, items, flagsArg, orderArg) {
   const mode = localStorage.getItem('kr_checklist_order') || 'manual';
   let base = items;
-  if (mode !== 'manual') {
+  // An explicit drag-set order (a per-block/session override, or a passed orderArg)
+  // wins over the mode. Otherwise Last-used/Typical compute an order; Manual keeps
+  // the item list order (which IS the whole-job manual order, i.e. SUBTASKS).
+  const manualOrder = orderArg || _sessionOrGlobalOrder(task);
+  if (manualOrder) {
+    base = items.slice().sort((a, b) => {
+      const ia = manualOrder.indexOf(a), ib = manualOrder.indexOf(b);
+      return (ia === -1 ? 1e9 : ia) - (ib === -1 ? 1e9 : ib);   // items not in the order keep at the end
+    });
+  } else if (mode !== 'manual') {
     const order = mode === 'lastused' ? _lastUsedChecklistOrder(task) : _typicalChecklistOrder(task);
     base = items.slice().sort((a, b) => (a in order ? order[a] : Infinity) - (b in order ? order[b] : Infinity));  // stable: no-data keeps manual order
   }
   // 🚩 Flagged items float to the top (most-recently-flagged first), the rest keep
-  // their mode order. Mirrors how flagged pinned notes behave. Device-local.
+  // their (mode/drag) order. Mirrors how flagged pinned notes behave. Device-local.
   // flagsArg lets the plan-organise editor render a per-block arrangement.
   const flags = flagsArg || _sessionOrGlobalFlags(task);
   const pos = {}; base.forEach((it, i) => { pos[it] = i; });
@@ -3072,6 +3081,13 @@ function savePlannerChecklist(m) { return _safeSetItem('kr_planner_checklist', J
 function _sessionOrGlobalFlags(task) {
   if (clockState && clockState.running && clockState.task === task && clockState.flagOverride) return clockState.flagOverride;
   return getChecklistFlags()[task] || {};
+}
+// The manual drag order a live run should use: a session order override (from a
+// planner block) if present, else null (meaning use SUBTASKS' own order = the
+// whole-job manual order). Whole-job reorders SUBTASKS directly, so no separate store.
+function _sessionOrGlobalOrder(task) {
+  if (clockState && clockState.running && clockState.task === task && Array.isArray(clockState.orderOverride)) return clockState.orderOverride;
+  return null;
 }
 function _checklistDurations() {
   if (!clockState) return {};
@@ -4965,12 +4981,12 @@ function confirmTime(choice) {
       // — the job's global flags stay untouched), then consume the block.
       const pcm = getPlannerChecklist();
       const rec = pcm[taskInfo._planId];
-      if (rec && rec.flags && Object.keys(rec.flags).length) {
-        clockState.flagOverride = { ...rec.flags };
-        _safeSetItem('kr_clock', JSON.stringify(clockState));
-        renderRunChecklist();
+      if (rec) {
+        if (rec.flags && Object.keys(rec.flags).length) clockState.flagOverride = { ...rec.flags };
+        if (Array.isArray(rec.order) && rec.order.length) clockState.orderOverride = rec.order.slice();
+        if (clockState.flagOverride || clockState.orderOverride) { _safeSetItem('kr_clock', JSON.stringify(clockState)); renderRunChecklist(); }
+        delete pcm[taskInfo._planId]; savePlannerChecklist(pcm);
       }
-      if (rec) { delete pcm[taskInfo._planId]; savePlannerChecklist(pcm); }
       _plannerPlans = _plannerPlans.filter(p => p.id !== taskInfo._planId);
       savePlanner();
       showScreen('clock', document.querySelector(".nav-tab[onclick*=\"'clock'\"]"));
@@ -11123,8 +11139,12 @@ function clSwipeStart(e) {
   const y = e.touches[0].clientY;
   _clSwipe = { row, item: row.dataset.clItem, task: row.dataset.clTask, x: e.touches[0].clientX, y, moved: false };
   clearTimeout(_clLongPressTimer); _clLongPressTimer = null;
-  if (row.dataset.clFlagged === '1') {
-    _clLongPressTimer = setTimeout(() => { _clLongPressTimer = null; _startClDrag(row, row.dataset.clTask, y); }, _CL_HOLD_MS);
+  // In the Organise page ANY item can be dragged to set its order; on the running
+  // clock only 🚩 flagged items reorder (keeps that gesture unchanged).
+  const inOrganise = !!row.closest('#cl-organise-body');
+  const flagged = row.dataset.clFlagged === '1';
+  if (flagged || inOrganise) {
+    _clLongPressTimer = setTimeout(() => { _clLongPressTimer = null; _startClDrag(row, row.dataset.clTask, y, flagged); }, _CL_HOLD_MS);
   }
 }
 function clSwipeMove(e) {
@@ -11152,10 +11172,10 @@ function clSwipeEnd(e) {
   if (s.moved) _clSwipeBlockClickUntil = Date.now() + 400; // any horizontal drag suppresses the tap-to-tick
   if (s.moved && dx > 48) toggleChecklistFlag(s.task, s.item);
 }
-function _startClDrag(row, task, startY) {
+function _startClDrag(row, task, startY, flagged) {
   _clSwipe = null;
   const rect = row.getBoundingClientRect();
-  _clDrag = { row, task, grabOffset: startY - rect.top };
+  _clDrag = { row, task, grabOffset: startY - rect.top, flagged: !!flagged };
   _clSwipeBlockClickUntil = Date.now() + 600;
   row.style.transition = 'none';
   row.style.opacity = '0.95';
@@ -11166,8 +11186,9 @@ function _startClDrag(row, task, startY) {
   if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
 }
 function _clDragMove(clientY) {
-  const dragged = _clDrag.row, parent = dragged.parentNode;
-  const others = [...parent.children].filter(c => c.dataset && c.dataset.clFlagged === '1' && c !== dragged);
+  const dragged = _clDrag.row, parent = dragged.parentNode, flagged = _clDrag.flagged;
+  // Reorder only among rows of the same flag-group (flagged stay above the rest).
+  const others = [...parent.children].filter(c => c.classList && c.classList.contains('cl-row') && (c.dataset.clFlagged === '1') === flagged && c !== dragged);
   const target = others.find(r => { const b = r.getBoundingClientRect(); return clientY < b.top + b.height / 2; });
   if (target) { parent.insertBefore(dragged, target); }
   else { const last = others[others.length - 1]; if (last) parent.insertBefore(dragged, last.nextSibling); }
@@ -11176,13 +11197,19 @@ function _clDragMove(clientY) {
   dragged.style.transform = 'translateY(' + ty + 'px) scale(1.03)';
 }
 function _endClDrag() {
-  const dragged = _clDrag.row, task = _clDrag.task, parent = dragged.parentNode;
+  const dragged = _clDrag.row, task = _clDrag.task, parent = dragged.parentNode, flagged = _clDrag.flagged;
   _clDrag = null;
   dragged.style.transition = 'transform 0.15s, box-shadow 0.15s, opacity 0.15s';
   dragged.style.transform = ''; dragged.style.opacity = ''; dragged.style.boxShadow = '';
   dragged.style.position = ''; dragged.style.zIndex = '';
-  const order = [...parent.children].filter(c => c.dataset && c.dataset.clFlagged === '1').map(c => c.dataset.clItem);
-  _applyChecklistFlagOrder(task, order);
+  if (flagged) {
+    const order = [...parent.children].filter(c => c.dataset && c.dataset.clFlagged === '1').map(c => c.dataset.clItem);
+    _applyChecklistFlagOrder(task, order);
+  } else {
+    // Persist the full visible order (flagged first, then the rest as arranged).
+    const fullOrder = [...parent.children].filter(c => c.classList && c.classList.contains('cl-row')).map(c => c.dataset.clItem);
+    _applyChecklistManualOrder(task, fullOrder);
+  }
 }
 // Encode a manual order of flagged items into flaggedAt (top = newest).
 function _applyChecklistFlagOrder(task, orderedItems) {
@@ -11200,6 +11227,30 @@ function _applyChecklistFlagOrder(task, orderedItems) {
   orderedItems.forEach((item, i) => { if (f[item]) f[item] = base - i * 1000; }); // first listed = highest = top
   if (useSession) _safeSetItem('kr_clock', JSON.stringify(clockState));
   else { const all = getChecklistFlags(); all[task] = f; saveChecklistFlags(all); }
+  _refreshChecklistSurfaces(task);
+}
+// Persist a drag-set manual order of the non-flagged items — scoped exactly like
+// flags: a planner block (This block), the live run (session override), else the
+// whole job (rewrites SUBTASKS' order). fullOrder = flagged first, then the rest.
+function _applyChecklistManualOrder(task, fullOrder) {
+  const pid = _clTargetPlanId();
+  if (pid) {   // this planned block only
+    const m = getPlannerChecklist(); const rec = m[pid] || (m[pid] = { flags: {} });
+    rec.order = fullOrder.slice();
+    savePlannerChecklist(m); _renderClOrganiseBody();
+    return;
+  }
+  const useSession = clockState && clockState.running && clockState.task === task && Array.isArray(clockState.orderOverride);
+  if (useSession) {
+    clockState.orderOverride = fullOrder.slice();
+    _safeSetItem('kr_clock', JSON.stringify(clockState));
+  } else {
+    // Whole job: rewrite SUBTASKS to the new order (items not in the list kept at end).
+    const cur = SUBTASKS[task] || [];
+    const inList = new Set(fullOrder);
+    SUBTASKS[task] = fullOrder.filter(x => cur.includes(x)).concat(cur.filter(x => !inList.has(x)));
+    _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
+  }
   _refreshChecklistSurfaces(task);
 }
 function toggleChecklistFlag(task, item) {
@@ -11281,7 +11332,9 @@ function _renderClOrganiseBody() {
   if (!body) return;
   const all = SUBTASKS[task] || [];
   const flags = _editTargetFlags();
-  const ordered = _orderedChecklistItems(task, all, flags);
+  const pid = _clTargetPlanId();
+  const orderArg = pid ? ((getPlannerChecklist()[pid] || {}).order || null) : _sessionOrGlobalOrder(task);
+  const ordered = _orderedChecklistItems(task, all, flags, orderArg);
   const taskAttr = _attr(task);
   const flagged = ordered.filter(s => flags[s]);
   const scopeToggle = _clOrganisePlanId ? `
@@ -11289,13 +11342,13 @@ function _renderClOrganiseBody() {
       ${[['plan', '📅 This block'], ['job', '🗂 Whole job']].map(([k, l]) => `<div onclick="setClEditScope('${k}')" style="flex:1;text-align:center;padding:8px 6px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;${_clEditScope === k ? 'background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,0.12);' : 'color:var(--subtext);'}">${l}</div>`).join('')}
     </div>
     <div style="font-size:11px;color:var(--subtext);margin-bottom:4px;">${_clEditScope === 'plan' ? 'Arranges just this planned run — the job stays as it is.' : 'Changes this job’s checklist everywhere.'}</div>` : '';
-  const intro = `<div style="font-size:11px;color:var(--subtext);margin:${_clOrganisePlanId ? '8px' : '12px'} 0 8px;">Swipe an item right to 🚩 flag it to the top · hold &amp; drag a 🚩 item to set the order it’s done in.</div>`;
+  const intro = `<div style="font-size:11px;color:var(--subtext);margin:${_clOrganisePlanId ? '8px' : '12px'} 0 8px;">Hold &amp; drag any item to set the order it’s done in · swipe an item right to 🚩 flag it to the top.</div>`;
   const rowHtml = (s) => {
     const isFlagged = !!flags[s];
     return `<div class="cl-row" data-cl-item="${_attr(s)}" data-cl-task="${taskAttr}" data-cl-flagged="${isFlagged ? '1' : ''}" ontouchstart="clSwipeStart(event)" ontouchmove="clSwipeMove(event)" ontouchend="clSwipeEnd(event)" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:11px 10px;border-radius:8px;border:1px solid var(--border);${isFlagged ? 'background:rgba(255,214,10,0.12);' : 'background:var(--card);'}">
       <span style="font-size:16px;flex-shrink:0;">${isFlagged ? '🚩' : '▫️'}</span>
       <span style="flex:1;min-width:0;overflow-wrap:anywhere;font-size:15px;color:var(--text);">${s}</span>
-      ${isFlagged ? '<span style="font-size:12px;color:var(--subtext);flex-shrink:0;">⠿ hold to drag</span>' : ''}</div>`;
+      <span style="font-size:12px;color:var(--subtext);flex-shrink:0;">⠿</span></div>`;
   };
   const flaggedBlock = flagged.length
     ? `<div style="font-size:12px;color:#FFD60A;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;margin:4px 0 8px;">🚩 Flagged · done first</div>${flagged.map(rowHtml).join('')}`
