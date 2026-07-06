@@ -2436,7 +2436,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.127';
+const APP_VERSION = '2026-06-21.128';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -11437,6 +11437,7 @@ function togglePinSort() {
   if (previewOpen) _renderPinPreview();
   const det = document.getElementById('modal-planner-detail');
   if (det && det.classList.contains('open') && _plannerDetailId) openPlannerDetail(_plannerDetailId);
+  showToast('↕ ' + _pinSortLabel() + ' · 🚩 flagged stay on top');
 }
 
 // compact=true uses smaller thumbnails so rows stay short — used in the
@@ -11456,7 +11457,7 @@ function _pinnedNotesHtml(task, compact, search) {
   return `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">
     <div style="font-size:12px;color:#FFD60A;margin-bottom:2px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">📌 To-dos</div>
     <div style="font-size:11px;color:var(--subtext);margin-bottom:8px;">${compact ? 'Hold &amp; drag any to-do to reorder · swipe right to 🚩 flag it to the top' : 'Swipe a to-do right to 🚩 flag it to the top · hold &amp; drag a 🚩 to-do to reorder'}</div>
-    ${compact ? `<div onclick="togglePinSort()" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:10px;padding:6px 12px;border:1px solid var(--border);border-radius:999px;font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;">↕ ${_pinSortLabel()}</div>` : ''}
+    ${compact ? `<div style="position:sticky;top:0;z-index:3;background:var(--card);padding:2px 0 10px;"><div onclick="togglePinSort()" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--border);border-radius:999px;font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;">↕ ${_pinSortLabel()}</div></div>` : ''}
     ${pins.map(p => {
       const safe = p.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const _pinnedTs = (p.caught && p.ts && p.ts !== p.caught) ? p.ts : null;
