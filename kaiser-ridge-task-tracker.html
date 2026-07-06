@@ -2080,6 +2080,7 @@
 
     <div class="form-section">
       <textarea class="form-textarea" id="f-notes" placeholder="Add notes…" autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true"></textarea>
+      <div id="f-comment-photos" style="display:none;margin-top:10px;"></div>
     </div>
 
     <div id="f-delete-wrap" style="display:none">
@@ -2435,7 +2436,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.120';
+const APP_VERSION = '2026-06-21.121';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3149,10 +3150,15 @@ function _sessionOrGlobalOrder(task) {
 }
 // { itemText: lastDoneMs } across all clocked-out entries' checklist history — the
 // most recent time each recurring checklist item was ticked. Powers "done N days ago".
-function _checklistItemLastDone() {
+// Last time each checklist item was ticked — SCOPED TO ONE JOB. Item text is
+// shared across jobs (the three tiny-house change-overs use the same tasks), so
+// ticking "Clean the wood heater" at Serene must NOT read as "done today" on
+// Heritage. Only entries for `job` count.
+function _checklistItemLastDone(job) {
   const map = {};
+  if (!job) return map;
   entries.forEach(e => {
-    if (!Array.isArray(e.checklist)) return;
+    if (e.task !== job || !Array.isArray(e.checklist)) return;
     e.checklist.forEach(d => {
       if (!d || !d.item || !d.at) return;
       const t = new Date(d.at).getTime();
@@ -3305,8 +3311,10 @@ function openRunEdit(kind, ref) {
   inp.placeholder = '';
   if (isTask) {
     _runEditRef = { kind: 'tasks', task: clockState.task, oldText: ref };
-    document.getElementById('run-add-hint').innerHTML = 'Rename this task on <b>' + _escHtml(clockState.task) + '</b>. Publish the library to share the change.';
+    document.getElementById('run-add-hint').innerHTML = 'Rename this task on <b>' + _escHtml(clockState.task) + '</b>, or add a reference photo. Publish the library to share.';
     inp.value = ref;
+    _capturePhotos = (getSubtaskPhotos()[ref] || []).map(ph => Object.assign({}, ph));   // preload the task's reference photos
+    renderCapturePreview();
   } else {
     const p = ((getTaskNotes()[clockState.task]) || []).find(x => x.id === ref);
     if (!p) return;
@@ -3389,6 +3397,21 @@ async function confirmRunEdit() {
   try {
     if (ref.kind === 'tasks') {
       _renameChecklistItem(ref.task, ref.oldText, text);
+      // Reference photo(s) on the task — resolve like the add flow (keep Drive ids,
+      // upload new, on-device fallback), then store under the (possibly renamed)
+      // item text. _capturePhotos was preloaded with any existing ref-photos.
+      const tphotos = [];
+      let tAnyLocal = false;
+      for (const p of _capturePhotos) {
+        if (p.id) tphotos.push({ id: p.id });
+        else if (p.data) { const id = await _uploadPhoto(p.data); if (id) tphotos.push({ id }); else { tphotos.push({ data: p.data }); tAnyLocal = true; } }
+      }
+      if (tAnyLocal) showToast('Some photos saved on-device (no connection to Drive)');
+      _captureRemovedIds.forEach(id => _deletePhoto(id));
+      const sp = getSubtaskPhotos();
+      if (tphotos.length) sp[text] = tphotos; else delete sp[text];
+      if (ref.oldText !== text) delete sp[ref.oldText];
+      saveSubtaskPhotos(sp);
     } else {
       // Resolve photos the same way the add flow does: keep Drive ids, upload new
       // ones, or fall back to on-device if Drive is unreachable.
@@ -3671,7 +3694,9 @@ function renderRunChecklist() {
   if (tab === 'tasks') {
     const stepsMap = getSubtaskSteps();
     const subPhotos = getSubtaskPhotos();
-    const itemLastDone = _checklistItemLastDone();
+    const itemLastDone = _checklistItemLastDone(clockState && clockState.task);
+    const itemAvg = {};   // normalised item text → average minutes (from history)
+    _aggregateChecklistTimes().forEach(a => { itemAvg[a.item.trim().replace(/\s+/g, ' ').toLowerCase()] = a.avg; });
     const stepChecks = (clockState && clockState.stepChecks) || {};
     const taskAttr = (clockState && clockState.task) ? _attr(clockState.task) : '';
     const clFlags = _sessionOrGlobalFlags(clockState.task);
@@ -3696,9 +3721,11 @@ function renderRunChecklist() {
       const textTap = steps.length ? `toggleChecklistExpand('${enc}')` : `markChecklistItemDone('${enc}')`;
       const stepBadge = steps.length ? ` <span style="color:#616a7e;font-size:13px;">(${checkedCount}/${steps.length})</span>` : '';
       const textSpan = `<span onclick="${textTap}" style="flex:1;font-size:16px;cursor:pointer;${isDone ? 'color:#616a7e;text-decoration:line-through;' : 'color:#e7eaf0;'}">${flagged ? '🚩 ' : ''}${_escHtml(s)}${stepBadge}</span>`;
+      const _avgMin = itemAvg[s.trim().replace(/\s+/g, ' ').toLowerCase()];
+      const _avgTag = (!isDone && _avgMin) ? `<span title="average so far" style="font-size:12px;color:#616a7e;white-space:nowrap;flex-shrink:0;">~${fmtMin(_avgMin)}</span>` : '';
       const right = isDone
         ? `<span style="font-size:13px;color:#30d158;font-weight:600;white-space:nowrap;">${fmtMin(dur[s])}</span>`
-        : (steps.length ? `<span onclick="toggleChecklistExpand('${enc}')" style="color:#8b93a7;font-size:14px;cursor:pointer;padding:0 4px;flex-shrink:0;">${expanded ? '▾' : '▸'}</span>` : '');
+        : _avgTag + (steps.length ? `<span onclick="toggleChecklistExpand('${enc}')" style="color:#8b93a7;font-size:14px;cursor:pointer;padding:0 4px;flex-shrink:0;">${expanded ? '▾' : '▸'}</span>` : '');
       const clFlagAttr = (flagged && !isDone) ? '1' : '';
       const clRowBg = (flagged && !isDone) ? 'background:rgba(255,214,10,0.08);' : '';
       const editIcon = `<span onclick="event.stopPropagation();openRunEdit('tasks','${enc}')" style="flex-shrink:0;color:#9aa3b7;font-size:23px;line-height:1;cursor:pointer;padding:10px 14px 10px 12px;">✎</span>`;
@@ -4150,6 +4177,7 @@ function openCreate() {
   document.getElementById('f-break').value = '0';
   document.getElementById('f-break-row').style.display = '';
   document.getElementById('f-notes').value = '';
+  _showCommentPhotosField(null);
   document.getElementById('f-date').value = todayStr('-');
   document.getElementById('f-clockin').value = '';
   document.getElementById('f-clockout').value = '';
@@ -4159,6 +4187,16 @@ function openCreate() {
   openModal('modal-task');
 }
 
+// Show read-only comment-photo previews under the notes field (photos attached
+// via "Add Comment" on the clock). Hidden when there are none.
+function _showCommentPhotosField(photos) {
+  const el = document.getElementById('f-comment-photos');
+  if (!el) return;
+  if (Array.isArray(photos) && photos.length) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--subtext);margin-bottom:6px;">📷 Comment photos</div>' + _photosHtml({ photos }, 80);
+    el.style.display = 'block';
+  } else { el.innerHTML = ''; el.style.display = 'none'; }
+}
 function openEdit(id) {
   const e = entries.find(x => x.id === id);
   if (!e) return;
@@ -4196,6 +4234,7 @@ function openEdit(id) {
   populateProjectDropdown(e.projectId || '');
   populateStepDropdown(e.projectId || '', e.projectStepId || '');
   document.getElementById('f-notes').value = e.notes || '';
+  _showCommentPhotosField(e.commentPhotos);
 
   const parts = e.date.split('/');
   document.getElementById('f-date').value = `${parts[2]}-${parts[1]}-${parts[0]}`;
@@ -4234,6 +4273,7 @@ function openEditActive() {
   populateProjectDropdown(clockState.projectId || '');
   populateStepDropdown(clockState.projectId || '', clockState.projectStepId || '');
   document.getElementById('f-notes').value = clockState.notes || '';
+  _showCommentPhotosField(clockState.commentPhotos);
   document.getElementById('f-date').value = todayStr('-');
   document.getElementById('f-clockin').value = clockState.startTime || '';
   document.getElementById('f-clockout').value = '';
@@ -6642,12 +6682,14 @@ function renderDirectory() {
   // Last time each task was clocked (most recent entry date) + days since.
   const _today0 = new Date(); _today0.setHours(0, 0, 0, 0);
   const lastUsed = {};
+  const _avgAgg = {};   // task → { n, tot(hours) } for the average-duration line
   entries.forEach(e => {
     const d = _parseEntryDate(e.date);
-    if (!d) return;
-    const ts = d.getTime();
-    if (!lastUsed[e.task] || ts > lastUsed[e.task]) lastUsed[e.task] = ts;
+    if (d) { const ts = d.getTime(); if (!lastUsed[e.task] || ts > lastUsed[e.task]) lastUsed[e.task] = ts; }
+    if (e.task && e.durationHours > 0) { const a = _avgAgg[e.task] || (_avgAgg[e.task] = { n: 0, tot: 0 }); a.n++; a.tot += e.durationHours; }
   });
+  const taskAvg = {};   // task → average minutes
+  Object.keys(_avgAgg).forEach(t => { taskAvg[t] = (_avgAgg[t].tot / _avgAgg[t].n) * 60; });
   // Merge the shared map (both people's history) pulled from the sheet.
   const sharedLastDone = JSON.parse(localStorage.getItem('kr_lastdone') || '{}');
   Object.keys(sharedLastDone).forEach(task => {
@@ -6704,6 +6746,7 @@ function renderDirectory() {
                 <div style="font-size:15px;font-weight:500;color:var(--text);">${task}${autoBadge}${pinBadge}${videoBadge}</div>
                 ${autoSub}
                 ${usedLine}
+                ${taskAvg[task] ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">⏱ Avg ${fmtMin(taskAvg[task])}</div>` : ''}
                 ${meta.location ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">📍 ${meta.location}</div>` : ''}
                 ${equip.length ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${equip.join(', ')}</div>` : ''}
                 ${checklistHtml}
@@ -12145,7 +12188,8 @@ function parkPlannerBlock(id) {
 function renderPlannerHolding(dateStr) {
   const col = document.getElementById('planner-holding');
   if (!col) return;
-  const parked = _plannerPlans.filter(p => p.date === dateStr && p.parked);
+  const parked = _plannerPlans.filter(p => p.date === dateStr && p.parked)
+    .sort((a, b) => (a.parkOrder == null ? 1e9 : a.parkOrder) - (b.parkOrder == null ? 1e9 : b.parkOrder));
   if (!parked.length) { col.style.display = 'none'; col.innerHTML = ''; return; }
   col.style.display = 'block';
   col.innerHTML = '<div style="font-size:10px;font-weight:700;color:var(--subtext);text-align:center;padding:2px 0 6px;">HOLDING</div>' +
@@ -12243,6 +12287,23 @@ function _parkDragEnd(e) {
     plan.parked = false;
     savePlanner();
     scheduleCalendarAutoPush(plan.date); // now scheduled → mirror to the calendar
+    renderPlannerScreen();
+  } else if (t.clientX >= r.right) {   // dropped back in the holding column → reorder
+    const col = document.getElementById('planner-holding');
+    const chips = col ? [...col.querySelectorAll('[data-park-id]')] : [];
+    let idx = 0;   // how many OTHER chips sit above the drop point = insert position
+    chips.forEach(ch => {
+      if (ch.dataset.parkId === id) return;
+      const rc = ch.getBoundingClientRect();
+      if (rc.top + rc.height / 2 < t.clientY) idx++;
+    });
+    const orderIds = _plannerPlans
+      .filter(p => p.date === plan.date && p.parked)
+      .sort((a, b) => (a.parkOrder == null ? 1e9 : a.parkOrder) - (b.parkOrder == null ? 1e9 : b.parkOrder))
+      .map(p => p.id).filter(pid => pid !== id);
+    orderIds.splice(Math.min(idx, orderIds.length), 0, id);
+    orderIds.forEach((pid, i) => { const pp = _plannerPlans.find(p => p.id === pid); if (pp) pp.parkOrder = i; });
+    savePlanner();
     renderPlannerScreen();
   }
 }
