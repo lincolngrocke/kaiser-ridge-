@@ -2436,7 +2436,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.123';
+const APP_VERSION = '2026-06-21.124';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3223,7 +3223,7 @@ let _runGrabY = null, _runGrabActive = false;
 function _runHeroEl() { const ov = document.getElementById('running-overlay'); return ov ? ov.querySelector('.run-hero') : null; }
 function armRunCollapse() {
   if (_runCollapseTimer) clearTimeout(_runCollapseTimer);
-  _runCollapseTimer = setTimeout(() => { _runCollapseTimer = null; setRunListExpanded(false); }, 5000);
+  _runCollapseTimer = setTimeout(() => { _runCollapseTimer = null; setRunListExpanded(false); }, 30000);   // 30s — any list touch/scroll resets it, so it only snaps back after you've stopped using the list
 }
 function runListInteract() { if (_runListExpanded) armRunCollapse(); }   // reset the snap-back timer while you're using the list
 function setRunListExpanded(on) {
@@ -3268,7 +3268,7 @@ function runGrabMove(e) {
 }
 function runGrabEnd() {
   _runGrabActive = false; _runGrabY = null;
-  if (_runListExpanded) armRunCollapse();     // start the ~3s snap-back countdown on release
+  if (_runListExpanded) armRunCollapse();     // start the 30s snap-back countdown on release
 }
 // Add a Task (recurring) or To-do (one-off) to the job you're clocked into,
 // straight from the clock — writes to the same stores the Jobs page reads.
