@@ -1944,6 +1944,7 @@
     </label>
     <button id="run-add-remind" onclick="openReminderPicker(_runEditRef && _runEditRef.inboxId)" style="display:none;margin-top:12px;margin-left:18px;background:none;border:none;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">🔔 Remind me</button>
     <div id="run-add-photo-preview"></div>
+    <button id="run-add-delete" onclick="deleteRunItem()" style="display:none;width:100%;margin-top:18px;background:none;border:1px solid var(--red);color:var(--red);border-radius:10px;padding:11px;font-size:15px;cursor:pointer;">Delete</button>
   </div>
 </div>
 
@@ -2108,6 +2109,15 @@
         <div class="form-label">Repeats</div>
         <div id="dir-frequency-display" style="flex:1;text-align:right;font-size:16px;color:var(--subtext);">Select…</div>
         <div style="color:var(--subtext);margin-left:6px;">›</div>
+      </div>
+
+      <div class="form-row" onclick="_dirToggleRemind()" style="cursor:pointer;">
+        <div class="form-label">🔁 Remind when due</div>
+        <div id="dir-remind-state" style="flex:1;text-align:right;font-size:16px;color:var(--subtext);">Off</div>
+      </div>
+      <div id="dir-remind-detail" style="display:none;padding:2px 20px 12px;font-size:13px;color:var(--subtext);">
+        <div id="dir-remind-auto" style="margin-bottom:8px;"></div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">Remind every <input id="dir-remind-days" type="number" min="1" inputmode="numeric" placeholder="auto" style="width:64px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:15px;text-align:center;"> days <span style="color:var(--subtext);">(blank = app average)</span></div>
       </div>
 
       <div class="form-row" onclick="openGroupPicker()" style="cursor:pointer;">
@@ -2451,7 +2461,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.118';
+const APP_VERSION = '2026-06-21.119';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3163,6 +3173,20 @@ function _sessionOrGlobalOrder(task) {
   if (clockState && clockState.running && clockState.task === task && Array.isArray(clockState.orderOverride)) return clockState.orderOverride;
   return null;
 }
+// { itemText: lastDoneMs } across all clocked-out entries' checklist history — the
+// most recent time each recurring checklist item was ticked. Powers "done N days ago".
+function _checklistItemLastDone() {
+  const map = {};
+  entries.forEach(e => {
+    if (!Array.isArray(e.checklist)) return;
+    e.checklist.forEach(d => {
+      if (!d || !d.item || !d.at) return;
+      const t = new Date(d.at).getTime();
+      if (!isNaN(t) && (!map[d.item] || t > map[d.item])) map[d.item] = t;
+    });
+  });
+  return map;
+}
 function _checklistDurations() {
   if (!clockState) return {};
   const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
@@ -3284,6 +3308,7 @@ function openRunAdd(kind) {
   _capturePhotos = []; _captureRemovedIds = [];   // fresh photo tray (shared w/ quick-capture)
   const pv = document.getElementById('run-add-photo-preview'); if (pv) pv.innerHTML = '';
   const rb0 = document.getElementById('run-add-remind'); if (rb0) rb0.style.display = 'none';
+  const db0 = document.getElementById('run-add-delete'); if (db0) db0.style.display = 'none';
   const inp = document.getElementById('run-add-input');
   inp.value = '';
   inp.placeholder = isTask ? 'e.g. Wipe down the benches' : 'e.g. Order more filters';
@@ -3301,6 +3326,7 @@ function openRunEdit(kind, ref) {
   document.getElementById('run-add-title').textContent = isTask ? 'Edit task' : 'Edit to-do';
   const sb = document.getElementById('run-add-save'); if (sb) sb.textContent = 'Save';
   const rb = document.getElementById('run-add-remind'); if (rb) rb.style.display = 'none';
+  const db = document.getElementById('run-add-delete'); if (db) { db.style.display = 'block'; db.textContent = isTask ? 'Delete task' : 'Delete to-do'; }
   const inp = document.getElementById('run-add-input');
   inp.placeholder = '';
   if (isTask) {
@@ -3545,6 +3571,36 @@ function reviveDoneItem(i) {
   const all = _runDoneAllRows();
   if (!all.tasks.length && !all.notes.length) closeModal('modal-run-done');  // nothing left at all → back to the clock
 }
+// Delete the task or to-do being edited, straight from the running clock.
+function deleteRunItem() {
+  const ref = _runEditRef;
+  if (!ref || !clockState) { closeModal('modal-run-add'); return; }
+  const isTask = ref.kind === 'tasks';
+  if (!confirm('Delete this ' + (isTask ? 'task' : 'to-do') + '?' + (isTask ? '\n\nIt is removed from this job — Publish the library to share.' : ''))) return;
+  const task = ref.task;
+  if (isTask) {
+    const item = ref.oldText;
+    if (Array.isArray(SUBTASKS[task])) SUBTASKS[task] = SUBTASKS[task].filter(s => s !== item);
+    _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
+    const flags = getChecklistFlags(); if (flags[task] && flags[task][item] != null) { delete flags[task][item]; if (!Object.keys(flags[task]).length) delete flags[task]; saveChecklistFlags(flags); }
+    const sp = getSubtaskPhotos(); if (sp[item]) { delete sp[item]; saveSubtaskPhotos(sp); }
+    if (Array.isArray(clockState.checklistDone)) clockState.checklistDone = clockState.checklistDone.filter(d => d.item !== item);
+    if (Array.isArray(clockState.checklistCarried)) clockState.checklistCarried = clockState.checklistCarried.filter(s => s !== item);
+    if (clockState.flagOverride && clockState.flagOverride[item]) delete clockState.flagOverride[item];
+    if (Array.isArray(clockState.orderOverride)) clockState.orderOverride = clockState.orderOverride.filter(s => s !== item);
+    _safeSetItem('kr_clock', JSON.stringify(clockState));
+  } else {
+    const tn = getTaskNotes();
+    if (Array.isArray(tn[task])) tn[task] = tn[task].filter(p => p.id !== ref.pinId);
+    saveTaskNotes(tn);
+    if (clockState.pinDone) { delete clockState.pinDone[ref.pinId]; _safeSetItem('kr_clock', JSON.stringify(clockState)); }
+  }
+  _runAddMode = 'add'; _runEditRef = null;
+  closeModal('modal-run-add');
+  renderRunChecklist();
+  autoBackup();
+  showToast((isTask ? 'Task' : 'To-do') + ' deleted');
+}
 function toggleNoteExpand(id) {
   if (Date.now() < _pinSwipeBlockClickUntil) return;   // a swipe just happened — not a tap
   if (_expandedNotes.has(id)) _expandedNotes.delete(id); else _expandedNotes.add(id);
@@ -3641,6 +3697,7 @@ function renderRunChecklist() {
   if (tab === 'tasks') {
     const stepsMap = getSubtaskSteps();
     const subPhotos = getSubtaskPhotos();
+    const itemLastDone = _checklistItemLastDone();
     const stepChecks = (clockState && clockState.stepChecks) || {};
     const taskAttr = (clockState && clockState.task) ? _attr(clockState.task) : '';
     const clFlags = _sessionOrGlobalFlags(clockState.task);
@@ -3672,6 +3729,13 @@ function renderRunChecklist() {
       const clRowBg = (flagged && !isDone) ? 'background:rgba(255,214,10,0.08);' : '';
       const editIcon = `<span onclick="event.stopPropagation();openRunEdit('tasks','${enc}')" style="flex-shrink:0;color:#9aa3b7;font-size:23px;line-height:1;cursor:pointer;padding:10px 14px 10px 12px;">✎</span>`;
       let html = `<div class="cl-row" data-cl-item="${_attr(s)}" data-cl-task="${taskAttr}" data-cl-flagged="${clFlagAttr}" ontouchstart="clSwipeStart(event)" ontouchmove="clSwipeMove(event)" ontouchend="clSwipeEnd(event)" style="display:flex;align-items:center;gap:12px;padding:13px 0;border-top:0.5px solid rgba(255,255,255,0.08);${clRowBg}">${circle}${textSpan}${editIcon}${right}</div>`;
+      const _la = itemLastDone[s];
+      if (_la) {
+        const _d = new Date(_la);
+        const _days = Math.floor((Date.now() - new Date(_d.getFullYear(), _d.getMonth(), _d.getDate()).getTime()) / 86400000);
+        const _ago = _days <= 0 ? 'today' : _days === 1 ? 'yesterday' : _days + ' days ago';
+        html += `<div style="font-size:11px;color:#616a7e;padding:1px 0 7px 36px;">🗓 done ${_ago}</div>`;
+      }
       const refPhotos = subPhotos[s] || [];
       if (refPhotos.length) html += `<div style="padding:0 0 10px 36px;" onclick="event.stopPropagation();">${_photosHtml({ photos: refPhotos }, 64)}</div>`;   // reference photo
       if (expanded && steps.length && !isDone) {
@@ -5716,7 +5780,7 @@ const KR_BACKUP_KEYS = [
   'kr_sheet_url', 'kr_gmaps_key', 'kr_dark_mode',
   'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
   'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_task_videos', 'kr_checklist_flags', 'kr_task_merges', 'kr_subtask_origin', 'kr_pins_applied',
-  'kr_agents', 'kr_agent_runs', 'kr_planner_checklist', 'kr_pin_order', 'kr_subtask_photos'
+  'kr_agents', 'kr_agent_runs', 'kr_planner_checklist', 'kr_pin_order', 'kr_subtask_photos', 'kr_job_reminders'
 ];
 
 function buildBackupSnapshot() {
@@ -6997,10 +7061,26 @@ function openDirAddTask() {
   updateRestoreSubtasksBtn('');
   document.getElementById('dir-video').value = '';
   updateDirVideoPreview();
+  _populateJobRemind('');
   openModal('modal-dir-task');
   requestAnimationFrame(_sizeDirSubtaskInputs);
 }
 
+let _dirRemindOn = false;
+function _dirToggleRemind() {
+  _dirRemindOn = !_dirRemindOn;
+  const st = document.getElementById('dir-remind-state'); if (st) { st.textContent = _dirRemindOn ? 'On' : 'Off'; st.style.color = _dirRemindOn ? 'var(--blue)' : 'var(--subtext)'; }
+  const det = document.getElementById('dir-remind-detail'); if (det) det.style.display = _dirRemindOn ? 'block' : 'none';
+}
+function _populateJobRemind(task) {
+  const jr = (task ? getJobReminders()[task] : null) || {};
+  _dirRemindOn = !!jr.on;
+  const st = document.getElementById('dir-remind-state'); if (st) { st.textContent = _dirRemindOn ? 'On' : 'Off'; st.style.color = _dirRemindOn ? 'var(--blue)' : 'var(--subtext)'; }
+  const det = document.getElementById('dir-remind-detail'); if (det) det.style.display = _dirRemindOn ? 'block' : 'none';
+  const dv = document.getElementById('dir-remind-days'); if (dv) dv.value = jr.cadenceDays || '';
+  const au = document.getElementById('dir-remind-auto');
+  if (au) { const a = task ? computeAutoFrequencies()[task] : null; au.textContent = (a && a.avgGap) ? ('📈 App average: about every ' + Math.max(1, Math.round(a.avgGap)) + ' days') : 'No history yet — set a number of days below, or leave blank to start once there is.'; }
+}
 function openDirEditTask(encodedKey) {
   if (isWorker()) { showToast('Worker mode — jobs are managed on the manager device'); return; }
   const key = decodeURIComponent(encodedKey);
@@ -7031,6 +7111,7 @@ function openDirEditTask(encodedKey) {
   const vid = getTaskVideos()[task];
   document.getElementById('dir-video').value = (vid && vid.id) ? ('https://youtu.be/' + vid.id) : '';
   updateDirVideoPreview();
+  _populateJobRemind(task);
   openModal('modal-dir-task');
   requestAnimationFrame(_sizeDirSubtaskInputs);
 }
@@ -8592,9 +8673,10 @@ function updateReminderBanners() {
   const wrap = document.getElementById('reminder-banners');
   if (!wrap) return;
   const active = _activeReminders();
-  if (!active.length) { wrap.innerHTML = ''; wrap.style.display = 'none'; return; }
+  const jobs = _dueJobs();
+  if (!active.length && !jobs.length) { wrap.innerHTML = ''; wrap.style.display = 'none'; return; }
   wrap.style.display = 'block';
-  wrap.innerHTML = active.map(n => {
+  const noteHtml = active.map(n => {
     const t = _escHtml(n.text || '').replace(/\n/g, ' ');
     return `<div style="display:flex;align-items:center;gap:10px;background:#1c1c1e;border:1px solid rgba(255,214,10,0.55);border-radius:14px;margin:8px 10px 0;padding:12px 12px 12px 14px;box-shadow:0 5px 18px rgba(0,0,0,0.45);">
       <span style="font-size:18px;flex-shrink:0;">🔔</span>
@@ -8602,9 +8684,59 @@ function updateReminderBanners() {
       <button onclick="dismissReminder('${n.id}')" aria-label="Dismiss" style="background:none;border:none;color:var(--subtext);font-size:20px;cursor:pointer;padding:2px 6px;flex-shrink:0;">✕</button>
     </div>`;
   }).join('');
+  const jobHtml = jobs.map(j => {
+    const jn = _escHtml(j.job), jarg = j.job.replace(/'/g, "\\'");
+    const sub = j.never ? 'due · not done yet' : ('due · last done ' + (j.days <= 0 ? 'today' : j.days === 1 ? 'yesterday' : j.days + ' days ago') + ' · ~every ' + j.cad + 'd');
+    return `<div style="display:flex;align-items:center;gap:10px;background:#1c1c1e;border:1px solid rgba(90,200,250,0.55);border-radius:14px;margin:8px 10px 0;padding:12px 12px 12px 14px;box-shadow:0 5px 18px rgba(0,0,0,0.45);">
+      <span style="font-size:18px;flex-shrink:0;">🔁</span>
+      <div onclick="openJobReminder('${jarg}')" style="flex:1;min-width:0;cursor:pointer;">
+        <div style="color:#fff;font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${jn}</div>
+        <div style="color:var(--subtext);font-size:12px;">${sub}</div>
+      </div>
+      <button onclick="dismissJobReminder('${jarg}')" aria-label="Dismiss" style="background:none;border:none;color:var(--subtext);font-size:20px;cursor:pointer;padding:2px 6px;flex-shrink:0;">✕</button>
+    </div>`;
+  }).join('');
+  wrap.innerHTML = noteHtml + jobHtml;
 }
 function dismissReminder(id) { _remindSessionDismissed.add(id); updateReminderBanners(); }
 function openReminderNote(id) { _remindSessionDismissed.add(id); updateReminderBanners(); openInbox(id); }
+// ── Job soft reminders (opt-in per job; nudges when overdue vs its cadence) ──
+function getJobReminders() { try { return JSON.parse(localStorage.getItem('kr_job_reminders') || '{}') || {}; } catch (e) { return {}; } }
+function saveJobReminders(o) { return _safeSetItem('kr_job_reminders', JSON.stringify(o)); }
+// Effective cadence (days): manual override, else the app's learned average gap.
+function _jobCadenceDays(job, autoMap) {
+  const rec = getJobReminders()[job];
+  if (rec && rec.cadenceDays) return rec.cadenceDays;
+  const a = (autoMap || computeAutoFrequencies())[job];
+  return (a && a.avgGap) ? Math.max(1, Math.round(a.avgGap)) : null;
+}
+// Jobs with a reminder on that are now due (lastDone + cadence <= today), not dismissed.
+function _dueJobs() {
+  const reminders = getJobReminders();
+  const jobList = Object.keys(reminders).filter(j => reminders[j] && reminders[j].on);
+  if (!jobList.length) return [];
+  const autoMap = computeAutoFrequencies();
+  let shared = {}; try { shared = JSON.parse(localStorage.getItem('kr_lastdone') || '{}') || {}; } catch (e) {}
+  const localLast = {};
+  entries.forEach(e => { if (!e.task) return; const t = _entryClockInEpoch(e); if (t && (!localLast[e.task] || t > localLast[e.task])) localLast[e.task] = t; });
+  const out = [];
+  jobList.forEach(job => {
+    if (_remindSessionDismissed.has('job:' + job)) return;
+    const cad = _jobCadenceDays(job, autoMap);
+    if (!cad) return;
+    const sh = shared[job] ? new Date(shared[job]).getTime() : 0;
+    const ldMs = Math.max(localLast[job] || 0, isNaN(sh) ? 0 : sh);
+    if (!ldMs) { out.push({ job, cad, never: true }); return; }
+    if (ldMs + cad * 86400000 <= Date.now()) {
+      const d0 = new Date(ldMs); d0.setHours(0, 0, 0, 0);
+      const t0 = new Date(); t0.setHours(0, 0, 0, 0);
+      out.push({ job, cad, days: Math.floor((t0 - d0) / 86400000) });
+    }
+  });
+  return out;
+}
+function dismissJobReminder(job) { _remindSessionDismissed.add('job:' + job); updateReminderBanners(); }
+function openJobReminder(job) { _remindSessionDismissed.add('job:' + job); updateReminderBanners(); showScreen('clock', document.querySelector(".nav-tab[onclick*=\"'clock'\"]")); openCreate(); showToast('Clock into ' + job); }
 function deleteInboxItem(id) {
   const inbox = getInbox();
   const idx = inbox.findIndex(n => n.id === id);
@@ -9343,6 +9475,9 @@ function saveDirTask() {
       // Checklist-item flags keyed by task name
       const cflags = getChecklistFlags();
       if (cflags[oldTask]) { cflags[task] = Object.assign(cflags[task] || {}, cflags[oldTask]); delete cflags[oldTask]; saveChecklistFlags(cflags); }
+      // Job reminder keyed by task name
+      const jrem = getJobReminders();
+      if (jrem[oldTask]) { if (!jrem[task]) jrem[task] = jrem[oldTask]; delete jrem[oldTask]; saveJobReminders(jrem); }
       // Merge records reference tasks by name
       const _mg = getTaskMerges(); let _mgCh = false;
       _mg.forEach(m => {
@@ -9400,11 +9535,22 @@ function saveDirTask() {
   } // else: unparseable text — leave any existing video untouched
   saveTaskVideos(tvids);
 
+  // Job soft-reminder (device-local): on/off + optional manual "every N days".
+  const jr = getJobReminders();
+  if (_dirRemindOn) {
+    const cd = parseInt(document.getElementById('dir-remind-days').value, 10);
+    jr[task] = (cd > 0) ? { on: true, cadenceDays: cd } : { on: true };
+  } else {
+    delete jr[task];
+  }
+  saveJobReminders(jr);
+
   localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
   _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
   closeModal('modal-dir-task');
   renderDirectory();
   autoBackup();
+  updateReminderBanners();
   showToast('Task saved');
 }
 
@@ -9420,6 +9566,8 @@ function deleteDirTask() {
     if (tvids[task]) { delete tvids[task]; saveTaskVideos(tvids); }
     const cflags = getChecklistFlags();
     if (cflags[task]) { delete cflags[task]; saveChecklistFlags(cflags); }
+    const jrem = getJobReminders();
+    if (jrem[task]) { delete jrem[task]; saveJobReminders(jrem); }
     // Drop any merge records for this (now-gone) task — can't un-merge into it
     const mg = getTaskMerges();
     const kept = mg.filter(m => m.primary !== task && m.secondary !== task);
@@ -9599,8 +9747,13 @@ function renderRobotsScreen() {
       <div style="display:flex;flex-wrap:wrap;gap:8px;">${chips}<button onclick="startAgentPrompt('${a.id}')" style="background:none;border:1px dashed var(--border);border-radius:16px;padding:7px 12px;font-size:13px;color:var(--subtext);cursor:pointer;">＋ Other…</button></div>
     </div>`;
   }).join('');
+  // Pin "Running now" to the top so you can Stop a robot while scrolling the roster.
+  const runningHead = `<div style="font-size:13px;font-weight:600;color:var(--subtext);margin:4px 2px 8px;">RUNNING NOW</div>${runHtml}`;
+  const runningSection = runs.length
+    ? `<div style="position:sticky;top:0;z-index:5;background:var(--bg);padding-bottom:8px;box-shadow:0 6px 8px -6px rgba(0,0,0,0.5);">${runningHead}</div>`
+    : runningHead;
   body.innerHTML =
-    `<div style="font-size:13px;font-weight:600;color:var(--subtext);margin:4px 2px 8px;">RUNNING NOW</div>${runHtml}` +
+    runningSection +
     `<div style="font-size:13px;font-weight:600;color:var(--subtext);margin:18px 2px 8px;">YOUR ROBOTS</div>${rosterHtml}` +
     `<div style="display:flex;gap:10px;margin-top:12px;">
        <button onclick="openAgentLog()" style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;font-size:14px;color:var(--text);cursor:pointer;">🕘 Log a past run</button>
