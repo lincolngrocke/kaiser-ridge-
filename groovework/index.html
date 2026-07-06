@@ -2436,7 +2436,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.121';
+const APP_VERSION = '2026-06-21.122';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4195,6 +4195,7 @@ function _showCommentPhotosField(photos) {
   if (Array.isArray(photos) && photos.length) {
     el.innerHTML = '<div style="font-size:12px;color:var(--subtext);margin-bottom:6px;">📷 Comment photos</div>' + _photosHtml({ photos }, 80);
     el.style.display = 'block';
+    _loadPhotoThumbs();   // Drive photos render as placeholders until their thumbnails are fetched
   } else { el.innerHTML = ''; el.style.display = 'none'; }
 }
 function openEdit(id) {
