@@ -2436,7 +2436,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.124';
+const APP_VERSION = '2026-06-21.125';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2895,6 +2895,7 @@ function clockOut(overrideTime) {
     break: parseFloat(breakHours.toFixed(2)),
     pin: clockState.pin || null,
     checklist: (clockState.checklistDone || []),
+    steps: (clockState.stepDone || []),          // timed sub-steps: [{item, step, at}]
     breaks: (clockState.breaks || []),
     commentPhotos: (clockState.commentPhotos || []),
     synced: false,
@@ -3181,6 +3182,19 @@ function _checklistDurations() {
     .sort((a, b) => new Date(a.at) - new Date(b.at));
   return _computeChecklistDurations(events, _clockInEpoch(), breaks);
 }
+// Per-step durations for the running session, keyed "item~|~step" (so a step
+// text shared across tasks never collides). Each step is timed by the gap from the
+// previous step tick, chained from clock-in — same engine as the task timings.
+function _stepDurations() {
+  if (!clockState) return {};
+  const sd = Array.isArray(clockState.stepDone) ? clockState.stepDone : [];
+  if (!sd.length) return {};
+  const breaks = Array.isArray(clockState.breaks) ? clockState.breaks.slice() : [];
+  if (clockState.onBreak && clockState.breakStartMs) breaks.push({ start: clockState.breakStartMs, end: Date.now() });
+  const events = sd.map(d => ({ item: d.item + '~|~' + d.step, at: d.at }))
+    .sort((a, b) => new Date(a.at) - new Date(b.at));
+  return _computeChecklistDurations(events, _clockInEpoch(), breaks);
+}
 let _expandedChecklistItems = new Set();
 function markChecklistItemDone(item) {
   if (Date.now() < _clSwipeBlockClickUntil) return;   // a swipe/drag just happened — not a tap
@@ -3198,14 +3212,22 @@ function toggleChecklistExpand(item) {
   else _expandedChecklistItems.add(item);
   renderRunChecklist();
 }
-// Ephemeral working ticks for sub-steps — kept on clockState so they survive a
-// re-render, and naturally reset each clock session (fresh clockState).
+// Sub-steps are timed mini-tasks: ticking one records the moment
+// (clockState.stepDone = [{item, step, at}]) so each step gets its own duration and
+// folds into the entry at clock-out. stepChecks stays as the fast ticked/not lookup.
+// Both live on clockState so they survive a re-render and reset each clock session.
 function toggleChecklistStep(item, step) {
   if (!clockState) return;
   if (!clockState.stepChecks) clockState.stepChecks = {};
   if (!clockState.stepChecks[item]) clockState.stepChecks[item] = {};
-  if (clockState.stepChecks[item][step]) delete clockState.stepChecks[item][step];
-  else clockState.stepChecks[item][step] = true;
+  if (!Array.isArray(clockState.stepDone)) clockState.stepDone = [];
+  if (clockState.stepChecks[item][step]) {
+    delete clockState.stepChecks[item][step];                                     // untick
+    clockState.stepDone = clockState.stepDone.filter(d => !(d.item === item && d.step === step));
+  } else {
+    clockState.stepChecks[item][step] = true;                                     // tick → time it
+    clockState.stepDone.push({ item, step, at: new Date().toISOString() });
+  }
   _safeSetItem('kr_clock', JSON.stringify(clockState));
   renderRunChecklist();
 }
@@ -3464,6 +3486,7 @@ function _renameChecklistItem(task, oldName, newName) {
   if (Array.isArray(clockState.checklistDone)) clockState.checklistDone.forEach(d => { if (d.item === oldName) { d.item = newName; clockChanged = true; } });
   if (Array.isArray(clockState.checklistCarried)) clockState.checklistCarried = clockState.checklistCarried.map(s => { if (s === oldName) { clockChanged = true; return newName; } return s; });
   if (clockState.stepChecks && clockState.stepChecks[oldName]) { clockState.stepChecks[newName] = clockState.stepChecks[oldName]; delete clockState.stepChecks[oldName]; clockChanged = true; }
+  if (Array.isArray(clockState.stepDone)) clockState.stepDone.forEach(d => { if (d.item === oldName) { d.item = newName; clockChanged = true; } });
   if (_expandedChecklistItems.has(oldName)) { _expandedChecklistItems.delete(oldName); _expandedChecklistItems.add(newName); }
   if (clockChanged) _safeSetItem('kr_clock', JSON.stringify(clockState));
   const pi = _subtaskItems.indexOf(oldName); if (pi !== -1) _subtaskItems[pi] = newName;
@@ -3582,6 +3605,8 @@ function deleteRunItem() {
     const flags = getChecklistFlags(); if (flags[task] && flags[task][item] != null) { delete flags[task][item]; if (!Object.keys(flags[task]).length) delete flags[task]; saveChecklistFlags(flags); }
     const sp = getSubtaskPhotos(); if (sp[item]) { delete sp[item]; saveSubtaskPhotos(sp); }
     if (Array.isArray(clockState.checklistDone)) clockState.checklistDone = clockState.checklistDone.filter(d => d.item !== item);
+    if (Array.isArray(clockState.stepDone)) clockState.stepDone = clockState.stepDone.filter(d => d.item !== item);
+    if (clockState.stepChecks && clockState.stepChecks[item]) delete clockState.stepChecks[item];
     if (Array.isArray(clockState.checklistCarried)) clockState.checklistCarried = clockState.checklistCarried.filter(s => s !== item);
     if (clockState.flagOverride && clockState.flagOverride[item]) delete clockState.flagOverride[item];
     if (Array.isArray(clockState.orderOverride)) clockState.orderOverride = clockState.orderOverride.filter(s => s !== item);
@@ -3698,6 +3723,7 @@ function renderRunChecklist() {
     const itemAvg = {};   // normalised item text → average minutes (from history)
     _aggregateChecklistTimes().forEach(a => { itemAvg[a.item.trim().replace(/\s+/g, ' ').toLowerCase()] = a.avg; });
     const stepChecks = (clockState && clockState.stepChecks) || {};
+    const stepDur = _stepDurations();   // timed sub-steps this session → minutes per step
     const taskAttr = (clockState && clockState.task) ? _attr(clockState.task) : '';
     const clFlags = _sessionOrGlobalFlags(clockState.task);
     if (items.filter(s => clFlags[s]).length > 1) organiseLink = `<span onclick="openChecklistOrganise(event)" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">⤢ Organise</span>`;
@@ -3743,9 +3769,11 @@ function renderRunChecklist() {
         html += steps.map(st => {
           const encStep = st.replace(/'/g, "\\'");
           const checked = !!(stepChecks[s] && stepChecks[s][st]);
+          const _sdur = checked ? stepDur[s + '~|~' + st] : null;
+          const _stime = _sdur ? `<span style="font-size:12px;color:#30d158;font-weight:600;white-space:nowrap;flex-shrink:0;">${fmtMin(_sdur)}</span>` : '';
           return `<div onclick="toggleChecklistStep('${enc}','${encStep}')" style="display:flex;align-items:center;gap:12px;padding:10px 0 10px 36px;cursor:pointer;">
             <span style="font-size:20px;flex-shrink:0;color:${checked ? '#30d158' : '#616a7e'};">${checked ? '☑' : '☐'}</span>
-            <span style="font-size:15px;${checked ? 'color:#616a7e;text-decoration:line-through;' : 'color:#c7ccd8;'}">${_escHtml(st)}</span></div>`;
+            <span style="flex:1;font-size:15px;${checked ? 'color:#616a7e;text-decoration:line-through;' : 'color:#c7ccd8;'}">${_escHtml(st)}</span>${_stime}</div>`;
         }).join('');
       }
       return html;
