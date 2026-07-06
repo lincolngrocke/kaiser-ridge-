@@ -2436,7 +2436,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.126';
+const APP_VERSION = '2026-06-21.127';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -11426,11 +11426,17 @@ function _sortPins(arr, task) {
 }
 function togglePinSort() {
   localStorage.setItem('kr_pin_sort', (localStorage.getItem('kr_pin_sort') === 'newest') ? 'oldest' : 'newest');
+  // Tapping Newest/Oldest is a deliberate time-sort. A saved manual drag order
+  // (kr_pin_order) otherwise silently overrides it and the toggle looks stuck, so
+  // clear the viewed job's manual order — dragging a to-do sets a fresh one again.
+  const pop = document.getElementById('modal-pin-preview');
+  const previewOpen = !!(pop && pop.classList.contains('open') && _pinPreviewTask);
+  const sortTask = previewOpen ? _pinPreviewTask : (clockState && clockState.task);
+  if (sortTask) { const po = getPinOrder(); if (po[sortTask]) { delete po[sortTask]; savePinOrder(po); } }
   if (clockState && clockState.running) renderRunChecklist();
+  if (previewOpen) _renderPinPreview();
   const det = document.getElementById('modal-planner-detail');
   if (det && det.classList.contains('open') && _plannerDetailId) openPlannerDetail(_plannerDetailId);
-  const pop = document.getElementById('modal-pin-preview');
-  if (pop && pop.classList.contains('open') && _pinPreviewTask) showPinnedNotesPopupTask(_pinPreviewTask);
 }
 
 // compact=true uses smaller thumbnails so rows stay short — used in the
