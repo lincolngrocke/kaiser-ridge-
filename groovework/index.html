@@ -2436,7 +2436,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.128';
+const APP_VERSION = '2026-06-21.129';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3642,6 +3642,17 @@ function toggleNoteExpand(id) {
   if (_expandedNotes.has(id)) _expandedNotes.delete(id); else _expandedNotes.add(id);
   renderRunChecklist();
 }
+// Expand or collapse EVERY to-do in the running list at once (they clamp to 2 lines
+// otherwise). Tapping a to-do still opens/closes just that one.
+function toggleAllPinsExpanded() {
+  if (!clockState || !clockState.task) return;
+  const pinDone = clockState.pinDone || {};
+  const pins = (getTaskNotes()[clockState.task] || []).filter(p => !pinDone[p.id]);
+  const allExp = pins.length > 0 && pins.every(p => _expandedNotes.has(p.id));
+  if (allExp) pins.forEach(p => _expandedNotes.delete(p.id));
+  else pins.forEach(p => _expandedNotes.add(p.id));
+  renderRunChecklist();
+}
 function _runEstSec() {
   if (!clockState) return 0;
   const avg = getTaskAvgDuration(clockState.task);     // hours
@@ -3728,7 +3739,7 @@ function renderRunChecklist() {
   }
 
   el.style.display = 'flex';
-  let rows = '', organiseLink = '';
+  let rows = '', organiseLink = '', expandLink = '';
 
   if (tab === 'tasks') {
     const stepsMap = getSubtaskSteps();
@@ -3795,6 +3806,11 @@ function renderRunChecklist() {
   } else {
     const pinTaskAttr = _attr(clockState.task);
     if (pinned.length > 1) organiseLink = `<span onclick="openPinOrganise(event)" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">⤢ Organise</span>`;
+    const _visPins = pinned.filter(p => !pinDone[p.id]);
+    if (_visPins.length >= 2) {
+      const _allExp = _visPins.every(p => _expandedNotes.has(p.id));
+      expandLink = `<span onclick="toggleAllPinsExpanded()" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">${_allExp ? '⤡ Collapse all' : '⤢ Expand all'}</span>`;
+    }
     rows = pinned.map(p => {
       const isDone = !!pinDone[p.id];
       if (isDone) return '';   // ticked this session → moves to the ✓ chip / Completed view
@@ -3830,7 +3846,7 @@ function renderRunChecklist() {
     rows = `<div style="padding:22px 0;text-align:center;color:#616a7e;font-size:14px;">${msg}</div>`;
   }
   const addLink = `<span onclick="openRunAdd('${tab}')" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">+ Add ${tab === 'tasks' ? 'task' : 'to-do'}</span>`;
-  const headerHtml = `<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0 6px;">${addLink}${organiseLink || '<span></span>'}</div>`;
+  const headerHtml = `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:2px 0 6px;">${addLink}${expandLink || '<span></span>'}${organiseLink || '<span></span>'}</div>`;
   const prevScroll = (document.getElementById('run-checklist-scroll') || {}).scrollTop || 0;
   el.innerHTML = headerHtml + `<div id="run-checklist-scroll" onscroll="runListInteract()" style="flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;">${rows}</div>`;
   const sc = document.getElementById('run-checklist-scroll');
@@ -6597,6 +6613,12 @@ function clearDirSearch() {
 // own handler on clear. Skips fields that already have a dedicated clear button.
 function initSearchClears() {
   document.querySelectorAll('input[type="search"]').forEach(input => {
+    // Search fields must NOT autocorrect/autocapitalise/spellcheck — iOS was silently
+    // rewriting typed queries (e.g. "Ly" → another word, "C" → something), which made
+    // search look random and "stuck". Force them off on every search box centrally.
+    input.setAttribute('autocorrect', 'off');
+    input.setAttribute('autocapitalize', 'none');
+    input.setAttribute('spellcheck', 'false');
     if (input._clearWired) return;
     if (input.parentElement && input.parentElement.querySelector('button')) return;
     input._clearWired = true;
