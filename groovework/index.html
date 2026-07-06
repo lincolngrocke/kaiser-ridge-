@@ -2156,11 +2156,6 @@
         <button id="dir-video-watch" onclick="playVideoForTask(document.getElementById('dir-task').value.trim())" style="display:none;margin-top:8px;background:none;border:1px solid var(--blue);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">▶ Watch how-to</button>
       </div>
 
-      <div style="padding:16px 20px 0;" id="dir-merge-wrap">
-        <div id="dir-merged-list"></div>
-        <button onclick="openMergePicker()" style="width:100%;padding:14px;background:none;border:1px solid var(--blue);border-radius:12px;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">🔗 Merge another job into this one…</button>
-      </div>
-
       <div style="padding:16px 20px 0;" id="dir-duplicate-wrap">
         <button onclick="duplicateDirTask()" style="width:100%;padding:14px;background:none;border:1px solid var(--blue);border-radius:12px;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">⎘ Duplicate Job</button>
       </div>
@@ -2169,27 +2164,6 @@
         <button onclick="deleteDirTask()" style="width:100%;padding:14px;background:none;border:1px solid var(--red);border-radius:12px;color:var(--red);font-size:16px;font-weight:600;cursor:pointer;">Delete Job</button>
       </div>
     </div>
-  </div>
-</div>
-
-<!-- ══════════════ MERGE PICKER ══════════════ -->
-<div class="modal-backdrop" id="modal-merge-picker" style="z-index:320;">
-  <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:85vh;display:flex;flex-direction:column;">
-    <div style="display:flex;align-items:center;padding:16px 20px 4px;">
-      <button onclick="closeModal('modal-merge-picker')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:0;margin-right:12px;">‹ Back</button>
-      <span style="font-size:17px;font-weight:600;flex:1;text-align:center;">Merge into “<span id="merge-primary-name"></span>”</span>
-      <span style="width:44px;"></span>
-    </div>
-    <div style="padding:0 20px 8px;font-size:12px;color:var(--subtext);">Pick the job to fold in. Its 📌 notes, tasks, 🎥 video &amp; 🚩 flags move here and it’s removed from your jobs. You can un-merge later.</div>
-    <div style="padding:8px 16px 12px;">
-      <div style="display:flex;align-items:center;background:var(--bg);border-radius:12px;padding:0 12px;">
-        <span style="font-size:16px;color:var(--subtext);margin-right:8px;">🔍</span>
-        <input id="merge-picker-search" type="search" placeholder="Find a job to merge in" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"
-          oninput="renderMergePickerList()"
-          style="flex:1;padding:10px 0;border:none;background:transparent;font-size:16px;color:var(--text);outline:none;">
-      </div>
-    </div>
-    <div id="merge-picker-list" style="flex:1;overflow-y:auto;padding:0 16px 24px;"></div>
   </div>
 </div>
 
@@ -2461,7 +2435,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.119';
+const APP_VERSION = '2026-06-21.120';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -7054,7 +7028,6 @@ function openDirAddTask() {
   addNameField.placeholder = 'e.g. Change over tiny house';
   document.getElementById('dir-delete-wrap').style.display = 'none';
   document.getElementById('dir-duplicate-wrap').style.display = 'none';
-  document.getElementById('dir-merge-wrap').style.display = 'none';
   populateDirGroupDropdown('');
   renderDirEquipmentList([]);
   renderDirSubtaskList([]);
@@ -7101,8 +7074,6 @@ function openDirEditTask(encodedKey) {
   editNameField.placeholder = 'e.g. Change over tiny house';
   document.getElementById('dir-delete-wrap').style.display = 'block';
   document.getElementById('dir-duplicate-wrap').style.display = 'block';
-  document.getElementById('dir-merge-wrap').style.display = 'block';
-  renderMergedList(task);
   populateDirGroupDropdown(realGrp);
   const equip = matches.map(r => r.equipment).filter(Boolean);
   renderDirEquipmentList(equip);
@@ -7165,7 +7136,6 @@ function duplicateDirTask() {
   document.getElementById('dir-modal-title').textContent = 'Duplicate Job';
   document.getElementById('dir-delete-wrap').style.display = 'none';
   document.getElementById('dir-duplicate-wrap').style.display = 'none';
-  document.getElementById('dir-merge-wrap').style.display = 'none';
 
   setLocationDisplay(entry && entry.location ? entry.location : '');
   setFrequencyDisplay(realFreq);
@@ -7184,12 +7154,17 @@ function duplicateDirTask() {
 }
 
 // ══════════════════════════════════════════════
-//  MERGE / UN-MERGE TASKS  (manager only)
+//  MERGE / UN-MERGE TASKS  — UI REMOVED 2026-07-06
 // ══════════════════════════════════════════════
-// Fold task B into task A: its pinned notes, checklist items, how-to video and
-// flags move into A, and B is removed from the directory. A device-local record
-// (kr_task_merges) snapshots B so the whole thing can be un-merged later.
-// Timesheet history is NOT re-assigned (each entry keeps its original task name).
+// The merge/un-merge UI (create button, picker modal, and un-merge list) was
+// REMOVED after a job went missing — there is no way to trigger a merge from the
+// app any more. The functions below are retained but UNREACHABLE (no caller); the
+// getTaskMerges/saveTaskMerges helpers stay in use by the rename + delete paths so
+// existing kr_task_merges records (e.g. the intentional "App ideas" fold) keep
+// their data intact in backups. Kept in case a restore-based un-merge is ever
+// wanted. Original behaviour: fold task B into A (notes, checklist, video, flags),
+// remove B from the directory, snapshot B to kr_task_merges for un-merge;
+// timesheet history was never re-assigned.
 function getTaskMerges() { return JSON.parse(localStorage.getItem('kr_task_merges') || '[]'); }
 function saveTaskMerges(a) { return _safeSetItem('kr_task_merges', JSON.stringify(a)); }
 function _uniqueDirTaskNames() { return [...new Set(DIRECTORY.map(r => r.task).filter(Boolean))]; }
@@ -9556,8 +9531,14 @@ function saveDirTask() {
 
 function deleteDirTask() {
   if (!_dirEditingKey) return;
-  if (!confirm('Delete this job?')) return;
   const [freq, grp, task] = _dirEditingKey.split('||');
+  // Two-step guard — deleting a job is permanent and has no in-app undo.
+  const _itemN = (SUBTASKS[task] || []).length;
+  const _warn = 'Delete the job "' + task + '"?'
+    + (_itemN ? '\n\nThis also removes its ' + _itemN + ' checklist task' + (_itemN === 1 ? '' : 's') + '.' : '')
+    + '\n\nThis is permanent and can\'t be undone from the app.';
+  if (!confirm(_warn)) return;
+  if (!confirm('Are you sure? "' + task + '" will be permanently deleted.')) return;
   DIRECTORY = DIRECTORY.filter(r => !_dirKeyMatches(r, freq, grp, task));
   // Only drop the checklist / video if no other task still uses this name
   if (!DIRECTORY.some(r => r.task === task)) {
@@ -9577,6 +9558,7 @@ function deleteDirTask() {
   _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
   closeModal('modal-dir-task');
   renderDirectory();
+  autoBackup();
   showToast('Job deleted');
 }
 
