@@ -2436,7 +2436,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.122';
+const APP_VERSION = '2026-06-21.123';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2676,7 +2676,7 @@ window.addEventListener('load', () => {
   pullAssignments();                       // worker: fetch the day the manager planned
   pullPins();                              // worker: fetch pinned notes from the manager
   fetchSharedLastDone();                   // shared "last done per task" from the sheet
-  rolloverParkedTasks();                    // carry stranded holding-bay tasks forward (10pm cutoff)
+  rolloverParkedTasks();                    // carry past-day holding-bay tasks forward (at midnight / day change)
   setInterval(pullAssignments, 60000);     // worker: keep the plan live (time changes/deletes) without reopening
   checkForUpdate();
   checkLibraryUpdate();
@@ -10475,8 +10475,11 @@ function _plannerDateNumFromStr(s) {            // "DD/MM/YYYY" → YYYYMMDD for
 // so stranded tasks always surface in the current bay even if the app was shut.
 function rolloverParkedTasks() {
   const now = new Date();
+  // Carry parked (un-scheduled) holding-bay jobs over only when the DAY itself
+  // changes — at midnight, jobs left in a PAST day's holding bay move to the
+  // current day. They stay put all day today. (Was a 10pm cutoff; Lincoln wanted
+  // true midnight so nothing disappears from the evening's holding bay.)
   const target = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  if (now.getHours() >= 22) target.setDate(target.getDate() + 1); // past 10pm → next day
   const targetStr = plannerDateStr(target);
   const targetNum = _plannerDateNumFromStr(targetStr);
   let changed = 0;
