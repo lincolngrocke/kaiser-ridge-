@@ -2436,7 +2436,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.125';
+const APP_VERSION = '2026-06-21.126';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2909,7 +2909,15 @@ function clockOut(overrideTime) {
       .slice().sort((a, b) => new Date(a.at) - new Date(b.at))
       .map(d => {
         const t = new Date(d.at).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true });
-        return `[${t}] (${fmtMin(dur[d.item])}) ${d.item}`;
+        // If the task has steps, record how many were done this time + which ones,
+        // so the sheet keeps "4 of 8 steps" and exactly which four were ticked.
+        const totalSteps = (getSubtaskSteps()[d.item] || []).length;
+        let stepStr = '';
+        if (totalSteps) {
+          const doneSteps = (clockState.stepDone || []).filter(x => x.item === d.item);
+          stepStr = ` — ${doneSteps.length}/${totalSteps} steps` + (doneSteps.length ? ': ' + doneSteps.map(x => x.step).join('; ') : '');
+        }
+        return `[${t}] (${fmtMin(dur[d.item])}) ${d.item}${stepStr}`;
       });
     const block = lines.join('\n');
     entry.notes = entry.notes ? entry.notes + '\n' + block : block;
@@ -3570,12 +3578,18 @@ function renderRunDone() {
     const time = r.at ? _inboxStamp(r.at) : '';
     const durStr = (r.dur != null) ? `<span style="font-size:13px;color:#30d158;font-weight:600;white-space:nowrap;flex-shrink:0;">${fmtMin(r.dur)}</span>` : '';
     const tag = r.kind === 'task' ? 'Task' : 'To-do';
+    let stepInfo = '';
+    if (r.kind === 'task') {
+      const total = (getSubtaskSteps()[r.text] || []).length;
+      if (total) { const dn = (clockState.stepDone || []).filter(x => x.item === r.text).length; stepInfo = `<div style="font-size:12px;color:#30d158;margin-top:3px;">✓ ${dn}/${total} steps done</div>`; }
+    }
     const tick = `<span onclick="reviveDoneItem(${i})" title="Tap to un-tick" style="width:24px;height:24px;border-radius:${r.kind === 'task' ? '50%' : '7px'};background:#30d158;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#05070c;font-size:14px;cursor:pointer;margin-top:1px;">✓</span>`;
     return `<div style="display:flex;gap:12px;padding:14px 0;border-top:0.5px solid rgba(255,255,255,0.08);">
       ${tick}
       <div style="flex:1;min-width:0;">
         <div style="font-size:15px;line-height:1.4;color:#8b93a7;text-decoration:line-through;">${_escHtml(r.text)}</div>
         <div style="font-size:12px;color:#616a7e;margin-top:4px;">${tag}${time ? ' · ' + time : ''} · tap ✓ to bring back</div>
+        ${stepInfo}
       </div>
       ${durStr}
     </div>`;
