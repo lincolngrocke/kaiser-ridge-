@@ -2425,7 +2425,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.133';
+const APP_VERSION = '2026-06-21.134';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4111,15 +4111,25 @@ function _entryDateTimeKey(e) {
 let _tsWho = 'mine';
 function setTsWho(w) { _tsWho = w; renderTimesheets(); }
 // ── Timesheet date-range window ──────────────────────────────────────────────
-// _tsRangeSize: 0 = all time; else a rolling block of N days ending on the day at
-// _tsRangeEndMs (midnight ms; null = today). Slide shifts the whole block ±1 day.
-let _tsRangeSize = 0, _tsRangeEndMs = null;
+// _tsRangeSize: 0 = all time; else an N-day block that STARTS on the day at
+// _tsRangeStartMs (midnight ms; null = default so the block ends today). Tap the
+// range label → calendar to pick the start (e.g. a pay-period start); ‹ › nudge it a
+// day. Window = [startDay, startDay + size-1]; may run past today (future days just
+// have no entries yet).
+let _tsRangeSize = 0, _tsRangeStartMs = null;
 function _tsTodayDayMs() { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); }
-function setTsRange(size) { _tsRangeSize = size; _tsRangeEndMs = null; renderTimesheets(); }
+function _tsRangeStartDay() { return _tsRangeStartMs != null ? _tsRangeStartMs : (_tsTodayDayMs() - (_tsRangeSize - 1) * 86400000); }
+function setTsRange(size) { _tsRangeSize = size; renderTimesheets(); }   // keep the chosen start when switching 7↔30
 function slideTsRange(dir) {
   if (!_tsRangeSize) return;
-  const end = (_tsRangeEndMs != null ? _tsRangeEndMs : _tsTodayDayMs()) + dir * 86400000;
-  _tsRangeEndMs = Math.min(end, _tsTodayDayMs());   // window can't run into the future
+  _tsRangeStartMs = _tsRangeStartDay() + dir * 86400000;
+  renderTimesheets();
+}
+function setTsRangeStart(val) {
+  if (!val) return;
+  const p = val.split('-').map(Number);
+  if (p.length !== 3) return;
+  _tsRangeStartMs = new Date(p[0], p[1] - 1, p[2]).getTime();
   renderTimesheets();
 }
 function _renderTsRange() {
@@ -4130,14 +4140,17 @@ function _renderTsRange() {
     `<div onclick="setTsRange(${sz})" style="padding:6px 11px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;${_tsRangeSize === sz ? 'background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,0.12);' : 'color:var(--subtext);'}">${lab}</div>`
   ).join('');
   if (!_tsRangeSize) { navEl.innerHTML = '<span style="font-size:13px;color:var(--subtext);">All time</span>'; return; }
-  const endDay = _tsRangeEndMs != null ? _tsRangeEndMs : _tsTodayDayMs();
-  const startDay = endDay - (_tsRangeSize - 1) * 86400000;
+  const startDay = _tsRangeStartDay();
+  const endDay = startDay + (_tsRangeSize - 1) * 86400000;
   const fmt = ms => new Date(ms).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
-  const atToday = endDay >= _tsTodayDayMs();
+  const ymd = ms => { const d = new Date(ms); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
   navEl.innerHTML =
     `<span onclick="slideTsRange(-1)" style="color:var(--blue);font-size:22px;cursor:pointer;padding:0 6px;line-height:1;">‹</span>`
-    + `<span style="font-size:13px;color:var(--text);white-space:nowrap;min-width:104px;text-align:center;">${fmt(startDay)} – ${fmt(endDay)}</span>`
-    + `<span onclick="${atToday ? '' : 'slideTsRange(1)'}" style="color:${atToday ? 'var(--border)' : 'var(--blue)'};font-size:22px;cursor:${atToday ? 'default' : 'pointer'};padding:0 6px;line-height:1;">›</span>`;
+    + `<label style="position:relative;display:inline-block;">`
+    +   `<span style="font-size:13px;color:var(--text);white-space:nowrap;min-width:104px;text-align:center;display:inline-block;border-bottom:1px dashed var(--subtext);padding-bottom:1px;">${fmt(startDay)} – ${fmt(endDay)}</span>`
+    +   `<input type="date" id="ts-range-date" value="${ymd(startDay)}" onchange="setTsRangeStart(this.value)" style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;-webkit-appearance:none;">`
+    + `</label>`
+    + `<span onclick="slideTsRange(1)" style="color:var(--blue);font-size:22px;cursor:pointer;padding:0 6px;line-height:1;">›</span>`;
 }
 function _renderTsWho(hasBots) {
   const el = document.getElementById('ts-who');
@@ -4163,9 +4176,9 @@ function renderTimesheets() {
     if (_tsFilters.equip    && e.tool      !== _tsFilters.equip)    return false;
     return true;
   });
-  if (_tsRangeSize) {   // limit to the chosen rolling date window
-    const endDay = _tsRangeEndMs != null ? _tsRangeEndMs : _tsTodayDayMs();
-    const startDay = endDay - (_tsRangeSize - 1) * 86400000;
+  if (_tsRangeSize) {   // limit to the chosen date window (N-day block from the start day)
+    const startDay = _tsRangeStartDay();
+    const endDay = startDay + (_tsRangeSize - 1) * 86400000;
     filtered = filtered.filter(e => {
       const d = _parseEntryDate(e.date);
       if (!d) return false;
