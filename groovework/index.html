@@ -1567,10 +1567,25 @@
     <input id="robot-log-activity" type="text" placeholder="e.g. Floor 2 / Zone 3" style="width:100%;margin:4px 0 12px;padding:11px;border:1px solid var(--border);border-radius:10px;font-size:16px;background:var(--bg);color:var(--text);" autocorrect="on" autocapitalize="sentences">
     <label style="font-size:13px;color:var(--subtext);">Date</label>
     <input id="robot-log-date" type="date" style="width:100%;margin:4px 0 12px;padding:11px;border:1px solid var(--border);border-radius:10px;font-size:16px;background:var(--bg);color:var(--text);">
-    <div style="display:flex;gap:12px;">
-      <div style="flex:1;"><label style="font-size:13px;color:var(--subtext);">Start</label><input id="robot-log-start" type="time" style="width:100%;margin-top:4px;padding:11px;border:1px solid var(--border);border-radius:10px;font-size:16px;background:var(--bg);color:var(--text);"></div>
-      <div style="flex:1;"><label style="font-size:13px;color:var(--subtext);">End</label><input id="robot-log-end" type="time" style="width:100%;margin-top:4px;padding:11px;border:1px solid var(--border);border-radius:10px;font-size:16px;background:var(--bg);color:var(--text);"></div>
+    <div style="display:flex;gap:10px;">
+      <div style="flex:1;"><label style="font-size:13px;color:var(--subtext);">Start</label><input id="robot-log-start" type="time" oninput="_agSyncEnd()" style="width:100%;margin-top:4px;padding:11px;border:1px solid var(--border);border-radius:10px;font-size:16px;background:var(--bg);color:var(--text);"></div>
+      <div style="flex:0 0 82px;"><label style="font-size:13px;color:var(--subtext);">Mins</label><input id="robot-log-dur" type="number" inputmode="numeric" min="0" placeholder="12" oninput="_agSyncEnd()" style="width:100%;margin-top:4px;padding:11px;border:1px solid var(--border);border-radius:10px;font-size:16px;background:var(--bg);color:var(--text);"></div>
+      <div style="flex:1;"><label style="font-size:13px;color:var(--subtext);">End</label><input id="robot-log-end" type="time" oninput="_agSyncDur()" style="width:100%;margin-top:4px;padding:11px;border:1px solid var(--border);border-radius:10px;font-size:16px;background:var(--bg);color:var(--text);"></div>
     </div>
+    <div style="font-size:12px;color:var(--subtext);margin-top:8px;line-height:1.45;">Type the minutes and the finish time fills itself in — handy when an app only shows the start time and how long it took.</div>
+  </div>
+</div>
+
+<!-- Robots: backdate a running run's start -->
+<div class="modal-backdrop" id="modal-agent-start" style="z-index:360;">
+  <div class="modal-sheet" style="padding:16px 20px 24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <button onclick="closeModal('modal-agent-start')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;">Cancel</button>
+      <span style="font-size:17px;font-weight:600;">Set start time</span>
+      <button onclick="saveAgentRunStart()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Save</button>
+    </div>
+    <div style="font-size:13px;color:var(--subtext);margin-bottom:10px;line-height:1.45;">Started it late or forgot to hit start? Set when it actually began — the timer catches up.</div>
+    <input type="time" id="agent-start-input" style="width:100%;font-size:20px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);-webkit-appearance:none;">
   </div>
 </div>
 
@@ -2434,7 +2449,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.135';
+const APP_VERSION = '2026-06-21.136';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3241,6 +3256,18 @@ function toggleChecklistStep(item, step) {
 let _runTab = 'tasks', _runTabUserSet = false, _runLastTask = null;
 let _expandedNotes = new Set();
 function _escHtml(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+// Escape a note for display, then turn any pasted URL into a tappable link — a
+// Gmail link opens the email, any other URL opens in the browser. stopPropagation
+// keeps a tap on the link from also toggling the note open/shut.
+function _linkifyText(s) {
+  return _escHtml(s).replace(/(https?:\/\/[^\s<>"]+)/g, (m) => {
+    let url = m, tail = '';
+    const tm = url.match(/(?:&amp;|[.,;:!?)\]])+$/);   // strip trailing sentence punctuation
+    if (tm) { tail = tm[0]; url = url.slice(0, -tail.length); }
+    if (!url) return m;
+    return `<a href="${url}" target="_blank" rel="noopener" onclick="event.stopPropagation();" style="color:#5ac8fa;text-decoration:underline;">${url}</a>${tail}`;
+  });
+}
 let _runSegBlockTapUntil = 0;
 function setRunTab(tab) { if (Date.now() < _runSegBlockTapUntil) return; _runTabUserSet = true; _runTab = tab; renderRunChecklist(); }
 
@@ -3829,7 +3856,7 @@ function renderRunChecklist() {
     rows = pinned.map(p => {
       const isDone = !!pinDone[p.id];
       if (isDone) return '';   // ticked this session → moves to the ✓ chip / Completed view
-      const safe = _escHtml(p.text);
+      const safe = _linkifyText(p.text);
       const expanded = _expandedNotes.has(p.id);
       const caughtTs = p.caught || p.ts;
       const pinnedTs = (p.caught && p.ts && p.ts !== p.caught) ? p.ts : null;
@@ -8722,7 +8749,7 @@ function _inboxNoteRow(n) {
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const st = _inboxState(n);
   const isDone = st === 'done', isAssigned = st === 'assigned';
-  const safe = esc(n.text);
+  const safe = _linkifyText(n.text);
   const taskName = n.movedTo ? esc(n.movedTo.replace(/\s*\(pinned · Ethan\)/, ' · Ethan').replace(/\s*\(pinned\)/, '')) : '';
   let meta = 'Caught ' + _inboxStamp(n.ts);
   if (n.editedTs) meta += '　•　✏️ Edited ' + _inboxStamp(n.editedTs);
@@ -9812,6 +9839,33 @@ function discardAgentRun(runId) {
   saveAgentRuns(getAgentRuns().filter(r => r.runId !== runId));
   renderRobotsScreen(); updateRobotBadge();
 }
+// Backdate a running run's start — for when you tapped Start late or forgot until
+// it was already underway. The live timer just catches up to the earlier start.
+let _agentStartRunId = null;
+function editAgentRunStart(runId) {
+  const run = getAgentRuns().find(r => r.runId === runId);
+  if (!run) return;
+  _agentStartRunId = runId;
+  document.getElementById('agent-start-input').value = _agHM(new Date(run.startMs));
+  openModal('modal-agent-start');
+}
+function saveAgentRunStart() {
+  const v = document.getElementById('agent-start-input').value;
+  if (!v) { showToast('Pick a start time'); return; }
+  const runs = getAgentRuns();
+  const run = runs.find(r => r.runId === _agentStartRunId);
+  if (!run) { closeModal('modal-agent-start'); return; }
+  const [h, m] = v.split(':').map(Number);
+  const d = new Date(run.startMs);   // keep the run's original day
+  d.setHours(h, m, 0, 0);
+  let ms = d.getTime();
+  if (ms > Date.now()) ms -= 24 * 3600000;   // a time later than now means it began the day before
+  run.startMs = ms;
+  if (!saveAgentRuns(runs)) return;
+  closeModal('modal-agent-start');
+  renderRobotsScreen();
+  showToast('Start updated ✓');
+}
 // Append a robot run as a normal timesheet entry (syncs via the usual path).
 function _logAgentEntry(run, startMs, endMs, note) {
   const a = agentById(run.agentId) || { name: 'Robot', emoji: '🤖' };
@@ -9877,6 +9931,7 @@ function renderRobotsScreen() {
       <div style="flex:1;min-width:0;">
         <div style="font-size:16px;font-weight:600;color:var(--text);">${_escHtml(a.name)}</div>
         <div style="font-size:13px;color:var(--subtext);">${_escHtml(r.activity)}</div>
+        <div style="font-size:12px;color:var(--subtext);margin-top:3px;">▶ ${formatTimeAmPm(_agHM(new Date(r.startMs)))} · <span onclick="editAgentRunStart('${r.runId}')" style="color:var(--blue);cursor:pointer;font-weight:600;">set earlier</span></div>
       </div>
       <span class="robot-elapsed" data-start="${r.startMs}" style="font-size:16px;font-weight:700;color:var(--green);font-variant-numeric:tabular-nums;flex-shrink:0;">${_agElapsed(Date.now() - r.startMs)}</span>
       <button onclick="stopAgentRun('${r.runId}')" style="background:var(--red);color:#fff;border:none;border-radius:20px;padding:8px 14px;font-size:14px;font-weight:600;cursor:pointer;flex-shrink:0;">Stop</button>
@@ -9919,7 +9974,29 @@ function openAgentLog() {
   document.getElementById('robot-log-date').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
   document.getElementById('robot-log-start').value = _agHM(new Date(now.getTime() - 30 * 60000));
   document.getElementById('robot-log-end').value = _agHM(now);
+  document.getElementById('robot-log-dur').value = 30;
   openModal('modal-robot-log');
+}
+// Log-a-run: keep End = Start + Mins in sync, so you can enter what an app gives you
+// (a start time + how many minutes it ran) and the finish time fills itself in.
+function _agSyncEnd() {
+  const startV = document.getElementById('robot-log-start').value;
+  const durRaw = document.getElementById('robot-log-dur').value;
+  const durV = parseInt(durRaw, 10);
+  if (!startV || durRaw === '' || !(durV >= 0)) return;
+  const [sh, sm] = startV.split(':').map(Number);
+  document.getElementById('robot-log-end').value = _agHM(new Date(2000, 0, 1, sh, sm + durV));
+}
+// If you set the End time directly instead, back-fill the minutes so they agree.
+function _agSyncDur() {
+  const startV = document.getElementById('robot-log-start').value;
+  const endV = document.getElementById('robot-log-end').value;
+  if (!startV || !endV) return;
+  const [sh, sm] = startV.split(':').map(Number);
+  const [eh, em] = endV.split(':').map(Number);
+  let mins = (eh * 60 + em) - (sh * 60 + sm);
+  if (mins < 0) mins += 24 * 60;   // crossed midnight
+  document.getElementById('robot-log-dur').value = mins;
 }
 function saveAgentLog() {
   const agentId = document.getElementById('robot-log-agent').value;
