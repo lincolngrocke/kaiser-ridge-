@@ -987,7 +987,10 @@
   <div class="scroll-area">
     <div class="update-banner" id="restore-entry-banner" onclick="restoreDeletedEntry()" style="display:none;background:var(--green);margin:8px 12px 0;"></div>
     <div class="ts-summary">
-      <div class="ts-period" id="ts-period-label">This pay period</div>
+      <div id="ts-range-bar" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+        <div id="ts-range-sizes" style="display:inline-flex;gap:3px;background:var(--bg);border-radius:9px;padding:3px;"></div>
+        <div id="ts-range-nav" style="display:flex;align-items:center;gap:2px;"></div>
+      </div>
       <div class="ts-summary-top">
         <div class="ts-summary-amount" id="ts-total-hours">0.00h</div>
         <div id="ts-count" style="font-size:13px;color:var(--subtext);margin-top:2px;">0 timesheets</div>
@@ -2422,7 +2425,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.132';
+const APP_VERSION = '2026-06-21.133';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4107,6 +4110,35 @@ function _entryDateTimeKey(e) {
 // only appears once there are any robot-logged entries.
 let _tsWho = 'mine';
 function setTsWho(w) { _tsWho = w; renderTimesheets(); }
+// ── Timesheet date-range window ──────────────────────────────────────────────
+// _tsRangeSize: 0 = all time; else a rolling block of N days ending on the day at
+// _tsRangeEndMs (midnight ms; null = today). Slide shifts the whole block ±1 day.
+let _tsRangeSize = 0, _tsRangeEndMs = null;
+function _tsTodayDayMs() { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); }
+function setTsRange(size) { _tsRangeSize = size; _tsRangeEndMs = null; renderTimesheets(); }
+function slideTsRange(dir) {
+  if (!_tsRangeSize) return;
+  const end = (_tsRangeEndMs != null ? _tsRangeEndMs : _tsTodayDayMs()) + dir * 86400000;
+  _tsRangeEndMs = Math.min(end, _tsTodayDayMs());   // window can't run into the future
+  renderTimesheets();
+}
+function _renderTsRange() {
+  const sizesEl = document.getElementById('ts-range-sizes');
+  const navEl = document.getElementById('ts-range-nav');
+  if (!sizesEl || !navEl) return;
+  sizesEl.innerHTML = [[7, '7 days'], [30, '30 days'], [0, 'All']].map(([sz, lab]) =>
+    `<div onclick="setTsRange(${sz})" style="padding:6px 11px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;${_tsRangeSize === sz ? 'background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,0.12);' : 'color:var(--subtext);'}">${lab}</div>`
+  ).join('');
+  if (!_tsRangeSize) { navEl.innerHTML = '<span style="font-size:13px;color:var(--subtext);">All time</span>'; return; }
+  const endDay = _tsRangeEndMs != null ? _tsRangeEndMs : _tsTodayDayMs();
+  const startDay = endDay - (_tsRangeSize - 1) * 86400000;
+  const fmt = ms => new Date(ms).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+  const atToday = endDay >= _tsTodayDayMs();
+  navEl.innerHTML =
+    `<span onclick="slideTsRange(-1)" style="color:var(--blue);font-size:22px;cursor:pointer;padding:0 6px;line-height:1;">‹</span>`
+    + `<span style="font-size:13px;color:var(--text);white-space:nowrap;min-width:104px;text-align:center;">${fmt(startDay)} – ${fmt(endDay)}</span>`
+    + `<span onclick="${atToday ? '' : 'slideTsRange(1)'}" style="color:${atToday ? 'var(--border)' : 'var(--blue)'};font-size:22px;cursor:${atToday ? 'default' : 'pointer'};padding:0 6px;line-height:1;">›</span>`;
+}
 function _renderTsWho(hasBots) {
   const el = document.getElementById('ts-who');
   if (!el) return;
@@ -4131,6 +4163,16 @@ function renderTimesheets() {
     if (_tsFilters.equip    && e.tool      !== _tsFilters.equip)    return false;
     return true;
   });
+  if (_tsRangeSize) {   // limit to the chosen rolling date window
+    const endDay = _tsRangeEndMs != null ? _tsRangeEndMs : _tsTodayDayMs();
+    const startDay = endDay - (_tsRangeSize - 1) * 86400000;
+    filtered = filtered.filter(e => {
+      const d = _parseEntryDate(e.date);
+      if (!d) return false;
+      const day = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      return day >= startDay && day <= endDay;
+    });
+  }
   if (searchTerm) {
     filtered = filtered.filter(e =>
       [e.task, e.personnel, e.group, e.notes, e.tool, e.location, e.frequency, entryProjectLabel(e)].some(f => f && f.toLowerCase().includes(searchTerm))
@@ -4150,12 +4192,7 @@ function renderTimesheets() {
   document.getElementById('ts-total-hours').textContent = formatHours(total);
   document.getElementById('ts-bar').style.width = Math.min(100, (total / 40) * 100) + '%';
 
-  const now = new Date();
-  const periodStart = new Date(now);
-  periodStart.setDate(now.getDate() - 13);
-  document.getElementById('ts-period-label').textContent =
-    periodStart.toLocaleDateString('en-AU', {day:'numeric', month:'short'}) + ' – ' +
-    new Date(periodStart.getTime() + 13*86400000).toLocaleDateString('en-AU', {day:'numeric', month:'short'});
+  _renderTsRange();
 
   if (!filtered.length) {
     list.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div>No entries yet</div>';
