@@ -988,7 +988,7 @@
     <div class="update-banner" id="restore-entry-banner" onclick="restoreDeletedEntry()" style="display:none;background:var(--green);margin:8px 12px 0;"></div>
     <div class="ts-summary">
       <div id="ts-range-bar" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
-        <div id="ts-range-sizes" style="display:inline-flex;gap:3px;background:var(--bg);border-radius:9px;padding:3px;"></div>
+        <div id="ts-range-sizes" style="display:inline-flex;"></div>
         <div id="ts-range-nav" style="display:flex;align-items:center;gap:2px;"></div>
       </div>
       <div class="ts-summary-top">
@@ -1530,6 +1530,15 @@
       </div>
       <button onclick="closeModal('modal-time')" style="width:100%;height:46px;border-radius:10px;border:none;background:none;color:var(--subtext);font-size:16px;cursor:pointer;margin-top:12px;">Cancel</button>
     </div>
+  </div>
+</div>
+
+<!-- ══════════════ TIMESHEET DATE-RANGE PICKER ══════════════ -->
+<div class="modal-backdrop" id="modal-ts-range" onclick="if(event.target===this)closeModal('modal-ts-range')">
+  <div class="modal-sheet" style="padding:8px 0 24px;">
+    <div class="modal-handle"></div>
+    <div style="text-align:center;font-size:16px;font-weight:600;padding:4px 20px 10px;border-bottom:1px solid var(--border);">Date range</div>
+    <div id="ts-range-options"></div>
   </div>
 </div>
 
@@ -2425,7 +2434,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.134';
+const APP_VERSION = '2026-06-21.135';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4119,7 +4128,14 @@ function setTsWho(w) { _tsWho = w; renderTimesheets(); }
 let _tsRangeSize = 0, _tsRangeStartMs = null;
 function _tsTodayDayMs() { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); }
 function _tsRangeStartDay() { return _tsRangeStartMs != null ? _tsRangeStartMs : (_tsTodayDayMs() - (_tsRangeSize - 1) * 86400000); }
-function setTsRange(size) { _tsRangeSize = size; renderTimesheets(); }   // keep the chosen start when switching 7↔30
+function setTsRange(size) { _tsRangeSize = size; renderTimesheets(); }   // keep the chosen start when switching between block sizes
+function openTsRangeMenu() {
+  const el = document.getElementById('ts-range-options');
+  if (el) el.innerHTML = [[7, '7 days'], [14, '14 days'], [30, '30 days'], [0, 'All time']].map(([sz, lab]) =>
+    `<div onclick="setTsRange(${sz});closeModal('modal-ts-range');" style="padding:15px 22px;font-size:16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;${_tsRangeSize === sz ? 'color:var(--blue);font-weight:600;' : 'color:var(--text);'}">${lab}${_tsRangeSize === sz ? '<span>✓</span>' : ''}</div>`
+  ).join('');
+  openModal('modal-ts-range');
+}
 function slideTsRange(dir) {
   if (!_tsRangeSize) return;
   _tsRangeStartMs = _tsRangeStartDay() + dir * 86400000;
@@ -4136,9 +4152,8 @@ function _renderTsRange() {
   const sizesEl = document.getElementById('ts-range-sizes');
   const navEl = document.getElementById('ts-range-nav');
   if (!sizesEl || !navEl) return;
-  sizesEl.innerHTML = [[7, '7 days'], [30, '30 days'], [0, 'All']].map(([sz, lab]) =>
-    `<div onclick="setTsRange(${sz})" style="padding:6px 11px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;${_tsRangeSize === sz ? 'background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,0.12);' : 'color:var(--subtext);'}">${lab}</div>`
-  ).join('');
+  const curLab = _tsRangeSize === 0 ? 'All time' : _tsRangeSize + ' days';
+  sizesEl.innerHTML = `<div onclick="openTsRangeMenu()" style="display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border-radius:9px;background:var(--card);border:1px solid var(--border);font-size:14px;font-weight:600;color:var(--text);cursor:pointer;">${curLab} <span style="color:var(--subtext);font-size:11px;">▾</span></div>`;
   if (!_tsRangeSize) { navEl.innerHTML = '<span style="font-size:13px;color:var(--subtext);">All time</span>'; return; }
   const startDay = _tsRangeStartDay();
   const endDay = startDay + (_tsRangeSize - 1) * 86400000;
