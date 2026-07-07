@@ -2422,7 +2422,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.131';
+const APP_VERSION = '2026-06-21.132';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3639,6 +3639,18 @@ function toggleAllPinsExpanded() {
   else pins.forEach(p => _expandedNotes.add(p.id));
   renderRunChecklist();
 }
+// Same for the Tasks tab — expand/collapse every task's sub-steps at once (only
+// tasks that have steps and aren't ticked off). Tapping a task still toggles its own.
+function toggleAllTasksExpanded() {
+  if (!clockState || !clockState.task) return;
+  const stepsMap = getSubtaskSteps();
+  const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
+  const items = (SUBTASKS[clockState.task] || []).filter(s => (stepsMap[s] || []).length > 0 && !done.some(d => d.item === s));
+  const allExp = items.length > 0 && items.every(s => _expandedChecklistItems.has(s));
+  if (allExp) items.forEach(s => _expandedChecklistItems.delete(s));
+  else items.forEach(s => _expandedChecklistItems.add(s));
+  renderRunChecklist();
+}
 function _runEstSec() {
   if (!clockState) return 0;
   const avg = getTaskAvgDuration(clockState.task);     // hours
@@ -3738,6 +3750,11 @@ function renderRunChecklist() {
     const taskAttr = (clockState && clockState.task) ? _attr(clockState.task) : '';
     const clFlags = _sessionOrGlobalFlags(clockState.task);
     if (items.filter(s => clFlags[s]).length > 1) organiseLink = `<span onclick="openChecklistOrganise(event)" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">⤢ Organise</span>`;
+    const _tasksWithSteps = items.filter(s => (stepsMap[s] || []).length > 0 && !done.some(d => d.item === s));
+    if (_tasksWithSteps.length >= 1) {
+      const _allExp = _tasksWithSteps.every(s => _expandedChecklistItems.has(s));
+      expandLink = `<span onclick="toggleAllTasksExpanded()" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">${_allExp ? '⤡ Collapse all' : '⤢ Expand all'}</span>`;
+    }
     rows = items.map(s => {
       const enc = s.replace(/'/g, "\\'");
       const isDone = done.some(d => d.item === s);
