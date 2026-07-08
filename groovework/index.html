@@ -2497,7 +2497,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.140';
+const APP_VERSION = '2026-06-21.141';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2920,6 +2920,7 @@ function captureClockInLocation() {
 function clockOut(overrideTime) {
   if (!clockState || !clockState.running) return;
   finalizeDonePins();   // fold any ticked-off pinned notes into the entry + clear them
+  _satisfyJobReminder(clockState.task);   // clocking out = job done → clear its reminder (daily re-arms tomorrow)
   let endMs = Date.now();
   if (overrideTime) {
     const now = new Date();
@@ -3271,8 +3272,8 @@ function markChecklistItemDone(item) {
   if (!clockState || !clockState.running) return;
   if (!Array.isArray(clockState.checklistDone)) clockState.checklistDone = [];
   const i = clockState.checklistDone.findIndex(d => d.item === item);
-  if (i >= 0) clockState.checklistDone.splice(i, 1);          // tap again to untick
-  else { clockState.checklistDone.push({ item, at: new Date().toISOString() }); _expandedChecklistItems.delete(item); }
+  if (i >= 0) { clockState.checklistDone.splice(i, 1); _setTaskReminderDone(clockState.task, item, false); }          // tap again to untick
+  else { clockState.checklistDone.push({ item, at: new Date().toISOString() }); _expandedChecklistItems.delete(item); _setTaskReminderDone(clockState.task, item, true); }
   _safeSetItem('kr_clock', JSON.stringify(clockState));
   renderRunChecklist();
 }
@@ -8867,10 +8868,13 @@ function _ymd(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padSt
 let _reminderRepeatDaily = false;
 // Is this reminder currently "due"? True from its start date (remindOn), and — if a
 // time is set — only once that time has passed. Daily reminders re-arm every day.
+// Completing the item marks it done: remindDoneOn clears a one-off for good, and a
+// daily just for that day (it comes back tomorrow).
 function _isReminderDue(n) {
   if (!n.remindOn || n.done) return false;
   const now = new Date();
   const today = _ymd(now);
+  if (n.remindDoneOn && (n.remindRepeat === 'daily' ? n.remindDoneOn === today : true)) return false;
   if (n.remindOn > today) return false;
   if (n.remindTime) {
     const [h, m] = n.remindTime.split(':').map(Number);
@@ -8879,6 +8883,34 @@ function _isReminderDue(n) {
     else if (n.remindOn === today && curMin < remMin) return false;
   }
   return true;
+}
+// Mark a reminder record done (or un-done) when its item is completed / re-opened.
+// Sets remindDoneOn=today on done; removes it on undo. Shared shape across note/job/task.
+function _markRecDone(rec, done) {
+  if (!rec) return;
+  if (done) rec.remindDoneOn = _ymd(new Date());
+  else if (rec.remindDoneOn === _ymd(new Date())) delete rec.remindDoneOn;
+}
+// A to-do (inbox note) ticked/un-ticked on the clock → clear/restore its reminder.
+function _setNoteReminderDone(inboxId, done) {
+  if (!inboxId) return;
+  const arr = getInbox(); const n = arr.find(x => x.id === inboxId);
+  if (!n || !n.remindOn) return;
+  _markRecDone(n, done); saveInbox(arr); updateReminderBanners();
+}
+// A task (checklist item) ticked/un-ticked → clear/restore its reminder for this job.
+function _setTaskReminderDone(job, task, done) {
+  if (!job) return;
+  const rem = getTaskReminders(); const rec = rem[_taskRemKey(job, task)];
+  if (!rec) return;
+  _markRecDone(rec, done); saveTaskReminders(rem); updateReminderBanners();
+}
+// Clocking out of a job = you did it → mark its job reminder done (daily re-arms tomorrow).
+function _satisfyJobReminder(job) {
+  if (!job) return;
+  const jr = getJobReminders(); const rec = jr[job];
+  if (!rec || !rec.remindOn) return;
+  _markRecDone(rec, true); saveJobReminders(jr); updateReminderBanners();
 }
 // One-line label — "🔁 Daily · 8:00am" or "🔔 Wed 9 Jul · 8:00am".
 function _remindLabel(n) {
@@ -9392,6 +9424,8 @@ function togglePinnedNote(id) {
   if (clockState.pinDone[id]) delete clockState.pinDone[id];
   else clockState.pinDone[id] = new Date().toISOString();
   _safeSetItem('kr_clock', JSON.stringify(clockState));
+  const _p = (getTaskNotes()[clockState.task] || []).find(x => x.id === id);
+  if (_p && _p.inboxId) _setNoteReminderDone(_p.inboxId, !!clockState.pinDone[id]);
   renderRunChecklist();
 }
 // At clock-out: for each pinned note ticked done this session, fold it into the
