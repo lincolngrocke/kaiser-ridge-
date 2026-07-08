@@ -918,6 +918,28 @@
   </div>
 </div>
 
+<!-- Task reminder picker (per task within a job) -->
+<div class="modal-backdrop" id="modal-task-remind" style="z-index:690;">
+  <div class="modal-sheet" style="padding:16px 20px 24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <button onclick="closeModal('modal-task-remind')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;">Cancel</button>
+      <span style="font-size:17px;font-weight:600;">🔔 Remind me</span>
+      <button onclick="saveTaskRemind()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Save</button>
+    </div>
+    <div id="task-remind-note" style="font-size:13px;color:var(--subtext);margin-bottom:12px;white-space:pre-wrap;line-height:1.4;max-height:80px;overflow:hidden;"></div>
+    <label style="font-size:13px;color:var(--subtext);">Remind me from</label>
+    <input id="task-remind-date" type="date" style="width:100%;margin:5px 0 10px;padding:12px;border:1px solid var(--border);border-radius:10px;font-size:16px;background:var(--bg);color:var(--text);">
+    <label style="font-size:13px;color:var(--subtext);">Time (optional)</label>
+    <input id="task-remind-time" type="time" style="width:100%;margin:5px 0 10px;padding:12px;border:1px solid var(--border);border-radius:10px;font-size:16px;background:var(--bg);color:var(--text);-webkit-appearance:none;">
+    <div onclick="toggleTaskRemRepeat()" style="display:flex;align-items:center;justify-content:space-between;padding:12px;border:1px solid var(--border);border-radius:10px;cursor:pointer;">
+      <span style="font-size:15px;color:var(--text);">🔁 Repeat daily</span>
+      <span id="task-remind-repeat-state" style="font-size:15px;color:var(--subtext);font-weight:600;">Off</span>
+    </div>
+    <div style="font-size:12px;color:var(--subtext);margin-top:8px;line-height:1.45;">Shows as a banner when you open the app — from the date, and after the time if set. Tapping it clocks you into the job. Only shows if you set it.</div>
+    <button id="task-remind-remove" onclick="clearTaskRemind()" style="display:none;width:100%;margin-top:16px;background:none;border:1px solid var(--red);color:var(--red);border-radius:10px;padding:11px;font-size:15px;cursor:pointer;">Remove reminder</button>
+  </div>
+</div>
+
 <!-- ══════════════ CLOCK SCREEN ══════════════ -->
 <div class="screen active" id="screen-clock">
   <div class="header">
@@ -2462,7 +2484,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.138';
+const APP_VERSION = '2026-06-21.139';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -5953,7 +5975,7 @@ const KR_BACKUP_KEYS = [
   'kr_sheet_url', 'kr_gmaps_key', 'kr_dark_mode',
   'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
   'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_task_videos', 'kr_checklist_flags', 'kr_task_merges', 'kr_subtask_origin', 'kr_pins_applied',
-  'kr_agents', 'kr_agent_runs', 'kr_planner_checklist', 'kr_pin_order', 'kr_subtask_photos', 'kr_job_reminders'
+  'kr_agents', 'kr_agent_runs', 'kr_planner_checklist', 'kr_pin_order', 'kr_subtask_photos', 'kr_job_reminders', 'kr_task_reminders'
 ];
 
 function buildBackupSnapshot() {
@@ -8017,6 +8039,8 @@ function renderDirSubtaskList(items) {
   const guides = getSubtaskGuides();
   const stepsMap = getSubtaskSteps();
   const origins = getSubtaskOrigin();
+  const taskRem = getTaskReminders();
+  const _jn = _dirJobName();
   document.getElementById('dir-subtask-list').innerHTML = _subtaskItems.map((s, i) => {
     const enc = s.replace(/'/g,"\\'");
     const hasGuide = guides[s] && (_guideInstructionsToSteps(guides[s].instructions).length > 0 || guides[s].url);
@@ -8039,6 +8063,7 @@ function renderDirSubtaskList(items) {
       <button onclick="openSubtaskGuide('${enc}')" title="${hasGuide ? 'Edit guide' : 'Add guide'}"
         style="background:none;border:none;color:${hasGuide ? 'var(--blue)' : 'var(--subtext)'};font-size:18px;cursor:pointer;padding:4px 6px;flex-shrink:0;">📋</button>
       ${originBtn}
+      <button onclick="openTaskRemindPicker(${i})" title="${(_jn && taskRem[_taskRemKey(_jn, s)]) ? 'Edit reminder' : 'Set a reminder'}" style="background:none;border:none;color:${(_jn && taskRem[_taskRemKey(_jn, s)]) ? '#ffd60a' : 'var(--subtext)'};font-size:16px;cursor:pointer;padding:4px 6px;flex-shrink:0;">🔔</button>
       <button onclick="removeSubtaskItem(${i})" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:4px;flex-shrink:0;">✕</button>
     </div>`;
   }).join('');
@@ -8902,7 +8927,9 @@ function updateReminderBanners() {
   if (!wrap) return;
   const active = _activeReminders();
   const jobs = _dueJobs();
-  if (!active.length && !jobs.length) { wrap.innerHTML = ''; wrap.style.display = 'none'; return; }
+  _dueTaskRemCache = _dueTaskReminders();
+  const taskRems = _dueTaskRemCache;
+  if (!active.length && !jobs.length && !taskRems.length) { wrap.innerHTML = ''; wrap.style.display = 'none'; return; }
   wrap.style.display = 'block';
   const noteHtml = active.map(n => {
     const t = _escHtml(n.text || '').replace(/\n/g, ' ');
@@ -8928,13 +8955,94 @@ function updateReminderBanners() {
       <button onclick="dismissJobReminder('${jarg}')" aria-label="Dismiss" style="background:none;border:none;color:var(--subtext);font-size:20px;cursor:pointer;padding:2px 6px;flex-shrink:0;">✕</button>
     </div>`;
   }).join('');
-  wrap.innerHTML = noteHtml + jobHtml;
+  const taskHtml = taskRems.map((tr, idx) => {
+    const tt = _escHtml(tr.rec.task || '').replace(/\n/g, ' ');
+    const jn = _escHtml(tr.rec.job || '');
+    const lbl = _remindLabel(tr.rec);
+    return `<div style="display:flex;align-items:center;gap:10px;background:#1c1c1e;border:1px solid rgba(191,90,242,0.55);border-radius:14px;margin:8px 10px 0;padding:12px 12px 12px 14px;box-shadow:0 5px 18px rgba(0,0,0,0.45);">
+      <span style="font-size:18px;flex-shrink:0;">${tr.rec.remindRepeat === 'daily' ? '🔁' : '🔔'}</span>
+      <div onclick="openTaskReminder(${idx})" style="flex:1;min-width:0;cursor:pointer;">
+        <div style="color:#fff;font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${tt}</div>
+        <div style="color:var(--subtext);font-size:12px;margin-top:2px;">📂 ${jn}${lbl ? ' · ' + lbl : ''}</div>
+      </div>
+      <button onclick="dismissTaskReminder(${idx})" aria-label="Dismiss" style="background:none;border:none;color:var(--subtext);font-size:20px;cursor:pointer;padding:2px 6px;flex-shrink:0;">✕</button>
+    </div>`;
+  }).join('');
+  wrap.innerHTML = noteHtml + jobHtml + taskHtml;
 }
 function dismissReminder(id) { _remindSessionDismissed.add(id); updateReminderBanners(); }
 function openReminderNote(id) { _remindSessionDismissed.add(id); updateReminderBanners(); openInbox(id); }
 // ── Job soft reminders (opt-in per job; nudges when overdue vs its cadence) ──
 function getJobReminders() { try { return JSON.parse(localStorage.getItem('kr_job_reminders') || '{}') || {}; } catch (e) { return {}; } }
 function saveJobReminders(o) { return _safeSetItem('kr_job_reminders', JSON.stringify(o)); }
+// ── Task reminders (per task within a job; same date/time/daily rules) ──
+// Keyed by job name + \u0001 + task text; each record carries {job,task,remindOn,remindTime,remindRepeat}.
+function getTaskReminders() { try { return JSON.parse(localStorage.getItem('kr_task_reminders') || '{}') || {}; } catch (e) { return {}; } }
+function saveTaskReminders(o) { return _safeSetItem('kr_task_reminders', JSON.stringify(o)); }
+function _taskRemKey(job, task) { return job + '\u0001' + task; }
+let _dueTaskRemCache = [];
+function _dueTaskReminders() {
+  const rem = getTaskReminders();
+  return Object.keys(rem)
+    .filter(k => _isReminderDue(rem[k]) && !_remindSessionDismissed.has('task:' + k))
+    .map(k => ({ key: k, rec: rem[k] }));
+}
+function dismissTaskReminder(idx) { const tr = _dueTaskRemCache[idx]; if (tr) _remindSessionDismissed.add('task:' + tr.key); updateReminderBanners(); }
+function openTaskReminder(idx) {
+  const tr = _dueTaskRemCache[idx]; if (!tr) return;
+  _remindSessionDismissed.add('task:' + tr.key); updateReminderBanners();
+  showScreen('clock', document.querySelector(".nav-tab[onclick*=\"'clock'\"]")); openCreate();
+  showToast('Clock into ' + tr.rec.job);
+}
+// The job whose Edit screen is open (Job→Task→Step: the directory "task" is the job).
+function _dirJobName() { return _dirEditingKey ? _dirEditingKey.split('||')[2] : ''; }
+let _taskRemIndex = -1, _taskRemRepeatDaily = false;
+function _setTaskRemRepeatUI() {
+  const s = document.getElementById('task-remind-repeat-state');
+  if (s) { s.textContent = _taskRemRepeatDaily ? 'On' : 'Off'; s.style.color = _taskRemRepeatDaily ? 'var(--blue)' : 'var(--subtext)'; }
+}
+function toggleTaskRemRepeat() { _taskRemRepeatDaily = !_taskRemRepeatDaily; _setTaskRemRepeatUI(); }
+function openTaskRemindPicker(i) {
+  const job = _dirJobName();
+  if (!job) { showToast('Save the job first, then set task reminders'); return; }
+  _taskRemIndex = i;
+  const task = _subtaskItems[i];
+  const rec = getTaskReminders()[_taskRemKey(job, task)] || {};
+  document.getElementById('task-remind-note').textContent = task || '';
+  document.getElementById('task-remind-date').value = rec.remindOn || _ymd(new Date());
+  document.getElementById('task-remind-time').value = rec.remindTime || '';
+  _taskRemRepeatDaily = (rec.remindRepeat === 'daily');
+  _setTaskRemRepeatUI();
+  document.getElementById('task-remind-remove').style.display = rec.remindOn ? 'block' : 'none';
+  openModal('modal-task-remind');
+}
+function saveTaskRemind() {
+  const job = _dirJobName(); const task = _subtaskItems[_taskRemIndex];
+  if (!job || !task) { closeModal('modal-task-remind'); return; }
+  const date = document.getElementById('task-remind-date').value || _ymd(new Date());
+  const time = document.getElementById('task-remind-time').value;
+  const rem = getTaskReminders();
+  const rec = { job, task, remindOn: date };
+  if (time) rec.remindTime = time;
+  if (_taskRemRepeatDaily) rec.remindRepeat = 'daily';
+  rem[_taskRemKey(job, task)] = rec;
+  saveTaskReminders(rem);
+  _remindSessionDismissed.delete('task:' + _taskRemKey(job, task));
+  closeModal('modal-task-remind');
+  renderDirSubtaskList();
+  updateReminderBanners();
+  showToast(_taskRemRepeatDaily
+    ? '🔁 Daily reminder set for ' + formatTimeAmPm(time)
+    : '🔔 Reminder set' + (time ? ' · ' + formatTimeAmPm(time) : ''));
+}
+function clearTaskRemind() {
+  const job = _dirJobName(); const task = _subtaskItems[_taskRemIndex];
+  const rem = getTaskReminders(); delete rem[_taskRemKey(job, task)]; saveTaskReminders(rem);
+  closeModal('modal-task-remind');
+  renderDirSubtaskList();
+  updateReminderBanners();
+  showToast('Reminder removed');
+}
 // Jobs you've set an explicit reminder on that are now due, not dismissed this session.
 // Uses the same date/time/daily rules as to-do reminders (_isReminderDue).
 function _dueJobs() {
@@ -9686,6 +9794,17 @@ function saveDirTask() {
       // Job reminder keyed by task name
       const jrem = getJobReminders();
       if (jrem[oldTask]) { if (!jrem[task]) jrem[task] = jrem[oldTask]; delete jrem[oldTask]; saveJobReminders(jrem); }
+      // Task reminders keyed by job name — re-key onto the new job name
+      const trem = getTaskReminders(); let tremCh = false;
+      Object.keys(trem).forEach(k => {
+        if (trem[k] && trem[k].job === oldTask) {
+          const nk = _taskRemKey(task, trem[k].task);
+          trem[nk] = Object.assign({}, trem[k], { job: task });
+          if (nk !== k) delete trem[k];
+          tremCh = true;
+        }
+      });
+      if (tremCh) saveTaskReminders(trem);
       // Merge records reference tasks by name
       const _mg = getTaskMerges(); let _mgCh = false;
       _mg.forEach(m => {
@@ -9786,6 +9905,9 @@ function deleteDirTask() {
     if (cflags[task]) { delete cflags[task]; saveChecklistFlags(cflags); }
     const jrem = getJobReminders();
     if (jrem[task]) { delete jrem[task]; saveJobReminders(jrem); }
+    const trem = getTaskReminders(); let tremCh = false;
+    Object.keys(trem).forEach(k => { if (trem[k] && trem[k].job === task) { delete trem[k]; tremCh = true; } });
+    if (tremCh) saveTaskReminders(trem);
     // Drop any merge records for this (now-gone) task — can't un-merge into it
     const mg = getTaskMerges();
     const kept = mg.filter(m => m.primary !== task && m.secondary !== task);
