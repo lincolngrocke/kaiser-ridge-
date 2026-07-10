@@ -1648,6 +1648,10 @@
   </div>
 </div>
 
+<!-- Back to top — floats over whichever long list you're scrolling. -->
+<button id="back-to-top" onclick="scrollActiveTop()" aria-label="Back to top"
+  style="display:none;position:fixed;right:14px;bottom:88px;z-index:900;width:44px;height:44px;border-radius:50%;border:1px solid rgba(255,255,255,0.14);background:rgba(28,28,30,0.92);color:#5ac8fa;font-size:20px;font-weight:700;line-height:1;cursor:pointer;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(0,0,0,0.5);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);">↑</button>
+
 <!-- ══════════════ BOTTOM NAV ══════════════ -->
 <nav class="bottom-nav">
   <button class="nav-tab" onclick="openInbox()">
@@ -2497,7 +2501,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.143';
+const APP_VERSION = '2026-06-21.144';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2720,6 +2724,7 @@ window.addEventListener('load', () => {
   autoSyncPending();                       // catch up anything pending from a previous session
   setInterval(autoSyncPending, 60000);     // push entries ~5 min after clock-out, no manual sync needed
   setInterval(updateReminderBanners, 60000);   // re-check reminders each minute so a timed one pops when its time arrives
+  _initBackToTop();
   updateHeaderDate();
   migrateLegacyLocations();       // existing users keep old locations; fresh installs start empty
   populateLocationDropdown();
@@ -2782,8 +2787,35 @@ function _breakRangesLabel(breaks) {
 
 // ════════════════════════════════
 //  NAVIGATION
+// ── Back to top ──────────────────────────────────────────────────────────────
+// The page itself never scrolls — only inner regions do. So we watch scroll in the
+// capture phase (scroll events don't bubble), remember whichever long list you last
+// scrolled, and float an ↑ button over it once you're a screenful down.
+let _btTarget = null;
+function _hideBackToTop() { const b = document.getElementById('back-to-top'); if (b) b.style.display = 'none'; }
+function _isBackToTopList(el) {
+  return !!(el && el.classList && (el.classList.contains('scroll-area') || el.id === 'inbox-list'));
+}
+function _initBackToTop() {
+  document.addEventListener('scroll', (e) => {
+    const el = e.target;
+    if (!_isBackToTopList(el)) return;
+    _btTarget = el;
+    const b = document.getElementById('back-to-top');
+    if (!b) return;
+    b.style.display = (el.scrollTop > 400 && el.offsetParent !== null) ? 'flex' : 'none';
+  }, true);
+}
+function scrollActiveTop() {
+  if (_btTarget) {
+    try { _btTarget.scrollTo({ top: 0, behavior: 'smooth' }); }
+    catch (e) { _btTarget.scrollTop = 0; }   // older webviews
+  }
+  _hideBackToTop();
+}
 // ════════════════════════════════
 function showScreen(id, tab) {
+  _hideBackToTop();
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.getElementById('screen-' + id).classList.add('active');
@@ -5245,6 +5277,7 @@ function openModal(id) {
   _fitModalsToKeyboard();
 }
 function closeModal(id) {
+  _hideBackToTop();   // the list it belonged to may be going away
   const el = document.getElementById(id);
   el.classList.remove('open');
   el.style.bottom = '';
