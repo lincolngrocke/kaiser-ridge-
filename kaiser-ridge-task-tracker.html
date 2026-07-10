@@ -2497,7 +2497,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.142';
+const APP_VERSION = '2026-06-21.143';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6109,7 +6109,7 @@ const KR_BACKUP_KEYS = [
   'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
   'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_task_videos', 'kr_checklist_flags', 'kr_task_merges', 'kr_subtask_origin', 'kr_pins_applied',
   'kr_agents', 'kr_agent_runs', 'kr_planner_checklist', 'kr_pin_order', 'kr_subtask_photos', 'kr_job_reminders', 'kr_task_reminders',
-  'kr_task_types', 'kr_job_runs'
+  'kr_task_types', 'kr_job_runs', 'kr_job_flags'
 ];
 
 function buildBackupSnapshot() {
@@ -7018,19 +7018,9 @@ function renderDirectory() {
     if (typeof ts === 'number' && (!lastUsed[task] || ts > lastUsed[task])) lastUsed[task] = ts;
   });
 
-  list.innerHTML = freqs.map(freq => `
-    <div style="margin-bottom:8px;" data-freq="${freq}">
-      <div style="padding:8px 16px 4px;font-size:11px;font-weight:700;color:var(--subtext);letter-spacing:0.5px;text-transform:uppercase;">${freq}</div>
-      ${Object.keys(grouped[freq]).map(grp => {
-        const orderKey = freq + '||' + grp;
-        const savedOrder = taskOrder[orderKey] || [];
-        const tasks = Object.keys(grouped[freq][grp]);
-        const ordered = [...savedOrder.filter(t => tasks.includes(t)), ...tasks.filter(t => !savedOrder.includes(t))];
-        return `
-        <div style="margin:0 12px 8px;background:var(--card);border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
-          <div style="padding:10px 16px;background:var(--blue);color:#fff;font-size:12px;font-weight:700;letter-spacing:0.3px;">${grp}</div>
-          <div class="dir-group-tasks" data-orderkey="${encodeURIComponent(orderKey)}">
-          ${ordered.map(task => {
+  const jobFlags = getJobFlags();
+  // One row renderer, shared by the 🚩 Flagged section and the normal freq/area groups.
+  const rowHtml = (freq, grp, task) => {
             const equip = grouped[freq][grp][task];
             const subtaskList = (SUBTASKS[task] || []);
             const matchingSubs = searchTerm ? subtaskList.filter(s => s.toLowerCase().includes(searchTerm)) : [];
@@ -7059,12 +7049,15 @@ function renderDirectory() {
               usedLine = `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🗓 Not done yet</div>`;
             }
             const autoSub = auto ? `<div style="font-size:12px;color:#5856D6;margin-top:2px;">⚙ Auto frequency · every ~${gapDays} day${gapDays === 1 ? '' : 's'}${auto.freq !== origFreq ? ` · was ${origFreq}` : ''}</div>` : '';
-            return `<div class="dir-task-row" data-task="${task}" data-key="${key}"
+            const isFlagged = !!jobFlags[task];
+            return `<div class="dir-task-row" data-task="${task}" data-key="${key}" data-flagged="${isFlagged ? '1' : ''}"
               ontouchstart="dirTaskTouchStart(event,this)"
+              ontouchmove="dirSwipeMove(event)"
+              ontouchend="dirSwipeEnd(event)"
               onclick="dirTaskClick(event,this)"
-              style="padding:12px 16px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none;-webkit-user-select:none;">
+              style="padding:12px 16px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none;-webkit-user-select:none;${isFlagged ? 'background:rgba(255,214,10,0.08);' : ''}">
               <div style="flex:1;min-width:0;">
-                <div style="font-size:15px;font-weight:500;color:var(--text);">${task}${autoBadge}${pinBadge}${videoBadge}</div>
+                <div style="font-size:15px;font-weight:500;color:var(--text);">${isFlagged ? '🚩 ' : ''}${task}${autoBadge}${pinBadge}${videoBadge}</div>
                 ${autoSub}
                 ${usedLine}
                 ${taskAvg[task] ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">⏱ Avg ${fmtMin(taskAvg[task])}</div>` : ''}
@@ -7074,12 +7067,51 @@ function renderDirectory() {
               </div>
               <div style="color:var(--subtext);font-size:18px;padding-left:8px;">›</div>
             </div>`;
-          }).join('')}
+  };
+
+  // 🚩 Flagged section — swipe a job right to bring it up here, then hold-drag to
+  // arrange the order you'll actually work them in. Its order key can't collide with
+  // a real Repeats||Area pair, so the drag handler leaves DIRECTORY untouched.
+  const _flagged = [];
+  freqs.forEach(f => Object.keys(grouped[f]).forEach(g => Object.keys(grouped[f][g]).forEach(t => { if (jobFlags[t]) _flagged.push({ f, g, t }); })));
+  const flagOrderKey = '🚩||Flagged';
+  const flagSaved = taskOrder[flagOrderKey] || [];
+  _flagged.sort((a, b) => {
+    const ia = flagSaved.indexOf(a.t), ib = flagSaved.indexOf(b.t);
+    return (ia < 0 ? 1e9 : ia) - (ib < 0 ? 1e9 : ib);
+  });
+  const flaggedHtml = _flagged.length ? `
+    <div style="margin-bottom:8px;">
+      <div style="padding:8px 16px 4px;font-size:11px;font-weight:700;color:#ffd60a;letter-spacing:0.5px;text-transform:uppercase;">🚩 Flagged</div>
+      <div style="margin:0 12px 8px;background:var(--card);border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+        <div class="dir-group-tasks" data-orderkey="${encodeURIComponent(flagOrderKey)}">
+          ${_flagged.map(x => rowHtml(x.f, x.g, x.t)).join('')}
+        </div>
+      </div>
+    </div>` : '';
+
+  list.innerHTML = flaggedHtml + freqs.map(freq => {
+    const groupsHtml = Object.keys(grouped[freq]).map(grp => {
+      const orderKey = freq + '||' + grp;
+      const savedOrder = taskOrder[orderKey] || [];
+      const tasks = Object.keys(grouped[freq][grp]).filter(t => !jobFlags[t]);   // flagged rows live at the top instead
+      if (!tasks.length) return '';
+      const ordered = [...savedOrder.filter(t => tasks.includes(t)), ...tasks.filter(t => !savedOrder.includes(t))];
+      return `
+        <div style="margin:0 12px 8px;background:var(--card);border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+          <div style="padding:10px 16px;background:var(--blue);color:#fff;font-size:12px;font-weight:700;letter-spacing:0.3px;">${grp}</div>
+          <div class="dir-group-tasks" data-orderkey="${encodeURIComponent(orderKey)}">
+          ${ordered.map(task => rowHtml(freq, grp, task)).join('')}
           </div>
         </div>`;
-      }).join('')}
-    </div>
-  `).join('');
+    }).filter(Boolean).join('');
+    if (!groupsHtml) return '';   // every job in this Repeats bucket is flagged
+    return `
+    <div style="margin-bottom:8px;" data-freq="${freq}">
+      <div style="padding:8px 16px 4px;font-size:11px;font-weight:700;color:var(--subtext);letter-spacing:0.5px;text-transform:uppercase;">${freq}</div>
+      ${groupsHtml}
+    </div>`;
+  }).filter(Boolean).join('');
 
   // Sticky frequency badge — updates as sections scroll into view
   const badge = document.getElementById('dir-freq-badge');
@@ -10041,6 +10073,9 @@ function saveDirTask() {
       // Open lap run keyed by job name
       const runs = getJobRuns();
       if (runs[oldTask]) { runs[task] = Object.assign({}, runs[oldTask], { job: task }); delete runs[oldTask]; saveJobRuns(runs); }
+      // 🚩 Job flag keyed by job name
+      const jflags = getJobFlags();
+      if (jflags[oldTask]) { jflags[task] = true; delete jflags[oldTask]; saveJobFlags(jflags); }
       // Merge records reference tasks by name
       const _mg = getTaskMerges(); let _mgCh = false;
       _mg.forEach(m => {
@@ -10149,6 +10184,8 @@ function deleteDirTask() {
     if (ttyCh) saveTaskTypes(tty);
     const runs = getJobRuns();
     if (runs[task]) { delete runs[task]; saveJobRuns(runs); }
+    const jflags = getJobFlags();
+    if (jflags[task]) { delete jflags[task]; saveJobFlags(jflags); }
     // Drop any merge records for this (now-gone) task — can't un-merge into it
     const mg = getTaskMerges();
     const kept = mg.filter(m => m.primary !== task && m.secondary !== task);
@@ -10728,7 +10765,49 @@ let _dtRects = [];
 let _dtStartY = 0;
 let _dtScrollInterval = null;
 
+// ── Job flags: swipe a job right to 🚩 float it into the Flagged section at the
+// top of the Jobs list, where it can be dragged into the order you'll work it in.
+// Device-local; never touches DIRECTORY or sync. Mirrors the to-do / task gesture.
+function getJobFlags() { try { return JSON.parse(localStorage.getItem('kr_job_flags') || '{}') || {}; } catch (e) { return {}; } }
+function saveJobFlags(o) { return _safeSetItem('kr_job_flags', JSON.stringify(o)); }
+function toggleJobFlag(task) {
+  const f = getJobFlags();
+  const on = !f[task];
+  if (on) f[task] = true; else delete f[task];
+  if (!saveJobFlags(f)) return;
+  if (navigator.vibrate) { try { navigator.vibrate(12); } catch (e) {} }
+  renderDirectory();
+  showToast(on ? '🚩 Flagged to top' : 'Unflagged');
+}
+let _dirSwipe = null, _dirSwipeBlockClickUntil = 0;
+function dirSwipeMove(e) {
+  if (_dtDragging || !_dirSwipe) return;
+  const dx = e.touches[0].clientX - _dirSwipe.x, dy = e.touches[0].clientY - _dirSwipe.y;
+  // Vertical scroll or a left-swipe → not ours, let it go.
+  if (!_dirSwipe.moved && (Math.abs(dy) > Math.abs(dx) || dx < 0)) { _dirSwipe = null; return; }
+  if (dx > 6) {
+    _dirSwipe.moved = true;
+    _dtCancelLong();                    // a horizontal swipe is never a pick-up
+    e.preventDefault();
+    const row = _dirSwipe.row;
+    row.style.transition = 'none';
+    row.style.transform = 'translateX(' + Math.min(dx, 90) + 'px)';
+    row.style.opacity = String(Math.max(0.45, 1 - dx / 220));
+  }
+}
+function dirSwipeEnd(e) {
+  if (_dtDragging) { _dirSwipe = null; return; }
+  if (!_dirSwipe) return;
+  const s = _dirSwipe; _dirSwipe = null;
+  const dx = (e.changedTouches[0] ? e.changedTouches[0].clientX : s.x) - s.x;
+  s.row.style.transition = 'transform 0.16s, opacity 0.16s';
+  s.row.style.transform = ''; s.row.style.opacity = '';
+  if (s.moved) _dirSwipeBlockClickUntil = Date.now() + 400;   // suppress the tap-to-open
+  if (s.moved && dx > 48) toggleJobFlag(s.task);
+}
+
 function dirTaskTouchStart(e, row) {
+  _dirSwipe = { row, task: row.dataset.task, x: e.touches[0].clientX, y: e.touches[0].clientY, moved: false };
   if (isWorker()) return; // no drag-reorder in worker mode
   _dtDragging = false;
   _dtSrcRow = row;
@@ -10755,6 +10834,7 @@ function _dtCancelLong() {
 
 function dirTaskClick(e, row) {
   if (_dtDragging) { e.stopPropagation(); return; }
+  if (Date.now() < _dirSwipeBlockClickUntil) { e.stopPropagation(); return; }   // a swipe just happened — not a tap
   const key = row.dataset.key;
   if (key) openDirEditTask(key);
 }
