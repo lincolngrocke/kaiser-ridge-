@@ -2501,7 +2501,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.145';
+const APP_VERSION = '2026-06-21.146';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -9119,6 +9119,7 @@ let _reminderRepeatDaily = false;
 // daily just for that day (it comes back tomorrow).
 function _isReminderDue(n) {
   if (!n.remindOn || n.done) return false;
+  if (n.enabled === false) return false;   // switched off in the Reminders panel (kept, not deleted)
   const now = new Date();
   const today = _ymd(now);
   if (n.remindDoneOn && (n.remindRepeat === 'daily' ? n.remindDoneOn === today : true)) return false;
@@ -9197,6 +9198,8 @@ function saveReminder() {
     n.remindOn = date;
     if (time) n.remindTime = time; else delete n.remindTime;
     if (_reminderRepeatDaily) n.remindRepeat = 'daily'; else delete n.remindRepeat;
+    delete n.enabled;          // setting a reminder switches it on
+    delete n.remindDoneOn;     // and re-arms it
     saveInbox(arr); _remindSessionDismissed.delete(n.id);
   }
   closeModal('modal-reminder');
@@ -9208,7 +9211,7 @@ function saveReminder() {
 }
 function clearReminder() {
   const arr = getInbox(); const n = arr.find(x => x.id === _reminderNoteId);
-  if (n) { delete n.remindOn; delete n.remindTime; delete n.remindRepeat; saveInbox(arr); }
+  if (n) { delete n.remindOn; delete n.remindTime; delete n.remindRepeat; delete n.enabled; delete n.remindDoneOn; saveInbox(arr); }
   closeModal('modal-reminder');
   if (document.getElementById('modal-inbox').classList.contains('open')) renderInbox();
   updateReminderBanners();
@@ -9356,32 +9359,104 @@ function openJobEditByName(job) {
   openDirEditTask(encodeURIComponent((row.frequency || '') + '||' + (row.group || '') + '||' + job));
 }
 // Jobs-page overview: every job + task reminder you've set, in one list.
-function openRemindersOverview() {
-  const jrem = getJobReminders(), trem = getTaskReminders();
-  const rows = Object.keys(jrem).filter(j => jrem[j] && jrem[j].remindOn).map(j => ({ type: 'job', job: j, rec: jrem[j] }))
-    .concat(Object.keys(trem).filter(k => trem[k] && trem[k].remindOn).map(k => ({ type: 'task', job: trem[k].job, task: trem[k].task, rec: trem[k] })))
-    .sort((a, b) => (a.rec.remindOn < b.rec.remindOn ? -1 : a.rec.remindOn > b.rec.remindOn ? 1 : (a.job < b.job ? -1 : 1)));
-  document.getElementById('reminders-overview-title').textContent = '🔔 Reminders' + (rows.length ? ' · ' + rows.length : '');
-  const body = document.getElementById('reminders-overview-body');
-  if (!rows.length) {
-    body.innerHTML = `<div style="padding:26px 8px;text-align:center;color:var(--subtext);line-height:1.6;">No reminders set yet.<br>Set one from a job's Edit screen, or a task's 🔔.</div>`;
+// ── Reminders control panel: every reminder you've set, at all three levels
+// (to-dos, whole jobs, tasks within a job), in one place. Switch each on/off
+// WITHOUT deleting it (the `enabled` flag), filter, edit, or add a new one.
+let _remRows = [];
+let _remFilter = 'all';   // 'all' | 'due' | 'off'
+function _remEnabled(rec) { return rec.enabled !== false; }
+function _allReminderRows() {
+  const rows = [];
+  getInbox().forEach(n => {
+    if (n.remindOn && !n.done) rows.push({ kind: 'note', id: n.id, title: (n.text || '(note)').replace(/\n/g, ' '), sub: 'To-do', rec: n });
+  });
+  const jr = getJobReminders();
+  Object.keys(jr).forEach(job => { const r = jr[job]; if (r && r.remindOn) rows.push({ kind: 'job', id: job, title: job, sub: 'Whole job', rec: r }); });
+  const tr = getTaskReminders();
+  Object.keys(tr).forEach(k => { const r = tr[k]; if (r && r.remindOn) rows.push({ kind: 'task', id: k, title: r.task, sub: '📂 ' + r.job, rec: r }); });
+  return rows.sort((a, b) => (a.rec.remindOn < b.rec.remindOn ? -1 : a.rec.remindOn > b.rec.remindOn ? 1 : (a.title < b.title ? -1 : 1)));
+}
+function setRemFilter(f) { _remFilter = f; renderRemindersOverview(); }
+function toggleReminderEnabled(idx, ev) {
+  if (ev) ev.stopPropagation();
+  const r = _remRows[idx]; if (!r) return;
+  const on = !_remEnabled(r.rec);
+  if (r.kind === 'note') {
+    const arr = getInbox(); const n = arr.find(x => x.id === r.id); if (!n) return;
+    if (on) delete n.enabled; else n.enabled = false;
+    saveInbox(arr);
+  } else if (r.kind === 'job') {
+    const jr = getJobReminders(); if (!jr[r.id]) return;
+    if (on) delete jr[r.id].enabled; else jr[r.id].enabled = false;
+    if (!saveJobReminders(jr)) return;
   } else {
-    body.innerHTML = rows.map(r => {
-      const due = _isReminderDue(r.rec);
-      const icon = r.rec.remindRepeat === 'daily' ? '🔁' : '🔔';
-      const title = _escHtml(r.type === 'job' ? r.job : r.task);
-      const sub = r.type === 'job' ? 'Whole job' : ('📂 ' + _escHtml(r.job));
-      const jarg = (r.job || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-      return `<div onclick="closeModal('modal-reminders-overview');openJobEditByName('${jarg}')" style="display:flex;align-items:flex-start;gap:10px;padding:12px 2px;border-bottom:1px solid var(--border);cursor:pointer;">
-        <span style="font-size:18px;flex-shrink:0;">${icon}</span>
-        <div style="flex:1;min-width:0;">
-          <div style="font-size:15px;color:var(--text);line-height:1.35;">${title}</div>
-          <div style="font-size:12px;color:var(--subtext);margin-top:3px;">${sub} · <span style="color:${due ? '#ffd60a' : 'var(--subtext)'};font-weight:${due ? '600' : '400'};">${_remindLabel(r.rec)}</span></div>
-        </div>
-        <span style="color:var(--subtext);font-size:15px;flex-shrink:0;align-self:center;">›</span>
-      </div>`;
-    }).join('');
+    const tr = getTaskReminders(); if (!tr[r.id]) return;
+    if (on) delete tr[r.id].enabled; else tr[r.id].enabled = false;
+    if (!saveTaskReminders(tr)) return;
   }
+  updateReminderBanners();
+  renderRemindersOverview();
+  showToast(on ? '🔔 Reminder on' : '🔕 Reminder off');
+}
+function openReminderRow(idx) {
+  const r = _remRows[idx]; if (!r) return;
+  closeModal('modal-reminders-overview');
+  if (r.kind === 'note') openInbox(r.id);            // edit its reminder from the note
+  else if (r.kind === 'job') openJobEditByName(r.id);
+  else openJobEditByName(r.rec.job);                 // the task's 🔔 lives on its job's Edit screen
+}
+// ＋ New: pick the job to set it on (a to-do's reminder is set from the Inbox).
+function openNewReminderPicker() {
+  const jobs = [...new Set(DIRECTORY.map(r => r.task).filter(Boolean))].sort();
+  const body = document.getElementById('reminders-overview-body');
+  document.getElementById('reminders-overview-title').textContent = '＋ New reminder';
+  body.innerHTML = `<div style="font-size:12px;color:var(--subtext);padding:4px 2px 10px;line-height:1.45;">Pick a job — set a reminder on the whole job, or on any of its tasks. (For a to-do, set it from the Inbox.)</div>`
+    + `<div style="font-size:13px;color:var(--blue);font-weight:600;padding:6px 2px 10px;cursor:pointer;" onclick="renderRemindersOverview()">‹ Back to reminders</div>`
+    + (jobs.length ? jobs.map(j => {
+        const jarg = j.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        return `<div onclick="closeModal('modal-reminders-overview');openJobEditByName('${jarg}')" style="display:flex;align-items:center;gap:10px;padding:12px 2px;border-bottom:1px solid var(--border);cursor:pointer;">
+          <span style="flex:1;min-width:0;font-size:15px;color:var(--text);">${_escHtml(j)}</span>
+          <span style="color:var(--subtext);font-size:15px;">›</span></div>`;
+      }).join('') : `<div style="padding:24px 8px;text-align:center;color:var(--subtext);">No jobs yet.</div>`);
+}
+function renderRemindersOverview() {
+  _remRows = _allReminderRows();
+  const shown = _remRows.map((r, i) => ({ r, i })).filter(({ r }) =>
+    _remFilter === 'all' ? true : _remFilter === 'due' ? _isReminderDue(r.rec) : !_remEnabled(r.rec));
+  const nDue = _remRows.filter(r => _isReminderDue(r.rec)).length;
+  const nOff = _remRows.filter(r => !_remEnabled(r.rec)).length;
+  document.getElementById('reminders-overview-title').textContent = '🔔 Reminders' + (_remRows.length ? ' · ' + _remRows.length : '');
+  const chip = (f, label) => `<button onclick="setRemFilter('${f}')" style="background:${_remFilter === f ? 'var(--blue)' : 'var(--bg)'};color:${_remFilter === f ? '#fff' : 'var(--text)'};border:1px solid var(--border);border-radius:16px;padding:6px 12px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">${label}</button>`;
+  const header = `<div style="display:flex;align-items:center;gap:8px;padding:2px 0 12px;overflow-x:auto;">
+      ${chip('all', 'All · ' + _remRows.length)}${chip('due', 'Due · ' + nDue)}${chip('off', 'Off · ' + nOff)}
+      <span style="flex:1;"></span>
+      <button onclick="openNewReminderPicker()" style="background:none;border:none;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;">＋ New</button>
+    </div>`;
+  const body = document.getElementById('reminders-overview-body');
+  if (!shown.length) {
+    const msg = _remRows.length
+      ? 'Nothing matches this filter.'
+      : 'No reminders set yet.<br>Set one on a job or task from its Edit screen, or on a to-do from the Inbox.';
+    body.innerHTML = header + `<div style="padding:26px 8px;text-align:center;color:var(--subtext);line-height:1.6;">${msg}</div>`;
+    return;
+  }
+  body.innerHTML = header + shown.map(({ r, i }) => {
+    const on = _remEnabled(r.rec);
+    const due = _isReminderDue(r.rec);
+    const icon = r.rec.remindRepeat === 'daily' ? '🔁' : '🔔';
+    return `<div onclick="openReminderRow(${i})" style="display:flex;align-items:flex-start;gap:10px;padding:12px 2px;border-bottom:1px solid var(--border);cursor:pointer;${on ? '' : 'opacity:0.45;'}">
+      <span style="font-size:18px;flex-shrink:0;">${icon}</span>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:15px;color:var(--text);line-height:1.35;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${_escHtml(r.title)}</div>
+        <div style="font-size:12px;color:var(--subtext);margin-top:3px;">${_escHtml(r.sub)} · <span style="color:${due ? '#ffd60a' : 'var(--subtext)'};font-weight:${due ? '600' : '400'};">${_remindLabel(r.rec)}</span>${on ? '' : ' · off'}</div>
+      </div>
+      <button onclick="toggleReminderEnabled(${i}, event)" aria-label="${on ? 'Turn off' : 'Turn on'}" style="flex-shrink:0;align-self:center;background:${on ? 'rgba(48,209,88,0.18)' : 'var(--bg)'};border:1px solid ${on ? 'rgba(48,209,88,0.6)' : 'var(--border)'};color:${on ? 'var(--green)' : 'var(--subtext)'};border-radius:14px;padding:5px 11px;font-size:12px;font-weight:700;cursor:pointer;">${on ? 'On' : 'Off'}</button>
+    </div>`;
+  }).join('');
+}
+function openRemindersOverview() {
+  _remFilter = 'all';
+  renderRemindersOverview();
   openModal('modal-reminders-overview');
 }
 // Jobs you've set an explicit reminder on that are now due, not dismissed this session.
