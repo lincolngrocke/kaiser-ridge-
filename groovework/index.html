@@ -2536,7 +2536,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.147';
+const APP_VERSION = '2026-06-21.148';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4439,6 +4439,17 @@ function _renderTsWho(hasBots) {
     opts.map(([k, label]) => `<div onclick="setTsWho('${k}')" style="flex:1;text-align:center;padding:8px 6px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;${_tsWho === k ? 'background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,0.12);' : 'color:var(--subtext);'}">${label}</div>`).join('') +
     `</div>`;
 }
+// Split a folded timesheet notes string into free comments/to-dos vs timed tasks,
+// so the timesheet can show them under separate headings. A folded TASK line looks
+// like "[time] (dur) …"; a 📌 to-do line carries 📌; everything else is a comment.
+function _tsNotesSplit(notes) {
+  const todos = [], tasks = [];
+  String(notes || '').split('\n').forEach(l => {
+    if (!l.trim()) return;
+    if (!/📌/.test(l) && /^\s*\[[^\]]*\]\s*\(/.test(l)) tasks.push(l); else todos.push(l);
+  });
+  return { todos, tasks };
+}
 function renderTimesheets() {
   updateRestoreEntryBanner();
   const list = document.getElementById('ts-list');
@@ -4524,7 +4535,14 @@ function renderTimesheets() {
       ${e.tool ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${hl(e.tool)}</div>` : ''}
       ${e.break > 0 ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☕ ${e.break.toFixed(2)}h break${_breakRangesLabel(e.breaks) ? ' · ' + _breakRangesLabel(e.breaks) : ''}</div>` : ''}
       ${e.pin && e.pin.url ? `<a href="${e.pin.url}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="display:inline-block;font-size:12px;color:var(--blue);text-decoration:none;margin-top:4px;">📍 View location</a>` : ''}
-      ${e.notes ? `<div class="ts-entry-note">${hl(e.notes)}</div>` : ''}
+      ${e.notes ? (() => {
+        const { todos, tasks } = _tsNotesSplit(e.notes);
+        const head = txt => `<div style="font-size:10px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--subtext);opacity:0.7;margin:8px 0 0;">${txt}</div>`;
+        let h = '';
+        if (todos.length) h += head('Notes & to-dos') + `<div class="ts-entry-note" style="margin-top:2px;">${hl(todos.join('\n'))}</div>`;
+        if (tasks.length) h += head('Tasks') + `<div class="ts-entry-note" style="margin-top:2px;">${hl(tasks.join('\n'))}</div>`;
+        return h || `<div class="ts-entry-note">${hl(e.notes)}</div>`;
+      })() : ''}
       ${(e.commentPhotos && e.commentPhotos.length) ? _photosHtml({ photos: e.commentPhotos }, 80) : ''}
     </div>`;
   }).join('');
@@ -7116,14 +7134,17 @@ function renderDirectory() {
   });
 
   const jobFlags = getJobFlags();
+  const _dirStepsMap = getSubtaskSteps();
   // One row renderer, shared by the 🚩 Flagged section and the normal freq/area groups.
   const rowHtml = (freq, grp, task) => {
             const equip = grouped[freq][grp][task];
             const subtaskList = (SUBTASKS[task] || []);
+            const _nWithSteps = subtaskList.filter(s => (_dirStepsMap[s] || []).length > 0).length;
+            const _stepsTag = _nWithSteps ? ` · <span style="color:var(--blue);">≣ ${_nWithSteps} with steps</span>` : '';
             const matchingSubs = searchTerm ? subtaskList.filter(s => s.toLowerCase().includes(searchTerm)) : [];
             const checklistHtml = matchingSubs.length
               ? matchingSubs.map(s => `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☑️ ${highlightMatch(s, searchTerm)}</div>`).join('')
-              : (subtaskList.length ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☑️ ${subtaskList.length} task${subtaskList.length > 1 ? 's' : ''}</div>` : '');
+              : (subtaskList.length ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☑️ ${subtaskList.length} task${subtaskList.length > 1 ? 's' : ''}${_stepsTag}</div>` : '');
             const origFreq = taskOrigFreq[grp + '||' + task] || freq;
             const key = encodeURIComponent(origFreq + '||' + grp + '||' + task);
             const meta = taskMeta[freq + '||' + grp + '||' + task] || {};
@@ -9347,6 +9368,7 @@ function updateReminderBanners() {
         <div style="color:#fff;font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${t}</div>
         ${lbl ? `<div style="color:var(--subtext);font-size:12px;margin-top:2px;">${lbl}</div>` : ''}
       </div>
+      <button onclick="doneNoteReminder('${n.id}')" aria-label="Done" title="Done${n.remindRepeat === 'daily' ? ' for today' : ''}" style="background:none;border:none;color:#30d158;font-size:20px;font-weight:700;cursor:pointer;padding:2px 6px;flex-shrink:0;">✓</button>
       <button onclick="dismissReminder('${n.id}')" aria-label="Dismiss" style="background:none;border:none;color:var(--subtext);font-size:20px;cursor:pointer;padding:2px 6px;flex-shrink:0;">✕</button>
     </div>`;
   }).join('');
@@ -9359,6 +9381,7 @@ function updateReminderBanners() {
         <div style="color:#fff;font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${jn}</div>
         ${lbl ? `<div style="color:var(--subtext);font-size:12px;margin-top:2px;">${lbl}</div>` : ''}
       </div>
+      <button onclick="doneJobReminder('${jarg}')" aria-label="Done" title="Done${j.rec.remindRepeat === 'daily' ? ' for today' : ''}" style="background:none;border:none;color:#30d158;font-size:20px;font-weight:700;cursor:pointer;padding:2px 6px;flex-shrink:0;">✓</button>
       <button onclick="dismissJobReminder('${jarg}')" aria-label="Dismiss" style="background:none;border:none;color:var(--subtext);font-size:20px;cursor:pointer;padding:2px 6px;flex-shrink:0;">✕</button>
     </div>`;
   }).join('');
@@ -9372,6 +9395,7 @@ function updateReminderBanners() {
         <div style="color:#fff;font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${tt}</div>
         <div style="color:var(--subtext);font-size:12px;margin-top:2px;">📂 ${jn}${lbl ? ' · ' + lbl : ''}</div>
       </div>
+      <button onclick="doneTaskReminder(${idx})" aria-label="Done" title="Done${tr.rec.remindRepeat === 'daily' ? ' for today' : ''}" style="background:none;border:none;color:#30d158;font-size:20px;font-weight:700;cursor:pointer;padding:2px 6px;flex-shrink:0;">✓</button>
       <button onclick="dismissTaskReminder(${idx})" aria-label="Dismiss" style="background:none;border:none;color:var(--subtext);font-size:20px;cursor:pointer;padding:2px 6px;flex-shrink:0;">✕</button>
     </div>`;
   }).join('');
@@ -9379,6 +9403,22 @@ function updateReminderBanners() {
 }
 function dismissReminder(id) { _remindSessionDismissed.add(id); updateReminderBanners(); }
 function openReminderNote(id) { _remindSessionDismissed.add(id); updateReminderBanners(); openInbox(id); }
+// ✓ mark a reminder DONE from its banner — for reminders that aren't tied to a
+// clock-out (e.g. a daily whole-job routine). Daily → gone today, back tomorrow;
+// one-off → gone for good. Uses the same remindDoneOn mechanism as completion.
+function _doneToast(rec) { showToast(rec && rec.remindRepeat === 'daily' ? '✓ Done — back tomorrow' : '✓ Done'); }
+function doneNoteReminder(id) {
+  const n = getInbox().find(x => x.id === id);
+  _setNoteReminderDone(id, true); _doneToast(n);
+}
+function doneJobReminder(job) {
+  const rec = getJobReminders()[job];
+  _satisfyJobReminder(job); _doneToast(rec);
+}
+function doneTaskReminder(idx) {
+  const tr = _dueTaskRemCache[idx]; if (!tr) return;
+  _setTaskReminderDone(tr.rec.job, tr.rec.task, true); _doneToast(tr.rec);
+}
 // ── Job soft reminders (opt-in per job; nudges when overdue vs its cadence) ──
 function getJobReminders() { try { return JSON.parse(localStorage.getItem('kr_job_reminders') || '{}') || {}; } catch (e) { return {}; } }
 function saveJobReminders(o) { return _safeSetItem('kr_job_reminders', JSON.stringify(o)); }
