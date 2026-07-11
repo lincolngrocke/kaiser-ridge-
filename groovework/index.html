@@ -2536,7 +2536,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.148';
+const APP_VERSION = '2026-06-21.149';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3902,7 +3902,7 @@ function toggleAllTasksExpanded() {
   if (!clockState || !clockState.task) return;
   const stepsMap = getSubtaskSteps();
   const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
-  const items = (SUBTASKS[clockState.task] || []).filter(s => (stepsMap[s] || []).length > 0 && !_isTaskDoneNow(clockState.task, s, done));
+  const items = (SUBTASKS[clockState.task] || []).filter(s => !_isTaskDoneNow(clockState.task, s, done) && ((stepsMap[s] || []).length > 0 || s.length > 55));
   const allExp = items.length > 0 && items.every(s => _expandedChecklistItems.has(s));
   if (allExp) items.forEach(s => _expandedChecklistItems.delete(s));
   else items.forEach(s => _expandedChecklistItems.add(s));
@@ -4007,9 +4007,9 @@ function renderRunChecklist() {
     const taskAttr = (clockState && clockState.task) ? _attr(clockState.task) : '';
     const clFlags = _sessionOrGlobalFlags(clockState.task);
     if (items.filter(s => clFlags[s]).length > 1) organiseLink = `<span onclick="openChecklistOrganise(event)" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">⤢ Organise</span>`;
-    const _tasksWithSteps = items.filter(s => (stepsMap[s] || []).length > 0 && !_isTaskDoneNow(clockState.task, s, done));
-    if (_tasksWithSteps.length >= 1) {
-      const _allExp = _tasksWithSteps.every(s => _expandedChecklistItems.has(s));
+    const _expandableTasks = items.filter(s => !_isTaskDoneNow(clockState.task, s, done) && ((stepsMap[s] || []).length > 0 || s.length > 55));
+    if (_expandableTasks.length >= 1) {
+      const _allExp = _expandableTasks.every(s => _expandedChecklistItems.has(s));
       expandLink = `<span onclick="toggleAllTasksExpanded()" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">${_allExp ? '⤡ Collapse all' : '⤢ Expand all'}</span>`;
     }
     // 🏁 Lap header — only for lap-based jobs (a job with at least one 'Every lap' task).
@@ -4045,14 +4045,19 @@ function renderRunChecklist() {
       const checkedCount = steps.filter(st => stepChecks[s] && stepChecks[s][st]).length;
       const flagged = !!clFlags[s];
       const circle = `<span onclick="markChecklistItemDone('${enc}')" style="width:24px;height:24px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;${isDone ? 'background:#30d158;' : 'border:2px solid rgba(255,255,255,0.28);'}">${isDone ? '<span style="color:#05070c;font-size:14px;">✓</span>' : ''}</span>`;
-      const textTap = steps.length ? `toggleChecklistExpand('${enc}')` : `markChecklistItemDone('${enc}')`;
+      // Long tasks (or tasks with steps) clamp to 2 lines and expand on tap — same
+      // as to-dos. Short tasks keep tap-the-text-to-complete. The circle always completes.
+      const _longish = s.length > 55;
+      const _expandable = steps.length > 0 || _longish;
+      const textTap = _expandable ? `toggleChecklistExpand('${enc}')` : `markChecklistItemDone('${enc}')`;
       const stepBadge = steps.length ? ` <span style="color:#616a7e;font-size:13px;">(${checkedCount}/${steps.length})</span>` : '';
-      const textSpan = `<span onclick="${textTap}" style="flex:1;font-size:16px;cursor:pointer;${isDone ? 'color:#616a7e;text-decoration:line-through;' : 'color:#e7eaf0;'}">${flagged ? '🚩 ' : ''}${_escHtml(s)}${stepBadge}</span>`;
+      const _clamp = (_expandable && !expanded) ? 'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;' : '';
+      const textSpan = `<span onclick="${textTap}" style="flex:1;min-width:0;font-size:16px;cursor:pointer;${_clamp}${isDone ? 'color:#616a7e;text-decoration:line-through;' : 'color:#e7eaf0;'}">${flagged ? '🚩 ' : ''}${_escHtml(s)}${stepBadge}</span>`;
       const _avgMin = itemAvg[s.trim().replace(/\s+/g, ' ').toLowerCase()];
       const _avgTag = (!isDone && _avgMin) ? `<span title="average so far" style="font-size:12px;color:#616a7e;white-space:nowrap;flex-shrink:0;">~${fmtMin(_avgMin)}</span>` : '';
       const right = isDone
         ? `<span style="font-size:13px;color:#30d158;font-weight:600;white-space:nowrap;">${fmtMin(dur[s])}</span>`
-        : _avgTag + (steps.length ? `<span onclick="toggleChecklistExpand('${enc}')" style="color:#8b93a7;font-size:14px;cursor:pointer;padding:0 4px;flex-shrink:0;">${expanded ? '▾' : '▸'}</span>` : '');
+        : _avgTag + (_expandable ? `<span onclick="toggleChecklistExpand('${enc}')" style="color:#8b93a7;font-size:14px;cursor:pointer;padding:0 4px;flex-shrink:0;">${expanded ? '▾' : '▸'}</span>` : '');
       const clFlagAttr = (flagged && !isDone) ? '1' : '';
       const clRowBg = (flagged && !isDone) ? 'background:rgba(255,214,10,0.08);' : '';
       const editIcon = `<span onclick="event.stopPropagation();openRunEdit('tasks','${enc}')" style="flex-shrink:0;color:#9aa3b7;font-size:23px;line-height:1;cursor:pointer;padding:10px 14px 10px 12px;">✎</span>`;
@@ -4443,12 +4448,14 @@ function _renderTsWho(hasBots) {
 // so the timesheet can show them under separate headings. A folded TASK line looks
 // like "[time] (dur) …"; a 📌 to-do line carries 📌; everything else is a comment.
 function _tsNotesSplit(notes) {
-  const todos = [], tasks = [];
+  const out = { notes: [], todos: [], tasks: [] };
   String(notes || '').split('\n').forEach(l => {
     if (!l.trim()) return;
-    if (!/📌/.test(l) && /^\s*\[[^\]]*\]\s*\(/.test(l)) tasks.push(l); else todos.push(l);
+    if (/📌/.test(l)) out.todos.push(l);                      // a folded to-do
+    else if (/^\s*\[[^\]]*\]\s*\(/.test(l)) out.tasks.push(l); // "[time] (dur) …" = a timed task
+    else out.notes.push(l);                                   // a free comment
   });
-  return { todos, tasks };
+  return out;
 }
 function renderTimesheets() {
   updateRestoreEntryBanner();
@@ -4536,11 +4543,10 @@ function renderTimesheets() {
       ${e.break > 0 ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☕ ${e.break.toFixed(2)}h break${_breakRangesLabel(e.breaks) ? ' · ' + _breakRangesLabel(e.breaks) : ''}</div>` : ''}
       ${e.pin && e.pin.url ? `<a href="${e.pin.url}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="display:inline-block;font-size:12px;color:var(--blue);text-decoration:none;margin-top:4px;">📍 View location</a>` : ''}
       ${e.notes ? (() => {
-        const { todos, tasks } = _tsNotesSplit(e.notes);
+        const { notes, todos, tasks } = _tsNotesSplit(e.notes);
         const head = txt => `<div style="font-size:10px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--subtext);opacity:0.7;margin:8px 0 0;">${txt}</div>`;
-        let h = '';
-        if (todos.length) h += head('Notes & to-dos') + `<div class="ts-entry-note" style="margin-top:2px;">${hl(todos.join('\n'))}</div>`;
-        if (tasks.length) h += head('Tasks') + `<div class="ts-entry-note" style="margin-top:2px;">${hl(tasks.join('\n'))}</div>`;
+        const sec = (arr, label) => arr.length ? head(label) + `<div class="ts-entry-note" style="margin-top:2px;">${hl(arr.join('\n'))}</div>` : '';
+        const h = sec(notes, 'Notes') + sec(todos, 'To-dos') + sec(tasks, 'Tasks');
         return h || `<div class="ts-entry-note">${hl(e.notes)}</div>`;
       })() : ''}
       ${(e.commentPhotos && e.commentPhotos.length) ? _photosHtml({ photos: e.commentPhotos }, 80) : ''}
