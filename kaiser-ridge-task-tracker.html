@@ -2221,7 +2221,10 @@
       </div>
 
       <div style="padding:16px 20px 8px;">
-        <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">TASKS</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <span style="font-size:13px;font-weight:600;color:var(--subtext);">TASKS</span>
+          <span onclick="openMoveTasks()" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;">⇄ Move</span>
+        </div>
         <div id="dir-subtask-list"></div>
         <button onclick="openSubtaskPicker()" style="margin-top:8px;background:none;border:1px dashed var(--border);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">+ Add Task</button>
         <button id="dir-restore-subtasks-btn" onclick="restoreDefaultSubtasks()" style="display:none;margin-top:8px;background:none;border:1px dashed var(--blue);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">↺ Restore Default Tasks</button>
@@ -2328,6 +2331,18 @@
       </div>
     </div>
     <div id="client-picker-list" style="flex:1;overflow-y:auto;padding:0 16px 24px;"></div>
+  </div>
+</div>
+
+<!-- Move tasks to another job (keeps a "from" trail so you can send them back) -->
+<div class="modal-backdrop" id="modal-move-tasks" style="z-index:400;" onclick="if(event.target===this)closeModal('modal-move-tasks')">
+  <div class="modal-sheet" style="padding:16px 20px 24px;max-height:85vh;display:flex;flex-direction:column;">
+    <div class="modal-handle"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+      <span id="move-tasks-title" style="font-size:17px;font-weight:600;">Move tasks</span>
+      <button onclick="closeModal('modal-move-tasks')" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Done</button>
+    </div>
+    <div id="move-tasks-body" style="overflow-y:auto;margin-top:6px;"></div>
   </div>
 </div>
 
@@ -2536,7 +2551,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.149';
+const APP_VERSION = '2026-06-21.150';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6201,7 +6216,7 @@ const KR_BACKUP_KEYS = [
   'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
   'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_task_videos', 'kr_checklist_flags', 'kr_task_merges', 'kr_subtask_origin', 'kr_pins_applied',
   'kr_agents', 'kr_agent_runs', 'kr_planner_checklist', 'kr_pin_order', 'kr_subtask_photos', 'kr_job_reminders', 'kr_task_reminders',
-  'kr_task_types', 'kr_job_runs', 'kr_job_flags'
+  'kr_task_types', 'kr_job_runs', 'kr_job_flags', 'kr_task_moves'
 ];
 
 function buildBackupSnapshot() {
@@ -9509,6 +9524,90 @@ function cycleTaskType(i) {
   if (!saveTaskTypes(types)) return;
   renderDirSubtaskList();
   showToast(next === 'lap' ? '↻ Every lap' : next === 'optional' ? '? Optional — never blocks a lap' : '1× Once per day');
+}
+
+// ── Move tasks to another job ──────────────────────────────────────────────
+// Moves selected tasks out of the job you're editing into another job. Steps,
+// guides, photos and timing history are keyed by task TEXT, so they follow
+// automatically; the task's reminder, lap-type and flag are re-keyed to the new
+// job. Records a "from" trail (kr_task_moves) so you always know where to send it back.
+function getTaskMoves() { try { return JSON.parse(localStorage.getItem('kr_task_moves') || '{}') || {}; } catch (e) { return {}; } }
+function saveTaskMoves(o) { return _safeSetItem('kr_task_moves', JSON.stringify(o)); }
+function _taskMoveKey(job, task) { return job + '\u0001' + task; }
+let _moveSel = new Set(), _moveSrcJob = '';
+function openMoveTasks() {
+  const job = _dirJobName();
+  if (!job) { showToast('Save the job first, then move its tasks'); return; }
+  if (!_subtaskItems.length) { showToast('No tasks to move'); return; }
+  _moveSrcJob = job; _moveSel.clear();
+  renderMoveTasks();
+  openModal('modal-move-tasks');
+}
+function toggleMoveSel(i) {
+  const t = _subtaskItems[i]; if (!t) return;
+  if (_moveSel.has(t)) _moveSel.delete(t); else _moveSel.add(t);
+  renderMoveTasks();
+}
+function renderMoveTasks() {
+  document.getElementById('move-tasks-title').textContent = 'Move tasks';
+  const moves = getTaskMoves();
+  const rows = _subtaskItems.map((t, i) => {
+    const on = _moveSel.has(t);
+    const mv = moves[_taskMoveKey(_moveSrcJob, t)];
+    const fromTag = (mv && mv.from) ? `<div style="font-size:11px;color:#5ac8fa;margin-top:2px;">↩ came from ${_escHtml(mv.from)}</div>` : '';
+    return `<div onclick="toggleMoveSel(${i})" style="display:flex;align-items:flex-start;gap:10px;padding:11px 2px;border-bottom:1px solid var(--border);cursor:pointer;">
+      <span style="width:22px;height:22px;border-radius:6px;flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;font-size:13px;${on ? 'background:var(--blue);color:#fff;' : 'border:1.5px solid var(--border);'}">${on ? '✓' : ''}</span>
+      <div style="flex:1;min-width:0;"><div style="font-size:15px;color:var(--text);line-height:1.35;">${_escHtml(t)}</div>${fromTag}</div>
+    </div>`;
+  }).join('');
+  const n = _moveSel.size;
+  const footer = `<button onclick="_moveGoDest()" ${n ? '' : 'disabled'} style="width:100%;margin-top:14px;padding:13px;border:none;border-radius:12px;background:${n ? 'var(--blue)' : 'var(--border)'};color:#fff;font-size:15px;font-weight:700;cursor:${n ? 'pointer' : 'default'};">Move ${n || ''} to another job →</button>`;
+  document.getElementById('move-tasks-body').innerHTML =
+    `<div style="font-size:12px;color:var(--subtext);padding:2px 2px 10px;line-height:1.45;">Select tasks to move out of <b>${_escHtml(_moveSrcJob)}</b>, then choose where they go. Their steps, timing history, reminder and lap type go with them.</div>` + rows + footer;
+}
+function _moveGoDest() {
+  if (!_moveSel.size) return;
+  const jobs = [...new Set(DIRECTORY.map(r => r.task).filter(Boolean))].filter(j => j !== _moveSrcJob).sort((a, b) => a.toLowerCase() < b.toLowerCase() ? -1 : 1);
+  document.getElementById('move-tasks-title').textContent = 'Move ' + _moveSel.size + ' to…';
+  const back = `<div onclick="renderMoveTasks()" style="font-size:13px;color:var(--blue);font-weight:600;padding:6px 2px 10px;cursor:pointer;">‹ Back to selection</div>`;
+  const list = jobs.length ? jobs.map(j => {
+    const jarg = j.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return `<div onclick="confirmMoveTo('${jarg}')" style="display:flex;align-items:center;gap:10px;padding:13px 2px;border-bottom:1px solid var(--border);cursor:pointer;">
+      <span style="flex:1;min-width:0;font-size:15px;color:var(--text);">${_escHtml(j)}</span><span style="color:var(--subtext);">›</span></div>`;
+  }).join('') : `<div style="padding:24px 8px;text-align:center;color:var(--subtext);">No other jobs yet — create one first.</div>`;
+  document.getElementById('move-tasks-body').innerHTML = back + list;
+}
+function confirmMoveTo(destJob) {
+  const tasks = [..._moveSel];
+  if (!tasks.length) return;
+  _doMoveTasks(_moveSrcJob, destJob, tasks);
+  closeModal('modal-move-tasks');
+  renderDirSubtaskList();
+  showToast('Moved ' + tasks.length + ' task' + (tasks.length === 1 ? '' : 's') + ' → ' + destJob);
+}
+function _doMoveTasks(srcJob, destJob, tasks) {
+  if (!SUBTASKS[destJob]) SUBTASKS[destJob] = [];
+  SUBTASKS[srcJob] = (SUBTASKS[srcJob] || []).filter(x => !tasks.includes(x));
+  const rem = getTaskReminders(), types = getTaskTypes(), flags = getChecklistFlags(), moves = getTaskMoves();
+  let remCh = false, typCh = false, flagCh = false;
+  tasks.forEach(t => {
+    if (!SUBTASKS[destJob].some(x => x.trim().toLowerCase() === t.trim().toLowerCase())) SUBTASKS[destJob].push(t);
+    const sk = _taskRemKey(srcJob, t), dk = _taskRemKey(destJob, t);
+    if (rem[sk]) { rem[dk] = Object.assign({}, rem[sk], { job: destJob }); delete rem[sk]; remCh = true; }
+    const stk = _taskTypeKey(srcJob, t), dtk = _taskTypeKey(destJob, t);
+    if (types[stk]) { types[dtk] = types[stk]; delete types[stk]; typCh = true; }
+    if (flags[srcJob] && flags[srcJob][t]) { (flags[destJob] = flags[destJob] || {})[t] = flags[srcJob][t]; delete flags[srcJob][t]; flagCh = true; }
+    if (flags[srcJob] && !Object.keys(flags[srcJob]).length) delete flags[srcJob];
+    const prev = moves[_taskMoveKey(srcJob, t)];
+    moves[_taskMoveKey(destJob, t)] = { from: srcJob, at: new Date().toISOString(), trail: (prev && prev.trail ? prev.trail : []).concat([srcJob]) };
+    delete moves[_taskMoveKey(srcJob, t)];
+  });
+  _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
+  if (remCh) saveTaskReminders(rem);
+  if (typCh) saveTaskTypes(types);
+  if (flagCh) saveChecklistFlags(flags);
+  saveTaskMoves(moves);
+  _subtaskItems = _subtaskItems.filter(x => !tasks.includes(x));
 }
 // Open a job's Edit screen from just its name (used by the Reminders overview).
 function openJobEditByName(job) {
