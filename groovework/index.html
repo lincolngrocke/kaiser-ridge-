@@ -2565,7 +2565,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.155';
+const APP_VERSION = '2026-06-21.156';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -10785,6 +10785,19 @@ function startRobotTick() {
 }
 function stopRobotTick() { clearInterval(_robotInterval); _robotInterval = null; }
 
+// A small "N days ago" pill for a robot activity's last run. Green when fresh
+// (≤7 days), blue when it's getting stale; nothing if it's never been run.
+function _daysAgoPill(ts) {
+  if (!ts) return '';
+  const d0 = new Date(ts); d0.setHours(0, 0, 0, 0);
+  const t0 = new Date(); t0.setHours(0, 0, 0, 0);
+  const days = Math.floor((t0 - d0) / 86400000);
+  const label = days <= 0 ? 'today' : days === 1 ? '1d ago' : days + 'd ago';
+  const fresh = days <= 7;
+  const col = fresh ? '48,209,88' : '90,200,250';
+  return `<span style="font-size:11px;font-weight:700;padding:1px 6px;border-radius:9px;background:rgba(${col},0.2);color:rgb(${col});white-space:nowrap;">${label}</span>`;
+}
+
 function renderRobotsScreen() {
   const body = document.getElementById('robots-body');
   if (!body) return;
@@ -10804,9 +10817,18 @@ function renderRobotsScreen() {
       <button onclick="discardAgentRun('${r.runId}')" title="Discard" style="background:none;border:none;color:var(--subtext);font-size:17px;cursor:pointer;flex-shrink:0;">✕</button>
     </div>`;
   }).join('') : `<div style="color:var(--subtext);font-size:14px;padding:6px 2px 10px;">Nothing running. Tap a robot below to start timing it.</div>`;
+  // Last time each robot ran each activity (from the logged bot entries), so each
+  // chip can show a "N days ago" pill — spot at a glance which rooms are overdue.
+  const _botLast = {};
+  entries.forEach(e => {
+    if (!e.bot || !e.task) return;
+    const d = _parseEntryDate(e.date); if (!d) return;
+    const k = (e.personnel || '') + '~#~' + e.task, t = d.getTime();
+    if (!_botLast[k] || t > _botLast[k]) _botLast[k] = t;
+  });
   const rosterHtml = agents.map(a => {
     const chips = (a.activities || []).map(act =>
-      `<button onclick="startAgentRun('${a.id}', &quot;${_escHtml(act).replace(/"/g, '&quot;')}&quot;)" style="background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:7px 12px;font-size:13px;color:var(--text);cursor:pointer;">▶ ${_escHtml(act)}</button>`
+      `<button onclick="startAgentRun('${a.id}', &quot;${_escHtml(act).replace(/"/g, '&quot;')}&quot;)" style="background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:7px 12px;font-size:13px;color:var(--text);cursor:pointer;display:inline-flex;align-items:center;gap:6px;">▶ ${_escHtml(act)}${_daysAgoPill(_botLast[a.name + '~#~' + act])}</button>`
     ).join('');
     return `<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:10px;">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
