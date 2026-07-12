@@ -1078,6 +1078,7 @@
   <!-- Filter chips -->
   <div id="dir-filter-bar" style="display:flex;gap:8px;padding:8px 12px;overflow-x:auto;background:var(--card);border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch;scrollbar-width:none;">
     <button id="chip-reminders" onclick="openRemindersOverview()" class="dir-chip" style="color:var(--blue);font-weight:600;">🔔 Reminders</button>
+    <button id="chip-horizon" onclick="openHorizonReview()" class="dir-chip" style="color:var(--blue);font-weight:600;">🗓 Horizon</button>
     <button id="chip-filters" onclick="openDirFilters()" class="dir-chip">⚲ Filter</button>
   </div>
   <div class="scroll-area" id="dir-scroll-area">
@@ -1138,6 +1139,18 @@
       <button onclick="closeModal('modal-reminders-overview')" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Done</button>
     </div>
     <div id="reminders-overview-body" style="overflow-y:auto;margin-top:6px;"></div>
+  </div>
+</div>
+
+<!-- Horizon review: drop jobs into time-sector buckets (This Week / Next Week / …) -->
+<div class="modal-backdrop" id="modal-horizon" style="z-index:400;" onclick="if(event.target===this)closeModal('modal-horizon')">
+  <div class="modal-sheet" style="padding:16px 20px 24px;max-height:85vh;display:flex;flex-direction:column;">
+    <div class="modal-handle"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+      <span id="horizon-title" style="font-size:17px;font-weight:600;">🗓 Horizon</span>
+      <button onclick="closeModal('modal-horizon')" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Done</button>
+    </div>
+    <div id="horizon-body" style="overflow-y:auto;margin-top:6px;"></div>
   </div>
 </div>
 
@@ -2551,7 +2564,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.151';
+const APP_VERSION = '2026-06-21.152';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6184,7 +6197,7 @@ const KR_BACKUP_KEYS = [
   'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
   'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_task_videos', 'kr_checklist_flags', 'kr_task_merges', 'kr_subtask_origin', 'kr_pins_applied',
   'kr_agents', 'kr_agent_runs', 'kr_planner_checklist', 'kr_pin_order', 'kr_subtask_photos', 'kr_job_reminders', 'kr_task_reminders',
-  'kr_task_types', 'kr_job_runs', 'kr_job_flags', 'kr_task_moves'
+  'kr_task_types', 'kr_job_runs', 'kr_job_flags', 'kr_task_moves', 'kr_job_horizon'
 ];
 
 function buildBackupSnapshot() {
@@ -7168,6 +7181,7 @@ function renderDirectory() {
                 ${autoSub}
                 ${usedLine}
                 ${taskAvg[task] ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">⏱ Avg ${fmtMin(taskAvg[task])}</div>` : ''}
+                ${jobHorizon(task) ? `<div style="font-size:12px;color:#5ac8fa;margin-top:2px;">🗓 ${_horizonLabel(jobHorizon(task))}</div>` : ''}
                 ${meta.client ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">👤 For ${_escHtml(meta.client)}</div>` : ''}
                 ${meta.location ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">📍 ${meta.location}</div>` : ''}
                 ${equip.length ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${equip.join(', ')}</div>` : ''}
@@ -10463,6 +10477,9 @@ function saveDirTask() {
       // 🚩 Job flag keyed by job name
       const jflags = getJobFlags();
       if (jflags[oldTask]) { jflags[task] = true; delete jflags[oldTask]; saveJobFlags(jflags); }
+      // 🗓 Horizon keyed by job name
+      const jhz = getJobHorizons();
+      if (jhz[oldTask]) { jhz[task] = jhz[oldTask]; delete jhz[oldTask]; saveJobHorizons(jhz); }
       // Merge records reference tasks by name
       const _mg = getTaskMerges(); let _mgCh = false;
       _mg.forEach(m => {
@@ -10573,6 +10590,8 @@ function deleteDirTask() {
     if (runs[task]) { delete runs[task]; saveJobRuns(runs); }
     const jflags = getJobFlags();
     if (jflags[task]) { delete jflags[task]; saveJobFlags(jflags); }
+    const jhz = getJobHorizons();
+    if (jhz[task]) { delete jhz[task]; saveJobHorizons(jhz); }
     // Drop any merge records for this (now-gone) task — can't un-merge into it
     const mg = getTaskMerges();
     const kept = mg.filter(m => m.primary !== task && m.secondary !== task);
@@ -11152,6 +11171,64 @@ let _dtRects = [];
 let _dtStartY = 0;
 let _dtScrollInterval = null;
 
+// ── Horizon (Carl Pullein time-sector triage): drop jobs into "when it needs
+// attention" buckets, re-sorted in the weekly review. Opt-in + device-local
+// (kr_job_horizon, keyed by job name); recurring routines can stay Unsorted.
+const _HORIZONS = [
+  { key: 'this-week',  label: 'This Week' },
+  { key: 'next-week',  label: 'Next Week' },
+  { key: 'this-month', label: 'This Month' },
+  { key: 'next-month', label: 'Next Month' },
+  { key: 'long-term',  label: 'Long Term' },
+  { key: 'on-hold',    label: 'On Hold' },
+];
+function _horizonLabel(k) { const h = _HORIZONS.find(x => x.key === k); return h ? h.label : ''; }
+function getJobHorizons() { try { return JSON.parse(localStorage.getItem('kr_job_horizon') || '{}') || {}; } catch (e) { return {}; } }
+function saveJobHorizons(o) { return _safeSetItem('kr_job_horizon', JSON.stringify(o)); }
+function jobHorizon(job) { return getJobHorizons()[job] || ''; }
+function setJobHorizon(job, key) {
+  const all = getJobHorizons();
+  if (key) all[job] = key; else delete all[job];
+  if (!saveJobHorizons(all)) return;
+  renderHorizonBoard();
+  renderDirectory();
+  showToast(key ? '🗓 ' + _horizonLabel(key) : 'Unsorted');
+}
+function openHorizonReview() { renderHorizonBoard(); openModal('modal-horizon'); }
+function _hzSection(title, rows, color) {
+  return `<div style="font-size:11px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:${color};margin:12px 0 4px;">${title}</div>` + rows;
+}
+function renderHorizonBoard() {
+  const body = document.getElementById('horizon-body'); if (!body) return;
+  document.getElementById('horizon-title').textContent = '🗓 Horizon';
+  const jobs = [...new Set(DIRECTORY.map(r => r.task).filter(Boolean))].sort((a, b) => a.toLowerCase() < b.toLowerCase() ? -1 : 1);
+  if (!jobs.length) { body.innerHTML = `<div style="padding:24px 8px;text-align:center;color:var(--subtext);">No jobs yet.</div>`; return; }
+  const hz = getJobHorizons();
+  const byBucket = {}; _HORIZONS.forEach(h => byBucket[h.key] = []);
+  const unsorted = [];
+  jobs.forEach(j => { const k = hz[j]; if (k && byBucket[k]) byBucket[k].push(j); else unsorted.push(j); });
+  const jobRow = j => {
+    const jarg = j.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return `<div onclick="pickHorizonFor('${jarg}')" style="display:flex;align-items:center;gap:10px;padding:11px 2px;border-bottom:1px solid var(--border);cursor:pointer;">
+      <span style="flex:1;min-width:0;font-size:15px;color:var(--text);">${_escHtml(j)}</span>
+      <span style="color:var(--blue);font-size:13px;font-weight:600;">Move ›</span></div>`;
+  };
+  let html = `<div style="font-size:12px;color:var(--subtext);padding:2px 2px 10px;line-height:1.45;">Work down your jobs and drop each into a bucket. Recurring routines can stay Unsorted. Re-sort in your weekly review.</div>`;
+  if (unsorted.length) html += _hzSection('Unsorted · ' + unsorted.length, unsorted.map(jobRow).join(''), '#8b93a7');
+  _HORIZONS.forEach(h => { if (byBucket[h.key].length) html += _hzSection(h.label + ' · ' + byBucket[h.key].length, byBucket[h.key].map(jobRow).join(''), 'var(--blue)'); });
+  body.innerHTML = html;
+}
+function pickHorizonFor(job) {
+  document.getElementById('horizon-title').textContent = 'When for this job?';
+  const jarg = job.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const cur = jobHorizon(job);
+  const opt = (k, label) => `<div onclick="setJobHorizon('${jarg}','${k}')" style="display:flex;align-items:center;justify-content:space-between;padding:14px 2px;border-bottom:1px solid var(--border);cursor:pointer;">
+    <span style="font-size:15px;color:var(--text);">${label}</span>${cur === k ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}</div>`;
+  document.getElementById('horizon-body').innerHTML =
+    `<div onclick="renderHorizonBoard()" style="font-size:13px;color:var(--blue);font-weight:600;padding:6px 2px 8px;cursor:pointer;">‹ Back</div>`
+    + `<div style="font-size:14px;color:var(--text);font-weight:600;padding:2px 2px 10px;">${_escHtml(job)}</div>`
+    + _HORIZONS.map(h => opt(h.key, h.label)).join('') + opt('', 'Unsorted (clear)');
+}
 // ── Job flags: swipe a job right to 🚩 float it into the Flagged section at the
 // top of the Jobs list, where it can be dragged into the order you'll work it in.
 // Device-local; never touches DIRECTORY or sync. Mirrors the to-do / task gesture.
