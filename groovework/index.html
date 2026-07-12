@@ -2564,7 +2564,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.152';
+const APP_VERSION = '2026-06-21.153';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6863,12 +6863,12 @@ function updateRestoreClockBanner() {
 let _dirEditingKey = null; // "frequency|group|task" key for editing
 
 // ── Directory filters ──
-const _dirFilters = { freq: null, group: null, location: null, equip: null, client: null };
+const _dirFilters = { freq: null, group: null, location: null, equip: null, client: null, horizon: null };
 let _dirFilterType = null;
 
 function openDirFilter(type) {
   _dirFilterType = type;
-  const titles = { freq: 'Frequency', group: 'Area', location: 'Location', equip: 'Equipment', client: 'For' };
+  const titles = { freq: 'Frequency', group: 'Area', location: 'Location', equip: 'Equipment', client: 'For', horizon: 'Horizon' };
   document.getElementById('dir-filter-title').textContent = titles[type];
 
   // Build option list from current DIRECTORY
@@ -6889,6 +6889,9 @@ function openDirFilter(type) {
     if (options.length === 0) options = [...inUse].sort();
   } else if (type === 'client') {
     options = getAllClients();
+  } else if (type === 'horizon') {
+    const used = new Set(Object.values(getJobHorizons()));
+    options = _HORIZONS.filter(h => used.has(h.key)).map(h => h.label);
   }
 
   const current = _dirFilters[type];
@@ -6919,6 +6922,7 @@ function clearDirFilter() {
 // One "⚲ Filter" button opens a sheet with every dimension — no more sideways
 // chip scroll, and it scales to any number of dimensions.
 const _DIR_FILTER_DIMS = [
+  { type: 'horizon', label: 'Horizon' },
   { type: 'freq', label: 'Repeats' },
   { type: 'group', label: 'Area' },
   { type: 'client', label: 'For' },
@@ -7076,6 +7080,7 @@ function renderDirectory() {
     if (_dirFilters.location && r.location  !== _dirFilters.location) return false;
     if (_dirFilters.equip    && r.equipment !== _dirFilters.equip)    return false;
     if (_dirFilters.client   && (r.client || '') !== _dirFilters.client) return false;
+    if (_dirFilters.horizon  && _horizonLabel(jobHorizon(r.task)) !== _dirFilters.horizon) return false;
     if (searchTerm) {
       const subs = (SUBTASKS[r.task] || []).join(' ');
       const todos = (_dirAllNotes[r.task] || []).map(n => n.text).join(' ');   // pinned To-dos are searchable too
