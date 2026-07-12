@@ -2564,7 +2564,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.153';
+const APP_VERSION = '2026-06-21.154';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -11199,7 +11199,8 @@ function setJobHorizon(job, key) {
   renderDirectory();
   showToast(key ? '🗓 ' + _horizonLabel(key) : 'Unsorted');
 }
-function openHorizonReview() { renderHorizonBoard(); openModal('modal-horizon'); }
+let _horizonScroll = 0;   // remember your place in the list across a triage
+function openHorizonReview() { _horizonScroll = 0; renderHorizonBoard(); openModal('modal-horizon'); }
 function _hzSection(title, rows, color) {
   return `<div style="font-size:11px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:${color};margin:12px 0 4px;">${title}</div>` + rows;
 }
@@ -11222,8 +11223,10 @@ function renderHorizonBoard() {
   if (unsorted.length) html += _hzSection('Unsorted · ' + unsorted.length, unsorted.map(jobRow).join(''), '#8b93a7');
   _HORIZONS.forEach(h => { if (byBucket[h.key].length) html += _hzSection(h.label + ' · ' + byBucket[h.key].length, byBucket[h.key].map(jobRow).join(''), 'var(--blue)'); });
   body.innerHTML = html;
+  body.scrollTop = _horizonScroll;   // stay where you were after a triage
 }
 function pickHorizonFor(job) {
+  const _b = document.getElementById('horizon-body'); if (_b) _horizonScroll = _b.scrollTop;
   document.getElementById('horizon-title').textContent = 'When for this job?';
   const jarg = job.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const cur = jobHorizon(job);
