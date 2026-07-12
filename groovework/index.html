@@ -2565,7 +2565,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.156';
+const APP_VERSION = '2026-06-21.157';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -10785,17 +10785,17 @@ function startRobotTick() {
 }
 function stopRobotTick() { clearInterval(_robotInterval); _robotInterval = null; }
 
-// A small "N days ago" pill for a robot activity's last run. Green when fresh
-// (≤7 days), blue when it's getting stale; nothing if it's never been run.
-function _daysAgoPill(ts) {
-  if (!ts) return '';
-  const d0 = new Date(ts); d0.setHours(0, 0, 0, 0);
+// A small pill for a robot activity's last run: "N days ago · how long it took".
+// Green when fresh (≤7 days), blue when getting stale; nothing if never run.
+function _daysAgoPill(rec) {
+  if (!rec || !rec.ts) return '';
+  const d0 = new Date(rec.ts); d0.setHours(0, 0, 0, 0);
   const t0 = new Date(); t0.setHours(0, 0, 0, 0);
   const days = Math.floor((t0 - d0) / 86400000);
-  const label = days <= 0 ? 'today' : days === 1 ? '1d ago' : days + 'd ago';
-  const fresh = days <= 7;
-  const col = fresh ? '48,209,88' : '90,200,250';
-  return `<span style="font-size:11px;font-weight:700;padding:1px 6px;border-radius:9px;background:rgba(${col},0.2);color:rgb(${col});white-space:nowrap;">${label}</span>`;
+  const when = days <= 0 ? 'today' : days === 1 ? '1d ago' : days + 'd ago';
+  const dur = (rec.mins > 0) ? ' · ' + fmtMin(rec.mins) : '';
+  const col = days <= 7 ? '48,209,88' : '90,200,250';
+  return `<span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:9px;background:rgba(${col},0.2);color:rgb(${col});white-space:nowrap;flex-shrink:0;">${when}${dur}</span>`;
 }
 
 function renderRobotsScreen() {
@@ -10824,11 +10824,13 @@ function renderRobotsScreen() {
     if (!e.bot || !e.task) return;
     const d = _parseEntryDate(e.date); if (!d) return;
     const k = (e.personnel || '') + '~#~' + e.task, t = d.getTime();
-    if (!_botLast[k] || t > _botLast[k]) _botLast[k] = t;
+    if (!_botLast[k] || t > _botLast[k].ts) _botLast[k] = { ts: t, mins: Math.round((e.durationHours || 0) * 60) };
   });
   const rosterHtml = agents.map(a => {
+    // One action per line: name on the left, "N days ago · how long" pill on the right.
     const chips = (a.activities || []).map(act =>
-      `<button onclick="startAgentRun('${a.id}', &quot;${_escHtml(act).replace(/"/g, '&quot;')}&quot;)" style="background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:7px 12px;font-size:13px;color:var(--text);cursor:pointer;display:inline-flex;align-items:center;gap:6px;">▶ ${_escHtml(act)}${_daysAgoPill(_botLast[a.name + '~#~' + act])}</button>`
+      `<button onclick="startAgentRun('${a.id}', &quot;${_escHtml(act).replace(/"/g, '&quot;')}&quot;)" style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-size:14px;color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;text-align:left;">
+        <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">▶ ${_escHtml(act)}</span>${_daysAgoPill(_botLast[a.name + '~#~' + act])}</button>`
     ).join('');
     return `<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:10px;">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
@@ -10836,7 +10838,7 @@ function renderRobotsScreen() {
         <span style="flex:1;font-size:16px;font-weight:600;color:var(--text);">${_escHtml(a.name)}</span>
         <button onclick="openAgentEdit('${a.id}')" style="background:none;border:none;color:var(--blue);font-size:14px;cursor:pointer;">Edit</button>
       </div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;">${chips}<button onclick="startAgentPrompt('${a.id}')" style="background:none;border:1px dashed var(--border);border-radius:16px;padding:7px 12px;font-size:13px;color:var(--subtext);cursor:pointer;">＋ Other…</button></div>
+      <div style="display:flex;flex-direction:column;gap:6px;">${chips}<button onclick="startAgentPrompt('${a.id}')" style="background:none;border:1px dashed var(--border);border-radius:12px;padding:10px 14px;font-size:14px;color:var(--subtext);cursor:pointer;width:100%;text-align:left;">＋ Other…</button></div>
     </div>`;
   }).join('');
   // Pin "Running now" to the top so you can Stop a robot while scrolling the roster.
