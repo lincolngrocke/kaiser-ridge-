@@ -838,7 +838,7 @@
     -webkit-user-select: none;
     z-index: 2;
   }
-  .planner-block-title { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .planner-block-title { font-size: 12px; font-weight: 700; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; line-height: 1.2; }
   .planner-block-meta { font-size: 10px; opacity: 0.85; margin-top: 2px; }
   .planner-now-line {
     position: absolute;
@@ -1653,6 +1653,19 @@
   </div>
 </div>
 
+<!-- Robots: stop a run at an earlier time (forgot to hit Stop) -->
+<div class="modal-backdrop" id="modal-agent-stop" style="z-index:360;">
+  <div class="modal-sheet" style="padding:16px 20px 24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <button onclick="closeModal('modal-agent-stop')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;">Cancel</button>
+      <span style="font-size:17px;font-weight:600;">Stop at an earlier time</span>
+      <button onclick="saveAgentRunStop()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Stop</button>
+    </div>
+    <div style="font-size:13px;color:var(--subtext);margin-bottom:10px;line-height:1.45;">Forgot to hit Stop? Set when it actually finished — it logs to your Timesheets ending then.</div>
+    <input type="time" id="agent-stop-input" style="width:100%;font-size:20px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);-webkit-appearance:none;">
+  </div>
+</div>
+
 <!-- Robots: add / edit -->
 <div class="modal-backdrop" id="modal-robot-edit" style="z-index:360;">
   <div class="modal-sheet" style="padding:16px 20px 24px;">
@@ -2406,8 +2419,8 @@
 
 <!-- ══════════════ EQUIPMENT DETAIL · NOTES & FILES ══════════════ -->
 <div class="modal-backdrop" id="modal-equipment-detail" style="z-index:600;">
-  <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:92vh;display:flex;flex-direction:column;">
-    <div style="display:flex;align-items:center;padding:16px 20px 8px;border-bottom:1px solid var(--border);">
+  <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:85vh;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;padding:calc(14px + env(safe-area-inset-top)) 20px 8px;border-bottom:1px solid var(--border);">
       <button onclick="closeModal('modal-equipment-detail')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:0;margin-right:12px;">‹ Back</button>
       <span id="equip-detail-title" style="font-size:17px;font-weight:600;flex:1;text-align:center;">Equipment</span>
       <button onclick="closeModal('modal-equipment-detail')" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;padding:0;width:60px;text-align:right;">Done</button>
@@ -2565,7 +2578,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.157';
+const APP_VERSION = '2026-06-21.158';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -10732,6 +10745,38 @@ function saveAgentRunStart() {
   renderRobotsScreen();
   showToast('Start updated ✓');
 }
+// Stop a running robot at an EARLIER time — for when you forgot to hit Stop and it
+// kept counting. Logs the run ending at the chosen time instead of now.
+let _agentStopRunId = null;
+function stopAgentRunEarlier(runId) {
+  const run = getAgentRuns().find(r => r.runId === runId);
+  if (!run) return;
+  _agentStopRunId = runId;
+  document.getElementById('agent-stop-input').value = _agHM(new Date());
+  openModal('modal-agent-stop');
+}
+function saveAgentRunStop() {
+  const v = document.getElementById('agent-stop-input').value;
+  if (!v) { showToast('Pick a time'); return; }
+  const runs = getAgentRuns();
+  const i = runs.findIndex(r => r.runId === _agentStopRunId);
+  if (i < 0) { closeModal('modal-agent-stop'); return; }
+  const run = runs[i];
+  const [h, m] = v.split(':').map(Number);
+  const d = new Date(run.startMs);   // end lands on the run's day (handles crossing midnight)
+  d.setHours(h, m, 0, 0);
+  let endMs = d.getTime();
+  if (endMs < run.startMs) endMs += 24 * 3600000;   // a time before the start = next day
+  if (endMs > Date.now()) endMs = Date.now();       // never log into the future
+  if (endMs <= run.startMs) { showToast('End must be after the start'); return; }
+  _logAgentEntry({ agentId: run.agentId, activity: run.activity }, run.startMs, endMs);
+  runs.splice(i, 1); saveAgentRuns(runs);
+  const a = agentById(run.agentId);
+  closeModal('modal-agent-stop');
+  renderRobotsScreen(); updateRobotBadge();
+  if (document.getElementById('screen-timesheets').classList.contains('active')) renderTimesheets();
+  showToast('Logged ' + (a ? a.name : 'robot') + ' · ' + run.activity + ' ✓');
+}
 // Append a robot run as a normal timesheet entry (syncs via the usual path).
 function _logAgentEntry(run, startMs, endMs, note) {
   const a = agentById(run.agentId) || { name: 'Robot', emoji: '🤖' };
@@ -10810,7 +10855,7 @@ function renderRobotsScreen() {
       <div style="flex:1;min-width:0;">
         <div style="font-size:16px;font-weight:600;color:var(--text);">${_escHtml(a.name)}</div>
         <div style="font-size:13px;color:var(--subtext);">${_escHtml(r.activity)}</div>
-        <div style="font-size:12px;color:var(--subtext);margin-top:3px;">▶ ${formatTimeAmPm(_agHM(new Date(r.startMs)))} · <span onclick="editAgentRunStart('${r.runId}')" style="color:var(--blue);cursor:pointer;font-weight:600;">set earlier</span></div>
+        <div style="font-size:12px;color:var(--subtext);margin-top:3px;">▶ ${formatTimeAmPm(_agHM(new Date(r.startMs)))} · <span onclick="editAgentRunStart('${r.runId}')" style="color:var(--blue);cursor:pointer;font-weight:600;">start earlier</span> · <span onclick="stopAgentRunEarlier('${r.runId}')" style="color:var(--blue);cursor:pointer;font-weight:600;">stop earlier</span></div>
       </div>
       <span class="robot-elapsed" data-start="${r.startMs}" style="font-size:16px;font-weight:700;color:var(--green);font-variant-numeric:tabular-nums;flex-shrink:0;">${_agElapsed(Date.now() - r.startMs)}</span>
       <button onclick="stopAgentRun('${r.runId}')" style="background:var(--red);color:#fff;border:none;border-radius:20px;padding:8px 14px;font-size:14px;font-weight:600;cursor:pointer;flex-shrink:0;">Stop</button>
