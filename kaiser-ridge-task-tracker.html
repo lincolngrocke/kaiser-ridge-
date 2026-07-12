@@ -1056,6 +1056,7 @@
     <div style="display:flex;align-items:center;gap:8px;">
       <div class="header-title" id="dir-header-title">Jobs</div>
       <div id="dir-freq-badge" style="display:none;background:var(--blue);color:#fff;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;letter-spacing:0.3px;text-transform:uppercase;"></div>
+      <span id="dir-job-count" style="font-size:13px;font-weight:600;color:var(--subtext);"></span>
     </div>
     <button id="dir-add-btn" onclick="dirAddButtonClick()" style="background:var(--blue);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:14px;font-weight:600;cursor:pointer;">+ Add</button>
   </div>
@@ -2564,7 +2565,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.154';
+const APP_VERSION = '2026-06-21.155';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -7090,6 +7091,17 @@ function renderDirectory() {
     return true;
   });
 
+  // Job count in the header — reflects active filters/search, so a "This Week"
+  // filter turns it into a workload gauge for the weekly planning session.
+  const _cntEl = document.getElementById('dir-job-count');
+  if (_cntEl) {
+    const _nJobs = new Set(visibleDir.map(r => r.task).filter(Boolean)).size;
+    const _filtered = Object.values(_dirFilters).some(Boolean) || !!searchTerm;
+    _cntEl.textContent = _nJobs + ' job' + (_nJobs === 1 ? '' : 's');
+    _cntEl.style.color = _filtered ? 'var(--blue)' : 'var(--subtext)';
+    _cntEl.style.display = 'inline';
+  }
+
   // Group by (effective) frequency → group → task. The data-key for editing
   // keeps the ORIGINAL frequency so look-ups still hit the real DIRECTORY row.
   const grouped = {};
@@ -10986,6 +10998,8 @@ function setDirMode(mode) {
   document.getElementById('dir-filter-bar').style.display = isProjects ? 'none' : '';
   const badge = document.getElementById('dir-freq-badge');
   if (isProjects && badge) badge.style.display = 'none';
+  const cnt = document.getElementById('dir-job-count');
+  if (cnt && isProjects) cnt.style.display = 'none';
   // Lists
   document.getElementById('dir-list').style.display = isProjects ? 'none' : '';
   document.getElementById('dir-projects-list').style.display = isProjects ? 'block' : 'none';
