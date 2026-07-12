@@ -2551,7 +2551,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.150';
+const APP_VERSION = '2026-06-21.151';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3062,7 +3062,7 @@ function clockOut(overrideTime) {
           const doneSteps = (clockState.stepDone || []).filter(x => x.item === d.item);
           stepStr = ` — ${doneSteps.length}/${totalSteps} steps` + (doneSteps.length ? ': ' + doneSteps.map(x => x.step).join('; ') : '');
         }
-        return `[${t}] (${fmtMin(dur[_occKey(d)])}) ${d.lap ? 'Lap ' + d.lap + ' · ' : ''}${d.item}${stepStr}`;
+        return `[${t}] (${fmtMin(dur[_occKey(d)])}) ${(d.rep || d.lap) ? 'Lap ' + (d.rep || d.lap) + ' · ' : ''}${d.item}${stepStr}`;
       });
     const block = lines.join('\n');
     entry.notes = entry.notes ? entry.notes + '\n' + block : block;
@@ -3316,81 +3316,46 @@ function _sessionOrGlobalOrder(task) {
 // Laps live on a RUN, which spans clock sessions and only ends when you wave the
 // chequered flag — so "Load #3" follows "Load #2" across a midnight.
 const _LAPSEP = '\u0002';
-function _occKey(d) { return (d && d.lap) ? d.item + _LAPSEP + d.lap : (d ? d.item : ''); }
+function _occKey(d) { const r = d && (d.rep || d.lap); return r ? d.item + _LAPSEP + r : (d ? d.item : ''); }
 function _stripLap(k) { const i = String(k).indexOf(_LAPSEP); return i < 0 ? String(k) : String(k).slice(0, i); }
 
 function getTaskTypes() { try { return JSON.parse(localStorage.getItem('kr_task_types') || '{}') || {}; } catch (e) { return {}; } }
 function saveTaskTypes(o) { return _safeSetItem('kr_task_types', JSON.stringify(o)); }
 function _taskTypeKey(job, task) { return job + '\u0001' + task; }
-function taskTypeOf(job, task) { return getTaskTypes()[_taskTypeKey(job, task)] || 'once'; }
-function _lapItemsOfType(job, type) { const t = getTaskTypes(); return (SUBTASKS[job] || []).filter(s => (t[_taskTypeKey(job, s)] || 'once') === type); }
-function _lapRequiredItems(job) { return _lapItemsOfType(job, 'lap'); }
-function jobHasLaps(job) { return _lapRequiredItems(job).length > 0; }
-// An 'optional' task in a job with no 'lap' tasks has nothing to repeat against, so it
-// simply behaves as 'once'. Keeps a half-configured job sane.
-function _taskUsesLaps(job, item) { return jobHasLaps(job) && taskTypeOf(job, item) !== 'once'; }
+// Legacy 'lap'/'optional' both collapse to the single 'repeat' type.
+function taskTypeOf(job, task) { const t = getTaskTypes()[_taskTypeKey(job, task)]; return (t === 'repeat' || t === 'lap' || t === 'optional') ? 'repeat' : 'once'; }
+function isRepeatTask(job, task) { return taskTypeOf(job, task) === 'repeat'; }
 
+// Per-task rep counts live on a RUN (kr_job_runs) so they carry across clock sessions:
+// clock in tomorrow and "Load truck" resumes at rep 3 (= Load #3). Reset to start fresh.
 function getJobRuns() { try { return JSON.parse(localStorage.getItem('kr_job_runs') || '{}') || {}; } catch (e) { return {}; } }
 function saveJobRuns(o) { return _safeSetItem('kr_job_runs', JSON.stringify(o)); }
-function getRun(job) { return getJobRuns()[job] || null; }
-function currentLap(job) { const r = getRun(job); return (r && r.lap) ? r.lap : 1; }
-function ensureRun(job) {
+function taskRepCount(job, task) { const r = getJobRuns()[job]; return (r && r.reps && r.reps[task]) || 0; }
+function _bumpTaskRep(job, task, delta) {
   const all = getJobRuns();
-  if (!all[job]) { all[job] = { job, lap: 1, startedAt: new Date().toISOString(), lapDone: {} }; saveJobRuns(all); }
-  return all[job];
-}
-// lapDone lives on the RUN (not clockState) so a lap half-finished at knock-off is
-// still half-finished when you clock in tomorrow.
-function _lapDoneHas(job, item) { const r = getRun(job); return !!(r && r.lapDone && r.lapDone[item]); }
-function _setLapDone(job, item, at) {
-  const all = getJobRuns(); if (!all[job]) return;
-  if (!all[job].lapDone) all[job].lapDone = {};
-  if (at) all[job].lapDone[item] = at; else delete all[job].lapDone[item];
+  const r = all[job] || (all[job] = { job, reps: {}, startedAt: new Date().toISOString() });
+  if (!r.reps) r.reps = {};
+  const n = Math.max(0, (r.reps[task] || 0) + delta);
+  if (n > 0) r.reps[task] = n; else delete r.reps[task];
+  if (!Object.keys(r.reps).length) delete all[job];   // run empty → drop it
   saveJobRuns(all);
+  return n;
 }
-// Only 'lap' tasks decide when a lap is done — 'optional' never blocks it.
-function lapComplete(job) {
-  const req = _lapRequiredItems(job);
-  return req.length > 0 && req.every(s => _lapDoneHas(job, s));
-}
-// Ticked right now? 'once' = once this session; lap/optional = done on THIS lap.
-function _isTaskDoneNow(job, item, done) {
-  if (!_taskUsesLaps(job, item)) return done.some(d => d.item === item && !d.lap);
-  return _lapDoneHas(job, item);
-}
-// Minutes attributable to one lap this session (its completions' chained durations).
-function _lapMinutes(lap) {
-  if (!clockState || !Array.isArray(clockState.checklistDone)) return 0;
-  const dur = _checklistDurations();
-  return clockState.checklistDone.filter(d => d.lap === lap)
-    .reduce((sum, d) => sum + (dur[_occKey(d)] || 0), 0);
-}
-function startNextLapClick() {
-  const job = clockState && clockState.task; if (!job) return;
-  const all = getJobRuns(); const r = all[job]; if (!r) return;
-  const finished = r.lap;
-  const mins = _lapMinutes(finished);
-  r.lap = finished + 1; r.lapDone = {};
-  saveJobRuns(all);
-  // Re-arm the per-lap tasks' sub-steps too, so lap 2 starts with clean steps.
-  if (clockState.stepChecks) {
-    _lapRequiredItems(job).concat(_lapItemsOfType(job, 'optional')).forEach(s => { delete clockState.stepChecks[s]; });
-    _safeSetItem('kr_clock', JSON.stringify(clockState));
-  }
-  renderRunChecklist();
-  showToast('🏁 Lap ' + finished + ' done' + (mins ? ' · ' + fmtMin(mins) : '') + ' — Lap ' + r.lap + ' started');
-}
+function jobHasReps(job) { const r = getJobRuns()[job]; return !!(r && r.reps && Object.keys(r.reps).length); }
+function resetRun(job) { const all = getJobRuns(); if (all[job]) { delete all[job]; saveJobRuns(all); } }
 function finishRunPrompt() {
   const job = clockState && clockState.task; if (!job) return;
-  const r = getRun(job); if (!r) { showToast('No run in progress'); return; }
-  const laps = lapComplete(job) ? r.lap : r.lap - 1;
-  const msg = 'Finish this run?\n\n' + job + '\n'
-    + (laps > 0 ? laps + ' lap' + (laps === 1 ? '' : 's') + ' completed.' : 'No completed laps yet.')
-    + '\n\nThe next clock-in starts a fresh run at Lap 1.';
-  if (!confirm(msg)) return;
-  const all = getJobRuns(); delete all[job]; saveJobRuns(all);
+  if (!jobHasReps(job)) { showToast('No reps to reset'); return; }
+  if (!confirm('Reset the rep counts for “' + job + '”?\n\nThe timed reps already saved to your timesheet stay put — this just starts the counting fresh (e.g. a new batch).')) return;
+  resetRun(job);
   renderRunChecklist();
-  showToast('🏁 Run finished · ' + laps + ' lap' + (laps === 1 ? '' : 's'));
+  showToast('↺ Reps reset');
+}
+// A 'once' task is "done" when ticked this session; a 'repeat' task is never removed
+// from the list (it stays so you can tick it again) — its state is its rep count.
+function _isTaskDoneNow(job, item, done) {
+  if (isRepeatTask(job, item)) return false;
+  return done.some(d => d.item === item && !d.rep && !d.lap);
 }
 
 function _checklistItemLastDone(job) {
@@ -3439,24 +3404,31 @@ function markChecklistItemDone(item) {
   if (!clockState || !clockState.running) return;
   if (!Array.isArray(clockState.checklistDone)) clockState.checklistDone = [];
   const job = clockState.task;
-  // 'once' tasks are stamped without a lap (old shape, old behaviour). Per-lap tasks
-  // are stamped with the run's current lap, so the same task can be done every lap.
-  const usesLaps = _taskUsesLaps(job, item);
-  if (usesLaps) ensureRun(job);
-  const lap = usesLaps ? currentLap(job) : null;
-  const i = clockState.checklistDone.findIndex(d => d.item === item && (lap ? d.lap === lap : !d.lap));
-  if (i >= 0) {                                                        // tap again to untick
-    clockState.checklistDone.splice(i, 1);
-    if (lap) _setLapDone(job, item, null);
-    _setTaskReminderDone(job, item, false);
-  } else {
-    const at = new Date().toISOString();
-    const rec = { item, at }; if (lap) rec.lap = lap;
-    clockState.checklistDone.push(rec);
-    _expandedChecklistItems.delete(item);
-    if (lap) _setLapDone(job, item, at);
+  if (isRepeatTask(job, item)) {
+    // Repeatable task: each tap adds a rep (count carries across sessions on the run),
+    // logs a timed completion, and the task STAYS in the list so you can tap again.
+    const rep = _bumpTaskRep(job, item, +1);
+    clockState.checklistDone.push({ item, at: new Date().toISOString(), rep });
     _setTaskReminderDone(job, item, true);
+  } else {
+    // 'Once' task: tap to tick, tap again to untick (stamped without a rep).
+    const i = clockState.checklistDone.findIndex(d => d.item === item && !d.rep && !d.lap);
+    if (i >= 0) { clockState.checklistDone.splice(i, 1); _setTaskReminderDone(job, item, false); }
+    else { clockState.checklistDone.push({ item, at: new Date().toISOString() }); _expandedChecklistItems.delete(item); _setTaskReminderDone(job, item, true); }
   }
+  _safeSetItem('kr_clock', JSON.stringify(clockState));
+  renderRunChecklist();
+}
+// Undo the most recent rep of a repeatable task (drops the count + its timed entry).
+function undoTaskRep(item) {
+  if (!clockState || !clockState.running) return;
+  const job = clockState.task;
+  const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
+  let li = -1; for (let k = done.length - 1; k >= 0; k--) { if (done[k].item === item && done[k].rep) { li = k; break; } }
+  if (li < 0) { _bumpTaskRep(job, item, -1); renderRunChecklist(); return; }   // count from an earlier session
+  done.splice(li, 1);
+  _bumpTaskRep(job, item, -1);
+  if (taskRepCount(job, item) === 0) _setTaskReminderDone(job, item, false);
   _safeSetItem('kr_clock', JSON.stringify(clockState));
   renderRunChecklist();
 }
@@ -3792,7 +3764,7 @@ function _runDoneAllRows() {
   const pinDone = clockState.pinDone || {};
   const dur = _checklistDurations();
   const pins = (getTaskNotes()[clockState.task]) || [];
-  const tasks = done.map(d => ({ kind: 'task', text: (d.lap ? 'Lap ' + d.lap + ' · ' : '') + d.item, at: d.at, dur: dur[_occKey(d)] }));
+  const tasks = done.map(d => ({ kind: 'task', text: ((d.rep || d.lap) ? 'Lap ' + (d.rep || d.lap) + ' · ' : '') + d.item, at: d.at, dur: dur[_occKey(d)] }));
   const notes = Object.keys(pinDone).map(id => {
     const p = pins.find(x => x.id === id);
     return { kind: 'note', id, text: p ? p.text : '(removed to-do)', at: pinDone[id], dur: dur['pin:' + id], missing: !p };
@@ -3983,7 +3955,7 @@ function renderRunChecklist() {
   const carried = new Set((clockState && Array.isArray(clockState.checklistCarried)) ? clockState.checklistCarried : []);
   const dur = _checklistDurations();
   const pinDone = (clockState && clockState.pinDone) || {};
-  const tasksDone = items.filter(s => _isTaskDoneNow(clockState.task, s, done) || carried.has(s)).length;
+  const tasksDone = items.filter(s => _isTaskDoneNow(clockState.task, s, done) || carried.has(s) || (isRepeatTask(clockState.task, s) && taskRepCount(clockState.task, s) > 0)).length;
   const notesDone = pinned.filter(p => pinDone[p.id]).length;
 
   // Segmented Tasks / To-dos — always shown while clocked in. Auto-pick the tab
@@ -4027,23 +3999,19 @@ function renderRunChecklist() {
       const _allExp = _expandableTasks.every(s => _expandedChecklistItems.has(s));
       expandLink = `<span onclick="toggleAllTasksExpanded()" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">${_allExp ? '⤡ Collapse all' : '⤢ Expand all'}</span>`;
     }
-    // 🏁 Lap header — only for lap-based jobs (a job with at least one 'Every lap' task).
-    if (jobHasLaps(clockState.task)) {
-      const _lap = currentLap(clockState.task);
-      const _done = lapComplete(clockState.task);
-      rows += `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0 6px;">
-        <span style="font-size:15px;font-weight:700;color:#e7eaf0;">🏁 Lap ${_lap}</span>
-        <span onclick="finishRunPrompt()" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">Finish run</span>
+    // ↺ Reset reps — subtle, shown once any repeatable task has reps on this run.
+    if (jobHasReps(clockState.task)) {
+      rows += `<div style="display:flex;justify-content:flex-end;padding:2px 0 6px;">
+        <span onclick="finishRunPrompt()" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:12px;">↺ Reset reps</span>
       </div>`;
-      if (_done) {
-        rows += `<button onclick="startNextLapClick()" style="width:100%;margin:2px 0 10px;padding:12px;border:none;border-radius:12px;background:#30d158;color:#05070c;font-size:15px;font-weight:700;cursor:pointer;">▶ Lap ${_lap} complete — start Lap ${_lap + 1}</button>`;
-      }
     }
     rows += items.map(s => {
       const enc = s.replace(/'/g, "\\'");
-      const _ty = taskTypeOf(clockState.task, s);
-      const _tyBadge = (_taskUsesLaps(clockState.task, s))
-        ? `<span title="${_ty === 'lap' ? 'Every lap' : 'Optional — never blocks a lap'}" style="font-size:11px;font-weight:700;flex-shrink:0;color:${_ty === 'lap' ? '#5ac8fa' : '#ffd60a'};">${_ty === 'lap' ? '↻' : '?'}</span>`
+      const _isRep = isRepeatTask(clockState.task, s);
+      const _reps = _isRep ? taskRepCount(clockState.task, s) : 0;
+      // Green count dot on a repeatable task (🔁 N); tap it to undo the last rep.
+      const _tyBadge = _isRep
+        ? `<span onclick="event.stopPropagation();undoTaskRep('${enc}')" title="${_reps} done — tap to undo last" style="flex-shrink:0;min-width:24px;height:22px;padding:0 7px;border-radius:11px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:${_reps ? 'rgba(48,209,88,0.22)' : 'transparent'};border:1px solid ${_reps ? 'rgba(48,209,88,0.6)' : 'rgba(255,255,255,0.22)'};color:${_reps ? '#30d158' : '#8b93a7'};cursor:pointer;">🔁${_reps ? ' ' + _reps : ''}</span>`
         : '';
       const isDone = _isTaskDoneNow(clockState.task, s, done);
       // Ticked this session → vanishes from the active list; it lives in the ✓ chip
@@ -4059,7 +4027,7 @@ function renderRunChecklist() {
       const expanded = _expandedChecklistItems.has(s);
       const checkedCount = steps.filter(st => stepChecks[s] && stepChecks[s][st]).length;
       const flagged = !!clFlags[s];
-      const circle = `<span onclick="markChecklistItemDone('${enc}')" style="width:24px;height:24px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;${isDone ? 'background:#30d158;' : 'border:2px solid rgba(255,255,255,0.28);'}">${isDone ? '<span style="color:#05070c;font-size:14px;">✓</span>' : ''}</span>`;
+      const circle = `<span onclick="markChecklistItemDone('${enc}')" title="${_isRep ? 'Add a rep' : ''}" style="width:24px;height:24px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;${isDone ? 'background:#30d158;' : (_isRep && _reps ? 'border:2px solid rgba(48,209,88,0.6);' : 'border:2px solid rgba(255,255,255,0.28);')}">${isDone ? '<span style="color:#05070c;font-size:14px;">✓</span>' : (_isRep ? '<span style="color:#30d158;font-size:19px;font-weight:700;line-height:1;">+</span>' : '')}</span>`;
       // Long tasks (or tasks with steps) clamp to 2 lines and expand on tap — same
       // as to-dos. Short tasks keep tap-the-text-to-complete. The circle always completes.
       const _longish = s.length > 55;
@@ -8396,9 +8364,8 @@ function renderDirSubtaskList(items) {
   const types = getTaskTypes();
   const _jn = _dirJobName();
   const _TYMETA = {
-    once:     { label: '1×', color: 'var(--subtext)', title: 'Once per day — tap to change' },
-    lap:      { label: '↻',  color: 'var(--blue)',    title: 'Every lap — tap to change' },
-    optional: { label: '?',  color: '#ffd60a',        title: 'Optional / as needed — never blocks a lap' },
+    once:   { label: '1×', color: 'var(--subtext)', title: 'Once — tap to make it repeatable' },
+    repeat: { label: '↻',  color: '#30d158',        title: 'Repeatable — tick it as many times as you do it' },
   };
   // 🚩 Flagged tasks float to the top of the editor — same global flag the running
   // clock uses. Display order only: each row keeps its true index into _subtaskItems,
@@ -8432,7 +8399,7 @@ function renderDirSubtaskList(items) {
       <button onclick="openSubtaskGuide('${enc}')" title="${hasGuide ? 'Edit guide' : 'Add guide'}"
         style="background:none;border:none;color:${hasGuide ? 'var(--blue)' : 'var(--subtext)'};font-size:18px;cursor:pointer;padding:4px 6px;flex-shrink:0;">📋</button>
       ${originBtn}
-      <button onclick="cycleTaskType(${i})" title="${_TYMETA[(_jn && types[_taskTypeKey(_jn, s)]) || 'once'].title}" style="background:none;border:none;color:${_TYMETA[(_jn && types[_taskTypeKey(_jn, s)]) || 'once'].color};font-size:14px;font-weight:700;cursor:pointer;padding:4px 5px;flex-shrink:0;min-width:24px;">${_TYMETA[(_jn && types[_taskTypeKey(_jn, s)]) || 'once'].label}</button>
+      <button onclick="cycleTaskType(${i})" title="${_TYMETA[_jn ? taskTypeOf(_jn, s) : 'once'].title}" style="background:none;border:none;color:${_TYMETA[_jn ? taskTypeOf(_jn, s) : 'once'].color};font-size:14px;font-weight:700;cursor:pointer;padding:4px 5px;flex-shrink:0;min-width:24px;">${_TYMETA[_jn ? taskTypeOf(_jn, s) : 'once'].label}</button>
       <button onclick="openTaskRemindPicker(${i})" title="${_remOn ? 'Reminder active — tap to edit' : 'Set a reminder'}" style="background:${_remOn ? 'rgba(255,214,10,0.18)' : 'none'};border:1px solid ${_remOn ? 'rgba(255,214,10,0.6)' : 'transparent'};border-radius:8px;opacity:${_remOn ? '1' : '0.3'};font-size:15px;line-height:1;cursor:pointer;padding:4px 5px;flex-shrink:0;">🔔</button>
       <button onclick="removeSubtaskItem(${i})" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:4px;flex-shrink:0;">✕</button>
     </div>`;
@@ -9511,19 +9478,18 @@ function clearTaskRemind() {
   updateReminderBanners();
   showToast('Reminder removed');
 }
-// Cycle a task's type: Once per day → Every lap → Optional → Once. The type is a
-// forward-looking property of the template — changing it never rewrites past laps.
+// Toggle a task between Once (1×) and Repeatable (↻). Forward-looking template
+// property — changing it never rewrites past completions.
 function cycleTaskType(i) {
   const job = _dirJobName();
   if (!job) { showToast('Save the job first, then set task types'); return; }
   const s = _subtaskItems[i]; if (!s) return;
   const types = getTaskTypes(); const k = _taskTypeKey(job, s);
-  const cur = types[k] || 'once';
-  const next = cur === 'once' ? 'lap' : cur === 'lap' ? 'optional' : 'once';
-  if (next === 'once') delete types[k]; else types[k] = next;
+  const next = taskTypeOf(job, s) === 'once' ? 'repeat' : 'once';
+  if (next === 'once') delete types[k]; else types[k] = 'repeat';
   if (!saveTaskTypes(types)) return;
   renderDirSubtaskList();
-  showToast(next === 'lap' ? '↻ Every lap' : next === 'optional' ? '? Optional — never blocks a lap' : '1× Once per day');
+  showToast(next === 'repeat' ? '↻ Repeatable — tick it as many times as you do it' : '1× Once');
 }
 
 // ── Move tasks to another job ──────────────────────────────────────────────
