@@ -2422,7 +2422,7 @@
   <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:85vh;display:flex;flex-direction:column;">
     <div style="display:flex;align-items:center;padding:calc(14px + env(safe-area-inset-top)) 20px 8px;border-bottom:1px solid var(--border);">
       <button onclick="closeModal('modal-equipment-detail')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:0;margin-right:12px;">‹ Back</button>
-      <span id="equip-detail-title" style="font-size:17px;font-weight:600;flex:1;text-align:center;">Equipment</span>
+      <span id="equip-detail-title" style="font-size:17px;font-weight:600;flex:1;text-align:center;line-height:1.25;word-break:break-word;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">Equipment</span>
       <button onclick="closeModal('modal-equipment-detail')" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;padding:0;width:60px;text-align:right;">Done</button>
     </div>
     <div style="flex:1;overflow-y:auto;padding:20px;">
@@ -2578,7 +2578,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.160';
+const APP_VERSION = '2026-06-21.161';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -8260,7 +8260,7 @@ function openEquipmentDetailByIndex(i) {
 function openEquipmentDetail(name) {
   _equipDetailName = name;
   document.getElementById('equip-detail-name').value = name;
-  document.getElementById('equip-detail-title').textContent = name.length > 26 ? name.slice(0, 26) + '…' : name;
+  document.getElementById('equip-detail-title').textContent = name;   // wraps to 2 lines; no mid-name truncation
   const ro = isWorker();
   document.getElementById('equip-detail-note-add').style.display = ro ? 'none' : 'flex';
   document.getElementById('equip-detail-link-add').style.display = ro ? 'none' : 'block';
