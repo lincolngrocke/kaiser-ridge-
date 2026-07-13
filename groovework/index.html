@@ -2578,7 +2578,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.159';
+const APP_VERSION = '2026-06-21.160';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -5084,6 +5084,18 @@ function highlightMatch(text, q) {
   const idx = text.toLowerCase().indexOf(q);
   if (idx === -1) return text;
   return text.slice(0, idx) + '<mark>' + text.slice(idx, idx + q.length) + '</mark>' + text.slice(idx + q.length);
+}
+
+// Highlight EVERY match of `term` inside an HTML string, skipping tag internals
+// (so it's safe on linkified text). Same yellow mark the timesheets search uses.
+function _hlSearch(html, term) {
+  const t = (term || '').trim();
+  if (!t || html == null) return html || '';
+  const re = new RegExp('(' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+  return String(html).split(/(<[^>]*>)/).map(chunk =>
+    chunk.charAt(0) === '<' ? chunk
+      : chunk.replace(re, '<mark style="background:#FFD60A;color:#000;border-radius:2px;padding:0 1px;">$1</mark>')
+  ).join('');
 }
 
 function selectSearchedTask(sel) {
@@ -8383,7 +8395,7 @@ function renderEquipmentScreen() {
     const nC = (allNotes[e.name] || []).length, lC = (allLinks[e.name] || []).length;
     return `<div onclick="openEquipmentScreenItem(${i})" style="display:flex;align-items:center;gap:12px;padding:15px 4px;border-bottom:1px solid var(--border);cursor:pointer;">
       <div style="flex:1;min-width:0;">
-        <div style="font-size:16px;color:var(--text);">${escapeHtmlProj(e.name)}</div>
+        <div style="font-size:16px;color:var(--text);">${_hlSearch(escapeHtmlProj(e.name), q)}</div>
         <div style="font-size:12px;color:var(--blue);margin-top:3px;">${equipMetaLabel(nC, lC)}</div>
       </div>
       <span style="color:var(--subtext);font-size:22px;flex-shrink:0;">›</span>
@@ -9224,8 +9236,9 @@ function _inboxNoteRow(n) {
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const st = _inboxState(n);
   const isDone = st === 'done', isAssigned = st === 'assigned';
-  const safe = _linkifyText(n.text);
-  const taskName = n.movedTo ? esc(n.movedTo.replace(/\s*\(pinned · Ethan\)/, ' · Ethan').replace(/\s*\(pinned\)/, '')) : '';
+  const _hlq = (document.getElementById('inbox-search') || {}).value || '';
+  const safe = _hlSearch(_linkifyText(n.text), _hlq);
+  const taskName = n.movedTo ? _hlSearch(esc(n.movedTo.replace(/\s*\(pinned · Ethan\)/, ' · Ethan').replace(/\s*\(pinned\)/, '')), _hlq) : '';
   let meta = 'Caught ' + _inboxStamp(n.ts);
   if (n.editedTs) meta += '　•　✏️ Edited ' + _inboxStamp(n.editedTs);
   if (isDone && n.doneTs) meta += '　•　✓ Done ' + _inboxStamp(n.doneTs);
@@ -9883,7 +9896,7 @@ function renderInboxAssignList() {
       const sel = _inboxAssignSelected.has(t);
       return `<div onclick="toggleInboxAssignTask('${enc}')" style="padding:13px 4px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;align-items:center;gap:10px;">
         <span style="font-size:20px;flex-shrink:0;color:${sel ? 'var(--blue)' : 'var(--subtext)'};">${sel ? '☑' : '☐'}</span>
-        <span style="flex:1;font-size:15px;color:var(--text);">${t.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</span>
+        <span style="flex:1;font-size:15px;color:var(--text);">${_hlSearch(t.replace(/&/g, '&amp;').replace(/</g, '&lt;'), q)}</span>
         <span style="font-size:12px;color:var(--subtext);white-space:nowrap;">${n} item${n === 1 ? '' : 's'}</span>
       </div>`;
     }).join('');
@@ -12667,7 +12680,7 @@ function _pinnedNotesHtml(task, compact, search) {
       const _pinnedTs = (p.caught && p.ts && p.ts !== p.caught) ? p.ts : null;
       const caught = (p.caught || p.ts) ? `<div style="font-size:11px;color:var(--subtext);margin-top:2px;">Caught ${_inboxStamp(p.caught || p.ts)}${_pinnedTs ? ' · 📌 Pinned ' + _inboxStamp(_pinnedTs) : ''}${p.editedTs ? ' · ✏️ Edited ' + _inboxStamp(p.editedTs) : ''}</div>` : '';
       const thumb = _photosHtml(p, compact ? 54 : 90);
-      return `<div class="pin-row" data-pin-id="${p.id}" data-pin-task="${taskAttr}" data-pin-flagged="${p.flagged ? '1' : ''}" ontouchstart="pinSwipeStart(event)" ontouchmove="pinSwipeMove(event)" ontouchend="pinSwipeEnd(event)" style="margin-bottom:8px;padding:8px;border-radius:8px;overflow-wrap:anywhere;${p.flagged ? 'background:rgba(255,214,10,0.12);' : ''}"><span style="font-size:14px;color:#FFD60A;">${p.flagged ? '🚩 ' : ''}📌 ${safe}</span>${caught}${thumb}</div>`;
+      return `<div class="pin-row" data-pin-id="${p.id}" data-pin-task="${taskAttr}" data-pin-flagged="${p.flagged ? '1' : ''}" ontouchstart="pinSwipeStart(event)" ontouchmove="pinSwipeMove(event)" ontouchend="pinSwipeEnd(event)" style="margin-bottom:8px;padding:8px;border-radius:8px;overflow-wrap:anywhere;${p.flagged ? 'background:rgba(255,214,10,0.12);' : ''}"><span style="font-size:14px;color:#FFD60A;">${p.flagged ? '🚩 ' : ''}📌 ${_hlSearch(safe, q)}</span>${caught}${thumb}</div>`;
     }).join('')}
   </div>`;
 }
