@@ -2578,7 +2578,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.161';
+const APP_VERSION = '2026-06-21.162';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -11956,6 +11956,50 @@ function getTaskAvgDuration(taskName) {
   return parseFloat(avg.toFixed(2));
 }
 
+// ── Job time estimate from history (sizes a planner block automatically) ──
+// Per-task average durations in minutes, pooled by normalised task text — the
+// same history behind the ⏱ Checklist Item Times list and the day-view pills.
+function _normTaskKey(s) { return String(s).trim().replace(/\s+/g, ' ').toLowerCase(); }
+function _taskHistAvgMap() {
+  const map = {};
+  _aggregateChecklistTimes().forEach(a => { map[_normTaskKey(a.item)] = a.avg; });
+  return map;
+}
+// Estimate a planner block's duration (minutes) from history.
+//   • Tasks flagged on the block  → sum THOSE tasks' average times (a task with
+//     no history simply adds nothing).
+//   • No flags (or none of the flagged have history) → fall back to the job's
+//     own average clocked duration ("the timed history of that job").
+// Returns { mins, basis:'flagged'|'job', n } or null when there's no history at all.
+function _estimateBlockMins(plan) {
+  if (!plan) return null;
+  const rec = getPlannerChecklist()[plan.id];
+  const flagged = rec && rec.flags ? Object.keys(rec.flags) : [];
+  if (flagged.length) {
+    const map = _taskHistAvgMap();
+    let sum = 0, n = 0;
+    flagged.forEach(item => { const a = map[_normTaskKey(item)]; if (isFinite(a) && a > 0) { sum += a; n++; } });
+    if (sum > 0) return { mins: sum, basis: 'flagged', n };
+  }
+  const jobAvgH = getTaskAvgDuration(plan.task);   // hours
+  if (jobAvgH && jobAvgH > 0) return { mins: jobAvgH * 60, basis: 'job', n: 0 };
+  return null;
+}
+// Auto-fill a block's durationHours from the estimate (kept fully editable).
+// Returns the estimate object, or null when there's no history to size from
+// (the block's current duration is then left untouched).
+function _applyBlockEstimate(planId) {
+  const plan = _plannerPlans.find(p => p.id === planId);
+  if (!plan) return null;
+  const est = _estimateBlockMins(plan);
+  if (!est) return null;
+  plan.durationHours = Math.max(0.05, parseFloat((est.mins / 60).toFixed(2)));
+  savePlanner();
+  const inp = document.getElementById('planner-edit-duration');   // keep the detail popup's field in sync
+  if (inp) inp.value = plan.durationHours;
+  return est;
+}
+
 // Friendly estimate string: "45 min" under an hour, "1.5h" at or above.
 function fmtEstHours(h) {
   if (h >= 1) return (Math.round(h * 10) / 10) + 'h';
@@ -12972,8 +13016,10 @@ function toggleChecklistFlag(task, item) {
     const nowFlagged = !f[item];
     if (f[item]) delete f[item]; else f[item] = Date.now();
     savePlannerChecklist(m);
-    showToast(nowFlagged ? '🚩 Flagged to top' : 'Flag removed');
+    const est = _applyBlockEstimate(pid);   // re-size the block from the flagged tasks' history
+    showToast((nowFlagged ? '🚩 Flagged to top' : 'Flag removed') + (est ? ' · block ~' + fmtMin(est.mins) : ''));
     _renderClOrganiseBody();
+    if (typeof renderPlannerScreen === 'function') renderPlannerScreen();   // reflect the new duration on the timeline behind the sheet
     return;
   }
   const useSession = clockState && clockState.running && clockState.task === task && clockState.flagOverride;
@@ -13032,6 +13078,7 @@ function openChecklistOrganiseForPlan(planId) {
   _clEditScope = 'plan';
   const m = getPlannerChecklist();
   if (!m[planId]) { m[planId] = { flags: { ...(getChecklistFlags()[plan.task] || {}) } }; savePlannerChecklist(m); }
+  _applyBlockEstimate(planId);   // size the block from history on open (flagged sum, else job average)
   document.getElementById('cl-organise-title').textContent = plan.task;
   _renderClOrganiseBody();
   openModal('modal-cl-organise');
@@ -13053,6 +13100,14 @@ function _renderClOrganiseBody() {
       ${[['plan', '📅 This block'], ['job', '🗂 Whole job']].map(([k, l]) => `<div onclick="setClEditScope('${k}')" style="flex:1;text-align:center;padding:8px 6px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;${_clEditScope === k ? 'background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,0.12);' : 'color:var(--subtext);'}">${l}</div>`).join('')}
     </div>
     <div style="font-size:11px;color:var(--subtext);margin-bottom:4px;">${_clEditScope === 'plan' ? 'Arranges just this planned run — the job stays as it is.' : 'Changes this job’s checklist everywhere.'}</div>` : '';
+  let estLine = '';
+  if (_clOrganisePlanId && _clEditScope === 'plan') {
+    const plan = _plannerPlans.find(p => p.id === _clOrganisePlanId);
+    const est = plan ? _estimateBlockMins(plan) : null;
+    estLine = est
+      ? `<div style="margin:10px 0 2px;padding:9px 12px;border-radius:10px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.35);font-size:13px;color:var(--text);">⏱ Block sized to <b>~${fmtMin(est.mins)}</b> · ${est.basis === 'flagged' ? 'from ' + est.n + ' flagged task' + (est.n === 1 ? '' : 's') : 'from this job’s history'}<div style="font-size:11px;color:var(--subtext);margin-top:2px;">Auto-filled from your timed history — you can still edit the block’s duration.</div></div>`
+      : `<div style="margin:10px 0 2px;padding:9px 12px;border-radius:10px;background:rgba(127,127,127,0.1);font-size:12px;color:var(--subtext);">⏱ No timed history yet — flag tasks you’ve timed before (or clock this job once) to size the block automatically.</div>`;
+  }
   const intro = `<div style="font-size:11px;color:var(--subtext);margin:${_clOrganisePlanId ? '8px' : '12px'} 0 8px;">Hold &amp; drag any item to set the order it’s done in · swipe an item right to 🚩 flag it to the top.</div>`;
   const rowHtml = (s) => {
     const isFlagged = !!flags[s];
@@ -13068,7 +13123,7 @@ function _renderClOrganiseBody() {
   const restBlock = rest.length
     ? `<div style="font-size:12px;color:var(--subtext);font-weight:700;text-transform:uppercase;letter-spacing:0.4px;margin:16px 0 8px;">Rest of the tasks</div>${rest.map(rowHtml).join('')}`
     : '';
-  body.innerHTML = scopeToggle + intro + flaggedBlock + restBlock;
+  body.innerHTML = scopeToggle + estLine + intro + flaggedBlock + restBlock;
 }
 
 function openPlannerDetail(planId) {
