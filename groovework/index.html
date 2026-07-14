@@ -2617,7 +2617,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.165';
+const APP_VERSION = '2026-06-21.166';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3069,6 +3069,11 @@ function clockOut(overrideTime) {
   if (!clockState || !clockState.running) return;
   finalizeDonePins();   // fold any ticked-off pinned notes into the entry + clear them
   _satisfyJobReminder(clockState.task);   // clocking out = job done → clear its reminder (daily re-arms tomorrow)
+  // Clocking out = job done → clear this job's 🚩 done-first TASK flags so next run is a
+  // clean slate (flags stay a per-run priority, not a creep to "everything flagged").
+  // To-dos are one-shot and clear themselves when ticked, so their flags are left alone.
+  const _doneFlags = getChecklistFlags();
+  if (_doneFlags[clockState.task]) { delete _doneFlags[clockState.task]; saveChecklistFlags(_doneFlags); }
   let endMs = Date.now();
   if (overrideTime) {
     const now = new Date();
