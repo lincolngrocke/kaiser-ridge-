@@ -737,6 +737,43 @@
     background: #fff; border-radius: 50%; box-shadow: -11px 9px 0 -3px #fff;
   }
   .caught-bubble.pop { display: block; animation: caughtPop 1.5s ease forwards; }
+  /* "Done ✓" bubble that floats up toward the header counter, with an Undo while it floats */
+  @keyframes doneFly {
+    0%   { transform: translate(-50%, 0)     scale(0.5);  opacity: 0; }
+    9%   { transform: translate(-50%, -4vh)  scale(1.08); opacity: 1; }
+    18%  { transform: translate(-50%, -5vh)  scale(1);    opacity: 1; }
+    68%  { transform: translate(-50%, -9vh)  scale(1);    opacity: 1; }
+    100% { transform: translate(-50%, -48vh) scale(0.8);  opacity: 0; }
+  }
+  @keyframes doneHold {
+    0%  { transform: translate(-50%,0) scale(.9); opacity: 0; }
+    6%  { transform: translate(-50%,0) scale(1);  opacity: 1; }
+    88% { transform: translate(-50%,0) scale(1);  opacity: 1; }
+    100%{ transform: translate(-50%,0) scale(1);  opacity: 0; }
+  }
+  .done-fly {
+    position: fixed; left: 50%; top: 56%; transform: translate(-50%, 0);
+    z-index: 820; pointer-events: none; display: flex; align-items: center; gap: 10px;
+    background: #30d158; color: #05070c; font-size: 16px; font-weight: 800; line-height: 1;
+    padding: 12px 14px 12px 18px; border-radius: 24px; white-space: nowrap;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.4), 0 0 0 4px rgba(48,209,88,0.18);
+    animation: doneFly 3s cubic-bezier(.22,.61,.36,1) forwards;
+  }
+  .done-fly-undo {
+    pointer-events: auto; -webkit-tap-highlight-color: transparent;
+    background: rgba(5,7,12,0.16); color: #05070c; border: none; border-radius: 16px;
+    padding: 7px 15px; font-size: 14px; font-weight: 800; cursor: pointer;
+  }
+  @keyframes chipBump {
+    0%   { transform: translate(-50%,-50%) scale(1); }
+    40%  { transform: translate(-50%,-50%) scale(1.3); }
+    100% { transform: translate(-50%,-50%) scale(1); }
+  }
+  .run-done-chip.bump { animation: chipBump .45s ease; }
+  @media (prefers-reduced-motion: reduce) {
+    .done-fly { animation: doneHold 3s linear forwards; }
+    .run-done-chip.bump { animation: none; }
+  }
   .undo-toast button {
     background: rgba(77,163,255,0.16); border: none; color: #6bb6ff; font-size: 16px; font-weight: 800;
     cursor: pointer; padding: 9px 18px; flex-shrink: 0; border-radius: 18px;
@@ -2573,12 +2610,14 @@
 <div class="toast" id="toast"></div>
 <div class="undo-toast" id="undo-toast"><span id="undo-toast-msg"></span><button onclick="_doUndo()">Undo</button></div>
 <div class="caught-bubble" id="caught-bubble">💭 Caught it ✓</div>
+<!-- Haptic experiment: toggling iOS's native switch inside a tap MAY emit the picker-wheel tick (Safari 17.4+; not guaranteed) -->
+<input type="checkbox" id="haptic-tick" switch tabindex="-1" aria-hidden="true" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;pointer-events:none;">
 
 <script>
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.163';
+const APP_VERSION = '2026-06-21.164';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3431,20 +3470,23 @@ function markChecklistItemDone(item) {
   if (!clockState || !clockState.running) return;
   if (!Array.isArray(clockState.checklistDone)) clockState.checklistDone = [];
   const job = clockState.task;
+  let didComplete = false, undoFn = null;
   if (isRepeatTask(job, item)) {
     // Repeatable task: each tap adds a rep (count carries across sessions on the run),
     // logs a timed completion, and the task STAYS in the list so you can tap again.
     const rep = _bumpTaskRep(job, item, +1);
     clockState.checklistDone.push({ item, at: new Date().toISOString(), rep });
     _setTaskReminderDone(job, item, true);
+    didComplete = true; undoFn = () => undoTaskRep(item);
   } else {
     // 'Once' task: tap to tick, tap again to untick (stamped without a rep).
     const i = clockState.checklistDone.findIndex(d => d.item === item && !d.rep && !d.lap);
     if (i >= 0) { clockState.checklistDone.splice(i, 1); _setTaskReminderDone(job, item, false); }
-    else { clockState.checklistDone.push({ item, at: new Date().toISOString() }); _expandedChecklistItems.delete(item); _setTaskReminderDone(job, item, true); }
+    else { clockState.checklistDone.push({ item, at: new Date().toISOString() }); _expandedChecklistItems.delete(item); _setTaskReminderDone(job, item, true); didComplete = true; undoFn = () => markChecklistItemDone(item); }
   }
   _safeSetItem('kr_clock', JSON.stringify(clockState));
   renderRunChecklist();
+  if (didComplete) flyDoneBubble(undoFn);   // dopamine bubble floats up to the counter + Undo while it floats
 }
 // Undo the most recent rep of a repeatable task (drops the count + its timed entry).
 function undoTaskRep(item) {
@@ -6753,6 +6795,36 @@ function showCaughtBubble() {
   b.classList.remove('pop'); void b.offsetWidth; b.classList.add('pop');   // restart the animation
 }
 
+// Best-effort haptic on iOS web: iOS gives its NATIVE controls haptic detents,
+// so toggling a hidden native <input switch> inside a real tap can emit the tick.
+// Unverified across iOS versions; silently does nothing where unsupported.
+function _hapticTick() {
+  try { const s = document.getElementById('haptic-tick'); if (s) s.checked = !s.checked; } catch (e) {}
+}
+// "Done ✓" bubble: pops in, floats up toward the header counter, and offers an
+// Undo the whole time it's floating. onUndo reverses the completion.
+function flyDoneBubble(onUndo) {
+  try {
+    _hapticTick();
+    const host = document.getElementById('running-overlay') || document.body;
+    const b = document.createElement('div');
+    b.className = 'done-fly';
+    b.innerHTML = '<span>Done ✓</span><button class="done-fly-undo" type="button">Undo</button>';
+    host.appendChild(b);
+    let closed = false;
+    const close = (bump) => {
+      if (closed) return; closed = true;
+      b.remove();
+      if (bump) { const chip = document.getElementById('run-done-chip'); if (chip && chip.style.display !== 'none') { chip.classList.remove('bump'); void chip.offsetWidth; chip.classList.add('bump'); } }
+    };
+    b.querySelector('.done-fly-undo').addEventListener('click', (e) => {
+      e.stopPropagation(); close(false); try { onUndo && onUndo(); } catch (_) {}
+    });
+    b.addEventListener('animationend', () => close(true));
+    setTimeout(() => close(true), 3300);   // safety net if animationend doesn't fire
+  } catch (e) {}
+}
+
 // Reusable Undo bar: do the action immediately, then offer ~5s to reverse it.
 // Pass a callback that restores prior state. Drop this onto any delete action.
 let _undoTimer = null, _undoAction = null;
@@ -10047,7 +10119,9 @@ function togglePinnedNote(id) {
   _safeSetItem('kr_clock', JSON.stringify(clockState));
   const _p = (getTaskNotes()[clockState.task] || []).find(x => x.id === id);
   if (_p && _p.inboxId) _setNoteReminderDone(_p.inboxId, !!clockState.pinDone[id]);
+  const nowDone = !!clockState.pinDone[id];
   renderRunChecklist();
+  if (nowDone) flyDoneBubble(() => togglePinnedNote(id));   // Done bubble floats to the counter + Undo
 }
 // At clock-out: for each pinned note ticked done this session, fold it into the
 // entry notes (with its journey), stamp/clear the inbox, and remove the pin.
