@@ -2617,7 +2617,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.164';
+const APP_VERSION = '2026-06-21.165';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3484,6 +3484,7 @@ function markChecklistItemDone(item) {
     if (i >= 0) { clockState.checklistDone.splice(i, 1); _setTaskReminderDone(job, item, false); }
     else { clockState.checklistDone.push({ item, at: new Date().toISOString() }); _expandedChecklistItems.delete(item); _setTaskReminderDone(job, item, true); didComplete = true; undoFn = () => markChecklistItemDone(item); }
   }
+  if (didComplete) _chipHold++;              // hold the counter number until the bubble lands
   _safeSetItem('kr_clock', JSON.stringify(clockState));
   renderRunChecklist();
   if (didComplete) flyDoneBubble(undoFn);   // dopamine bubble floats up to the counter + Undo while it floats
@@ -4045,7 +4046,10 @@ function renderRunChecklist() {
   const sessionDone = done.length + Object.keys(pinDone).length;
   const chip = document.getElementById('run-done-chip');
   if (chip) {
-    if (sessionDone > 0) { chip.style.display = 'flex'; chip.innerHTML = '<span style="font-size:13px;">✓</span>' + sessionDone; }
+    // Hold the increment while a Done bubble is still floating — the number ticks
+    // up only when the bubble lands (see _chipHold / flyDoneBubble), like it's swallowed.
+    const shownN = Math.max(0, sessionDone - _chipHold);
+    if (shownN > 0) { chip.style.display = 'flex'; chip.innerHTML = '<span style="font-size:13px;">✓</span>' + shownN; }
     else chip.style.display = 'none';
   }
 
@@ -6802,7 +6806,10 @@ function _hapticTick() {
   try { const s = document.getElementById('haptic-tick'); if (s) s.checked = !s.checked; } catch (e) {}
 }
 // "Done ✓" bubble: pops in, floats up toward the header counter, and offers an
-// Undo the whole time it's floating. onUndo reverses the completion.
+// Undo the whole time it's floating. onUndo reverses the completion. The counter
+// number is held back (_chipHold) until the bubble LANDS, so it ticks up with the
+// swell — like the task's been swallowed — not the instant you tap.
+let _chipHold = 0;
 function flyDoneBubble(onUndo) {
   try {
     _hapticTick();
@@ -6812,13 +6819,18 @@ function flyDoneBubble(onUndo) {
     b.innerHTML = '<span>Done ✓</span><button class="done-fly-undo" type="button">Undo</button>';
     host.appendChild(b);
     let closed = false;
-    const close = (bump) => {
+    const close = (landed) => {
       if (closed) return; closed = true;
       b.remove();
-      if (bump) { const chip = document.getElementById('run-done-chip'); if (chip && chip.style.display !== 'none') { chip.classList.remove('bump'); void chip.offsetWidth; chip.classList.add('bump'); } }
+      _chipHold = Math.max(0, _chipHold - 1);
+      if (landed && clockState && clockState.running) {
+        renderRunChecklist();   // hold released → the arrived count shows...
+        const chip = document.getElementById('run-done-chip');
+        if (chip && chip.style.display !== 'none') { chip.classList.remove('bump'); void chip.offsetWidth; chip.classList.add('bump'); }  // ...with the swell
+      }
     };
     b.querySelector('.done-fly-undo').addEventListener('click', (e) => {
-      e.stopPropagation(); close(false); try { onUndo && onUndo(); } catch (_) {}
+      e.stopPropagation(); close(false); try { onUndo && onUndo(); } catch (_) {}   // onUndo re-renders with the reverted count
     });
     b.addEventListener('animationend', () => close(true));
     setTimeout(() => close(true), 3300);   // safety net if animationend doesn't fire
@@ -10120,6 +10132,7 @@ function togglePinnedNote(id) {
   const _p = (getTaskNotes()[clockState.task] || []).find(x => x.id === id);
   if (_p && _p.inboxId) _setNoteReminderDone(_p.inboxId, !!clockState.pinDone[id]);
   const nowDone = !!clockState.pinDone[id];
+  if (nowDone) _chipHold++;                  // hold the counter number until the bubble lands
   renderRunChecklist();
   if (nowDone) flyDoneBubble(() => togglePinnedNote(id));   // Done bubble floats to the counter + Undo
 }
