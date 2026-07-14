@@ -2617,7 +2617,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.168';
+const APP_VERSION = '2026-06-21.169';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -10990,6 +10990,45 @@ function _daysAgoPill(rec) {
   return `<span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:9px;background:rgba(${col},0.2);color:rgb(${col});white-space:nowrap;flex-shrink:0;">${when}${dur}</span>`;
 }
 
+let _robotOpen = {};   // agentId → expanded on the roster (default = collapsed to a single line)
+let _robotDrag = null;
+function toggleRobotOpen(id) { _robotOpen[id] = !_robotOpen[id]; renderRobotsScreen(); }
+// Drag a robot card by its ⠿ handle to reorder the roster (tap the row toggles it open).
+function robotDragStart(e, id) {
+  const card = e.currentTarget.closest('.robot-card'); if (!card) return;
+  _robotDrag = { card, moved: false, grabOffset: e.touches[0].clientY - card.getBoundingClientRect().top };
+  card.style.transition = 'none'; card.style.opacity = '0.95'; card.style.boxShadow = '0 6px 16px rgba(0,0,0,0.45)';
+  card.style.position = 'relative'; card.style.zIndex = '5'; card.style.transform = 'scale(1.02)';
+  if (navigator.vibrate) { try { navigator.vibrate(15); } catch (_) {} }
+}
+function robotDragMove(e) {
+  if (!_robotDrag) return;
+  e.preventDefault();
+  _robotDrag.moved = true;
+  const clientY = e.touches[0].clientY, dragged = _robotDrag.card, parent = dragged.parentNode;
+  const others = [...parent.children].filter(c => c.classList && c.classList.contains('robot-card') && c !== dragged);
+  const target = others.find(r => { const b = r.getBoundingClientRect(); return clientY < b.top + b.height / 2; });
+  if (target) parent.insertBefore(dragged, target);
+  else { const last = others[others.length - 1]; if (last) parent.insertBefore(dragged, last.nextSibling); }
+  dragged.style.transform = 'none';
+  dragged.style.transform = 'translateY(' + (clientY - _robotDrag.grabOffset - dragged.getBoundingClientRect().top) + 'px) scale(1.02)';
+}
+function robotDragEnd() {
+  if (!_robotDrag) return;
+  const dragged = _robotDrag.card, parent = dragged.parentNode, moved = _robotDrag.moved;
+  _robotDrag = null;
+  dragged.style.transition = 'transform .15s, box-shadow .15s, opacity .15s';
+  dragged.style.transform = ''; dragged.style.opacity = ''; dragged.style.boxShadow = '';
+  dragged.style.position = ''; dragged.style.zIndex = '';
+  if (!moved) return;
+  const ids = [...parent.children].filter(c => c.classList && c.classList.contains('robot-card')).map(c => c.dataset.agentId);
+  const agents = getAgents(), byId = {};
+  agents.forEach(a => { byId[a.id] = a; });
+  const reordered = ids.map(id => byId[id]).filter(Boolean);
+  agents.forEach(a => { if (ids.indexOf(a.id) < 0) reordered.push(a); });   // keep any card not in the DOM order
+  saveAgents(reordered);
+  renderRobotsScreen();
+}
 function renderRobotsScreen() {
   const body = document.getElementById('robots-body');
   if (!body) return;
@@ -11019,18 +11058,28 @@ function renderRobotsScreen() {
     if (!_botLast[k] || t > _botLast[k].ts) _botLast[k] = { ts: t, mins: Math.round((e.durationHours || 0) * 60) };
   });
   const rosterHtml = agents.map(a => {
+    const open = !!_robotOpen[a.id];
+    const actCount = (a.activities || []).length;
     // One action per line: name on the left, "N days ago · how long" pill on the right.
     const chips = (a.activities || []).map(act =>
       `<button onclick="startAgentRun('${a.id}', &quot;${_escHtml(act).replace(/"/g, '&quot;')}&quot;)" style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-size:14px;color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;text-align:left;">
         <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">▶ ${_escHtml(act)}</span>${_daysAgoPill(_botLast[a.name + '~#~' + act])}</button>`
     ).join('');
-    return `<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:10px;">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
-        <span style="font-size:22px;">${a.emoji}</span>
-        <span style="flex:1;font-size:16px;font-weight:600;color:var(--text);">${_escHtml(a.name)}</span>
-        <button onclick="openAgentEdit('${a.id}')" style="background:none;border:none;color:var(--blue);font-size:14px;cursor:pointer;">Edit</button>
+    const bodyHtml = open
+      ? `<div style="display:flex;flex-direction:column;gap:6px;margin-top:10px;">${chips}<button onclick="startAgentPrompt('${a.id}')" style="background:none;border:1px dashed var(--border);border-radius:12px;padding:10px 14px;font-size:14px;color:var(--subtext);cursor:pointer;width:100%;text-align:left;">＋ Other…</button></div>`
+      : '';
+    return `<div class="robot-card" data-agent-id="${a.id}" style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px 14px;margin-bottom:10px;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span class="robot-drag" ontouchstart="robotDragStart(event,'${a.id}')" ontouchmove="robotDragMove(event)" ontouchend="robotDragEnd(event)" title="Drag to reorder" style="flex-shrink:0;color:var(--subtext);font-size:18px;cursor:grab;padding:4px 6px;touch-action:none;-webkit-tap-highlight-color:transparent;">⠿</span>
+        <div onclick="toggleRobotOpen('${a.id}')" style="flex:1;min-width:0;display:flex;align-items:center;gap:9px;cursor:pointer;">
+          <span style="font-size:22px;flex-shrink:0;">${a.emoji}</span>
+          <span style="flex:1;min-width:0;font-size:16px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_escHtml(a.name)}</span>
+          ${open ? '' : `<span style="flex-shrink:0;font-size:12px;color:var(--subtext);">${actCount} action${actCount === 1 ? '' : 's'}</span>`}
+          <span style="flex-shrink:0;color:var(--subtext);font-size:13px;">${open ? '▾' : '▸'}</span>
+        </div>
+        <button onclick="event.stopPropagation();openAgentEdit('${a.id}')" style="flex-shrink:0;background:none;border:none;color:var(--blue);font-size:14px;cursor:pointer;padding:4px 2px;">Edit</button>
       </div>
-      <div style="display:flex;flex-direction:column;gap:6px;">${chips}<button onclick="startAgentPrompt('${a.id}')" style="background:none;border:1px dashed var(--border);border-radius:12px;padding:10px 14px;font-size:14px;color:var(--subtext);cursor:pointer;width:100%;text-align:left;">＋ Other…</button></div>
+      ${bodyHtml}
     </div>`;
   }).join('');
   // Pin "Running now" to the top so you can Stop a robot while scrolling the roster.
