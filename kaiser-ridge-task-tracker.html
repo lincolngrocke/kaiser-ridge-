@@ -2617,7 +2617,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.166';
+const APP_VERSION = '2026-06-21.168';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3025,6 +3025,7 @@ function startClock(taskInfo) {
     projectStepId: taskInfo.projectStepId || '',
     notes: taskInfo.notes,
     pin: (taskInfo.pin && taskInfo.pin.url) ? taskInfo.pin : null,
+    flagOverride: {},   // clock in with NO flags; only a planner-block preset adds them (a job's global flags stay off the clock)
     tempId: Date.now().toString(),
   };
   localStorage.removeItem('kr_clock_trash'); // fresh session supersedes any discarded one
@@ -3534,6 +3535,7 @@ function toggleChecklistStep(item, step) {
 }
 // ── Focus-ring clock: tab state + ring helpers ──
 let _runTab = 'tasks', _runTabUserSet = false, _runLastTask = null;
+let _runGroupBy = 'flag', _runGroupCollapsed = {};   // clock Tasks list: 'flag' order vs 'lastdone' recency buckets
 let _expandedNotes = new Set();
 function _escHtml(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 // Escape a note for display, then turn any pasted URL into a tappable link — a
@@ -3550,6 +3552,8 @@ function _linkifyText(s) {
 }
 let _runSegBlockTapUntil = 0;
 function setRunTab(tab) { if (Date.now() < _runSegBlockTapUntil) return; _runTabUserSet = true; _runTab = tab; renderRunChecklist(); }
+function setRunGroupBy(k) { _runGroupBy = (k === 'lastdone') ? 'lastdone' : 'flag'; renderRunChecklist(); }
+function toggleRunGroup(k) { _runGroupCollapsed[k] = !_runGroupCollapsed[k]; renderRunChecklist(); }
 
 // ── Drag the Tasks/To-dos section up to cover the clock (bigger list). Snaps
 // back ~3s after you stop touching it. The clock ring collapses via max-height.
@@ -4024,7 +4028,7 @@ function renderRunChecklist() {
     return;
   }
   // Reset the tab choice + list-expand when the clocked job changes.
-  if (_runLastTask !== clockState.task) { _runTabUserSet = false; _expandedNotes.clear(); _runLastTask = clockState.task; resetRunList(); }
+  if (_runLastTask !== clockState.task) { _runTabUserSet = false; _expandedNotes.clear(); _runLastTask = clockState.task; _runGroupBy = 'flag'; _runGroupCollapsed = {}; resetRunList(); }
   const grab = document.getElementById('run-grab'); if (grab) grab.classList.add('on');
   const done = (clockState && Array.isArray(clockState.checklistDone)) ? clockState.checklistDone : [];
   const carried = new Set((clockState && Array.isArray(clockState.checklistCarried)) ? clockState.checklistCarried : []);
@@ -4077,13 +4081,20 @@ function renderRunChecklist() {
       const _allExp = _expandableTasks.every(s => _expandedChecklistItems.has(s));
       expandLink = `<span onclick="toggleAllTasksExpanded()" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">${_allExp ? '⤡ Collapse all' : '⤢ Expand all'}</span>`;
     }
+    // Group-by toggle — only worth offering on a longer list.
+    const GROUP_MIN = 4;
+    if (items.length >= GROUP_MIN) {
+      const _gopt = (k, label) => `<span onclick="setRunGroupBy('${k}')" style="padding:5px 12px;border-radius:14px;font-size:12px;font-weight:600;cursor:pointer;${_runGroupBy === k ? 'background:rgba(90,200,250,0.18);color:#5ac8fa;' : 'color:#8b93a7;'}">${label}</span>`;
+      rows += `<div style="display:flex;gap:5px;align-items:center;padding:2px 0 8px;">
+        <span style="font-size:11px;color:#616a7e;margin-right:3px;">Group</span>${_gopt('flag', 'Flagged')}${_gopt('lastdone', 'Last done')}</div>`;
+    }
     // ↺ Reset reps — subtle, shown once any repeatable task has reps on this run.
     if (jobHasReps(clockState.task)) {
       rows += `<div style="display:flex;justify-content:flex-end;padding:2px 0 6px;">
         <span onclick="finishRunPrompt()" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:12px;">↺ Reset reps</span>
       </div>`;
     }
-    rows += items.map(s => {
+    const buildTaskRow = (s) => {
       const enc = s.replace(/'/g, "\\'");
       const _isRep = isRepeatTask(clockState.task, s);
       const _reps = _isRep ? taskRepCount(clockState.task, s) : 0;
@@ -4144,7 +4155,32 @@ function renderRunChecklist() {
         }).join('');
       }
       return html;
-    }).join('');
+    };
+    if (_runGroupBy === 'lastdone' && items.length >= GROUP_MIN) {
+      // Group the visible tasks by how long since each was last done — a lens to
+      // surface neglected tasks; it doesn't touch the saved flag order.
+      const _now = Date.now();
+      const _built = items.map(s => ({ s, html: buildTaskRow(s), last: itemLastDone[s] })).filter(x => x.html);
+      const _bk = { recent: [], week: [], old: [], never: [] };
+      _built.forEach(x => {
+        if (!x.last) { _bk.never.push(x); return; }
+        const _d = new Date(x.last);
+        const _days = Math.floor((_now - new Date(_d.getFullYear(), _d.getMonth(), _d.getDate()).getTime()) / 86400000);
+        if (_days <= 3) _bk.recent.push(x); else if (_days <= 7) _bk.week.push(x); else _bk.old.push(x);
+      });
+      const _defs = [['recent', '✅ Done in the last 3 days'], ['week', '🕒 3–7 days ago'], ['old', '⚠️ Over a week ago'], ['never', '⬜ Never done']];
+      rows += _defs.map(([k, label]) => {
+        const arr = _bk[k]; if (!arr.length) return '';
+        const _col = !!_runGroupCollapsed[k];
+        const hd = `<div onclick="toggleRunGroup('${k}')" style="display:flex;align-items:center;gap:8px;padding:15px 0 6px;cursor:pointer;">
+          <span style="font-size:12px;font-weight:700;letter-spacing:0.3px;color:#9aa3b7;">${label}</span>
+          <span style="font-size:11px;color:#616a7e;background:rgba(255,255,255,0.06);border-radius:9px;padding:1px 7px;">${arr.length}</span>
+          <span style="flex:1;"></span><span style="color:#8b93a7;font-size:13px;">${_col ? '▸' : '▾'}</span></div>`;
+        return hd + (_col ? '' : arr.map(x => x.html).join(''));
+      }).join('');
+    } else {
+      rows += items.map(buildTaskRow).join('');
+    }
   } else {
     const pinTaskAttr = _attr(clockState.task);
     if (pinned.length > 1) organiseLink = `<span onclick="openPinOrganise(event)" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">⤢ Organise</span>`;
@@ -5627,6 +5663,7 @@ function confirmTime(choice) {
       projectStepId: taskInfo.projectStepId || '',
       notes:     taskInfo.notes     || '',
       pin: _pendingTaskInfo && _pendingTaskInfo.pin ? _pendingTaskInfo.pin : (currentPin || null),
+      flagOverride: {},   // clock in with NO flags; a planner block (_planId) fills these below
       tempId: Date.now().toString(),
     };
     localStorage.removeItem('kr_clock_trash'); // fresh session supersedes any discarded one
