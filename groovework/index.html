@@ -2617,7 +2617,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.169';
+const APP_VERSION = '2026-06-21.170';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -10955,10 +10955,10 @@ function updateRobotBadge() {
   if (n > 0) {
     if (!b) {
       b = document.createElement('span'); b.id = 'more-robot-badge';
-      b.style.cssText = 'position:absolute;top:2px;right:calc(50% - 26px);min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:#30d158;color:#05070c;font-size:10px;font-weight:800;line-height:17px;text-align:center;';
+      b.style.cssText = 'position:absolute;top:1px;right:calc(50% - 28px);min-width:22px;height:18px;padding:0 5px;border-radius:9px;background:#30d158;color:#05070c;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:2px;';
       tab.style.position = 'relative'; tab.appendChild(b);
     }
-    b.textContent = '🤖' + n; b.style.display = 'block';
+    b.innerHTML = '<span style="font-size:11px;line-height:1;">🤖</span><span style="line-height:1;">' + n + '</span>'; b.style.display = 'flex';
   } else if (b) { b.style.display = 'none'; }
   const menuCount = document.getElementById('more-robots-count');
   if (menuCount) menuCount.textContent = n > 0 ? '● ' + n + ' running' : '';
@@ -11041,7 +11041,11 @@ function renderRobotsScreen() {
       <div style="flex:1;min-width:0;">
         <div style="font-size:16px;font-weight:600;color:var(--text);">${_escHtml(a.name)}</div>
         <div style="font-size:13px;color:var(--subtext);">${_escHtml(r.activity)}</div>
-        <div style="font-size:12px;color:var(--subtext);margin-top:3px;">▶ ${formatTimeAmPm(_agHM(new Date(r.startMs)))} · <span onclick="editAgentRunStart('${r.runId}')" style="color:var(--blue);cursor:pointer;font-weight:600;">start earlier</span> · <span onclick="stopAgentRunEarlier('${r.runId}')" style="color:var(--blue);cursor:pointer;font-weight:600;">stop earlier</span></div>
+        <div style="font-size:12px;color:var(--subtext);margin-top:3px;">▶ ${formatTimeAmPm(_agHM(new Date(r.startMs)))}</div>
+        <div style="display:flex;gap:6px;margin-top:6px;">
+          <span onclick="editAgentRunStart('${r.runId}')" style="background:rgba(90,200,250,0.14);border:1px solid rgba(90,200,250,0.35);color:var(--blue);border-radius:13px;padding:5px 11px;font-size:12px;font-weight:600;cursor:pointer;">Start earlier</span>
+          <span onclick="stopAgentRunEarlier('${r.runId}')" style="background:rgba(90,200,250,0.14);border:1px solid rgba(90,200,250,0.35);color:var(--blue);border-radius:13px;padding:5px 11px;font-size:12px;font-weight:600;cursor:pointer;">Stop earlier</span>
+        </div>
       </div>
       <span class="robot-elapsed" data-start="${r.startMs}" style="font-size:16px;font-weight:700;color:var(--green);font-variant-numeric:tabular-nums;flex-shrink:0;">${_agElapsed(Date.now() - r.startMs)}</span>
       <button onclick="stopAgentRun('${r.runId}')" style="background:var(--red);color:#fff;border:none;border-radius:20px;padding:8px 14px;font-size:14px;font-weight:600;cursor:pointer;flex-shrink:0;">Stop</button>
@@ -11063,7 +11067,7 @@ function renderRobotsScreen() {
     // One action per line: name on the left, "N days ago · how long" pill on the right.
     const chips = (a.activities || []).map(act =>
       `<button onclick="startAgentRun('${a.id}', &quot;${_escHtml(act).replace(/"/g, '&quot;')}&quot;)" style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-size:14px;color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;text-align:left;">
-        <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">▶ ${_escHtml(act)}</span>${_daysAgoPill(_botLast[a.name + '~#~' + act])}</button>`
+        <span style="min-width:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.25;">▶ ${_escHtml(act)}</span>${_daysAgoPill(_botLast[a.name + '~#~' + act])}</button>`
     ).join('');
     const bodyHtml = open
       ? `<div style="display:flex;flex-direction:column;gap:6px;margin-top:10px;">${chips}<button onclick="startAgentPrompt('${a.id}')" style="background:none;border:1px dashed var(--border);border-radius:12px;padding:10px 14px;font-size:14px;color:var(--subtext);cursor:pointer;width:100%;text-align:left;">＋ Other…</button></div>`
@@ -11570,6 +11574,10 @@ function dirTaskTouchStart(e, row) {
   document.addEventListener('touchmove', _dtTouchMoveEarly, { passive: true });
   document.addEventListener('touchend', _dtCancelLong, { once: true });
   document.addEventListener('touchcancel', _dtCancelLong, { once: true });
+  // Any scroll of the jobs list cancels a pending pick-up — so scrolling can never
+  // accidentally lift a row into a floating drag ghost.
+  const _sa = document.getElementById('dir-scroll-area');
+  if (_sa) _sa.addEventListener('scroll', _dtCancelLong, { passive: true });
 }
 
 function _dtTouchMoveEarly(e) {
@@ -11581,6 +11589,8 @@ function _dtCancelLong() {
   clearTimeout(_dtLongTimer);
   _dtLongTimer = null;
   document.removeEventListener('touchmove', _dtTouchMoveEarly);
+  const _sa = document.getElementById('dir-scroll-area');
+  if (_sa) _sa.removeEventListener('scroll', _dtCancelLong);
 }
 
 function dirTaskClick(e, row) {
