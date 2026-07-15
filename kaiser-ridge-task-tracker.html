@@ -2078,6 +2078,7 @@
       📷 Add photo
       <input type="file" accept="image/*" multiple onchange="onCapturePhoto(event)" style="display:none;">
     </label>
+    <button id="run-add-steps" onclick="openRunTaskSteps()" style="display:none;margin-top:12px;margin-left:18px;background:none;border:none;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">≣ Steps</button>
     <button id="run-add-remind" onclick="openReminderPicker(_runEditRef && _runEditRef.inboxId)" style="display:none;margin-top:12px;margin-left:18px;background:none;border:none;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">🔔 Remind me</button>
     <div id="run-add-photo-preview"></div>
     <button id="run-add-delete" onclick="deleteRunItem()" style="display:none;width:100%;margin-top:18px;background:none;border:1px solid var(--red);color:var(--red);border-radius:10px;padding:11px;font-size:15px;cursor:pointer;">Delete</button>
@@ -2641,7 +2642,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.177';
+const APP_VERSION = '2026-06-21.178';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3689,6 +3690,7 @@ function openRunAdd(kind) {
   const pv = document.getElementById('run-add-photo-preview'); if (pv) pv.innerHTML = '';
   const rb0 = document.getElementById('run-add-remind'); if (rb0) rb0.style.display = 'none';
   const db0 = document.getElementById('run-add-delete'); if (db0) db0.style.display = 'none';
+  const stb0 = document.getElementById('run-add-steps'); if (stb0) stb0.style.display = 'none';
   const inp = document.getElementById('run-add-input');
   inp.value = '';
   inp.placeholder = isTask ? 'e.g. Wipe down the benches' : 'e.g. Order more filters';
@@ -3709,13 +3711,20 @@ function openRunEdit(kind, ref) {
   const db = document.getElementById('run-add-delete'); if (db) { db.style.display = 'block'; db.textContent = isTask ? 'Delete task' : 'Delete to-do'; }
   const inp = document.getElementById('run-add-input');
   inp.placeholder = '';
+  const stb = document.getElementById('run-add-steps');
   if (isTask) {
     _runEditRef = { kind: 'tasks', task: clockState.task, oldText: ref };
-    document.getElementById('run-add-hint').innerHTML = 'Rename this task on <b>' + _escHtml(clockState.task) + '</b>, or add a reference photo. Publish the library to share.';
+    document.getElementById('run-add-hint').innerHTML = 'Rename this task on <b>' + _escHtml(clockState.task) + '</b>, add a reference photo or steps. Publish the library to share.';
     inp.value = ref;
     _capturePhotos = (getSubtaskPhotos()[ref] || []).map(ph => Object.assign({}, ph));   // preload the task's reference photos
     renderCapturePreview();
+    if (stb) {   // steps live on the task globally — editing here saves to the jobs page too
+      const _nSt = (getSubtaskSteps()[ref] || []).length;
+      stb.textContent = _nSt ? ('≣ Steps (' + _nSt + ')') : '≣ Add steps';
+      stb.style.display = 'inline-flex';
+    }
   } else {
+    if (stb) stb.style.display = 'none';
     const p = ((getTaskNotes()[clockState.task]) || []).find(x => x.id === ref);
     if (!p) return;
     _runEditRef = { kind: 'notes', task: clockState.task, pinId: ref, oldText: p.text, inboxId: p.inboxId };
@@ -3727,6 +3736,18 @@ function openRunEdit(kind, ref) {
   }
   openModal('modal-run-add');
   setTimeout(() => inp.focus(), 120);
+}
+// Steps straight from the clock: opens the same steps editor the job editor uses
+// (kr_subtask_steps is global, keyed by task text), so anything added mid-run is
+// immediately on the jobs page too. Keys on the SAVED item text — an unsaved
+// rename in the box above doesn't apply until Save, and a later rename carries
+// steps across via _renameChecklistItem.
+function openRunTaskSteps() {
+  const ref = _runEditRef;
+  if (!ref || ref.kind !== 'tasks') return;
+  closeModal('modal-run-add');
+  _runAddMode = 'add'; _runEditRef = null;
+  openSubtaskStepsEditor(ref.oldText);
 }
 // Add a Task/To-do from the clock: it's born as an Inbox note, then filed to the
 // job (same as the Inbox assign flow) so the capture ledger stays complete.
@@ -4035,10 +4056,31 @@ function toggleAllTasksExpanded() {
   else items.forEach(s => _expandedChecklistItems.add(s));
   renderRunChecklist();
 }
+// The ring's target time — same rule as a planner block (_estimateBlockMins):
+// tasks flagged on THIS run → sum those tasks' learned average times; no flags
+// (or none with history) → the job's own clocked average. Flags can change
+// mid-run, so the estimate follows them live. Cached on the flag set — the ring
+// ticks every second and the history aggregation is too heavy to redo each tick.
+let _runEstCache = { sig: null, sec: 0, basis: 'job' };
 function _runEstSec() {
-  if (!clockState) return 0;
-  const avg = getTaskAvgDuration(clockState.task);     // hours
-  return avg ? avg * 3600 : 0;
+  if (!clockState || !clockState.task) return 0;
+  const task = clockState.task;
+  const flagged = Object.keys(_sessionOrGlobalFlags(task));
+  const sig = task + '\u0001' + flagged.slice().sort().join('\u0001');
+  if (_runEstCache.sig === sig) return _runEstCache.sec;
+  let sec = 0, basis = 'job';
+  if (flagged.length) {
+    const map = _taskHistAvgMap();
+    let sum = 0;
+    flagged.forEach(item => { const a = map[_normTaskKey(item)]; if (isFinite(a) && a > 0) sum += a; });
+    if (sum > 0) { sec = sum * 60; basis = 'flagged'; }   // minutes → seconds
+  }
+  if (!sec) {
+    const avg = getTaskAvgDuration(task);     // hours
+    sec = avg ? avg * 3600 : 0;
+  }
+  _runEstCache = { sig, sec, basis };
+  return sec;
 }
 // Fill the ring: elapsed vs this job's average. Past the average the ring
 // completes and turns amber rather than overflowing.
@@ -4067,7 +4109,8 @@ function updateRunRing(netElapsedSec) {
   ring.classList.toggle('over', over);
   if (label) {
     label.style.color = over ? '#ff9f0a' : '#5ac8fa';
-    label.textContent = over ? ('over ~' + fmtEstHours(est / 3600) + ' est') : (Math.round(frac * 100) + '% of ~' + fmtEstHours(est / 3600));
+    const _flagCue = _runEstCache.basis === 'flagged' ? ' 🚩' : '';   // estimate comes from the flagged tasks
+    label.textContent = (over ? ('over ~' + fmtEstHours(est / 3600) + ' est') : (Math.round(frac * 100) + '% of ~' + fmtEstHours(est / 3600))) + _flagCue;
   }
 }
 function renderRunChecklist() {
@@ -4214,6 +4257,8 @@ function renderRunChecklist() {
             <span style="font-size:20px;flex-shrink:0;color:${checked ? '#30d158' : '#616a7e'};">${checked ? '☑' : '☐'}</span>
             <span style="flex:1;font-size:15px;${checked ? 'color:#616a7e;text-decoration:line-through;' : 'color:#c7ccd8;'}">${_escHtml(st)}</span>${_stime}</div>`;
         }).join('');
+        // Steps are editable mid-run — saved globally, so the jobs page gets them too.
+        html += `<div onclick="event.stopPropagation();openSubtaskStepsEditor('${enc}')" style="padding:9px 0 9px 36px;color:#5ac8fa;font-size:13px;font-weight:600;cursor:pointer;">＋ Add step</div>`;
       }
       return html;
     };
@@ -10424,9 +10469,15 @@ function _stepsAutosave() {
 }
 function saveSubtaskStepsEditor() {
   clearTimeout(_stepsAutosaveTimer);
+  const item = _stepsEditingItem;
   const n = _stepsPersist();
   closeModal('modal-subtask-steps');
   renderDirSubtaskList();
+  // Editing from the running clock: show the new steps right away, expanded.
+  if (clockState && clockState.running && item != null) {
+    if (n) _expandedChecklistItems.add(item); else _expandedChecklistItems.delete(item);
+    renderRunChecklist();
+  }
   showToast(n ? n + ' step' + (n === 1 ? '' : 's') + ' saved ✓' : 'Steps cleared');
 }
 
@@ -13410,11 +13461,14 @@ function toggleChecklistFlag(task, item) {
     if (!Object.keys(all[task]).length) delete all[task];
     saveChecklistFlags(all);
   }
-  showToast(nowFlagged ? '🚩 Flagged to top' : 'Flag removed');
+  // While clocked into this job the ring's estimate follows the flags — say so.
+  const _estCue = (clockState && clockState.running && clockState.task === task && _runEstSec() > 0 && _runEstCache.basis === 'flagged')
+    ? ' · est ~' + fmtEstHours(_runEstSec() / 3600) : '';
+  showToast((nowFlagged ? '🚩 Flagged to top' : 'Flag removed') + _estCue);
   _refreshChecklistSurfaces(task);
 }
 function _refreshChecklistSurfaces(task) {
-  if (clockState && clockState.running && clockState.task === task) renderRunChecklist();
+  if (clockState && clockState.running && clockState.task === task) { renderRunChecklist(); updateRunRing(); }   // ring estimate follows the flags
   const org = document.getElementById('modal-cl-organise');
   if (org && org.classList.contains('open') && _clOrganiseTask === task) _renderClOrganiseBody();
 }
