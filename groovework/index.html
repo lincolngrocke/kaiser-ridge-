@@ -2309,6 +2309,25 @@
         <button id="dir-video-watch" onclick="playVideoForTask(document.getElementById('dir-task').value.trim())" style="display:none;margin-top:8px;background:none;border:1px solid var(--blue);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">▶ Watch how-to</button>
       </div>
 
+      <div style="padding:16px 20px 8px;">
+        <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">🔗 FILES &amp; LINKS</div>
+        <div style="font-size:12px;color:var(--subtext);margin-bottom:10px;">Paste a Google Sheet, Dropbox, web or email link for this job — tap to open it from here.</div>
+        <div id="dir-link-savefirst" style="display:none;font-size:13px;color:var(--subtext);padding:4px 0 2px;">Save the job first, then you can attach links.</div>
+        <div id="dir-link-add" style="display:none;">
+          <input id="dir-link-label" type="text" placeholder="Label (e.g. Booking sheet)"
+            autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
+            style="width:100%;padding:12px 14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;margin-bottom:8px;">
+          <div style="display:flex;gap:8px;">
+            <input id="dir-link-url" type="url" placeholder="https://docs.google.com/…"
+              autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="url" data-lpignore="true" data-1p-ignore
+              style="flex:1;min-width:0;padding:12px 14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;"
+              onkeydown="if(event.key==='Enter'){event.preventDefault();addJobLink();}">
+            <button onclick="addJobLink()" style="background:var(--blue);border:none;border-radius:12px;color:#fff;font-size:15px;font-weight:600;padding:0 16px;cursor:pointer;white-space:nowrap;">Add link</button>
+          </div>
+        </div>
+        <div id="dir-links-list" style="margin-top:6px;"></div>
+      </div>
+
       <div style="padding:16px 20px 0;" id="dir-duplicate-wrap">
         <button onclick="duplicateDirTask()" style="width:100%;padding:14px;background:none;border:1px solid var(--blue);border-radius:12px;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">⎘ Duplicate Job</button>
       </div>
@@ -2622,7 +2641,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.176';
+const APP_VERSION = '2026-06-21.177';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6358,7 +6377,7 @@ const KR_BACKUP_KEYS = [
   'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
   'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_task_videos', 'kr_checklist_flags', 'kr_task_merges', 'kr_subtask_origin', 'kr_pins_applied',
   'kr_agents', 'kr_agent_runs', 'kr_planner_checklist', 'kr_pin_order', 'kr_subtask_photos', 'kr_job_reminders', 'kr_task_reminders',
-  'kr_task_types', 'kr_job_runs', 'kr_job_flags', 'kr_task_moves', 'kr_job_horizon'
+  'kr_task_types', 'kr_job_runs', 'kr_job_flags', 'kr_task_moves', 'kr_job_horizon', 'kr_job_links'
 ];
 
 function buildBackupSnapshot() {
@@ -6651,7 +6670,7 @@ const KR_LIBRARY_KEYS = [
   'kr_equipment_notes', 'kr_equipment_links',
   'kr_equipment_master', 'kr_extra_frequencies', 'kr_extra_locations', 'kr_extra_clients',
   'kr_task_order', 'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
-  'kr_projects', 'kr_task_videos', 'kr_subtask_photos'
+  'kr_projects', 'kr_task_videos', 'kr_subtask_photos', 'kr_job_links'
 ];
 
 function exportTaskLibrary() {
@@ -7333,6 +7352,7 @@ function renderDirectory() {
   const taskOrder = JSON.parse(localStorage.getItem('kr_task_order') || '{}');
   const taskNotes = _dirAllNotes;     // pinned To-dos per job, for the 📌 indicator
   const taskVideos = getTaskVideos(); // how-to videos per task, for the 🎥 indicator
+  const jobLinksMap = getJobLinks();  // files & links per job, for the 🔗 indicator
   // Last time each task was clocked (most recent entry date) + days since.
   const _today0 = new Date(); _today0.setHours(0, 0, 0, 0);
   const lastUsed = {};
@@ -7373,6 +7393,8 @@ function renderDirectory() {
             const pinBadge = nPins ? `<span onclick="event.stopPropagation();showPinnedNotesPopup(this)" ontouchstart="event.stopPropagation()" title="View ${nPins} to-do${nPins === 1 ? '' : 's'}" style="display:inline-block;background:#FFD60A;color:#000;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;cursor:pointer;">📌 ${nPins}</span>` : '';
             const hasVideo = !!(taskVideos[task] || {}).id;
             const videoBadge = hasVideo ? `<span onclick="event.stopPropagation();playVideoForTask('${task.replace(/'/g, "\\'")}')" ontouchstart="event.stopPropagation()" title="Watch how-to video" style="display:inline-block;background:var(--blue);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;cursor:pointer;">🎥</span>` : '';
+            const nLinks = (jobLinksMap[task] || []).length;
+            const linkBadge = nLinks ? `<span title="${nLinks} file${nLinks === 1 ? '' : 's'} / link${nLinks === 1 ? '' : 's'}" style="display:inline-block;background:var(--bg);border:1px solid var(--border);color:var(--subtext);font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;">🔗 ${nLinks}</span>` : '';
             const lu = lastUsed[task];
             let usedLine;
             if (lu) {
@@ -7393,7 +7415,7 @@ function renderDirectory() {
               onclick="dirTaskClick(event,this)"
               style="padding:12px 16px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none;-webkit-user-select:none;${isFlagged ? 'background:rgba(255,214,10,0.08);' : ''}">
               <div style="flex:1;min-width:0;">
-                <div style="font-size:15px;font-weight:500;color:var(--text);">${isFlagged ? '🚩 ' : ''}${task}${autoBadge}${pinBadge}${videoBadge}</div>
+                <div style="font-size:15px;font-weight:500;color:var(--text);">${isFlagged ? '🚩 ' : ''}${task}${autoBadge}${pinBadge}${videoBadge}${linkBadge}</div>
                 ${autoSub}
                 ${usedLine}
                 ${taskAvg[task] ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">⏱ Avg ${fmtMin(taskAvg[task])}</div>` : ''}
@@ -7813,6 +7835,10 @@ function openDirAddTask() {
   updateRestoreSubtasksBtn('');
   document.getElementById('dir-video').value = '';
   updateDirVideoPreview();
+  _jobLinksKey = '';
+  document.getElementById('dir-link-label').value = '';
+  document.getElementById('dir-link-url').value = '';
+  renderJobLinks();
   _populateJobRemind('');
   openModal('modal-dir-task');
   requestAnimationFrame(_sizeDirSubtaskInputs);
@@ -7867,6 +7893,10 @@ function openDirEditTask(encodedKey) {
   const vid = getTaskVideos()[task];
   document.getElementById('dir-video').value = (vid && vid.id) ? ('https://youtu.be/' + vid.id) : '';
   updateDirVideoPreview();
+  _jobLinksKey = task;
+  document.getElementById('dir-link-label').value = '';
+  document.getElementById('dir-link-url').value = '';
+  renderJobLinks();
   _populateJobRemind(task);
   openModal('modal-dir-task');
   requestAnimationFrame(_sizeDirSubtaskInputs);
@@ -7935,6 +7965,8 @@ function duplicateDirTask() {
   nameField.focus();
   nameField.select();
   updateRestoreSubtasksBtn('');
+  _jobLinksKey = '';
+  renderJobLinks();
 
   showToast('Copied — give it a new name and tweak as needed');
 }
@@ -8419,6 +8451,11 @@ function saveEquipmentNotes(o) { localStorage.setItem('kr_equipment_notes', JSON
 function getEquipmentLinks() { return JSON.parse(localStorage.getItem('kr_equipment_links') || '{}'); }
 function saveEquipmentLinks(o) { localStorage.setItem('kr_equipment_links', JSON.stringify(o)); }
 
+// ── Files & links attached to a JOB (kr_job_links) — keyed by job (task) name,
+// mirrors equipment links. Tiny references only (URLs), never file bytes.
+function getJobLinks() { return JSON.parse(localStorage.getItem('kr_job_links') || '{}'); }
+function saveJobLinks(o) { return _safeSetItem('kr_job_links', JSON.stringify(o)); }
+
 let _equipDetailName = '';
 
 function openEquipmentDetailByIndex(i) {
@@ -8490,13 +8527,16 @@ function deleteEquipmentNote(id) {
 
 function _equipLinkIcon(label, url) {
   const u = (url || '').toLowerCase();
-  const s = ((label || '') + ' ' + u);
+  const s = ((label || '') + ' ' + u).toLowerCase();
+  if (/^mailto:/i.test(u) || /\bemail\b|\be-mail\b/.test(s)) return '✉️';
   if (/\.(jpg|jpeg|png|gif|heic|webp)(\?|$|#)/.test(u) || /photo|image|\bpic\b/.test(s)) return '🖼️';
   if (/\.pdf(\?|$|#)/.test(u) || /manual|guide|\bdoc\b|pdf/.test(s)) return '📄';
   return '🔗';
 }
 function _equipHostLabel(url) {
-  try { return new URL(url).hostname.replace('www.', ''); } catch (e) { return 'Open link'; }
+  const s = String(url || '');
+  if (/^mailto:/i.test(s)) return s.replace(/^mailto:/i, '').split('?')[0] || 'Email';
+  try { return new URL(s).hostname.replace('www.', ''); } catch (e) { return 'Open link'; }
 }
 
 function renderEquipmentLinks() {
@@ -8521,7 +8561,7 @@ function addEquipmentLink() {
   let url = urlEl.value.trim();
   const label = labelEl.value.trim();
   if (!url) { showToast('Paste a link first'); return; }
-  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  if (!/^(https?:\/\/|mailto:|tel:)/i.test(url)) url = 'https://' + url;
   const all = getEquipmentLinks();
   if (!all[_equipDetailName]) all[_equipDetailName] = [];
   all[_equipDetailName].push({ id: 'l' + Date.now() + Math.random().toString(36).slice(2, 6), label, url, ts: new Date().toISOString() });
@@ -8541,6 +8581,67 @@ function deleteEquipmentLink(id) {
   autoBackup();
   renderEquipmentLinks();
   refreshEquipmentLists();
+}
+
+// ── Job files & links (inside the Add/Edit Job sheet) — same shape as equipment
+// links, keyed by the job's task name. _jobLinksKey is '' for an unsaved job.
+let _jobLinksKey = '';
+
+function renderJobLinks() {
+  const listEl = document.getElementById('dir-links-list');
+  if (!listEl) return;
+  const addEl  = document.getElementById('dir-link-add');
+  const noteEl = document.getElementById('dir-link-savefirst');
+  const ro = isWorker();
+  if (!_jobLinksKey) {
+    // New/unsaved job — there's no name to attach links to yet.
+    listEl.innerHTML = '';
+    if (addEl)  addEl.style.display  = 'none';
+    if (noteEl) noteEl.style.display = ro ? 'none' : 'block';
+    return;
+  }
+  if (noteEl) noteEl.style.display = 'none';
+  if (addEl)  addEl.style.display  = ro ? 'none' : 'block';
+  const links = getJobLinks()[_jobLinksKey] || [];
+  listEl.innerHTML = links.length ? links.map(l => `
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--border);">
+      <span style="font-size:20px;flex-shrink:0;">${_equipLinkIcon(l.label, l.url)}</span>
+      <a href="${escapeHtmlProj(l.url)}" target="_blank" rel="noopener" style="flex:1;min-width:0;text-decoration:none;">
+        <div style="font-size:15px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtmlProj(l.label || _equipHostLabel(l.url))}</div>
+        <div style="font-size:12px;color:var(--blue);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtmlProj(_equipHostLabel(l.url))} ↗</div>
+      </a>
+      ${ro ? '' : `<button onclick="deleteJobLink('${l.id}')" style="background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;padding:0 2px;flex-shrink:0;">✕</button>`}
+    </div>`).join('')
+    : '<div style="padding:6px 0 2px;color:var(--subtext);font-size:14px;">No files or links yet.</div>';
+}
+
+function addJobLink() {
+  if (isWorker()) return;
+  if (!_jobLinksKey) { showToast('Save the job first, then add links'); return; }
+  const labelEl = document.getElementById('dir-link-label');
+  const urlEl = document.getElementById('dir-link-url');
+  let url = urlEl.value.trim();
+  const label = labelEl.value.trim();
+  if (!url) { showToast('Paste a link first'); return; }
+  if (!/^(https?:\/\/|mailto:|tel:)/i.test(url)) url = 'https://' + url;
+  const all = getJobLinks();
+  if (!all[_jobLinksKey]) all[_jobLinksKey] = [];
+  all[_jobLinksKey].push({ id: 'l' + Date.now() + Math.random().toString(36).slice(2, 6), label, url, ts: new Date().toISOString() });
+  saveJobLinks(all);
+  autoBackup();
+  labelEl.value = ''; urlEl.value = '';
+  renderJobLinks();
+}
+
+function deleteJobLink(id) {
+  if (isWorker()) return;
+  if (!_jobLinksKey) return;
+  const all = getJobLinks();
+  all[_jobLinksKey] = (all[_jobLinksKey] || []).filter(l => l.id !== id);
+  if (!all[_jobLinksKey].length) delete all[_jobLinksKey];
+  saveJobLinks(all);
+  autoBackup();
+  renderJobLinks();
 }
 
 // ── Equipment screen (top-level nav tab) ──
@@ -10699,6 +10800,9 @@ function saveDirTask() {
       // How-to video keyed by task name
       const tvids = getTaskVideos();
       if (tvids[oldTask]) { if (!tvids[task]) tvids[task] = tvids[oldTask]; delete tvids[oldTask]; saveTaskVideos(tvids); }
+      // Files & links keyed by task name
+      const jlinks = getJobLinks();
+      if (jlinks[oldTask]) { jlinks[task] = (jlinks[task] || []).concat(jlinks[oldTask]); delete jlinks[oldTask]; saveJobLinks(jlinks); }
       // Checklist-item flags keyed by task name
       const cflags = getChecklistFlags();
       if (cflags[oldTask]) { cflags[task] = Object.assign(cflags[task] || {}, cflags[oldTask]); delete cflags[oldTask]; saveChecklistFlags(cflags); }
@@ -10831,6 +10935,8 @@ function deleteDirTask() {
     delete SUBTASKS[task];
     const tvids = getTaskVideos();
     if (tvids[task]) { delete tvids[task]; saveTaskVideos(tvids); }
+    const jlinks = getJobLinks();
+    if (jlinks[task]) { delete jlinks[task]; saveJobLinks(jlinks); }
     const cflags = getChecklistFlags();
     if (cflags[task]) { delete cflags[task]; saveChecklistFlags(cflags); }
     const jrem = getJobReminders();
