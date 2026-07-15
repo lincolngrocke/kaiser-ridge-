@@ -2622,7 +2622,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.175';
+const APP_VERSION = '2026-06-21.176';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3071,6 +3071,41 @@ function captureClockInLocation() {
   );
 }
 
+// Learn the order tasks were done in: on clock-out, rewrite the job's saved task
+// order (SUBTASKS) so next time it's pre-populated as how you last did it — the
+// app's thesis (the order emerges from doing the work, it isn't configured).
+// RULE A: only the tasks you COMPLETED re-sequence, among their OWN positions, by
+// the order you did them; tasks you skipped stay exactly where they are (a partial
+// run never scrambles the rest). On a full run this = the exact order you did them.
+// Flags still float to the top separately. SAFE: only ever a permutation of the
+// existing tasks — writes nothing unless the result is the same set, reordered.
+// (Rule B "float completed to the top" would be a small change here later.)
+function _learnTaskOrderOnClockOut(job) {
+  try {
+    const cur = SUBTASKS[job];
+    if (!Array.isArray(cur) || cur.length < 2) return;
+    const done = (clockState && Array.isArray(clockState.checklistDone)) ? clockState.checklistDone : [];
+    if (!done.length) return;
+    const firstAt = {};   // task text → first completion time this session (repeat tasks: first tick)
+    done.forEach(d => {
+      if (!d || !d.item) return;
+      const t = new Date(d.at).getTime();
+      if (!isNaN(t) && (!(d.item in firstAt) || t < firstAt[d.item])) firstAt[d.item] = t;
+    });
+    const slots = [];                                     // indices the completed tasks occupy
+    cur.forEach((s, i) => { if (s in firstAt) slots.push(i); });
+    if (slots.length < 2) return;                         // one (or none) done → nothing to re-sequence
+    const seq = slots.map(i => cur[i]).sort((a, b) => firstAt[a] - firstAt[b]);   // completed tasks, in the order done
+    const next = cur.slice();
+    slots.forEach((slotIdx, k) => { next[slotIdx] = seq[k]; });   // fill the completed slots with that sequence
+    const curSet = new Set(cur), nextSet = new Set(next);         // SAFETY: must stay the same set of tasks
+    if (next.length !== cur.length || !next.every(v => curSet.has(v)) || !cur.every(v => nextSet.has(v))) return;
+    if (next.some((v, i) => v !== cur[i])) {              // only write when the order actually changed
+      SUBTASKS[job] = next;
+      _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
+    }
+  } catch (e) {}
+}
 function clockOut(overrideTime) {
   if (!clockState || !clockState.running) return;
   finalizeDonePins();   // fold any ticked-off pinned notes into the entry + clear them
@@ -3080,6 +3115,7 @@ function clockOut(overrideTime) {
   // To-dos are one-shot and clear themselves when ticked, so their flags are left alone.
   const _doneFlags = getChecklistFlags();
   if (_doneFlags[clockState.task]) { delete _doneFlags[clockState.task]; saveChecklistFlags(_doneFlags); }
+  _learnTaskOrderOnClockOut(clockState.task);   // remember the order you did the tasks in → pre-populates next run's clock + the Jobs screen
   let endMs = Date.now();
   if (overrideTime) {
     const now = new Date();
