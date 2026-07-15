@@ -2618,7 +2618,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.172';
+const APP_VERSION = '2026-06-21.173';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -10956,7 +10956,7 @@ function updateRobotBadge() {
   if (n > 0) {
     if (!b) {
       b = document.createElement('span'); b.id = 'more-robot-badge';
-      b.style.cssText = 'position:absolute;top:4px;right:calc(50% - 26px);pointer-events:none;min-width:22px;height:18px;padding:0 5px;border-radius:9px;background:#30d158;color:#05070c;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:2px;';
+      b.style.cssText = 'position:absolute;top:10px;right:calc(50% - 18px);pointer-events:none;min-width:22px;height:18px;padding:0 5px;border-radius:9px;background:#30d158;color:#05070c;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:2px;';
       tab.style.position = 'relative'; tab.appendChild(b);
     }
     b.innerHTML = '<span style="font-size:11px;line-height:1;">🤖</span><span style="line-height:1;">' + n + '</span>'; b.style.display = 'flex';
