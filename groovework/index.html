@@ -771,6 +771,9 @@
     100% { transform: translate(-50%,-50%) scale(1); }
   }
   .run-done-chip.bump { animation: chipBump .45s ease; }
+  /* Organise sheet: keep the tabs/estimate/instructions pinned while the task list scrolls */
+  .cl-sticky-top { position: sticky; top: 0; z-index: 3; background: var(--bg); padding-bottom: 6px; }
+  body.dark .cl-sticky-top { background: #1C1C1E; }
   @media (prefers-reduced-motion: reduce) {
     .done-fly { animation: doneHold 3s linear forwards; }
     .run-done-chip.bump { animation: none; }
@@ -1790,6 +1793,7 @@
 <!-- ══════════════ IMAGE VIEWER (pinch / double-tap to zoom, drag to pan) ══════════════ -->
 <div class="modal-backdrop" id="modal-image-view" style="z-index:700;" onclick="if(event.target===this)closeImageLightbox()">
   <button onclick="closeImageLightbox()" style="position:absolute;top:calc(env(safe-area-inset-top) + 12px);right:16px;z-index:2;width:40px;height:40px;border-radius:50%;background:rgba(0,0,0,0.55);color:#fff;border:none;font-size:20px;line-height:1;cursor:pointer;">✕</button>
+  <div id="image-view-counter" style="position:absolute;top:calc(env(safe-area-inset-top) + 18px);left:50%;transform:translateX(-50%);z-index:2;background:rgba(0,0,0,0.55);color:#fff;font-size:13px;font-weight:600;padding:5px 12px;border-radius:14px;display:none;pointer-events:none;"></div>
   <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:20px;overflow:hidden;" onclick="if(event.target===this)closeImageLightbox()">
     <img id="image-view-img" src="" alt="" ontouchstart="_ivTouchStart(event)" ontouchmove="_ivTouchMove(event)" ontouchend="_ivTouchEnd(event)" style="max-width:100%;max-height:100%;border-radius:12px;touch-action:none;will-change:transform;transform-origin:center center;">
   </div>
@@ -2618,7 +2622,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.174';
+const APP_VERSION = '2026-06-21.175';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3477,24 +3481,25 @@ function markChecklistItemDone(item) {
   if (!clockState || !clockState.running) return;
   if (!Array.isArray(clockState.checklistDone)) clockState.checklistDone = [];
   const job = clockState.task;
-  let didComplete = false, undoFn = null;
+  let didComplete = false, undoFn = null, doneOcc = null;
   if (isRepeatTask(job, item)) {
     // Repeatable task: each tap adds a rep (count carries across sessions on the run),
     // logs a timed completion, and the task STAYS in the list so you can tap again.
     const rep = _bumpTaskRep(job, item, +1);
-    clockState.checklistDone.push({ item, at: new Date().toISOString(), rep });
+    doneOcc = { item, at: new Date().toISOString(), rep };
+    clockState.checklistDone.push(doneOcc);
     _setTaskReminderDone(job, item, true);
     didComplete = true; undoFn = () => undoTaskRep(item);
   } else {
     // 'Once' task: tap to tick, tap again to untick (stamped without a rep).
     const i = clockState.checklistDone.findIndex(d => d.item === item && !d.rep && !d.lap);
     if (i >= 0) { clockState.checklistDone.splice(i, 1); _setTaskReminderDone(job, item, false); }
-    else { clockState.checklistDone.push({ item, at: new Date().toISOString() }); _expandedChecklistItems.delete(item); _setTaskReminderDone(job, item, true); didComplete = true; undoFn = () => markChecklistItemDone(item); }
+    else { doneOcc = { item, at: new Date().toISOString() }; clockState.checklistDone.push(doneOcc); _expandedChecklistItems.delete(item); _setTaskReminderDone(job, item, true); didComplete = true; undoFn = () => markChecklistItemDone(item); }
   }
   if (didComplete) _chipHold++;              // hold the counter number until the bubble lands
   _safeSetItem('kr_clock', JSON.stringify(clockState));
   renderRunChecklist();
-  if (didComplete) flyDoneBubble(undoFn);   // dopamine bubble floats up to the counter + Undo while it floats
+  if (didComplete) flyDoneBubble(undoFn, doneOcc ? _checklistDurations()[_occKey(doneOcc)] : null);   // bubble floats up w/ the time it took + Undo
 }
 // Undo the most recent rep of a repeatable task (drops the count + its timed entry).
 function undoTaskRep(item) {
@@ -6853,13 +6858,14 @@ function _hapticTick() {
 // number is held back (_chipHold) until the bubble LANDS, so it ticks up with the
 // swell — like the task's been swallowed — not the instant you tap.
 let _chipHold = 0;
-function flyDoneBubble(onUndo) {
+function flyDoneBubble(onUndo, mins) {
   try {
     _hapticTick();
     const host = document.getElementById('running-overlay') || document.body;
     const b = document.createElement('div');
     b.className = 'done-fly';
-    b.innerHTML = '<span>Done ✓</span><button class="done-fly-undo" type="button">Undo</button>';
+    const _t = (typeof mins === 'number' && isFinite(mins) && mins > 0) ? ' · ' + fmtMin(mins) : '';   // show how long the task took
+    b.innerHTML = '<span>Done ✓' + _t + '</span><button class="done-fly-undo" type="button">Undo</button>';
     host.appendChild(b);
     let closed = false;
     const close = (landed) => {
@@ -8904,8 +8910,8 @@ function _photosHtml(obj, maxH) {
   if (!ph.length) return '';
   const base = `max-height:${maxH || 90}px;max-width:100%;border-radius:8px;display:block;cursor:pointer;`;
   return `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">` + ph.map(p => {
-    if (p.id) return `<img data-pid="${p.id}" src="${_PHOTO_PLACEHOLDER}" onclick="event.stopPropagation();if(this.src&&!this.src.startsWith('data:image/gif'))openImageLightbox(this.src)" style="${base}min-height:48px;min-width:48px;background:var(--border);">`;
-    if (p.data) return `<img src="${p.data}" onclick="event.stopPropagation();openImageLightbox(this.src)" style="${base}">`;
+    if (p.id) return `<img data-pid="${p.id}" src="${_PHOTO_PLACEHOLDER}" onclick="event.stopPropagation();if(this.src&&!this.src.startsWith('data:image/gif'))openImageGallery(this)" style="${base}min-height:48px;min-width:48px;background:var(--border);">`;
+    if (p.data) return `<img src="${p.data}" onclick="event.stopPropagation();openImageGallery(this)" style="${base}">`;
     return '';
   }).join('') + `</div>`;
 }
@@ -8968,12 +8974,38 @@ let _iv = { scale: 1, tx: 0, ty: 0, startDist: 0, startScale: 1, panX: 0, panY: 
 function _ivImg() { return document.getElementById('image-view-img'); }
 function _ivApply() { const img = _ivImg(); if (img) img.style.transform = `translate(${_iv.tx}px,${_iv.ty}px) scale(${_iv.scale})`; }
 function _ivResetState() { _iv.scale = 1; _iv.tx = 0; _iv.ty = 0; _iv.mode = null; }
-function openImageLightbox(src) {
+let _ivGallery = [], _ivIndex = 0;
+function _ivUpdateCounter() {
+  const c = document.getElementById('image-view-counter'); if (!c) return;
+  if (_ivGallery.length > 1) { c.textContent = (_ivIndex + 1) + ' / ' + _ivGallery.length; c.style.display = 'block'; }
+  else c.style.display = 'none';
+}
+function _ivOpenSrc(src) {
   const img = _ivImg(); if (!img) return;
   img.src = src;
   _ivResetState();
   img.style.transition = ''; img.style.transform = '';
+  _ivUpdateCounter();
   openModal('modal-image-view');
+}
+function openImageLightbox(src) { _ivGallery = [src]; _ivIndex = 0; _ivOpenSrc(src); }
+// Open from a thumbnail, gathering its sibling photos so you can swipe between them.
+function openImageGallery(imgEl) {
+  let srcs = [];
+  try { const box = imgEl.closest('div'); if (box) srcs = [...box.querySelectorAll('img')].map(im => im.src).filter(s => s && !s.startsWith('data:image/gif')); } catch (_) {}
+  if (!srcs.length) srcs = [imgEl.src];
+  _ivGallery = srcs;
+  _ivIndex = Math.max(0, srcs.indexOf(imgEl.src));
+  _ivOpenSrc(srcs[_ivIndex]);
+}
+// Swipe navigation (dir = +1 next, -1 prev), cyclic. Returns true if it moved.
+function _ivShow(dir) {
+  if (_ivGallery.length < 2) return false;
+  _ivIndex = (_ivIndex + dir + _ivGallery.length) % _ivGallery.length;
+  const img = _ivImg(); _ivResetState();
+  if (img) { img.style.transition = 'none'; img.style.transform = ''; img.src = _ivGallery[_ivIndex]; }
+  _ivUpdateCounter();
+  return true;
 }
 function closeImageLightbox() {
   const img = _ivImg();
@@ -8991,7 +9023,7 @@ function _ivTouchStart(e) {
     if (now - _iv.lastTap < 300) { _iv.lastTap = 0; _ivToggleZoom(); e.preventDefault(); return; } // double-tap
     _iv.lastTap = now;
     if (_iv.scale > 1) { _iv.mode = 'pan'; _iv.panX = t[0].clientX; _iv.panY = t[0].clientY; _iv.startTx = _iv.tx; _iv.startTy = _iv.ty; e.preventDefault(); }
-    else _iv.mode = null;
+    else { _iv.mode = 'swipe'; _iv.panX = t[0].clientX; _iv.panY = t[0].clientY; }   // not zoomed → horizontal swipe changes photo
   }
 }
 function _ivTouchMove(e) {
@@ -9006,12 +9038,21 @@ function _ivTouchMove(e) {
     _iv.tx = _iv.startTx + (t[0].clientX - _iv.panX);
     _iv.ty = _iv.startTy + (t[0].clientY - _iv.panY);
     _ivApply();
+  } else if (_iv.mode === 'swipe' && t.length === 1 && _ivGallery.length > 1) {
+    const dx = t[0].clientX - _iv.panX, dy = t[0].clientY - _iv.panY;
+    if (Math.abs(dx) > Math.abs(dy)) { e.preventDefault(); _iv.tx = dx; _iv.ty = 0; _ivApply(); }   // drag the photo with the finger
   }
 }
 function _ivTouchEnd(e) {
   if (e.touches.length === 1 && _iv.mode === 'pinch') { // lifted one finger of a pinch → keep panning
     _iv.mode = 'pan'; _iv.panX = e.touches[0].clientX; _iv.panY = e.touches[0].clientY; _iv.startTx = _iv.tx; _iv.startTy = _iv.ty;
   } else if (e.touches.length === 0) {
+    if (_iv.mode === 'swipe') {
+      const dx = _iv.tx; _iv.mode = null;
+      if (Math.abs(dx) > 50 && _ivShow(dx < 0 ? 1 : -1)) return;   // far enough → next / previous photo
+      _iv.tx = 0; _iv.ty = 0; const img = _ivImg(); if (img) { img.style.transition = 'transform 0.2s'; img.style.transform = ''; }   // else snap back
+      return;
+    }
     _iv.mode = null;
     if (_iv.scale <= 1.02) { _iv.scale = 1; _iv.tx = 0; _iv.ty = 0; const img = _ivImg(); if (img) { img.style.transition = 'transform 0.2s'; img.style.transform = ''; } }
   }
@@ -10177,7 +10218,7 @@ function togglePinnedNote(id) {
   const nowDone = !!clockState.pinDone[id];
   if (nowDone) _chipHold++;                  // hold the counter number until the bubble lands
   renderRunChecklist();
-  if (nowDone) flyDoneBubble(() => togglePinnedNote(id));   // Done bubble floats to the counter + Undo
+  if (nowDone) flyDoneBubble(() => togglePinnedNote(id), _checklistDurations()['pin:' + id]);   // Done bubble floats to the counter + Undo, w/ the time it took
 }
 // At clock-out: for each pinned note ticked done this session, fold it into the
 // entry notes (with its journey), stamp/clear the inbox, and remove the pin.
@@ -13313,7 +13354,7 @@ function _renderClOrganiseBody() {
   const restBlock = rest.length
     ? `<div style="font-size:12px;color:var(--subtext);font-weight:700;text-transform:uppercase;letter-spacing:0.4px;margin:16px 0 8px;">Rest of the tasks</div>${rest.map(rowHtml).join('')}`
     : '';
-  body.innerHTML = scopeToggle + estLine + intro + flaggedBlock + restBlock;
+  body.innerHTML = '<div class="cl-sticky-top">' + scopeToggle + estLine + intro + '</div>' + flaggedBlock + restBlock;
 }
 
 function openPlannerDetail(planId) {
