@@ -2552,7 +2552,7 @@
       <span style="font-size:17px;font-weight:600;flex:1;text-align:center;">▣ Batches</span>
       <span style="width:60px;"></span>
     </div>
-    <div style="padding:0 20px 8px;font-size:12px;color:var(--subtext);line-height:1.5;">Group this job's tasks into batches — the clock shows each batch as its own section you can open and collapse. Tasks keep their name, history and steps; a batch is just a home.</div>
+    <div style="padding:0 20px 8px;font-size:12px;color:var(--subtext);line-height:1.5;">Group this job's tasks into batches — the clock shows each batch as its own section you can open and collapse. Tasks keep their name, history and steps; a batch is just a home. Hold ≡ and drag a batch to set the order — it carries to the job editor and the clock.</div>
     <div style="display:flex;gap:8px;padding:4px 20px 12px;">
       <input id="batch-new-name" type="text" placeholder="New batch (e.g. Animals)"
         autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
@@ -2678,7 +2678,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.180';
+const APP_VERSION = '2026-06-21.181';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -9139,12 +9139,12 @@ function renderBatchManager() {
         ${ro ? '' : `<button onclick="removeTaskFromBatch(decodeURIComponent('${enc(t)}'))" title="Remove from batch (task stays on the job)" style="background:none;border:none;color:var(--subtext);font-size:15px;cursor:pointer;padding:2px 4px;flex-shrink:0;">✕</button>`}
       </div>`).join('');
     return `
-    <div style="border:1px solid var(--border);border-radius:12px;padding:10px 14px;margin-bottom:10px;">
+    <div id="bmcard-${bi}" style="border:1px solid var(--border);border-radius:12px;padding:10px 14px;margin-bottom:10px;">
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+        ${ro ? '' : `<span ontouchstart="bmTouchStart(event,${bi})" style="color:var(--subtext);font-size:20px;padding:2px 6px 2px 0;user-select:none;-webkit-user-select:none;cursor:grab;flex-shrink:0;">≡</span>`}
         <span style="font-size:15px;font-weight:700;color:var(--text);flex:1;min-width:0;">▣ ${_escTxt(bn)}</span>
         <span style="font-size:12px;color:var(--subtext);">${members.length} task${members.length === 1 ? '' : 's'}</span>
         ${ro ? '' : `
-        <button onclick="moveBatchUp(${bi})" title="Move up" style="background:none;border:none;color:${bi === 0 ? 'var(--border)' : 'var(--subtext)'};font-size:15px;cursor:pointer;padding:2px 5px;">↑</button>
         <button onclick="renameBatch(${bi})" title="Rename" style="background:none;border:none;color:var(--subtext);font-size:15px;cursor:pointer;padding:2px 5px;">✎</button>
         <button onclick="deleteBatch(${bi})" title="Delete batch (tasks stay on the job)" style="background:none;border:none;color:var(--red);font-size:15px;cursor:pointer;padding:2px 5px;">✕</button>`}
       </div>
@@ -9204,14 +9204,87 @@ function deleteBatch(bi) {
   renderBatchManager();
   renderDirSubtaskList();
 }
-function moveBatchUp(bi) {
+// Reorder batches — the saved order is the one true order: the manager, the Edit
+// Job task list and the clock's batch headers all draw from it (on the clock a
+// batch holding a flagged task still floats above it for that run).
+function _bmMoveBatch(from, to) {
   if (isWorker()) return;
   const job = _dirJobName(); const all = getTaskBatches(); const rec = all[job];
-  if (!rec || bi <= 0 || !rec.order[bi]) return;
-  const [b] = rec.order.splice(bi, 1);
-  rec.order.splice(bi - 1, 0, b);
+  if (!rec || from === to || !rec.order[from] || to < 0 || to >= rec.order.length) return;
+  const [b] = rec.order.splice(from, 1);
+  rec.order.splice(to, 0, b);
   saveTaskBatches(all);
+  autoBackup();
   renderBatchManager();
+  renderDirSubtaskList();
+  if (clockState && clockState.running && clockState.task === job) renderRunChecklist();
+}
+// Hold ≡ and drag a batch card to reorder — same feel as dragging tasks.
+let _bmSrcIdx = null, _bmClone = null, _bmStartY = 0, _bmDragging = false, _bmRects = [], _bmCount = 0;
+function bmTouchStart(event, idx) {
+  event.preventDefault();
+  const job = _dirJobName(); const rec = _batchRec(job);
+  _bmCount = rec ? rec.order.length : 0;
+  _bmSrcIdx = idx; _bmStartY = event.touches[0].clientY;
+  _bmDragging = false; _bmClone = null; _bmRects = [];
+  document.addEventListener('touchmove', bmTouchMove, { passive: false });
+  document.addEventListener('touchend', bmTouchEnd, { once: true });
+  document.addEventListener('touchcancel', bmTouchCancel, { once: true });
+}
+function bmTouchMove(event) {
+  if (_bmSrcIdx === null) return;
+  const fingerY = event.touches[0].clientY;
+  const dy = fingerY - _bmStartY;
+  if (!_bmDragging) {
+    if (Math.abs(dy) < 6) return;
+    _bmDragging = true;
+    _bmRects = [];
+    for (let i = 0; i < _bmCount; i++) {
+      const c = document.getElementById('bmcard-' + i);
+      _bmRects.push(c ? c.getBoundingClientRect() : null);
+    }
+    const card = document.getElementById('bmcard-' + _bmSrcIdx);
+    if (!card) return;
+    card.style.opacity = '0.3';
+    const rec = _batchRec(_dirJobName());
+    _bmClone = document.createElement('div');
+    _bmClone.textContent = '▣ ' + ((rec && rec.order[_bmSrcIdx]) || '');
+    _bmClone.style.cssText = `position:fixed;left:20px;right:20px;background:var(--card);padding:12px 16px;border-radius:12px;font-size:15px;font-weight:700;color:var(--text);box-shadow:0 6px 24px rgba(0,0,0,0.18);z-index:999;pointer-events:none;`;
+    _bmClone.style.top = (fingerY - 24) + 'px';
+    document.body.appendChild(_bmClone);
+    if (navigator.vibrate) { try { navigator.vibrate(30); } catch (e) {} }
+  }
+  event.preventDefault();
+  if (_bmClone) _bmClone.style.top = (fingerY - 24) + 'px';
+}
+function bmTouchCancel() {
+  document.removeEventListener('touchmove', bmTouchMove);
+  if (_bmClone) { _bmClone.remove(); _bmClone = null; }
+  const card = _bmSrcIdx !== null ? document.getElementById('bmcard-' + _bmSrcIdx) : null;
+  if (card) card.style.opacity = '';
+  _bmSrcIdx = null; _bmDragging = false; _bmRects = [];
+}
+function bmTouchEnd(event) {
+  document.removeEventListener('touchmove', bmTouchMove);
+  if (!_bmDragging || _bmSrcIdx === null) { _bmSrcIdx = null; _bmDragging = false; return; }
+  const fingerY = event.changedTouches[0].clientY;
+  if (_bmClone) { _bmClone.remove(); _bmClone = null; }
+  const card = document.getElementById('bmcard-' + _bmSrcIdx);
+  if (card) card.style.opacity = '';
+  let targetIdx = _bmSrcIdx;
+  for (let i = 0; i < _bmRects.length; i++) {
+    const rect = _bmRects[i];
+    if (!rect) continue;
+    if (fingerY >= rect.top && fingerY <= rect.bottom) { targetIdx = i; break; }
+  }
+  if (_bmRects.length > 0) {
+    if (_bmRects[0] && fingerY < _bmRects[0].top) targetIdx = 0;
+    const last = _bmRects[_bmRects.length - 1];
+    if (last && fingerY > last.bottom) targetIdx = _bmRects.length - 1;
+  }
+  const src = _bmSrcIdx;
+  _bmSrcIdx = null; _bmDragging = false; _bmRects = [];
+  _bmMoveBatch(src, targetIdx);
 }
 // ── Task picker for one batch — tap a task to move it in/out ──
 function openBatchTaskPicker(bi) {
