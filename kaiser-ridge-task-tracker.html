@@ -2291,9 +2291,12 @@
       </div>
 
       <div style="padding:16px 20px 8px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;">
           <span style="font-size:13px;font-weight:600;color:var(--subtext);">TASKS</span>
-          <span onclick="openMoveTasks()" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;">⇄ Move</span>
+          <span style="display:flex;gap:14px;">
+            <span onclick="openBatchManager()" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;">▣ Batches</span>
+            <span onclick="openMoveTasks()" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;">⇄ Move</span>
+          </span>
         </div>
         <div id="dir-subtask-list"></div>
         <button onclick="openSubtaskPicker()" style="margin-top:8px;background:none;border:1px dashed var(--border);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">+ Add Task</button>
@@ -2541,6 +2544,39 @@
   </div>
 </div>
 
+<!-- ══════════════ BATCH MANAGER (Job → Batch → Task → Step) ══════════════ -->
+<div class="modal-backdrop" id="modal-batch-manager" style="z-index:300;">
+  <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:88vh;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;padding:16px 20px 8px;">
+      <button onclick="closeModal('modal-batch-manager')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:0;margin-right:12px;">‹ Back</button>
+      <span style="font-size:17px;font-weight:600;flex:1;text-align:center;">▣ Batches</span>
+      <span style="width:60px;"></span>
+    </div>
+    <div style="padding:0 20px 8px;font-size:12px;color:var(--subtext);line-height:1.5;">Group this job's tasks into batches — the clock shows each batch as its own section you can open and collapse. Tasks keep their name, history and steps; a batch is just a home.</div>
+    <div style="display:flex;gap:8px;padding:4px 20px 12px;">
+      <input id="batch-new-name" type="text" placeholder="New batch (e.g. Animals)"
+        autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
+        style="flex:1;padding:12px 14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();addBatch();}">
+      <button onclick="addBatch()" style="background:var(--blue);border:none;border-radius:12px;color:#fff;font-size:15px;font-weight:600;padding:0 18px;cursor:pointer;">Add</button>
+    </div>
+    <div id="batch-mgr-list" style="flex:1;overflow-y:auto;padding:0 20px 24px;"></div>
+  </div>
+</div>
+
+<!-- ══════════════ BATCH TASK PICKER ══════════════ -->
+<div class="modal-backdrop" id="modal-batch-tasks" style="z-index:400;">
+  <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:80vh;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;padding:16px 20px 8px;">
+      <button onclick="closeBatchTaskPicker()" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:0;margin-right:12px;">‹ Back</button>
+      <span style="font-size:17px;font-weight:600;flex:1;text-align:center;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">▣ <span id="batch-tasks-title"></span></span>
+      <button onclick="closeBatchTaskPicker()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;padding:0;width:60px;text-align:right;">Done</button>
+    </div>
+    <div style="padding:0 20px 6px;font-size:12px;color:var(--subtext);">Tap a task to put it in this batch — tap again to take it out.</div>
+    <div id="batch-tasks-list" style="flex:1;overflow-y:auto;padding:0 20px 24px;"></div>
+  </div>
+</div>
+
 <!-- ══════════════ SUBTASK GUIDE MODAL ══════════════ -->
 <div class="modal-backdrop" id="modal-subtask-guide" style="z-index:500;">
   <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:85vh;display:flex;flex-direction:column;">
@@ -2642,7 +2678,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.178';
+const APP_VERSION = '2026-06-21.179';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3614,8 +3650,8 @@ function _linkifyText(s) {
 }
 let _runSegBlockTapUntil = 0;
 function setRunTab(tab) { if (Date.now() < _runSegBlockTapUntil) return; _runTabUserSet = true; _runTab = tab; renderRunChecklist(); }
-function setRunGroupBy(k) { _runGroupBy = (k === 'lastdone') ? 'lastdone' : 'flag'; renderRunChecklist(); }
-function toggleRunGroup(k) { _runGroupCollapsed[k] = !_runGroupCollapsed[k]; renderRunChecklist(); }
+function setRunGroupBy(k) { _runGroupBy = (k === 'lastdone' || k === 'batch') ? k : 'flag'; renderRunChecklist(); }
+function toggleRunGroup(k, cur) { _runGroupCollapsed[k] = (cur === undefined) ? !_runGroupCollapsed[k] : !cur; renderRunChecklist(); }
 
 // ── Drag the Tasks/To-dos section up to cover the clock (bigger list). Snaps
 // back ~3s after you stop touching it. The clock ring collapses via max-height.
@@ -3875,6 +3911,7 @@ function _renameChecklistItem(task, oldName, newName) {
   if (steps[oldName]) { if (!steps[newName]) steps[newName] = steps[oldName]; delete steps[oldName]; saveSubtaskSteps(steps); }
   const guides = getSubtaskGuides();
   if (guides[oldName]) { if (!guides[newName]) guides[newName] = guides[oldName]; delete guides[oldName]; saveSubtaskGuides(guides); }
+  _migrateBatchTaskName(oldName, newName);   // ▣ batch membership follows the task
   const orig = getSubtaskOrigin();
   if (orig[oldName]) { orig[newName] = Object.assign({}, orig[newName] || {}, orig[oldName], { edited: new Date().toISOString() }); delete orig[oldName]; saveSubtaskOrigin(orig); }
   const flags = getChecklistFlags(); let flagsChanged = false;
@@ -4008,6 +4045,7 @@ function deleteRunItem() {
     if (Array.isArray(SUBTASKS[task])) SUBTASKS[task] = SUBTASKS[task].filter(s => s !== item);
     _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
     const flags = getChecklistFlags(); if (flags[task] && flags[task][item] != null) { delete flags[task][item]; if (!Object.keys(flags[task]).length) delete flags[task]; saveChecklistFlags(flags); }
+    const tbat = getTaskBatches(); if (tbat[task] && tbat[task].items && tbat[task].items[item] != null) { delete tbat[task].items[item]; saveTaskBatches(tbat); }   // ▣ this job's batch only
     const sp = getSubtaskPhotos(); if (sp[item]) { delete sp[item]; saveSubtaskPhotos(sp); }
     if (Array.isArray(clockState.checklistDone)) clockState.checklistDone = clockState.checklistDone.filter(d => d.item !== item);
     if (Array.isArray(clockState.stepDone)) clockState.stepDone = clockState.stepDone.filter(d => d.item !== item);
@@ -4132,7 +4170,7 @@ function renderRunChecklist() {
     return;
   }
   // Reset the tab choice + list-expand when the clocked job changes.
-  if (_runLastTask !== clockState.task) { _runTabUserSet = false; _expandedNotes.clear(); _runLastTask = clockState.task; _runGroupBy = 'flag'; _runGroupCollapsed = {}; resetRunList(); }
+  if (_runLastTask !== clockState.task) { _runTabUserSet = false; _expandedNotes.clear(); _runLastTask = clockState.task; _runGroupBy = _jobHasBatches(clockState.task) ? 'batch' : 'flag'; _runGroupCollapsed = {}; resetRunList(); }
   const grab = document.getElementById('run-grab'); if (grab) grab.classList.add('on');
   const done = (clockState && Array.isArray(clockState.checklistDone)) ? clockState.checklistDone : [];
   const carried = new Set((clockState && Array.isArray(clockState.checklistCarried)) ? clockState.checklistCarried : []);
@@ -4187,10 +4225,11 @@ function renderRunChecklist() {
     }
     // Group-by toggle — only worth offering on a longer list.
     const GROUP_MIN = 4;
-    if (items.length >= GROUP_MIN) {
+    const _hasBatches = _jobHasBatches(clockState.task);
+    if (items.length >= GROUP_MIN || _hasBatches) {
       const _gopt = (k, label) => `<span onclick="setRunGroupBy('${k}')" style="padding:5px 12px;border-radius:14px;font-size:12px;font-weight:600;cursor:pointer;${_runGroupBy === k ? 'background:rgba(90,200,250,0.18);color:#5ac8fa;' : 'color:#8b93a7;'}">${label}</span>`;
       rows += `<div style="display:flex;gap:5px;align-items:center;padding:2px 0 8px;">
-        <span style="font-size:11px;color:#616a7e;margin-right:3px;">Group</span>${_gopt('flag', 'Flagged')}${_gopt('lastdone', 'Last done')}</div>`;
+        <span style="font-size:11px;color:#616a7e;margin-right:3px;">Group</span>${_hasBatches ? _gopt('batch', 'Batches') : ''}${_gopt('flag', 'Flagged')}${_gopt('lastdone', 'Last done')}</div>`;
     }
     // ↺ Reset reps — subtle, shown once any repeatable task has reps on this run.
     if (jobHasReps(clockState.task)) {
@@ -4262,7 +4301,33 @@ function renderRunChecklist() {
       }
       return html;
     };
-    if (_runGroupBy === 'lastdone' && items.length >= GROUP_MIN) {
+    if (_runGroupBy === 'batch' && _hasBatches) {
+      // Batches lens — each batch is a collapsible section with progress + learned
+      // estimate. Default: collapsed, so a big job opens as a handful of headers;
+      // a batch holding a flagged (undone) task floats up and starts open.
+      const _bRec = _batchRec(clockState.task);
+      const _isDoneRow = s => _isTaskDoneNow(clockState.task, s, done) || carried.has(s) || (isRepeatTask(clockState.task, s) && taskRepCount(clockState.task, s) > 0);
+      const groups = _bRec.order
+        .map(name => ({ key: 'b:' + name, name, members: items.filter(s => _bRec.items[s] === name) }))
+        .filter(g => g.members.length);
+      const loose = items.filter(s => !(_bRec.items[s] && _bRec.order.includes(_bRec.items[s])));
+      if (loose.length) groups.push({ key: 'b:~loose', name: 'Other tasks', members: loose, loose: true });
+      const _gHasFlag = g => g.members.some(s => clFlags[s] && !_isDoneRow(s));
+      groups.sort((a, b) => _gHasFlag(b) - _gHasFlag(a));   // stable — flagged batches float, saved order otherwise
+      rows += groups.map(g => {
+        const doneN = g.members.filter(_isDoneRow).length;
+        const est = g.members.reduce((t, s) => { const a = itemAvg[s.trim().replace(/\s+/g, ' ').toLowerCase()]; return t + (isFinite(a) && a > 0 ? a : 0); }, 0);
+        const fl = _gHasFlag(g);
+        const col = (g.key in _runGroupCollapsed) ? !!_runGroupCollapsed[g.key] : !fl;
+        const allDone = g.members.length > 0 && doneN >= g.members.length;
+        const hd = `<div onclick="toggleRunGroup(decodeURIComponent('${encodeURIComponent(g.key)}'), ${col})" style="display:flex;align-items:center;gap:8px;padding:15px 0 6px;cursor:pointer;">
+          <span style="color:#8b93a7;font-size:13px;">${col ? '▸' : '▾'}</span>
+          <span style="font-size:13px;font-weight:700;letter-spacing:0.3px;color:${g.loose ? '#8b93a7' : (allDone ? '#30d158' : '#dfe3ec')};">${fl ? '🚩 ' : ''}${allDone ? '✓ ' : ''}${_escHtml(g.name)}</span>
+          <span style="font-size:11px;color:#616a7e;background:rgba(255,255,255,0.06);border-radius:9px;padding:1px 7px;">${doneN}/${g.members.length}${est ? ' · ~' + fmtMin(est) : ''}</span>
+          <span style="flex:1;"></span></div>`;
+        return hd + (col ? '' : g.members.map(buildTaskRow).join(''));
+      }).join('');
+    } else if (_runGroupBy === 'lastdone' && items.length >= GROUP_MIN) {
       // Group the visible tasks by how long since each was last done — a lens to
       // surface neglected tasks; it doesn't touch the saved flag order.
       const _now = Date.now();
@@ -6422,7 +6487,7 @@ const KR_BACKUP_KEYS = [
   'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
   'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_task_videos', 'kr_checklist_flags', 'kr_task_merges', 'kr_subtask_origin', 'kr_pins_applied',
   'kr_agents', 'kr_agent_runs', 'kr_planner_checklist', 'kr_pin_order', 'kr_subtask_photos', 'kr_job_reminders', 'kr_task_reminders',
-  'kr_task_types', 'kr_job_runs', 'kr_job_flags', 'kr_task_moves', 'kr_job_horizon', 'kr_job_links'
+  'kr_task_types', 'kr_job_runs', 'kr_job_flags', 'kr_task_moves', 'kr_job_horizon', 'kr_job_links', 'kr_task_batches'
 ];
 
 function buildBackupSnapshot() {
@@ -6715,7 +6780,7 @@ const KR_LIBRARY_KEYS = [
   'kr_equipment_notes', 'kr_equipment_links',
   'kr_equipment_master', 'kr_extra_frequencies', 'kr_extra_locations', 'kr_extra_clients',
   'kr_task_order', 'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
-  'kr_projects', 'kr_task_videos', 'kr_subtask_photos', 'kr_job_links'
+  'kr_projects', 'kr_task_videos', 'kr_subtask_photos', 'kr_job_links', 'kr_task_batches'
 ];
 
 function exportTaskLibrary() {
@@ -8749,7 +8814,7 @@ function renderDirSubtaskList(items) {
   const _clFlags = (_jn && getChecklistFlags()[_jn]) || {};
   const _pairs = _subtaskItems.map((s, i) => ({ s, i }));
   const _display = _pairs.filter(p => _clFlags[p.s]).concat(_pairs.filter(p => !_clFlags[p.s]));
-  document.getElementById('dir-subtask-list').innerHTML = _display.map(({ s, i }) => {
+  const _rowFor = ({ s, i }) => {
     const enc = s.replace(/'/g,"\\'");
     const hasGuide = guides[s] && (_guideInstructionsToSteps(guides[s].instructions).length > 0 || guides[s].url);
     const nSteps = (stepsMap[s] || []).length;
@@ -8779,7 +8844,25 @@ function renderDirSubtaskList(items) {
       <button onclick="openTaskRemindPicker(${i})" title="${_remOn ? 'Reminder active — tap to edit' : 'Set a reminder'}" style="background:${_remOn ? 'rgba(255,214,10,0.18)' : 'none'};border:1px solid ${_remOn ? 'rgba(255,214,10,0.6)' : 'transparent'};border-radius:8px;opacity:${_remOn ? '1' : '0.3'};font-size:15px;line-height:1;cursor:pointer;padding:4px 5px;flex-shrink:0;">🔔</button>
       <button onclick="removeSubtaskItem(${i})" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:4px;flex-shrink:0;">✕</button>
     </div>`;
-  }).join('');
+  };
+  // With batches: group the display under batch headers (Unbatched last). Rows keep
+  // their true index into _subtaskItems, so edit/delete/drag/flag are unaffected.
+  const _bRec = _jn && _batchRec(_jn);
+  let _listHtml;
+  if (_bRec && _bRec.order.length) {
+    const _used = new Set();
+    const _secHd = (label, n, muted) => `<div style="font-size:12px;font-weight:700;color:var(--subtext);${muted ? 'opacity:0.7;' : ''}padding:12px 0 2px;">▣ ${_escTxt(label)} · ${n}</div>`;
+    _listHtml = _bRec.order.map(bn => {
+      const ps = _display.filter(p => _bRec.items[p.s] === bn);
+      ps.forEach(p => _used.add(p.i));
+      return ps.length ? _secHd(bn, ps.length) + ps.map(_rowFor).join('') : '';
+    }).join('');
+    const _rest = _display.filter(p => !_used.has(p.i));
+    if (_rest.length) _listHtml += _secHd('Unbatched', _rest.length, true) + _rest.map(_rowFor).join('');
+  } else {
+    _listHtml = _display.map(_rowFor).join('');
+  }
+  document.getElementById('dir-subtask-list').innerHTML = _listHtml;
   _sizeDirSubtaskInputs();
 }
 // Size each item box to its full wrapped text so long items are fully visible.
@@ -9001,6 +9084,187 @@ function getSubtaskSteps() {
 }
 function saveSubtaskSteps(steps) {
   localStorage.setItem('kr_subtask_steps', JSON.stringify(steps));
+}
+
+// ══════════════════════════════════════════════
+//  BATCHES — Job → Batch → Task → Step
+// ══════════════════════════════════════════════
+// A batch is pure organisation: a named group of tasks WITHIN a job. Tasks keep
+// their own name, ticks, timing history, steps and flags — membership is only
+// metadata, so a wrong grouping is a two-second undo, never data loss.
+// Store: { [jobName]: { order: [batchName, …], items: { [taskText]: batchName } } }
+function getTaskBatches() { return JSON.parse(localStorage.getItem('kr_task_batches') || '{}'); }
+function saveTaskBatches(o) { return _safeSetItem('kr_task_batches', JSON.stringify(o)); }
+function _batchRec(job) {
+  const r = job && getTaskBatches()[job];
+  return (r && Array.isArray(r.order) && r.items) ? r : null;
+}
+function _jobHasBatches(job) { const r = _batchRec(job); return !!(r && r.order.length); }
+// A task was renamed (newName) or deleted (newName = null) — keep membership with it.
+function _migrateBatchTaskName(oldName, newName) {
+  const all = getTaskBatches(); let ch = false;
+  Object.keys(all).forEach(job => {
+    const it = all[job] && all[job].items;
+    if (it && it[oldName] != null) {
+      if (newName && it[newName] == null) it[newName] = it[oldName];
+      delete it[oldName]; ch = true;
+    }
+  });
+  if (ch) saveTaskBatches(all);
+}
+
+// ── Batch manager (Edit Job → ▣ Batches) ──
+let _batchPickTarget = null;   // batch name the task picker is filling
+function openBatchManager() {
+  const job = _dirJobName();
+  if (!job) { showToast('Save the job first, then organise its tasks into batches'); return; }
+  document.getElementById('batch-new-name').value = '';
+  renderBatchManager();
+  openModal('modal-batch-manager');
+}
+function renderBatchManager() {
+  const job = _dirJobName();
+  const listEl = document.getElementById('batch-mgr-list');
+  if (!listEl) return;
+  const all = getTaskBatches();
+  const rec = all[job] || { order: [], items: {} };
+  const tasks = _subtaskItems.slice();
+  const ro = isWorker();
+  const enc = s => encodeURIComponent(s);
+  const cards = rec.order.map((bn, bi) => {
+    const members = tasks.filter(t => rec.items[t] === bn);
+    const rows = members.map(t => `
+      <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--border);">
+        <span style="font-size:14px;color:var(--text);flex:1;min-width:0;">${_escTxt(t)}</span>
+        ${ro ? '' : `<button onclick="removeTaskFromBatch(decodeURIComponent('${enc(t)}'))" title="Remove from batch (task stays on the job)" style="background:none;border:none;color:var(--subtext);font-size:15px;cursor:pointer;padding:2px 4px;flex-shrink:0;">✕</button>`}
+      </div>`).join('');
+    return `
+    <div style="border:1px solid var(--border);border-radius:12px;padding:10px 14px;margin-bottom:10px;">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+        <span style="font-size:15px;font-weight:700;color:var(--text);flex:1;min-width:0;">▣ ${_escTxt(bn)}</span>
+        <span style="font-size:12px;color:var(--subtext);">${members.length} task${members.length === 1 ? '' : 's'}</span>
+        ${ro ? '' : `
+        <button onclick="moveBatchUp(${bi})" title="Move up" style="background:none;border:none;color:${bi === 0 ? 'var(--border)' : 'var(--subtext)'};font-size:15px;cursor:pointer;padding:2px 5px;">↑</button>
+        <button onclick="renameBatch(${bi})" title="Rename" style="background:none;border:none;color:var(--subtext);font-size:15px;cursor:pointer;padding:2px 5px;">✎</button>
+        <button onclick="deleteBatch(${bi})" title="Delete batch (tasks stay on the job)" style="background:none;border:none;color:var(--red);font-size:15px;cursor:pointer;padding:2px 5px;">✕</button>`}
+      </div>
+      ${rows || '<div style="font-size:13px;color:var(--subtext);padding:6px 0;">No tasks in this batch yet.</div>'}
+      ${ro ? '' : `<div onclick="openBatchTaskPicker(${bi})" style="color:var(--blue);font-size:13px;font-weight:600;cursor:pointer;padding:8px 0 2px;">＋ Add tasks</div>`}
+    </div>`;
+  }).join('');
+  const loose = tasks.filter(t => !(rec.items[t] && rec.order.includes(rec.items[t])));
+  const looseHtml = rec.order.length && loose.length ? `
+    <div style="margin-top:4px;">
+      <div style="font-size:12px;font-weight:700;color:var(--subtext);margin-bottom:2px;">UNBATCHED · ${loose.length}</div>
+      <div style="font-size:13px;color:var(--subtext);line-height:1.6;">${loose.map(_escTxt).join(' · ')}</div>
+    </div>` : '';
+  listEl.innerHTML = (cards || '<div style="padding:14px 0;color:var(--subtext);font-size:14px;">No batches yet — name one above (e.g. Animals, Power checks, Planning) and add tasks to it.</div>') + looseHtml;
+}
+function addBatch() {
+  if (isWorker()) return;
+  const job = _dirJobName(); if (!job) return;
+  const inp = document.getElementById('batch-new-name');
+  const name = (inp.value || '').trim();
+  if (!name) { showToast('Give the batch a name'); return; }
+  const all = getTaskBatches();
+  const rec = all[job] || (all[job] = { order: [], items: {} });
+  if (rec.order.some(b => b.toLowerCase() === name.toLowerCase())) { showToast('That batch already exists'); return; }
+  rec.order.push(name);
+  saveTaskBatches(all);
+  autoBackup();
+  inp.value = '';
+  renderBatchManager();
+  openBatchTaskPicker(rec.order.length - 1);   // straight into picking its tasks
+}
+function renameBatch(bi) {
+  if (isWorker()) return;
+  const job = _dirJobName(); const all = getTaskBatches(); const rec = all[job];
+  if (!rec || !rec.order[bi]) return;
+  const oldName = rec.order[bi];
+  const newName = (prompt('Rename "' + oldName + '" to:', oldName) || '').trim();
+  if (!newName || newName === oldName) return;
+  if (rec.order.some(b => b.toLowerCase() === newName.toLowerCase())) { showToast('That batch already exists'); return; }
+  rec.order[bi] = newName;
+  Object.keys(rec.items).forEach(t => { if (rec.items[t] === oldName) rec.items[t] = newName; });
+  saveTaskBatches(all);
+  autoBackup();
+  renderBatchManager();
+}
+function deleteBatch(bi) {
+  if (isWorker()) return;
+  const job = _dirJobName(); const all = getTaskBatches(); const rec = all[job];
+  if (!rec || !rec.order[bi]) return;
+  const name = rec.order[bi];
+  if (!confirm('Delete the batch "' + name + '"?\n\nIts tasks stay on the job — they just become unbatched.')) return;
+  rec.order.splice(bi, 1);
+  Object.keys(rec.items).forEach(t => { if (rec.items[t] === name) delete rec.items[t]; });
+  if (!rec.order.length && !Object.keys(rec.items).length) delete all[job];
+  saveTaskBatches(all);
+  autoBackup();
+  renderBatchManager();
+  renderDirSubtaskList();
+}
+function moveBatchUp(bi) {
+  if (isWorker()) return;
+  const job = _dirJobName(); const all = getTaskBatches(); const rec = all[job];
+  if (!rec || bi <= 0 || !rec.order[bi]) return;
+  const [b] = rec.order.splice(bi, 1);
+  rec.order.splice(bi - 1, 0, b);
+  saveTaskBatches(all);
+  renderBatchManager();
+}
+// ── Task picker for one batch — tap a task to move it in/out ──
+function openBatchTaskPicker(bi) {
+  const job = _dirJobName(); const rec = _batchRec(job) || { order: [], items: {} };
+  if (!rec.order[bi]) return;
+  _batchPickTarget = rec.order[bi];
+  document.getElementById('batch-tasks-title').textContent = _batchPickTarget;
+  renderBatchTaskPicker();
+  openModal('modal-batch-tasks');
+}
+function renderBatchTaskPicker() {
+  const job = _dirJobName();
+  const listEl = document.getElementById('batch-tasks-list');
+  if (!listEl) return;
+  const rec = _batchRec(job) || { order: [], items: {} };
+  const enc = s => encodeURIComponent(s);
+  listEl.innerHTML = _subtaskItems.map(t => {
+    const inThis = rec.items[t] === _batchPickTarget;
+    const other = !inThis && rec.items[t] && rec.order.includes(rec.items[t]) ? rec.items[t] : '';
+    return `<div onclick="toggleBatchTask(decodeURIComponent('${enc(t)}'))" style="display:flex;align-items:center;gap:10px;padding:13px 4px;border-bottom:1px solid var(--border);cursor:pointer;">
+      <span style="width:22px;height:22px;border-radius:7px;flex-shrink:0;display:flex;align-items:center;justify-content:center;${inThis ? 'background:var(--blue);' : 'border:1.5px solid var(--border);'}">${inThis ? '<span style="color:#fff;font-size:13px;">✓</span>' : ''}</span>
+      <span style="flex:1;min-width:0;font-size:15px;color:var(--text);">${_escTxt(t)}</span>
+      ${other ? `<span style="font-size:11px;color:var(--subtext);background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:2px 7px;flex-shrink:0;">▣ ${_escTxt(other)}</span>` : ''}
+    </div>`;
+  }).join('') || '<div style="padding:24px;text-align:center;color:var(--subtext);font-size:14px;">No tasks on this job yet.</div>';
+}
+function toggleBatchTask(taskText) {
+  if (isWorker()) return;
+  const job = _dirJobName(); const all = getTaskBatches();
+  const rec = all[job] || (all[job] = { order: [], items: {} });
+  if (!_batchPickTarget || !rec.order.includes(_batchPickTarget)) return;
+  if (rec.items[taskText] === _batchPickTarget) delete rec.items[taskText];
+  else rec.items[taskText] = _batchPickTarget;   // also moves it out of another batch
+  saveTaskBatches(all);
+  autoBackup();
+  renderBatchTaskPicker();
+}
+function closeBatchTaskPicker() {
+  closeModal('modal-batch-tasks');
+  _batchPickTarget = null;
+  renderBatchManager();
+  renderDirSubtaskList();
+  if (clockState && clockState.running && clockState.task === _dirJobName()) renderRunChecklist();
+}
+function removeTaskFromBatch(taskText) {
+  if (isWorker()) return;
+  const job = _dirJobName(); const all = getTaskBatches(); const rec = all[job];
+  if (!rec || rec.items[taskText] == null) return;
+  delete rec.items[taskText];
+  saveTaskBatches(all);
+  autoBackup();
+  renderBatchManager();
+  renderDirSubtaskList();
 }
 // Reference photos on a recurring checklist item (keyed by item text) — shown on
 // the running clock when that task appears. Rides the library so Ethan gets them.
@@ -9303,6 +9567,7 @@ function _propagateNoteEdit(note, oldText, photos) {
         // Carry any sub-steps across to the new item name.
         const steps = getSubtaskSteps();
         if (steps[oldText]) { steps[newText] = steps[oldText]; delete steps[oldText]; saveSubtaskSteps(steps); }
+        _migrateBatchTaskName(oldText, newText);   // ▣ batch membership follows the task
       }
     }
   }
@@ -10759,6 +11024,7 @@ function renameSubtaskGlobally(oldName, newName) {
   // Rename guide key if exists
   const guides = getSubtaskGuides();
   if (guides[oldName]) { guides[newName] = guides[oldName]; delete guides[oldName]; saveSubtaskGuides(guides); }
+  _migrateBatchTaskName(oldName, newName);   // ▣ batch membership follows the task
   // Update picker list
   const idx = _subtaskItems.indexOf(oldName);
   if (idx !== -1) { _subtaskItems[idx] = newName; renderDirSubtaskList(); }
@@ -10887,6 +11153,9 @@ function saveDirTask() {
       // 🚩 Job flag keyed by job name
       const jflags = getJobFlags();
       if (jflags[oldTask]) { jflags[task] = true; delete jflags[oldTask]; saveJobFlags(jflags); }
+      // ▣ Batches keyed by job name
+      const tbat = getTaskBatches();
+      if (tbat[oldTask]) { if (!tbat[task]) tbat[task] = tbat[oldTask]; delete tbat[oldTask]; saveTaskBatches(tbat); }
       // 🗓 Horizon keyed by job name
       const jhz = getJobHorizons();
       if (jhz[oldTask]) { jhz[task] = jhz[oldTask]; delete jhz[oldTask]; saveJobHorizons(jhz); }
@@ -10928,6 +11197,16 @@ function saveDirTask() {
     SUBTASKS[task] = subtasks;
   } else {
     delete SUBTASKS[task];
+  }
+
+  // ▣ Prune batch membership for tasks no longer on this job (renamed-in-editor
+  // tasks simply drop out of their batch — same known limit as task types).
+  const _tbAll = getTaskBatches();
+  const _tbRec = _tbAll[task];
+  if (_tbRec && _tbRec.items) {
+    let _tbCh = false;
+    Object.keys(_tbRec.items).forEach(t => { if (!subtasks.includes(t)) { delete _tbRec.items[t]; _tbCh = true; } });
+    if (_tbCh) saveTaskBatches(_tbAll);
   }
 
   // Save / clear the how-to video reference (keyed by the final task name).
@@ -11002,6 +11281,8 @@ function deleteDirTask() {
     if (runs[task]) { delete runs[task]; saveJobRuns(runs); }
     const jflags = getJobFlags();
     if (jflags[task]) { delete jflags[task]; saveJobFlags(jflags); }
+    const tbat = getTaskBatches();
+    if (tbat[task]) { delete tbat[task]; saveTaskBatches(tbat); }
     const jhz = getJobHorizons();
     if (jhz[task]) { delete jhz[task]; saveJobHorizons(jhz); }
     // Drop any merge records for this (now-gone) task — can't un-merge into it
