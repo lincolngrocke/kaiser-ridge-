@@ -2678,7 +2678,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.179';
+const APP_VERSION = '2026-06-21.180';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -10208,31 +10208,63 @@ function renderMoveTasks() {
   document.getElementById('move-tasks-body').innerHTML =
     `<div style="font-size:12px;color:var(--subtext);padding:2px 2px 10px;line-height:1.45;">Select tasks to move out of <b>${_escHtml(_moveSrcJob)}</b>, then choose where they go. Their steps, timing history, reminder and lap type go with them.</div>` + rows + footer;
 }
+let _moveOptBatch = false, _moveOptTodos = false;
 function _moveGoDest() {
   if (!_moveSel.size) return;
   const jobs = [...new Set(DIRECTORY.map(r => r.task).filter(Boolean))].filter(j => j !== _moveSrcJob).sort((a, b) => a.toLowerCase() < b.toLowerCase() ? -1 : 1);
   document.getElementById('move-tasks-title').textContent = 'Move ' + _moveSel.size + ' to…';
   const back = `<div onclick="renderMoveTasks()" style="font-size:13px;color:var(--blue);font-weight:600;padding:6px 2px 10px;cursor:pointer;">‹ Back to selection</div>`;
+  // Merge helpers — defaults read the intent: moving 2+ tasks suggests they belong
+  // together (batch them); moving the job's ENTIRE task list suggests a job merge
+  // (bring its to-dos along too). Both stay a tap to change.
+  const nTodos = (getTaskNotes()[_moveSrcJob] || []).length;
+  const movingAll = _moveSel.size === _subtaskItems.length;
+  _moveOptBatch = _moveSel.size >= 2;
+  _moveOptTodos = movingAll && nTodos > 0;
+  const optRow = (id, checked, label) => `
+    <label style="display:flex;align-items:flex-start;gap:10px;padding:9px 2px;cursor:pointer;">
+      <input type="checkbox" id="${id}" ${checked ? 'checked' : ''} onchange="_moveOptChanged()" style="width:20px;height:20px;margin-top:1px;accent-color:var(--blue);flex-shrink:0;">
+      <span style="font-size:13px;color:var(--text);line-height:1.4;">${label}</span>
+    </label>`;
+  const opts = `<div style="border:1px solid var(--border);border-radius:12px;padding:4px 12px;margin-bottom:12px;">
+    ${optRow('move-opt-batch', _moveOptBatch, `▣ Put them in a batch named “<b>${_escHtml(_moveSrcJob)}</b>” on the new job`)}
+    ${nTodos ? optRow('move-opt-todos', _moveOptTodos, `📌 Also bring this job's <b>${nTodos} to-do${nTodos === 1 ? '' : 's'}</b> across`) : ''}
+  </div>`;
   const list = jobs.length ? jobs.map(j => {
     const jarg = j.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     return `<div onclick="confirmMoveTo('${jarg}')" style="display:flex;align-items:center;gap:10px;padding:13px 2px;border-bottom:1px solid var(--border);cursor:pointer;">
       <span style="flex:1;min-width:0;font-size:15px;color:var(--text);">${_escHtml(j)}</span><span style="color:var(--subtext);">›</span></div>`;
   }).join('') : `<div style="padding:24px 8px;text-align:center;color:var(--subtext);">No other jobs yet — create one first.</div>`;
-  document.getElementById('move-tasks-body').innerHTML = back + list;
+  document.getElementById('move-tasks-body').innerHTML = back + opts + list;
+}
+function _moveOptChanged() {
+  const b = document.getElementById('move-opt-batch'); if (b) _moveOptBatch = b.checked;
+  const t = document.getElementById('move-opt-todos'); if (t) _moveOptTodos = t.checked;
 }
 function confirmMoveTo(destJob) {
   const tasks = [..._moveSel];
   if (!tasks.length) return;
-  _doMoveTasks(_moveSrcJob, destJob, tasks);
+  _doMoveTasks(_moveSrcJob, destJob, tasks, { batch: _moveOptBatch, todos: _moveOptTodos });
   closeModal('modal-move-tasks');
   renderDirSubtaskList();
-  showToast('Moved ' + tasks.length + ' task' + (tasks.length === 1 ? '' : 's') + ' → ' + destJob);
+  const extras = (_moveOptBatch ? ' · batched' : '') + (_moveOptTodos ? ' · to-dos too' : '');
+  showToast('Moved ' + tasks.length + ' task' + (tasks.length === 1 ? '' : 's') + ' → ' + destJob + extras);
 }
-function _doMoveTasks(srcJob, destJob, tasks) {
+function _doMoveTasks(srcJob, destJob, tasks, opts) {
+  opts = opts || {};
   if (!SUBTASKS[destJob]) SUBTASKS[destJob] = [];
   SUBTASKS[srcJob] = (SUBTASKS[srcJob] || []).filter(x => !tasks.includes(x));
   const rem = getTaskReminders(), types = getTaskTypes(), flags = getChecklistFlags(), moves = getTaskMoves();
-  let remCh = false, typCh = false, flagCh = false;
+  const bat = getTaskBatches();
+  let remCh = false, typCh = false, flagCh = false, batCh = false;
+  // Requested: land the moved tasks in a batch on the destination named after
+  // where they came from — a 3-jobs-into-1 merge arrives pre-organised.
+  let destBat = null;
+  if (opts.batch) {
+    destBat = bat[destJob] || (bat[destJob] = { order: [], items: {} });
+    if (!destBat.order.includes(srcJob)) destBat.order.push(srcJob);
+    batCh = true;
+  }
   tasks.forEach(t => {
     if (!SUBTASKS[destJob].some(x => x.trim().toLowerCase() === t.trim().toLowerCase())) SUBTASKS[destJob].push(t);
     const sk = _taskRemKey(srcJob, t), dk = _taskRemKey(destJob, t);
@@ -10241,6 +10273,8 @@ function _doMoveTasks(srcJob, destJob, tasks) {
     if (types[stk]) { types[dtk] = types[stk]; delete types[stk]; typCh = true; }
     if (flags[srcJob] && flags[srcJob][t]) { (flags[destJob] = flags[destJob] || {})[t] = flags[srcJob][t]; delete flags[srcJob][t]; flagCh = true; }
     if (flags[srcJob] && !Object.keys(flags[srcJob]).length) delete flags[srcJob];
+    if (destBat) destBat.items[t] = srcJob;
+    if (bat[srcJob] && bat[srcJob].items && bat[srcJob].items[t] != null) { delete bat[srcJob].items[t]; batCh = true; }   // leaves its old batch behind
     const prev = moves[_taskMoveKey(srcJob, t)];
     moves[_taskMoveKey(destJob, t)] = { from: srcJob, at: new Date().toISOString(), trail: (prev && prev.trail ? prev.trail : []).concat([srcJob]) };
     delete moves[_taskMoveKey(srcJob, t)];
@@ -10249,7 +10283,19 @@ function _doMoveTasks(srcJob, destJob, tasks) {
   if (remCh) saveTaskReminders(rem);
   if (typCh) saveTaskTypes(types);
   if (flagCh) saveChecklistFlags(flags);
+  if (batCh) saveTaskBatches(bat);
   saveTaskMoves(moves);
+  // Requested: bring the source job's to-dos (pinned notes are job-level, so a
+  // task move never carries them by itself). Appended, never overwritten.
+  if (opts.todos) {
+    const tn = getTaskNotes();
+    if (Array.isArray(tn[srcJob]) && tn[srcJob].length) {
+      tn[destJob] = (tn[destJob] || []).concat(tn[srcJob]);
+      delete tn[srcJob];
+      saveTaskNotes(tn);
+    }
+  }
+  autoBackup();
   _subtaskItems = _subtaskItems.filter(x => !tasks.includes(x));
 }
 // Open a job's Edit screen from just its name (used by the Reminders overview).
@@ -11254,8 +11300,10 @@ function deleteDirTask() {
   const [freq, grp, task] = _dirEditingKey.split('||');
   // Two-step guard — deleting a job is permanent and has no in-app undo.
   const _itemN = (SUBTASKS[task] || []).length;
+  const _pinN = (getTaskNotes()[task] || []).length;
   const _warn = 'Delete the job "' + task + '"?'
     + (_itemN ? '\n\nThis also removes its ' + _itemN + ' checklist task' + (_itemN === 1 ? '' : 's') + '.' : '')
+    + (_pinN ? '\n\n⚠️ It still has ' + _pinN + ' to-do' + (_pinN === 1 ? '' : 's') + ' — these are deleted with it. Use ⇄ Move to bring them to another job first if you want to keep them.' : '')
     + '\n\nThis is permanent and can\'t be undone from the app.';
   if (!confirm(_warn)) return;
   if (!confirm('Are you sure? "' + task + '" will be permanently deleted.')) return;
@@ -11283,6 +11331,10 @@ function deleteDirTask() {
     if (jflags[task]) { delete jflags[task]; saveJobFlags(jflags); }
     const tbat = getTaskBatches();
     if (tbat[task]) { delete tbat[task]; saveTaskBatches(tbat); }
+    // To-dos die with the job (warned above) — orphaned notes under a dead job
+    // name were invisible forever; deleting honestly beats losing them silently.
+    const tnDel = getTaskNotes();
+    if (tnDel[task]) { delete tnDel[task]; saveTaskNotes(tnDel); }
     const jhz = getJobHorizons();
     if (jhz[task]) { delete jhz[task]; saveJobHorizons(jhz); }
     // Drop any merge records for this (now-gone) task — can't un-merge into it
