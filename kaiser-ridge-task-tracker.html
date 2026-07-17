@@ -2693,7 +2693,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.188';
+const APP_VERSION = '2026-06-21.189';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4243,7 +4243,9 @@ function renderRunChecklist() {
     const stepDur = _stepDurations();   // timed sub-steps this session → minutes per step
     const taskAttr = (clockState && clockState.task) ? _attr(clockState.task) : '';
     const clFlags = _sessionOrGlobalFlags(clockState.task);
-    if (items.filter(s => clFlags[s]).length > 1) organiseLink = `<span onclick="openChecklistOrganise(event)" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">⤢ Organise</span>`;
+    // Always available while there are tasks — Organise is where ordering, flags
+    // AND batch moves live now, so it shouldn't hide behind having flagged two first.
+    if (items.length) organiseLink = `<span onclick="openChecklistOrganise(event)" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">⤢ Organise</span>`;
     const _expandableTasks = items.filter(s => !_isTaskDoneNow(clockState.task, s, done) && ((stepsMap[s] || []).length > 0 || s.length > 55));
     if (_expandableTasks.length >= 1) {
       const _allExp = _expandableTasks.every(s => _expandedChecklistItems.has(s));
