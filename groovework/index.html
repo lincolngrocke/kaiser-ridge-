@@ -1545,7 +1545,7 @@
       <span id="subtask-steps-title" style="font-size:17px;font-weight:600;">Steps</span>
       <span onclick="saveSubtaskStepsEditor()" style="color:var(--blue);font-size:16px;font-weight:700;cursor:pointer;">Done</span>
     </div>
-    <div style="padding:6px 20px 10px;font-size:13px;color:var(--subtext);">One step per line, in priority order. <b>Saves automatically as you type.</b> They show under the item on the running clock — tick as you go (steps aren't timed; only completing the item is).</div>
+    <div style="padding:6px 20px 10px;font-size:13px;color:var(--subtext);">One step per line, in priority order. <b>Saves automatically as you type.</b> They show under the item on the running clock — tick as you go, and each step is timed from your previous tick, so the step times add up within the task's time.</div>
     <div style="padding:0 20px;">
       <textarea id="subtask-steps-text" oninput="_stepsAutosave()" placeholder="Drain the hot tub&#10;Scrub the shell&#10;Refill and dose" autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true" style="width:100%;min-height:240px;padding:12px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);font-family:inherit;resize:vertical;outline:none;line-height:1.6;"></textarea>
     </div>
@@ -2693,7 +2693,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.184';
+const APP_VERSION = '2026-06-21.185';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3570,17 +3570,28 @@ function _checklistDurations() {
   return _computeChecklistDurations(events, _clockInEpoch(), breaks);
 }
 // Per-step durations for the running session, keyed "item~|~step" (so a step
-// text shared across tasks never collides). Each step is timed by the gap from the
-// previous step tick, chained from clock-in — same engine as the task timings.
+// text shared across tasks never collides). Steps are timed on the MERGED
+// timeline — the gap since your last tick of ANY kind (task, to-do or step) —
+// so a step is a slice of its task's span and the numbers reconcile. (Timing
+// steps on their own separate timeline was the old bug: the first step of a
+// session absorbed every task ticked since clock-in, so step times never
+// agreed with task times.)
 function _stepDurations() {
   if (!clockState) return {};
   const sd = Array.isArray(clockState.stepDone) ? clockState.stepDone : [];
   if (!sd.length) return {};
   const breaks = Array.isArray(clockState.breaks) ? clockState.breaks.slice() : [];
   if (clockState.onBreak && clockState.breakStartMs) breaks.push({ start: clockState.breakStartMs, end: Date.now() });
+  const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
+  const pinDone = clockState.pinDone || {};
   const events = sd.map(d => ({ item: d.item + '~|~' + d.step, at: d.at }))
+    .concat(done.map(d => ({ item: 't:' + _occKey(d), at: d.at })))          // anchor events —
+    .concat(Object.keys(pinDone).map(id => ({ item: 'p:' + id, at: pinDone[id] })))  // computed, then discarded
     .sort((a, b) => new Date(a.at) - new Date(b.at));
-  return _computeChecklistDurations(events, _clockInEpoch(), breaks);
+  const all = _computeChecklistDurations(events, _clockInEpoch(), breaks);
+  const out = {};
+  sd.forEach(d => { const k = d.item + '~|~' + d.step; if (all[k] != null) out[k] = all[k]; });
+  return out;
 }
 let _expandedChecklistItems = new Set();
 function markChecklistItemDone(item) {
