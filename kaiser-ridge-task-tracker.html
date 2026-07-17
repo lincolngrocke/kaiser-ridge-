@@ -2693,7 +2693,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.187';
+const APP_VERSION = '2026-06-21.188';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -14002,7 +14002,12 @@ function _startClDrag(row, task, startY, flagged) {
 function _clDragMove(clientY) {
   const dragged = _clDrag.row, parent = dragged.parentNode, flagged = _clDrag.flagged;
   // Reorder only among rows of the same flag-group (flagged stay above the rest).
-  const others = [...parent.children].filter(c => c.classList && c.classList.contains('cl-row') && (c.dataset.clFlagged === '1') === flagged && c !== dragged);
+  // ▣ batch headings also act as drop boundaries for unflagged rows: dropping just
+  // above a heading lands at the END of the previous batch, just below it at the
+  // TOP of that heading's batch.
+  const others = [...parent.children].filter(c => c !== dragged && (
+    (c.classList && c.classList.contains('cl-row') && (c.dataset.clFlagged === '1') === flagged) ||
+    (!flagged && c.dataset && c.dataset.batchSec)));
   const target = others.find(r => { const b = r.getBoundingClientRect(); return clientY < b.top + b.height / 2; });
   if (target) { parent.insertBefore(dragged, target); }
   else { const last = others[others.length - 1]; if (last) parent.insertBefore(dragged, last.nextSibling); }
@@ -14020,6 +14025,29 @@ function _endClDrag() {
     const order = [...parent.children].filter(c => c.dataset && c.dataset.clFlagged === '1').map(c => c.dataset.clItem);
     _applyChecklistFlagOrder(task, order);
   } else {
+    // Batch-aware drop: whichever ▣ heading the row now sits under is its batch —
+    // landing under a different one re-homes the task (job-level, like the manager).
+    const bRec = _batchRec(task);
+    if (bRec && bRec.order.length) {
+      let secEl = dragged.previousElementSibling;
+      while (secEl && !(secEl.dataset && secEl.dataset.batchSec)) secEl = secEl.previousElementSibling;
+      if (secEl) {
+        const item = dragged.dataset.clItem;
+        const destLoose = !!secEl.dataset.batchLoose;
+        const dest = destLoose ? null : secEl.dataset.batchName;
+        const cur = (bRec.items[item] && bRec.order.includes(bRec.items[item])) ? bRec.items[item] : null;
+        if (dest !== cur) {
+          const all = getTaskBatches(); const rec = all[task];
+          if (rec) {
+            if (dest === null) delete rec.items[item];
+            else rec.items[item] = dest;
+            saveTaskBatches(all);
+            autoBackup();
+            showToast(dest === null ? '▣ Moved out of ' + cur : '▣ Moved to ' + dest);
+          }
+        }
+      }
+    }
     // Persist the full visible order (flagged first, then the rest as arranged).
     const fullOrder = [...parent.children].filter(c => c.classList && c.classList.contains('cl-row')).map(c => c.dataset.clItem);
     _applyChecklistManualOrder(task, fullOrder);
@@ -14170,7 +14198,9 @@ function _renderClOrganiseBody() {
       ? `<div style="margin:10px 0 2px;padding:9px 12px;border-radius:10px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.35);font-size:13px;color:var(--text);">⏱ Block sized to <b>~${fmtMin(est.mins)}</b> · ${est.basis === 'flagged' ? 'from ' + est.n + ' flagged task' + (est.n === 1 ? '' : 's') : 'from this job’s history'}<div style="font-size:11px;color:var(--subtext);margin-top:2px;">Auto-filled from your timed history — you can still edit the block’s duration.</div></div>`
       : `<div style="margin:10px 0 2px;padding:9px 12px;border-radius:10px;background:rgba(127,127,127,0.1);font-size:12px;color:var(--subtext);">⏱ No timed history yet — flag tasks you’ve timed before (or clock this job once) to size the block automatically.</div>`;
   }
-  const intro = `<div style="font-size:11px;color:var(--subtext);margin:${_clOrganisePlanId ? '8px' : '12px'} 0 8px;">Hold &amp; drag any item to set the order it’s done in · swipe an item right to 🚩 flag it to the top.</div>`;
+  const _bRec = _batchRec(task);
+  const _hasBatches = !!(_bRec && _bRec.order.length);
+  const intro = `<div style="font-size:11px;color:var(--subtext);margin:${_clOrganisePlanId ? '8px' : '12px'} 0 8px;">Hold &amp; drag any item to set the order it’s done in · swipe an item right to 🚩 flag it to the top.${_hasBatches ? ' Drag a task under a different ▣ batch heading to move it into that batch.' : ''}</div>`;
   const rowHtml = (s) => {
     const isFlagged = !!flags[s];
     return `<div class="cl-row" data-cl-item="${_attr(s)}" data-cl-task="${taskAttr}" data-cl-flagged="${isFlagged ? '1' : ''}" ontouchstart="clSwipeStart(event)" ontouchmove="clSwipeMove(event)" ontouchend="clSwipeEnd(event)" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:11px 10px;border-radius:8px;border:1px solid var(--border);${isFlagged ? 'background:rgba(255,214,10,0.12);' : 'background:var(--card);'}">
@@ -14182,9 +14212,24 @@ function _renderClOrganiseBody() {
     ? `<div style="font-size:12px;color:#FFD60A;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;margin:4px 0 8px;">🚩 Flagged · done first</div>${flagged.map(rowHtml).join('')}`
     : `<div style="padding:18px 0;color:var(--subtext);text-align:center;font-size:14px;">No flagged items yet — swipe one right to flag it.</div>`;
   const rest = ordered.filter(s => !flags[s]);
-  const restBlock = rest.length
-    ? `<div style="font-size:12px;color:var(--subtext);font-weight:700;text-transform:uppercase;letter-spacing:0.4px;margin:16px 0 8px;">Rest of the tasks</div>${rest.map(rowHtml).join('')}`
-    : '';
+  let restBlock = '';
+  if (rest.length && _hasBatches) {
+    // Batch-aware: the rest of the tasks group under ▣ headings. Rows keep the
+    // same drag machinery — landing under another heading re-homes the task
+    // (membership is job-level, applied in _endClDrag).
+    const secHd = (label, looseAttr) => `<div data-batch-sec="1"${looseAttr ? ' data-batch-loose="1"' : ''} data-batch-name="${_attr(label)}" style="font-size:12px;color:var(--subtext);font-weight:700;letter-spacing:0.4px;margin:16px 0 8px;">▣ ${_escHtml(label)}</div>`;
+    const used = new Set();
+    _bRec.order.forEach(bn => {
+      const members = rest.filter(s => _bRec.items[s] === bn);
+      if (!members.length) return;
+      members.forEach(s => used.add(s));
+      restBlock += secHd(bn, false) + members.map(rowHtml).join('');
+    });
+    const loose = rest.filter(s => !used.has(s));
+    if (loose.length) restBlock += secHd('Unbatched', true) + loose.map(rowHtml).join('');
+  } else if (rest.length) {
+    restBlock = `<div style="font-size:12px;color:var(--subtext);font-weight:700;text-transform:uppercase;letter-spacing:0.4px;margin:16px 0 8px;">Rest of the tasks</div>${rest.map(rowHtml).join('')}`;
+  }
   body.innerHTML = '<div class="cl-sticky-top">' + scopeToggle + estLine + intro + '</div>' + flaggedBlock + restBlock;
 }
 
