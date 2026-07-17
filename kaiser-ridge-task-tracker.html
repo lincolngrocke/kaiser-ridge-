@@ -2583,6 +2583,15 @@
   </div>
 </div>
 
+<!-- ══════════════ TASK ACTIONS SHEET (job editor ⋯) ══════════════ -->
+<div class="modal-backdrop" id="modal-task-actions" style="z-index:300;" onclick="closeModal('modal-task-actions')">
+  <div class="modal-sheet" style="padding:14px 20px 26px;" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div id="task-actions-title" style="font-size:15px;font-weight:600;color:var(--text);padding:4px 0 10px;line-height:1.4;"></div>
+    <div id="task-actions-list"></div>
+  </div>
+</div>
+
 <!-- ══════════════ SUBTASK GUIDE MODAL ══════════════ -->
 <div class="modal-backdrop" id="modal-subtask-guide" style="z-index:500;">
   <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:85vh;display:flex;flex-direction:column;">
@@ -2684,7 +2693,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.183';
+const APP_VERSION = '2026-06-21.184';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -8937,34 +8946,36 @@ function renderDirSubtaskList(items) {
   const _pairs = _subtaskItems.map((s, i) => ({ s, i }));
   const _display = _pairs.filter(p => _clFlags[p.s]).concat(_pairs.filter(p => !_clFlags[p.s]));
   const _rowFor = ({ s, i }) => {
-    const enc = s.replace(/'/g,"\\'");
+    // One ⋯ replaces the old six-button strip (steps/guide/history/type/reminder/✕)
+    // — they live in a labelled action sheet now, so the task text gets the width.
+    // A tiny passive meta line keeps the at-a-glance signals (steps/guide/repeat/🔔).
     const hasGuide = guides[s] && (_guideInstructionsToSteps(guides[s].instructions).length > 0 || guides[s].url);
     const nSteps = (stepsMap[s] || []).length;
     const _remOn = !!(_jn && taskRem[_taskRemKey(_jn, s)]);
     const _flagged = !!_clFlags[s];
-    const originBtn = origins[s]
-      ? `<button onclick="openItemOrigin('${enc}')" title="History (from Inbox)" style="background:none;border:none;color:var(--subtext);font-size:16px;cursor:pointer;padding:4px 6px;flex-shrink:0;">ℹ️</button>`
-      : '';
+    const _isRep = _jn && taskTypeOf(_jn, s) === 'repeat';
+    const metaBits = [];
+    if (nSteps) metaBits.push('≣ ' + nSteps);
+    if (hasGuide) metaBits.push('📋');
+    if (_isRep) metaBits.push('<span style="color:#30d158;font-weight:700;">↻</span>');
+    if (_remOn) metaBits.push('🔔');
+    const metaLine = metaBits.length ? `<div style="font-size:11px;color:var(--subtext);padding:0 0 3px 2px;">${metaBits.join(' · ')}</div>` : '';
     return `
     <div id="strow-${i}" ontouchstart="stSwipeStart(event,${i})" ontouchmove="stSwipeMove(event)" ontouchend="stSwipeEnd(event)"
       style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);${_flagged ? 'background:rgba(255,214,10,0.08);' : ''}">
       ${_flagged ? '<span style="font-size:13px;padding:4px 0 0;flex-shrink:0;">🚩</span>' : ''}
       <div style="color:var(--subtext);font-size:22px;padding:2px 4px 0;user-select:none;-webkit-user-select:none;cursor:grab;"
         ontouchstart="stTouchStart(event,${i})">≡</div>
-      <textarea class="st-item-input" rows="1"
-        autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
-        oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px';"
-        onblur="updateSubtaskItem(${i}, this.value)"
-        onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
-        style="flex:1;font-size:15px;color:var(--text);background:transparent;border:none;outline:none;padding:4px 0;min-width:0;resize:none;line-height:1.4;font-family:inherit;overflow:hidden;">${s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</textarea>
-      <button onclick="openSubtaskStepsEditor('${enc}')" title="${nSteps ? 'Edit steps' : 'Add steps'}"
-        style="background:none;border:none;color:${nSteps ? 'var(--blue)' : 'var(--subtext)'};font-size:13px;font-weight:600;cursor:pointer;padding:4px 6px;flex-shrink:0;white-space:nowrap;">≣${nSteps ? ' ' + nSteps : ''}</button>
-      <button onclick="openSubtaskGuide('${enc}')" title="${hasGuide ? 'Edit guide' : 'Add guide'}"
-        style="background:none;border:none;color:${hasGuide ? 'var(--blue)' : 'var(--subtext)'};font-size:18px;cursor:pointer;padding:4px 6px;flex-shrink:0;">📋</button>
-      ${originBtn}
-      <button onclick="cycleTaskType(${i})" title="${_TYMETA[_jn ? taskTypeOf(_jn, s) : 'once'].title}" style="background:none;border:none;color:${_TYMETA[_jn ? taskTypeOf(_jn, s) : 'once'].color};font-size:14px;font-weight:700;cursor:pointer;padding:4px 5px;flex-shrink:0;min-width:24px;">${_TYMETA[_jn ? taskTypeOf(_jn, s) : 'once'].label}</button>
-      <button onclick="openTaskRemindPicker(${i})" title="${_remOn ? 'Reminder active — tap to edit' : 'Set a reminder'}" style="background:${_remOn ? 'rgba(255,214,10,0.18)' : 'none'};border:1px solid ${_remOn ? 'rgba(255,214,10,0.6)' : 'transparent'};border-radius:8px;opacity:${_remOn ? '1' : '0.3'};font-size:15px;line-height:1;cursor:pointer;padding:4px 5px;flex-shrink:0;">🔔</button>
-      <button onclick="removeSubtaskItem(${i})" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:4px;flex-shrink:0;">✕</button>
+      <div style="flex:1;min-width:0;">
+        <textarea class="st-item-input" rows="1"
+          autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
+          oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px';"
+          onblur="updateSubtaskItem(${i}, this.value)"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
+          style="width:100%;font-size:15px;color:var(--text);background:transparent;border:none;outline:none;padding:4px 0;min-width:0;resize:none;line-height:1.4;font-family:inherit;overflow:hidden;">${s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</textarea>
+        ${metaLine}
+      </div>
+      <button onclick="openTaskActions(${i})" title="Task options" style="background:none;border:none;color:var(--subtext);font-size:20px;font-weight:700;cursor:pointer;padding:4px 8px;flex-shrink:0;line-height:1;">⋯</button>
     </div>`;
   };
   // With batches: group the display under batch headers (Unbatched last). Rows keep
@@ -9460,6 +9471,63 @@ function removeTaskFromBatch(taskText) {
   autoBackup();
   renderBatchManager();
   renderDirSubtaskList();
+}
+
+// ══════════════════════════════════════════════
+//  TASK ACTIONS SHEET — the job editor's ⋯
+// ══════════════════════════════════════════════
+// One ⋯ per row opens this labelled sheet in place of the old six-icon strip:
+// same actions, now with names (progressive disclosure — the row keeps its width
+// for the task text, and new users get words instead of mystery icons). All
+// handlers are INDEX-based — never embed task text in onclick (see v183 lesson).
+let _taskActionIdx = null;
+function openTaskActions(i) {
+  _taskActionIdx = i;
+  if (!renderTaskActionsSheet()) return;
+  openModal('modal-task-actions');
+}
+function renderTaskActionsSheet() {
+  const i = _taskActionIdx;
+  const s = (i != null) ? _subtaskItems[i] : null;
+  if (s == null) return false;
+  const jn = _dirJobName();
+  const nSteps = (getSubtaskSteps()[s] || []).length;
+  const g = getSubtaskGuides()[s];
+  const hasGuide = g && (_guideInstructionsToSteps(g.instructions).length > 0 || g.url);
+  const hasOrigin = !!getSubtaskOrigin()[s];
+  const isRep = jn && taskTypeOf(jn, s) === 'repeat';
+  const remOn = !!(jn && getTaskReminders()[_taskRemKey(jn, s)]);
+  const flagged = !!(jn && (getChecklistFlags()[jn] || {})[s]);
+  document.getElementById('task-actions-title').textContent = s.length > 80 ? s.slice(0, 80) + '…' : s;
+  const row = (act, icon, label, value, danger) => `
+    <div onclick="taskActionGo('${act}')" style="display:flex;align-items:center;gap:12px;padding:13px 2px;border-bottom:1px solid var(--border);cursor:pointer;">
+      <span style="font-size:17px;width:24px;text-align:center;flex-shrink:0;">${icon}</span>
+      <span style="flex:1;font-size:15px;color:${danger ? 'var(--red)' : 'var(--text)'};">${label}</span>
+      ${value ? `<span style="font-size:13px;color:var(--subtext);flex-shrink:0;">${value}</span>` : ''}
+    </div>`;
+  document.getElementById('task-actions-list').innerHTML =
+    row('steps', '≣', nSteps ? 'Steps' : 'Add steps', nSteps ? String(nSteps) : '') +
+    row('guide', '📋', hasGuide ? 'Guide' : 'Add guide', hasGuide ? '✓' : '') +
+    (hasOrigin ? row('origin', 'ℹ️', 'History (from Inbox)', '') : '') +
+    row('type', isRep ? '↻' : '1×', 'Type', isRep ? 'Repeatable — tap to make once-per-run' : 'Once per run — tap to make repeatable') +
+    row('remind', '🔔', 'Reminder', remOn ? 'On' : 'Off') +
+    row('flag', '🚩', flagged ? 'Remove flag' : 'Flag to top', '') +
+    row('delete', '✕', 'Delete task', '', true);
+  return true;
+}
+function taskActionGo(act) {
+  const i = _taskActionIdx;
+  const s = (i != null) ? _subtaskItems[i] : null;
+  if (s == null) { closeModal('modal-task-actions'); return; }
+  // Type + flag are instant toggles — the sheet stays open and updates in place.
+  if (act === 'type') { cycleTaskType(i); renderTaskActionsSheet(); return; }
+  if (act === 'flag') { toggleEditorTaskFlag(i); renderTaskActionsSheet(); return; }
+  closeModal('modal-task-actions');
+  if (act === 'steps') openSubtaskStepsEditor(s);
+  else if (act === 'guide') openSubtaskGuide(s);
+  else if (act === 'origin') openItemOrigin(s);
+  else if (act === 'remind') openTaskRemindPicker(i);
+  else if (act === 'delete') removeSubtaskItem(i);
 }
 // Reference photos on a recurring checklist item (keyed by item text) — shown on
 // the running clock when that task appears. Rides the library so Ethan gets them.
