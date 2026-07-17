@@ -2684,7 +2684,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.182';
+const APP_VERSION = '2026-06-21.183';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4326,7 +4326,7 @@ function renderRunChecklist() {
         const fl = _gHasFlag(g);
         const col = (g.key in _runGroupCollapsed) ? !!_runGroupCollapsed[g.key] : !fl;
         const allDone = g.members.length > 0 && doneN >= g.members.length;
-        const hd = `<div onclick="toggleRunGroup(decodeURIComponent('${encodeURIComponent(g.key)}'), ${col})" style="display:flex;align-items:center;gap:8px;padding:15px 0 6px;cursor:pointer;">
+        const hd = `<div onclick="toggleRunGroup(decodeURIComponent('${encodeURIComponent(g.key).replace(/'/g, '%27')}'), ${col})" style="display:flex;align-items:center;gap:8px;padding:15px 0 6px;cursor:pointer;">
           <span style="color:#8b93a7;font-size:13px;">${col ? '▸' : '▾'}</span>
           <span style="font-size:13px;font-weight:700;letter-spacing:0.3px;color:${g.loose ? '#8b93a7' : (allDone ? '#30d158' : '#dfe3ec')};">${fl ? '🚩 ' : ''}${allDone ? '✓ ' : ''}${_escHtml(g.name)}</span>
           <span style="font-size:11px;color:#616a7e;background:rgba(255,255,255,0.06);border-radius:9px;padding:1px 7px;">${doneN}/${g.members.length}${est ? ' · ~' + fmtMin(est) : ''}</span>
@@ -6404,7 +6404,7 @@ function renderDashBrief() {
   const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay()); weekStart.setHours(0, 0, 0, 0);
   const today0 = new Date(); today0.setHours(0, 0, 0, 0);
   const human = entries.filter(e => !e.bot && e.task);
-  const jobArg = j => `openJobEditByName(decodeURIComponent('${encodeURIComponent(j)}'))`;
+  const jobArg = j => `openJobEditByName(decodeURIComponent('${encodeURIComponent(j).replace(/'/g, '%27')}'))`;
 
   // ── Narrative header — the week in one line ──
   const wk = human.filter(e => { const d = _parseEntryDate(e.date); return d && d >= weekStart; });
@@ -9252,7 +9252,7 @@ function renderBatchManager() {
   const rec = all[job] || { order: [], items: {} };
   const tasks = _subtaskItems.slice();
   const ro = isWorker();
-  const enc = s => encodeURIComponent(s);
+  const enc = s => encodeURIComponent(s).replace(/'/g, '%27');   // %27: apostrophes survive encodeURIComponent and would break the onclick string
   const cards = rec.order.map((bn, bi) => {
     const members = tasks.filter(t => rec.items[t] === bn);
     const rows = members.map(t => `
@@ -9422,7 +9422,7 @@ function renderBatchTaskPicker() {
   const listEl = document.getElementById('batch-tasks-list');
   if (!listEl) return;
   const rec = _batchRec(job) || { order: [], items: {} };
-  const enc = s => encodeURIComponent(s);
+  const enc = s => encodeURIComponent(s).replace(/'/g, '%27');   // %27: apostrophes survive encodeURIComponent and would break the onclick string
   listEl.innerHTML = _subtaskItems.map(t => {
     const inThis = rec.items[t] === _batchPickTarget;
     const other = !inThis && rec.items[t] && rec.order.includes(rec.items[t]) ? rec.items[t] : '';
