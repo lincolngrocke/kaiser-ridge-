@@ -2693,7 +2693,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.185';
+const APP_VERSION = '2026-06-21.186';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -10154,17 +10154,45 @@ function _inboxNoteRow(n) {
     </div>`;
   }
   const box = `<span onclick="toggleInboxDone('${n.id}')" style="font-size:22px;line-height:1;cursor:pointer;flex-shrink:0;padding-top:1px;color:${isDone ? 'var(--green)' : 'var(--subtext)'};">${isDone ? '☑' : '☐'}</span>`;
-  const remindBtn = isDone ? '' : `<button onclick="openReminderPicker('${n.id}')" title="${n.remindOn ? 'Reminder active — tap to edit' : 'Set a reminder'}" style="background:${n.remindOn ? 'rgba(255,214,10,0.18)' : 'none'};border:1px solid ${n.remindOn ? 'rgba(255,214,10,0.6)' : 'transparent'};border-radius:8px;opacity:${n.remindOn ? '1' : '0.3'};font-size:15px;line-height:1;cursor:pointer;padding:3px 5px;flex-shrink:0;">🔔</button>`;
-  const editBtn = isDone ? '' : `<button onclick="openInboxEdit('${n.id}')" title="Edit note" style="background:none;border:none;color:var(--subtext);font-size:16px;cursor:pointer;padding:2px 4px;flex-shrink:0;">✏️</button>`;
-  const assignBtn = isDone ? '' : `<button onclick="openInboxAssign('${n.id}')" title="Add to a job" style="background:none;border:none;color:var(--blue);font-size:18px;cursor:pointer;padding:2px 4px;flex-shrink:0;">📂</button>`;
+  // Active notes: the 🔔 ✏️ 📂 ✕ strip folds into one ⋯ (labelled action sheet —
+  // same pattern as the job editor). Done notes keep their single ✕ as before.
+  const actions = isDone
+    ? `<button onclick="deleteInboxItem('${n.id}')" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:2px 4px;flex-shrink:0;">✕</button>`
+    : `<button onclick="openInboxActions('${n.id}')" title="Note options" style="background:none;border:none;color:var(--subtext);font-size:20px;font-weight:700;cursor:pointer;padding:2px 8px;flex-shrink:0;line-height:1;">⋯</button>`;
   return `<div data-note-id="${n.id}" style="display:flex;gap:8px;align-items:flex-start;padding:12px 4px;border-bottom:1px solid var(--border);${rowDim}">
     ${box}
     ${body}
-    ${remindBtn}
-    ${editBtn}
-    ${assignBtn}
-    <button onclick="deleteInboxItem('${n.id}')" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:2px 4px;flex-shrink:0;">✕</button>
+    ${actions}
   </div>`;
+}
+// ── Inbox note actions sheet (the ⋯) — reuses the task-actions sheet chrome ──
+let _inboxActionId = null;
+function openInboxActions(id) {
+  const n = getInbox().find(x => x.id === id);
+  if (!n) return;
+  _inboxActionId = id;
+  document.getElementById('task-actions-title').textContent = (n.text || '(note)').replace(/\n/g, ' ').slice(0, 80) + ((n.text || '').length > 80 ? '…' : '');
+  const row = (act, icon, label, value, danger) => `
+    <div onclick="inboxActionGo('${act}')" style="display:flex;align-items:center;gap:12px;padding:13px 2px;border-bottom:1px solid var(--border);cursor:pointer;">
+      <span style="font-size:17px;width:24px;text-align:center;flex-shrink:0;">${icon}</span>
+      <span style="flex:1;font-size:15px;color:${danger ? 'var(--red)' : 'var(--text)'};">${label}</span>
+      ${value ? `<span style="font-size:13px;color:var(--subtext);flex-shrink:0;">${value}</span>` : ''}
+    </div>`;
+  document.getElementById('task-actions-list').innerHTML =
+    row('remind', '🔔', 'Reminder', n.remindOn ? 'On · ' + n.remindOn : 'Off') +
+    row('edit', '✏️', 'Edit note', '') +
+    row('assign', '📂', n.assigned ? 'Move to another job' : 'Add to a job', '') +
+    row('delete', '✕', 'Delete note', '', true);
+  openModal('modal-task-actions');
+}
+function inboxActionGo(act) {
+  const id = _inboxActionId;
+  closeModal('modal-task-actions');
+  if (!id) return;
+  if (act === 'remind') openReminderPicker(id);
+  else if (act === 'edit') openInboxEdit(id);
+  else if (act === 'assign') openInboxAssign(id);
+  else if (act === 'delete') deleteInboxItem(id);
 }
 function toggleInboxDone(id) {
   const arr = getInbox();
