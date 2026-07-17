@@ -1449,30 +1449,36 @@
       <div id="dash-date" style="font-size:12px;color:var(--subtext);"></div>
     </div>
   </div>
-  <!-- Period filter -->
-  <div style="display:flex;gap:8px;padding:10px 16px 8px;background:var(--card);border-bottom:1px solid var(--border);">
-    <button onclick="setChartPeriod('day',this)"   class="chart-period-btn" style="flex:1;">Day</button>
-    <button onclick="setChartPeriod('week',this)"  class="chart-period-btn active" style="flex:1;">Week</button>
-    <button onclick="setChartPeriod('month',this)" class="chart-period-btn" style="flex:1;">Month</button>
-    <button onclick="setChartPeriod('year',this)"  class="chart-period-btn" style="flex:1;">Year</button>
-    <button onclick="setChartPeriod('all',this)"   class="chart-period-btn" style="flex:1;">All</button>
-  </div>
-  <!-- Dimension filter -->
-  <div style="display:flex;gap:8px;padding:8px 16px 10px;background:var(--card);border-bottom:1px solid var(--border);">
-    <button onclick="setChartDimension('group',this)"     class="chart-period-btn active" style="flex:1;">Area</button>
-    <button onclick="setChartDimension('frequency',this)" class="chart-period-btn" style="flex:1;">Repeats</button>
-    <button onclick="setChartDimension('location',this)"  class="chart-period-btn" style="flex:1;">Location</button>
-    <button onclick="setChartDimension('equipment',this)" class="chart-period-btn" style="flex:1;">Equipment</button>
-  </div>
-  <!-- Task-times + day-view entry points -->
+  <!-- What-got-done / task-times / charts entry points -->
   <div style="display:flex;gap:8px;padding:8px 16px;background:var(--card);border-bottom:1px solid var(--border);">
-    <button onclick="openChecklistAvg()" style="flex:1;background:none;border:1px solid var(--blue);border-radius:8px;padding:9px;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">⏱ Task Times</button>
     <button onclick="openDayView()" style="flex:1;background:none;border:1px solid var(--blue);border-radius:8px;padding:9px;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">📅 What got done</button>
+    <button onclick="openChecklistAvg()" style="flex:1;background:none;border:1px solid var(--blue);border-radius:8px;padding:9px;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">⏱ Task Times</button>
+    <button id="dash-charts-btn" onclick="toggleDashCharts()" style="flex:1;background:none;border:1px solid var(--blue);border-radius:8px;padding:9px;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">📊 Charts</button>
   </div>
-  <!-- Chart fills remaining space -->
-  <div style="flex:1;display:flex;flex-direction:column;padding:16px;overflow:hidden;">
-    <canvas id="dash-chart" style="width:100%;flex:1;display:block;min-height:0;"></canvas>
-    <div id="dash-chart-legend" style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:12px;padding-bottom:4px;"></div>
+  <!-- THE BRIEF — the dashboard's front page: am I improving, and what needs me? -->
+  <div id="dash-brief" style="flex:1;overflow-y:auto;overflow-x:hidden;padding:14px 16px 28px;"></div>
+  <!-- Hours charts (the old dashboard) — behind the 📊 Charts toggle -->
+  <div id="dash-charts" style="display:none;flex-direction:column;flex:1;min-height:0;">
+    <!-- Period filter -->
+    <div style="display:flex;gap:8px;padding:10px 16px 8px;background:var(--card);border-bottom:1px solid var(--border);">
+      <button onclick="setChartPeriod('day',this)"   class="chart-period-btn" style="flex:1;">Day</button>
+      <button onclick="setChartPeriod('week',this)"  class="chart-period-btn active" style="flex:1;">Week</button>
+      <button onclick="setChartPeriod('month',this)" class="chart-period-btn" style="flex:1;">Month</button>
+      <button onclick="setChartPeriod('year',this)"  class="chart-period-btn" style="flex:1;">Year</button>
+      <button onclick="setChartPeriod('all',this)"   class="chart-period-btn" style="flex:1;">All</button>
+    </div>
+    <!-- Dimension filter -->
+    <div style="display:flex;gap:8px;padding:8px 16px 10px;background:var(--card);border-bottom:1px solid var(--border);">
+      <button onclick="setChartDimension('group',this)"     class="chart-period-btn active" style="flex:1;">Area</button>
+      <button onclick="setChartDimension('frequency',this)" class="chart-period-btn" style="flex:1;">Repeats</button>
+      <button onclick="setChartDimension('location',this)"  class="chart-period-btn" style="flex:1;">Location</button>
+      <button onclick="setChartDimension('equipment',this)" class="chart-period-btn" style="flex:1;">Equipment</button>
+    </div>
+    <!-- Chart fills remaining space -->
+    <div style="flex:1;display:flex;flex-direction:column;padding:16px;overflow:hidden;">
+      <canvas id="dash-chart" style="width:100%;flex:1;display:block;min-height:0;"></canvas>
+      <div id="dash-chart-legend" style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:12px;padding-bottom:4px;"></div>
+    </div>
   </div>
 </div>
 
@@ -2678,7 +2684,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.181';
+const APP_VERSION = '2026-06-21.182';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6354,14 +6360,130 @@ function getWeeklyTarget() {
   return parseFloat(localStorage.getItem('kr_weekly_target') || '40');
 }
 
+// The dashboard opens on THE BRIEF — "am I improving, and what needs me?" —
+// with the hours charts kept intact behind the 📊 Charts toggle.
+let _dashView = 'brief';   // 'brief' | 'charts'
+function toggleDashCharts() {
+  _dashView = (_dashView === 'brief') ? 'charts' : 'brief';
+  renderDashboard();
+}
 function renderDashboard() {
   const now = new Date();
   const el = document.getElementById('dash-date');
   if (el) el.textContent = now.toLocaleDateString('en-AU', { weekday:'long', day:'numeric', month:'long' });
-  renderDashboardChart();
-  const total = getChartEntries().reduce((s,e) => s + e.durationHours, 0);
+  const briefEl = document.getElementById('dash-brief');
+  const chartsEl = document.getElementById('dash-charts');
+  const btn = document.getElementById('dash-charts-btn');
+  const charts = _dashView === 'charts';
+  if (briefEl) briefEl.style.display = charts ? 'none' : 'block';
+  if (chartsEl) chartsEl.style.display = charts ? 'flex' : 'none';
+  if (btn) btn.textContent = charts ? '◂ Brief' : '📊 Charts';
+  if (charts) {
+    const t = document.getElementById('dash-header-title');
+    const titles = { group: 'Hours by Group', frequency: 'Hours by Frequency', location: 'Hours by Location', equipment: 'Hours by Equipment' };
+    if (t) t.textContent = titles[_chartDimension] || 'Hours by Group';
+    renderDashboardChart();
+    const total = getChartEntries().reduce((s,e) => s + e.durationHours, 0);
+    const th = document.getElementById('dash-total-hours');
+    if (th) th.textContent = total.toFixed(2) + 'h';
+  } else {
+    const t = document.getElementById('dash-header-title');
+    if (t) t.textContent = 'Dashboard';
+    renderDashBrief();
+  }
+}
+
+// ── THE BRIEF ────────────────────────────────────────────────────────────────
+// Getting faster: this week's average run per job vs its history — the USP made
+// visible. Slipping: jobs drifting past their own learned rhythm (the same
+// computeAutoFrequencies the AUTO badge uses, so the numbers always agree).
+function renderDashBrief() {
+  const el = document.getElementById('dash-brief');
+  if (!el) return;
+  const now = new Date();
+  const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay()); weekStart.setHours(0, 0, 0, 0);
+  const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+  const human = entries.filter(e => !e.bot && e.task);
+  const jobArg = j => `openJobEditByName(decodeURIComponent('${encodeURIComponent(j)}'))`;
+
+  // ── Narrative header — the week in one line ──
+  const wk = human.filter(e => { const d = _parseEntryDate(e.date); return d && d >= weekStart; });
+  const wkH = wk.reduce((s, e) => s + (e.durationHours > 0 ? e.durationHours : 0), 0);
+  const wkTicks = wk.reduce((s, e) => s + (Array.isArray(e.checklist) ? e.checklist.length : 0), 0);
+  const byJobH = {};
+  wk.forEach(e => { if (e.durationHours > 0) byJobH[e.task] = (byJobH[e.task] || 0) + e.durationHours; });
+  const biggest = Object.keys(byJobH).sort((a, b) => byJobH[b] - byJobH[a])[0];
   const th = document.getElementById('dash-total-hours');
-  if (th) th.textContent = total.toFixed(2) + 'h';
+  if (th) th.textContent = wkH.toFixed(1) + 'h';
+  let html = `<div style="font-size:14px;color:var(--subtext);line-height:1.5;padding-bottom:4px;">
+    <b style="color:var(--text);">${wkH.toFixed(1)}h</b> this week across ${wk.length} clock-in${wk.length === 1 ? '' : 's'}
+    · <b style="color:var(--text);">${wkTicks}</b> task${wkTicks === 1 ? '' : 's'} ticked${biggest ? `
+    · biggest: <b style="color:var(--text);">${_escHtml(biggest)}</b> ${byJobH[biggest].toFixed(1)}h` : ''}</div>`;
+
+  // ── Getting faster — jobs run this week, vs their own history ──
+  const runsByJob = {};
+  human.forEach(e => {
+    if (!(e.durationHours > 0)) return;
+    const d = _parseEntryDate(e.date); if (!d) return;
+    const r = runsByJob[e.task] || (runsByJob[e.task] = { week: [], prior: [] });
+    (d >= weekStart ? r.week : r.prior).push(e.durationHours * 60);
+  });
+  const trends = [];
+  Object.keys(runsByJob).forEach(job => {
+    const r = runsByJob[job];
+    if (!r.week.length || r.prior.length < 2) return;   // needs history to compare against
+    const wAvg = r.week.reduce((a, b) => a + b, 0) / r.week.length;
+    const pAvg = r.prior.reduce((a, b) => a + b, 0) / r.prior.length;
+    const delta = wAvg - pAvg;
+    const bestYet = Math.min(...r.week) < Math.min(...r.prior);
+    if (Math.abs(delta) < 1 && !bestYet) return;        // nothing worth saying
+    trends.push({ job, n: r.week.length, wAvg, delta, bestYet });
+  });
+  trends.sort((a, b) => a.delta - b.delta);             // biggest improvement first
+  html += `<div style="font-size:12px;font-weight:700;letter-spacing:0.3px;color:var(--subtext);padding:16px 0 2px;">📉 GETTING FASTER</div>`;
+  if (trends.length) {
+    html += trends.slice(0, 6).map(t => {
+      const up = t.delta > 0;
+      const col = up ? '#ff9f0a' : '#30d158';
+      const arrow = up ? '▲' : '▼';
+      return `<div onclick="${jobArg(t.job)}" style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--border);cursor:pointer;">
+        <span style="flex:1;min-width:0;font-size:15px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_escHtml(t.job)}</span>
+        <span style="font-size:12px;color:var(--subtext);flex-shrink:0;">${t.n} run${t.n === 1 ? '' : 's'}</span>
+        <span style="font-size:13px;font-weight:600;color:${col};white-space:nowrap;flex-shrink:0;">${fmtMin(t.wAvg)} ${arrow}${fmtMin(Math.abs(t.delta))}${t.bestYet ? ' · best yet' : ''}</span>
+      </div>`;
+    }).join('');
+  } else {
+    html += `<div style="padding:10px 0;font-size:13px;color:var(--subtext);line-height:1.5;">Run your repeating jobs and this fills in — after a few runs the app can show whether this week was faster than usual.</div>`;
+  }
+
+  // ── Slipping — past the rhythm the app has learned for that job ──
+  const autoMap = computeAutoFrequencies();
+  const lastUsed = {};
+  human.forEach(e => { const d = _parseEntryDate(e.date); if (d) { const ts = d.getTime(); if (!lastUsed[e.task] || ts > lastUsed[e.task]) lastUsed[e.task] = ts; } });
+  const sharedLastDone = JSON.parse(localStorage.getItem('kr_lastdone') || '{}');
+  Object.keys(sharedLastDone).forEach(task => { const ts = sharedLastDone[task]; if (typeof ts === 'number' && (!lastUsed[task] || ts > lastUsed[task])) lastUsed[task] = ts; });
+  const liveJobs = new Set(DIRECTORY.map(r => r.task).filter(Boolean));
+  const slipping = [];
+  Object.keys(autoMap).forEach(job => {
+    if (!liveJobs.has(job) || !lastUsed[job]) return;
+    const gap = autoMap[job].avgGap;
+    if (!(gap >= 1)) return;
+    const ld = new Date(lastUsed[job]);
+    const days = Math.floor((today0 - new Date(ld.getFullYear(), ld.getMonth(), ld.getDate())) / 86400000);
+    if (days > gap * 1.5 && days - gap >= 2) slipping.push({ job, days, gap: Math.max(1, Math.round(gap)), ratio: days / gap });
+  });
+  slipping.sort((a, b) => b.ratio - a.ratio);
+  html += `<div style="font-size:12px;font-weight:700;letter-spacing:0.3px;color:var(--subtext);padding:18px 0 2px;">⏳ SLIPPING PAST THEIR USUAL RHYTHM</div>`;
+  if (slipping.length) {
+    html += slipping.slice(0, 5).map(s => `
+      <div onclick="${jobArg(s.job)}" style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--border);cursor:pointer;">
+        <span style="flex:1;min-width:0;font-size:15px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_escHtml(s.job)}</span>
+        <span style="font-size:13px;font-weight:600;color:#ff9f0a;white-space:nowrap;flex-shrink:0;">${s.days} days · usually ~${s.gap}</span>
+      </div>`).join('');
+  } else {
+    html += `<div style="padding:10px 0;font-size:13px;color:var(--subtext);">Nothing overdue — every job is inside its usual rhythm ✓</div>`;
+  }
+  el.innerHTML = html;
 }
 
 // Quota-safe localStorage write. iPhone web apps get ~5MB; the auto-backup
