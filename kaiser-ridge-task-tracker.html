@@ -2693,7 +2693,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.190';
+const APP_VERSION = '2026-06-21.191';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4834,11 +4834,11 @@ function renderTimesheets() {
       <div class="ts-entry-row">
         <div>
           <div class="ts-entry-date">${dateStr}${syncBadge}</div>
-          <div class="ts-entry-time">${e.clockIn ? formatTimeAmPm(e.clockIn) : '—'} – ${e.clockOut ? formatTimeAmPm(e.clockOut) : '—'}</div>
+          <div class="ts-entry-time">${e.clockIn ? formatTimeAmPm(e.clockIn) : '—'} – ${e.clockOut ? formatTimeAmPm(e.clockOut) : '—'}${e.location ? ` <span class="ts-entry-tag">· ${e.location}</span>` : ''}</div>
         </div>
         <div style="text-align:right">
           <div class="ts-entry-hours">${formatHours(e.durationHours)}</div>
-          <div class="ts-entry-tag">${e.location || ''}</div>
+          <div class="ts-entry-tag" title="total minutes">${Math.round(e.durationHours * 60)}m</div>
         </div>
       </div>
       <div class="ts-entry-tag" style="margin-top:4px">${hl(tag)}</div>
