@@ -2693,7 +2693,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.189';
+const APP_VERSION = '2026-06-21.190';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4269,10 +4269,8 @@ function renderRunChecklist() {
       const enc = s.replace(/'/g, "\\'");
       const _isRep = isRepeatTask(clockState.task, s);
       const _reps = _isRep ? taskRepCount(clockState.task, s) : 0;
-      // Green count dot on a repeatable task (🔁 N); tap it to undo the last rep.
-      const _tyBadge = _isRep
-        ? `<span onclick="event.stopPropagation();undoTaskRep('${enc}')" title="${_reps} done — tap to undo last" style="flex-shrink:0;min-width:24px;height:22px;padding:0 7px;border-radius:11px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:${_reps ? 'rgba(48,209,88,0.22)' : 'transparent'};border:1px solid ${_reps ? 'rgba(48,209,88,0.6)' : 'rgba(255,255,255,0.22)'};color:${_reps ? '#30d158' : '#8b93a7'};cursor:pointer;">🔁${_reps ? ' ' + _reps : ''}</span>`
-        : '';
+      // The 🔁 rep chip lives on the meta line below the text (moved off the row
+      // so the task text doesn't get stepped in); the + circle still adds a rep.
       const isDone = _isTaskDoneNow(clockState.task, s, done);
       // Ticked this session → vanishes from the active list; it lives in the ✓ chip
       // / "Completed this session" view instead (revive it there).
@@ -4297,21 +4295,26 @@ function renderRunChecklist() {
       const _clamp = (_expandable && !expanded) ? 'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;' : '';
       const textSpan = `<span onclick="${textTap}" style="flex:1;min-width:0;font-size:16px;cursor:pointer;${_clamp}${isDone ? 'color:#616a7e;text-decoration:line-through;' : 'color:#e7eaf0;'}">${flagged ? '🚩 ' : ''}${_escHtml(s)}${stepBadge}</span>`;
       const _avgMin = itemAvg[s.trim().replace(/\s+/g, ' ').toLowerCase()];
-      const _avgTag = (!isDone && _avgMin) ? `<span title="average so far" style="font-size:12px;color:#616a7e;white-space:nowrap;flex-shrink:0;">~${fmtMin(_avgMin)}</span>` : '';
       const right = isDone
         ? `<span style="font-size:13px;color:#30d158;font-weight:600;white-space:nowrap;">${fmtMin(dur[s])}</span>`
-        : _avgTag + (_expandable ? `<span onclick="toggleChecklistExpand('${enc}')" style="color:#8b93a7;font-size:14px;cursor:pointer;padding:0 4px;flex-shrink:0;">${expanded ? '▾' : '▸'}</span>` : '');
+        : (_expandable ? `<span onclick="toggleChecklistExpand('${enc}')" style="color:#8b93a7;font-size:14px;cursor:pointer;padding:0 4px;flex-shrink:0;">${expanded ? '▾' : '▸'}</span>` : '');
       const clFlagAttr = (flagged && !isDone) ? '1' : '';
       const clRowBg = (flagged && !isDone) ? 'background:rgba(255,214,10,0.08);' : '';
       const editIcon = `<span onclick="event.stopPropagation();openRunEdit('tasks','${enc}')" style="flex-shrink:0;color:#9aa3b7;font-size:23px;line-height:1;cursor:pointer;padding:10px 14px 10px 12px;">✎</span>`;
-      let html = `<div class="cl-row" data-cl-item="${_attr(s)}" data-cl-task="${taskAttr}" data-cl-flagged="${clFlagAttr}" ontouchstart="clSwipeStart(event)" ontouchmove="clSwipeMove(event)" ontouchend="clSwipeEnd(event)" style="display:flex;align-items:center;gap:12px;padding:13px 0;border-top:0.5px solid rgba(255,255,255,0.08);${clRowBg}">${circle}${_tyBadge}${textSpan}${editIcon}${right}</div>`;
+      let html = `<div class="cl-row" data-cl-item="${_attr(s)}" data-cl-task="${taskAttr}" data-cl-flagged="${clFlagAttr}" ontouchstart="clSwipeStart(event)" ontouchmove="clSwipeMove(event)" ontouchend="clSwipeEnd(event)" style="display:flex;align-items:center;gap:12px;padding:13px 0;border-top:0.5px solid rgba(255,255,255,0.08);${clRowBg}">${circle}${textSpan}${editIcon}${right}</div>`;
+      // Meta line under the text — last done, learned average, and the 🔁 rep chip
+      // all live here now so the task text keeps the full row width.
       const _la = itemLastDone[s];
+      const _metaBits = [];
       if (_la) {
         const _d = new Date(_la);
         const _days = Math.floor((Date.now() - new Date(_d.getFullYear(), _d.getMonth(), _d.getDate()).getTime()) / 86400000);
         const _ago = _days <= 0 ? 'today' : _days === 1 ? 'yesterday' : _days + ' days ago';
-        html += `<div style="font-size:11px;color:#616a7e;padding:1px 0 7px 36px;">🗓 done ${_ago}</div>`;
+        _metaBits.push(`🗓 done ${_ago}`);
       }
+      if (_avgMin) _metaBits.push(`<span title="average so far">~${fmtMin(_avgMin)}</span>`);
+      if (_isRep) _metaBits.push(`<span onclick="event.stopPropagation();undoTaskRep('${enc}')" title="${_reps} done — tap to undo last" style="display:inline-flex;align-items:center;padding:1px 8px;border-radius:9px;font-weight:700;cursor:pointer;background:${_reps ? 'rgba(48,209,88,0.22)' : 'transparent'};border:1px solid ${_reps ? 'rgba(48,209,88,0.6)' : 'rgba(255,255,255,0.22)'};color:${_reps ? '#30d158' : '#8b93a7'};">🔁${_reps ? ' ' + _reps : ''}</span>`);
+      if (_metaBits.length) html += `<div style="font-size:11px;color:#616a7e;padding:1px 0 7px 36px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${_metaBits.join('<span style="opacity:0.6;">·</span>')}</div>`;
       const refPhotos = subPhotos[s] || [];
       if (refPhotos.length) html += `<div style="padding:0 0 10px 36px;" onclick="event.stopPropagation();">${_photosHtml({ photos: refPhotos }, 64)}</div>`;   // reference photo
       if (expanded && steps.length && !isDone) {
