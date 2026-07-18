@@ -2712,7 +2712,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.194';
+const APP_VERSION = '2026-06-21.195';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -12815,16 +12815,36 @@ function switchPlannerView(view) {
   renderPlannerScreen();
 }
 
+// The block arrangements (🚩 flags + order, kr_planner_checklist) that ride along
+// with Ethan's plans — keyed by plan id, only for blocks that actually have one.
+function _ethanArrangements(plans) {
+  const m = getPlannerChecklist();
+  const out = {};
+  plans.forEach(p => {
+    const a = m[p.id];
+    if (a && ((a.flags && Object.keys(a.flags).length) || (Array.isArray(a.order) && a.order.length))) {
+      out[p.id] = { flags: a.flags || {}, order: Array.isArray(a.order) ? a.order : [] };
+    }
+  });
+  return out;
+}
 // True if Ethan's Day differs from what was last sent (so the manager can be
-// nudged to re-send after editing).
+// nudged to re-send after editing) — plans OR their flag arrangements.
 function ethanDayHasUnsentChanges() {
   const cur = localStorage.getItem('kr_planner_ethan') || '[]';
   const sent = localStorage.getItem('kr_planner_ethan_sent');
   if (sent == null) return JSON.parse(cur).length > 0; // never sent
-  return cur !== sent;
+  if (cur !== sent) return true;
+  const curArr = JSON.stringify(_ethanArrangements(JSON.parse(cur)));
+  const sentArr = localStorage.getItem('kr_planner_ethan_sent_arr') || '{}';
+  return curArr !== sentArr;
 }
 
 // Manager: push the worker's planned day to the backend so their app pulls it.
+// Each block carries its 🚩 arrangement inside the plan object (_arr) — the
+// backend stores plans verbatim, so this needs no Apps Script change. The
+// worker's pull unpacks _arr into their own kr_planner_checklist, making their
+// planned day IDENTICAL to the one arranged here — flags, order, estimate.
 async function sendPlannerToEthan() {
   const url = localStorage.getItem('kr_sheet_url');
   if (!url) { showToast('Add your Apps Script URL in Settings first'); return; }
@@ -12832,15 +12852,18 @@ async function sendPlannerToEthan() {
   // Sending an empty day is how you CLEAR his planner after deleting tasks.
   if (!plans.length && !confirm('Ethan’s Day has no tasks. Send anyway to clear his planned tasks?')) return;
   const version = Date.now().toString();
+  const arrMap = _ethanArrangements(plans);
+  const plansOut = plans.map(p => arrMap[p.id] ? Object.assign({}, p, { _arr: arrMap[p.id] }) : p);
   showToast('Sending to Ethan…');
   try {
     const res = await fetch(url, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'assignPlanner', assignee: 'Ethan', version, plans }),
+      body: JSON.stringify({ action: 'assignPlanner', assignee: 'Ethan', version, plans: plansOut }),
     });
     const json = await res.json();
     if (json && json.success) {
       localStorage.setItem('kr_planner_ethan_sent', localStorage.getItem('kr_planner_ethan') || '[]');
+      localStorage.setItem('kr_planner_ethan_sent_arr', JSON.stringify(arrMap));
       if (_plannerView === 'ethan') renderPlannerScreen();
       showToast('Sent ' + json.count + ' task' + (json.count === 1 ? '' : 's') + ' to Ethan ✓');
     } else showToast('Send failed' + (json && json.error ? ': ' + json.error : ''));
@@ -12914,6 +12937,24 @@ async function pullAssignments() {
     const appliedV = localStorage.getItem('kr_assign_applied_v') || '';
     if (!remoteV || remoteV === appliedV) { updateAssignmentBanner(); return; }
     const plans = Array.isArray(json.assignment.plans) ? json.assignment.plans : [];
+    // Unpack each block's 🚩 arrangement (_arr, sent by the manager) into MY
+    // kr_planner_checklist — clocking in from the block then seeds the same
+    // flags/order/estimate the manager arranged. A plan arriving WITHOUT _arr
+    // clears any stale arrangement from an earlier send.
+    const arrM = getPlannerChecklist();
+    let arrCh = false;
+    plans.forEach(p => {
+      if (p._arr) {
+        arrM[p.id] = { flags: p._arr.flags || {} };
+        if (Array.isArray(p._arr.order) && p._arr.order.length) arrM[p.id].order = p._arr.order;
+        delete p._arr;
+        arrCh = true;
+      } else if (arrM[p.id]) {
+        delete arrM[p.id];
+        arrCh = true;
+      }
+    });
+    if (arrCh) savePlannerChecklist(arrM);
     localStorage.setItem('kr_planner', JSON.stringify(plans));
     localStorage.setItem('kr_assign_applied_v', remoteV);
     if (_plannerView === 'me') _plannerPlans = plans;
