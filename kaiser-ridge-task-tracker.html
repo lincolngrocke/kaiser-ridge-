@@ -2131,7 +2131,14 @@
         <button id="task-search-clear" onclick="clearTaskSearch()" type="button"
           style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);width:26px;height:26px;border:none;border-radius:50%;background:var(--border);color:var(--subtext);font-size:14px;line-height:1;cursor:pointer;">✕</button>
       </div>
-      <div id="task-search-results" style="display:none;position:absolute;left:16px;right:16px;top:calc(100% - 4px);background:var(--card);border:1px solid var(--border);border-radius:12px;max-height:260px;overflow-y:auto;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,0.18);"></div>
+      <div id="task-search-results" style="display:none;"></div>
+      <!-- The planner's picker, brought to clock-in: browse Recent / Most used and
+           tap a job — search filters this same list. Tap = the whole form fills. -->
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button id="ce-sort-recent" onclick="setCreateTaskSort('recent')" type="button" style="flex:1;border-radius:8px;padding:7px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--text);">🕘 Recent</button>
+        <button id="ce-sort-used" onclick="setCreateTaskSort('used')" type="button" style="flex:1;border-radius:8px;padding:7px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--text);">⭐ Most used</button>
+      </div>
+      <div id="ce-task-list" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;margin-top:8px;"></div>
       <div style="text-align:center;font-size:12px;color:var(--subtext);padding:10px 0 2px;">— or choose manually below —</div>
     </div>
 
@@ -2705,7 +2712,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.193';
+const APP_VERSION = '2026-06-21.194';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -5315,8 +5322,7 @@ function clearTaskSearch() {
   const input = document.getElementById('task-search-input');
   input.value = '';
   document.getElementById('task-search-clear').style.display = 'none';
-  document.getElementById('task-search-results').style.display = 'none';
-  document.getElementById('task-search-results').innerHTML = '';
+  renderCreateTaskList();
   input.focus();
 }
 
@@ -5335,47 +5341,71 @@ function taskMatchesQuery(task, q) {
 function onTaskSearchInput() {
   const q = document.getElementById('task-search-input').value.trim().toLowerCase();
   const clearBtn = document.getElementById('task-search-clear');
-  const results = document.getElementById('task-search-results');
   clearBtn.style.display = q ? 'flex' : 'none';
   clearBtn.style.alignItems = 'center';
   clearBtn.style.justifyContent = 'center';
-
-  if (!q) { results.style.display = 'none'; results.innerHTML = ''; return; }
-
-  // Group matching DIRECTORY rows by task name (a task can map to multiple equipment/freq/group combos)
+  renderCreateTaskList();
+}
+// The New Entry job list — the planner's picker brought to clocking in (Lincoln:
+// "the less clicks to clock into a job the better"). Browse 🕘 Recent / ⭐ Most
+// used with no query; typing filters the same list. Tap = selectSearchedTask
+// fills the whole form, so clocking in is tap-the-job → Save.
+let _ceTaskSort = localStorage.getItem('kr_create_task_sort') || 'used';
+function setCreateTaskSort(mode) {
+  _ceTaskSort = mode;
+  localStorage.setItem('kr_create_task_sort', mode);
+  renderCreateTaskList();
+}
+function _syncCeSortButtons() {
+  const r = document.getElementById('ce-sort-recent'), u = document.getElementById('ce-sort-used');
+  if (!r || !u) return;
+  const on = b => { b.style.background = 'var(--blue)'; b.style.color = '#fff'; b.style.borderColor = 'var(--blue)'; };
+  const off = b => { b.style.background = 'var(--card)'; b.style.color = 'var(--text)'; b.style.borderColor = 'var(--border)'; };
+  (_ceTaskSort === 'recent' ? on : off)(r);
+  (_ceTaskSort === 'used' ? on : off)(u);
+}
+function renderCreateTaskList() {
+  const list = document.getElementById('ce-task-list');
+  if (!list) return;
+  _syncCeSortButtons();
+  const q = (document.getElementById('task-search-input').value || '').trim().toLowerCase();
+  // Dedupe by freq||group||task (a job can span several equipment rows).
   const seen = {};
-  const matches = [];
+  const rows = [];
   DIRECTORY.forEach(r => {
     if (!r.task) return;
-    if (!taskMatchesQuery(r.task, q)) return;
+    if (q && !taskMatchesQuery(r.task, q)) return;
     const key = `${r.frequency}||${r.group}||${r.task}`;
     if (seen[key]) return;
     seen[key] = true;
-    matches.push(r);
+    rows.push(r);
   });
-
-  if (matches.length === 0) {
-    results.style.display = 'block';
-    results.innerHTML = `<div style="padding:14px 16px;font-size:14px;color:var(--subtext);text-align:center;">No matching tasks</div>`;
+  if (!rows.length) {
+    list.innerHTML = `<div style="padding:14px 16px;font-size:14px;color:var(--subtext);text-align:center;">${q ? 'No matching jobs' : 'No jobs yet — add one below'}</div>`;
     return;
   }
-
+  const { counts, recent } = _taskUsageMaps();
+  rows.sort(_taskSortCmp(_ceTaskSort, counts, recent));
   const autoMap = computeAutoFrequencies();
-  results.style.display = 'block';
-  results.innerHTML = matches.slice(0, 30).map((r, i) => {
+  const selected = document.getElementById('f-task').value;
+  list.innerHTML = rows.map((r, i) => {
     const auto = autoMap[r.task];
-    const dispFreq = auto ? auto.freq : r.frequency;
-    const sub = [dispFreq, r.group].filter(Boolean).join(' · ');
+    const avg = getTaskAvgDuration(r.task);
+    const sub = [r.group, avg ? 'avg ' + avg + 'h' : (auto ? auto.freq : r.frequency)].filter(Boolean).join(' · ');
     const badge = auto ? ` <span style="display:inline-block;background:#5856D6;color:#fff;font-size:9px;font-weight:700;letter-spacing:0.5px;padding:1px 5px;border-radius:5px;vertical-align:middle;">AUTO</span>` : '';
-    const matchSubs = (SUBTASKS[r.task] || []).filter(s => s.toLowerCase().includes(q));
+    const isSel = selected && r.task === selected;
+    const matchSubs = q ? (SUBTASKS[r.task] || []).filter(s => s.toLowerCase().includes(q)) : [];
     const subsHtml = matchSubs.map(s => `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☑️ ${highlightMatch(s, q)}</div>`).join('');
-    const matchEquip = taskEquipmentList(r.task).filter(e => e.toLowerCase().includes(q));
+    const matchEquip = q ? taskEquipmentList(r.task).filter(e => e.toLowerCase().includes(q)) : [];
     const equipHtml = matchEquip.map(e => `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${highlightMatch(e, q)}</div>`).join('');
     return `<div onclick='selectSearchedTask(${JSON.stringify({frequency:r.frequency,group:r.group,task:r.task})})'
-        style="padding:12px 16px;cursor:pointer;${i < matches.length - 1 ? 'border-bottom:1px solid var(--border);' : ''}">
-      <div style="font-size:15px;font-weight:500;">${highlightMatch(r.task, q)}</div>
-      ${sub ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">${sub}${badge}</div>` : ''}
-      ${equipHtml}${subsHtml}
+        style="padding:12px 14px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;background:${isSel ? 'rgba(0,122,255,0.08)' : 'transparent'};${i < rows.length - 1 ? 'border-bottom:1px solid var(--border);' : ''}">
+      <div style="min-width:0;">
+        <div style="font-size:15px;font-weight:500;">${q ? highlightMatch(r.task, q) : r.task}</div>
+        ${sub ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">${sub}${badge}</div>` : ''}
+        ${equipHtml}${subsHtml}
+      </div>
+      ${isSel ? '<span style="color:var(--blue);font-size:18px;flex-shrink:0;">✓</span>' : ''}
     </div>`;
   }).join('');
 }
@@ -5434,11 +5464,10 @@ function selectSearchedTask(sel) {
     onLocationChange();
   }
 
-  // Collapse the search UI
+  // Reflect the selection in the picker (list filters to it and shows the ✓)
   document.getElementById('task-search-input').value = task;
   document.getElementById('task-search-clear').style.display = 'flex';
-  document.getElementById('task-search-results').style.display = 'none';
-  document.getElementById('task-search-results').innerHTML = '';
+  renderCreateTaskList();
 
   if (SUBTASKS[task] && SUBTASKS[task].length > 0) openSubtaskModal();
 
