@@ -2712,7 +2712,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.195';
+const APP_VERSION = '2026-06-21.196';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -12822,8 +12822,9 @@ function _ethanArrangements(plans) {
   const out = {};
   plans.forEach(p => {
     const a = m[p.id];
-    if (a && ((a.flags && Object.keys(a.flags).length) || (Array.isArray(a.order) && a.order.length))) {
+    if (a && ((a.flags && Object.keys(a.flags).length) || (Array.isArray(a.order) && a.order.length) || (a.laps && Object.keys(a.laps).length))) {
       out[p.id] = { flags: a.flags || {}, order: Array.isArray(a.order) ? a.order : [] };
+      if (a.laps && Object.keys(a.laps).length) out[p.id].laps = a.laps;   // 🔁 planned laps ride along
     }
   });
   return out;
@@ -12947,6 +12948,7 @@ async function pullAssignments() {
       if (p._arr) {
         arrM[p.id] = { flags: p._arr.flags || {} };
         if (Array.isArray(p._arr.order) && p._arr.order.length) arrM[p.id].order = p._arr.order;
+        if (p._arr.laps && Object.keys(p._arr.laps).length) arrM[p.id].laps = p._arr.laps;   // 🔁 planned laps arrive too
         delete p._arr;
         arrCh = true;
       } else if (arrM[p.id]) {
@@ -13239,6 +13241,38 @@ function _taskHistAvgMap() {
   _aggregateChecklistTimes().forEach(a => { map[_normTaskKey(a.item)] = a.avg; });
   return map;
 }
+// Typical laps per run for each checklist item, learned from history: within one
+// timesheet entry a repeat task leaves one lap-stamped sample per rep ("Load
+// truck", "Load truck␂2", …) — the median count across entries is how many laps
+// a normal run does. Cached on entries.length (entries only ever append).
+let _repsRunCache = { len: -1, map: null };
+function _taskRepsPerRunMap() {
+  if (_repsRunCache.len === entries.length && _repsRunCache.map) return _repsRunCache.map;
+  const perEntry = {};   // normalised item → [reps in run 1, reps in run 2, …]
+  entries.forEach(e => {
+    const d = _entryChecklistDurations(e);
+    const counts = {};
+    Object.keys(d).forEach(item => { const k = _normTaskKey(_stripLap(item)); counts[k] = (counts[k] || 0) + 1; });
+    Object.keys(counts).forEach(k => { (perEntry[k] || (perEntry[k] = [])).push(counts[k]); });
+  });
+  const map = {};
+  Object.keys(perEntry).forEach(k => {
+    const a = perEntry[k].sort((x, y) => x - y);
+    map[k] = a[Math.floor((a.length - 1) / 2)];   // median, lower on ties
+  });
+  _repsRunCache = { len: entries.length, map };
+  return map;
+}
+// Laps planned for a task on a block: the ×N the manager set on the block if
+// any, else the learned typical laps, else 1. Once-tasks are always 1.
+function _plannedLapsFor(plan, item, repsMap) {
+  if (!isRepeatTask(plan.task, item)) return 1;
+  const rec = getPlannerChecklist()[plan.id];
+  const set = rec && rec.laps && rec.laps[item];
+  if (set >= 1) return set;
+  const learned = (repsMap || _taskRepsPerRunMap())[_normTaskKey(item)];
+  return learned >= 1 ? learned : 1;
+}
 // Estimate a planner block's duration (minutes) from history.
 //   • Tasks flagged on the block  → sum THOSE tasks' average times (a task with
 //     no history simply adds nothing).
@@ -13251,9 +13285,17 @@ function _estimateBlockMins(plan) {
   const flagged = rec && rec.flags ? Object.keys(rec.flags) : [];
   if (flagged.length) {
     const map = _taskHistAvgMap();
-    let sum = 0, n = 0;
-    flagged.forEach(item => { const a = map[_normTaskKey(item)]; if (isFinite(a) && a > 0) { sum += a; n++; } });
-    if (sum > 0) return { mins: sum, basis: 'flagged', n };
+    const reps = _taskRepsPerRunMap();
+    let sum = 0, n = 0, lapped = false;
+    flagged.forEach(item => {
+      const a = map[_normTaskKey(item)];
+      if (isFinite(a) && a > 0) {
+        const laps = _plannedLapsFor(plan, item, reps);   // 🔁 repeat tasks count once per planned lap
+        sum += a * laps; n++;
+        if (laps > 1) lapped = true;
+      }
+    });
+    if (sum > 0) return { mins: sum, basis: 'flagged', n, lapped };
   }
   const jobAvgH = getTaskAvgDuration(plan.task);   // hours
   if (jobAvgH && jobAvgH > 0) return { mins: jobAvgH * 60, basis: 'job', n: 0 };
@@ -14310,6 +14352,21 @@ function _applyChecklistManualOrder(task, fullOrder) {
   }
   _refreshChecklistSurfaces(task);
 }
+// Stepper on a flagged 🔁 task in a block's organise sheet: set how many laps
+// are planned, stored beside the block's flags (kr_planner_checklist[pid].laps).
+function _clLapAdj(item, delta) {
+  const pid = _clTargetPlanId(); if (!pid) return;
+  const plan = _plannerPlans.find(p => p.id === pid); if (!plan) return;
+  const m = getPlannerChecklist(); const rec = m[pid] || (m[pid] = { flags: {} });
+  const laps = rec.laps || (rec.laps = {});
+  const n = Math.max(1, Math.min(99, _plannedLapsFor(plan, item) + delta));
+  laps[item] = n;
+  savePlannerChecklist(m);
+  const est = _applyBlockEstimate(pid);   // re-size the block with the new lap count
+  showToast('🔁 ' + n + ' lap' + (n === 1 ? '' : 's') + ' planned' + (est ? ' · block ~' + fmtMin(est.mins) : ''));
+  _renderClOrganiseBody();
+  if (typeof renderPlannerScreen === 'function') renderPlannerScreen();   // reflect the new duration on the timeline behind the sheet
+}
 function toggleChecklistFlag(task, item) {
   const pid = _clTargetPlanId();
   if (pid) {   // flagging within a planner block's arrangement
@@ -14385,8 +14442,8 @@ function openChecklistOrganiseForPlan(planId) {
   if (!m[planId]) { m[planId] = { flags: { ...(getChecklistFlags()[plan.task] || {}) } }; savePlannerChecklist(m); }
   _applyBlockEstimate(planId);   // size the block from history on open (flagged sum, else job average)
   document.getElementById('cl-organise-title').textContent = plan.task;
+  openModal('modal-cl-organise');   // open FIRST — _clTargetPlanId() needs the open modal, else the first render shows the job's flags instead of this block's arrangement
   _renderClOrganiseBody();
-  openModal('modal-cl-organise');
 }
 function setClEditScope(scope) { _clEditScope = scope; _renderClOrganiseBody(); }
 function _renderClOrganiseBody() {
@@ -14410,17 +14467,29 @@ function _renderClOrganiseBody() {
     const plan = _plannerPlans.find(p => p.id === _clOrganisePlanId);
     const est = plan ? _estimateBlockMins(plan) : null;
     estLine = est
-      ? `<div style="margin:10px 0 2px;padding:9px 12px;border-radius:10px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.35);font-size:13px;color:var(--text);">⏱ Block sized to <b>~${fmtMin(est.mins)}</b> · ${est.basis === 'flagged' ? 'from ' + est.n + ' flagged task' + (est.n === 1 ? '' : 's') : 'from this job’s history'}<div style="font-size:11px;color:var(--subtext);margin-top:2px;">Auto-filled from your timed history — you can still edit the block’s duration.</div></div>`
+      ? `<div style="margin:10px 0 2px;padding:9px 12px;border-radius:10px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.35);font-size:13px;color:var(--text);">⏱ Block sized to <b>~${fmtMin(est.mins)}</b> · ${est.basis === 'flagged' ? 'from ' + est.n + ' flagged task' + (est.n === 1 ? '' : 's') + (est.lapped ? ' · 🔁 laps counted' : '') : 'from this job’s history'}<div style="font-size:11px;color:var(--subtext);margin-top:2px;">Auto-filled from your timed history — you can still edit the block’s duration.</div></div>`
       : `<div style="margin:10px 0 2px;padding:9px 12px;border-radius:10px;background:rgba(127,127,127,0.1);font-size:12px;color:var(--subtext);">⏱ No timed history yet — flag tasks you’ve timed before (or clock this job once) to size the block automatically.</div>`;
   }
   const _bRec = _batchRec(task);
   const _hasBatches = !!(_bRec && _bRec.order.length);
   const intro = `<div style="font-size:11px;color:var(--subtext);margin:${_clOrganisePlanId ? '8px' : '12px'} 0 8px;">Hold &amp; drag any item to set the order it’s done in · swipe an item right to 🚩 flag it to the top.${_hasBatches ? ' Drag a task under a different ▣ batch heading to move it into that batch.' : ''}</div>`;
+  // 🔁 Planned-laps stepper — plan scope only, on flagged repeat tasks: the block
+  // estimate counts these once per lap. Default N is learned (typical laps/run).
+  const _lapPlan = (pid && _clEditScope === 'plan') ? _plannerPlans.find(p => p.id === pid) : null;
+  const _lapReps = _lapPlan ? _taskRepsPerRunMap() : null;
+  const _lapEnc = s => encodeURIComponent(s).replace(/'/g, '%27');   // %27: apostrophes survive encodeURIComponent and would break the onclick string
   const rowHtml = (s) => {
     const isFlagged = !!flags[s];
+    const lapChip = (_lapPlan && isFlagged && isRepeatTask(task, s))
+      ? `<span ontouchstart="event.stopPropagation()" style="display:inline-flex;align-items:center;flex-shrink:0;background:rgba(48,209,88,0.14);border:1px solid rgba(48,209,88,0.4);border-radius:11px;padding:1px 2px;">
+          <span onclick="event.stopPropagation();_clLapAdj(decodeURIComponent('${_lapEnc(s)}'), -1)" style="font-size:17px;font-weight:700;color:var(--subtext);padding:0 7px;cursor:pointer;">−</span>
+          <span style="font-size:12px;font-weight:700;color:#30d158;">🔁×${_plannedLapsFor(_lapPlan, s, _lapReps)}</span>
+          <span onclick="event.stopPropagation();_clLapAdj(decodeURIComponent('${_lapEnc(s)}'), 1)" style="font-size:17px;font-weight:700;color:var(--subtext);padding:0 7px;cursor:pointer;">+</span></span>`
+      : '';
     return `<div class="cl-row" data-cl-item="${_attr(s)}" data-cl-task="${taskAttr}" data-cl-flagged="${isFlagged ? '1' : ''}" ontouchstart="clSwipeStart(event)" ontouchmove="clSwipeMove(event)" ontouchend="clSwipeEnd(event)" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:11px 10px;border-radius:8px;border:1px solid var(--border);${isFlagged ? 'background:rgba(255,214,10,0.12);' : 'background:var(--card);'}">
       <span style="font-size:16px;flex-shrink:0;">${isFlagged ? '🚩' : '▫️'}</span>
       <span style="flex:1;min-width:0;overflow-wrap:anywhere;font-size:15px;color:var(--text);">${s}</span>
+      ${lapChip}
       <span style="font-size:12px;color:var(--subtext);flex-shrink:0;">⠿</span></div>`;
   };
   const flaggedBlock = flagged.length
@@ -14487,10 +14556,10 @@ function openPlannerDetail(planId) {
           <span style="font-size:12px;color:var(--subtext);font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Tasks${hasPlanArr ? ' · 📅 arranged' : ''}</span>
           ${isWorker() ? '' : `<span onclick="openChecklistOrganiseForPlan('${planId}')" style="font-size:13px;color:var(--blue);font-weight:600;cursor:pointer;">⚙️ Organise</span>`}
         </div>
-        ${orderedSubs.map(s => `<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:7px;">
+        ${orderedSubs.map(s => { const _laps = (clFlags[s] && isRepeatTask(plan.task, s)) ? _plannedLapsFor(plan, s) : 1; return `<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:7px;">
           <span style="color:var(--subtext);font-size:14px;margin-top:1px;">${clFlags[s] ? '🚩' : '☐'}</span>
-          <span style="font-size:14px;color:var(--text);">${s}</span>
-        </div>`).join('')}
+          <span style="font-size:14px;color:var(--text);">${s}${_laps > 1 ? ` <span style="font-size:12px;font-weight:700;color:#30d158;">🔁×${_laps}</span>` : ''}</span>
+        </div>`; }).join('')}
       </div>`
     : '';
   document.getElementById('planner-detail-info').innerHTML =
