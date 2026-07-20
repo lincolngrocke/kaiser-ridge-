@@ -1324,6 +1324,15 @@
     <div class="settings-note" style="margin-top:0">Manual = the job editor's order. Last used = the average order you ticked tasks off across your last 3 times doing this job. Typical = the average across all recent times. (Display only — doesn’t change the saved tasks; switch back to Manual any time to revert.)</div>
 
     <div class="settings-section" style="margin-top:16px">
+      <div class="settings-row"><div class="settings-label">New flag sits</div></div>
+      <div style="display:flex;gap:8px;padding:4px 0 2px;">
+        <button id="flagpos-bottom" onclick="setFlagNewPos('bottom')" style="flex:1;border-radius:10px;padding:9px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--text);">Bottom</button>
+        <button id="flagpos-top" onclick="setFlagNewPos('top')" style="flex:1;border-radius:10px;padding:9px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--text);">Top</button>
+      </div>
+    </div>
+    <div class="settings-note" style="margin-top:0">Where a task lands when you swipe right to flag it — anywhere you can flag. Bottom = it sits below the flags you’ve already made, keeping your list order as you flag top-to-bottom. Top = the newest flag jumps to the front.</div>
+
+    <div class="settings-section" style="margin-top:16px">
       <div class="settings-row">
         <div class="settings-label">Google Sheet Web App URL</div>
       </div>
@@ -2712,7 +2721,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.196';
+const APP_VERSION = '2026-06-21.197';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2948,6 +2957,7 @@ window.addEventListener('load', () => {
   applyRoleUI();
   initSearchClears();
   _syncChecklistOrderUI();
+  _syncFlagNewPosUI();
   updateInboxCount();
   updateReminderBanners();
   updateAssignmentBanner();
@@ -3424,6 +3434,21 @@ function _syncChecklistOrderUI() {
   (mode === 'lastused' ? on : off)(l);
   (mode === 'typical' ? on : off)(t);
 }
+function setFlagNewPos(pos) {
+  localStorage.setItem('kr_flag_new_pos', pos === 'top' ? 'top' : 'bottom');
+  _syncFlagNewPosUI();
+  if (clockState && clockState.running) renderRunChecklist();   // re-order the live flagged tasks + to-dos
+  const pop = document.getElementById('modal-pin-preview');
+  if (pop && pop.classList.contains('open') && typeof _renderPinPreview === 'function') _renderPinPreview();
+}
+function _syncFlagNewPosUI() {
+  const b = document.getElementById('flagpos-bottom'), t = document.getElementById('flagpos-top');
+  if (!b || !t) return;
+  const on = el => { el.style.background = 'var(--blue)'; el.style.color = '#fff'; el.style.borderColor = 'var(--blue)'; };
+  const off = el => { el.style.background = 'var(--card)'; el.style.color = 'var(--text)'; el.style.borderColor = 'var(--border)'; };
+  (_flagNewPos() === 'top' ? on : off)(t);
+  (_flagNewPos() === 'top' ? off : on)(b);
+}
 // → { item: averageCompletionIndex } over recent entries for the task.
 function _typicalChecklistOrder(task) {
   const sums = {}, counts = {};
@@ -3471,22 +3496,31 @@ function _orderedChecklistItems(task, items, flagsArg, orderArg) {
     const order = mode === 'lastused' ? _lastUsedChecklistOrder(task) : _typicalChecklistOrder(task);
     base = items.slice().sort((a, b) => (a in order ? order[a] : Infinity) - (b in order ? order[b] : Infinity));  // stable: no-data keeps manual order
   }
-  // 🚩 Flagged items float to the top (most-recently-flagged first), the rest keep
-  // their (mode/drag) order. Mirrors how flagged pinned notes behave. Device-local.
-  // flagsArg lets the plan-organise editor render a per-block arrangement.
+  // 🚩 Flagged items float to the top as a group; within the group the order
+  // depends on kr_flag_new_pos (see _flagNewPos): 'bottom' (default) keeps the
+  // learned list order so a new flag lands below the ones already flagged — you
+  // flag top-to-bottom and they stay in that order; 'top' puts the newest flag
+  // first. The rest keep their (mode/drag) order. Device-local. flagsArg lets
+  // the plan-organise editor render a per-block arrangement.
   const flags = flagsArg || _sessionOrGlobalFlags(task);
   const pos = {}; base.forEach((it, i) => { pos[it] = i; });
+  const flagTop = _flagNewPos() === 'top';
   return base.slice().sort((a, b) => {
     const fa = flags[a] ? 1 : 0, fb = flags[b] ? 1 : 0;
     if (fa !== fb) return fb - fa;
-    if (fa) return flags[b] - flags[a];   // both flagged → newer flag on top
-    return pos[a] - pos[b];               // both unflagged → keep mode order
+    if (fa && flagTop) return flags[b] - flags[a];   // both flagged, 'top' → newer flag on top
+    return pos[a] - pos[b];                          // else keep the learned list order (flags float as a group)
   });
 }
 // Per-task checklist-item flags — { task: { itemText: flaggedAtMs } }. Device-local
 // (like pinned-note flags), never written to SUBTASKS or synced.
 function getChecklistFlags() { return JSON.parse(localStorage.getItem('kr_checklist_flags') || '{}'); }
 function saveChecklistFlags(o) { return _safeSetItem('kr_checklist_flags', JSON.stringify(o)); }
+// Where a freshly-swiped flag sits within the flagged group, everywhere you can
+// swipe-to-flag. 'bottom' (default): new flag appends below the current flags,
+// keeping the learned list order — flag top-to-bottom and they stay in that
+// order. 'top': newest flag jumps to the head of the group. Device-local.
+function _flagNewPos() { return localStorage.getItem('kr_flag_new_pos') === 'top' ? 'top' : 'bottom'; }
 // Per-planner-block checklist arrangement (flag+order override) — { planId: { flags:{item:ts} } }.
 // Lets you plan a block's checklist ahead; carried into clockState.flagOverride at
 // clock-in, then reverts (the job's global flags stay untouched). Device-local.
@@ -13986,11 +14020,12 @@ function savePinOrder(o) { return _safeSetItem('kr_pin_order', JSON.stringify(o)
 function _sortPins(arr, task) {
   const dir = (localStorage.getItem('kr_pin_sort') === 'newest') ? -1 : 1;
   const manual = (task && getPinOrder()[task]) || null;   // manual order of non-flagged ids
+  const flagTop = _flagNewPos() === 'top';
   return arr.slice().sort((a, b) => {
     const fa = a.flagged ? 1 : 0, fb = b.flagged ? 1 : 0;
     if (fa !== fb) return fb - fa;
-    if (fa) return (b.flaggedAt || 0) - (a.flaggedAt || 0);
-    if (manual) {   // non-flagged: manually-ordered ids first (in order), un-ordered by time after
+    if (fa && flagTop) return (b.flaggedAt || 0) - (a.flaggedAt || 0);   // 'top' → newest flag first; 'bottom' falls through to base order (you flag top-to-bottom, they stay in that order)
+    if (manual) {   // non-flagged (and 'bottom'-mode flagged): manually-ordered ids first (in order), un-ordered by time after
       const ia = manual.indexOf(a.id), ib = manual.indexOf(b.id);
       if (ia !== -1 || ib !== -1) {
         if (ia === -1) return 1;
