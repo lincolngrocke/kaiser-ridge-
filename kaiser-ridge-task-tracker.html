@@ -2721,7 +2721,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.199';
+const APP_VERSION = '2026-06-21.200';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -14415,8 +14415,15 @@ function _endClDrag() {
   dragged.style.transform = ''; dragged.style.opacity = ''; dragged.style.boxShadow = '';
   dragged.style.position = ''; dragged.style.zIndex = '';
   if (flagged) {
-    const order = [...parent.children].filter(c => c.dataset && c.dataset.clFlagged === '1').map(c => c.dataset.clItem);
-    _applyChecklistFlagOrder(task, order);
+    // Capture BOTH orders from the current DOM before any re-render detaches it.
+    const rows = [...parent.children].filter(c => c.classList && c.classList.contains('cl-row'));
+    const order = rows.filter(c => c.dataset.clFlagged === '1').map(c => c.dataset.clItem);
+    const fullOrder = rows.map(c => c.dataset.clItem);
+    _applyChecklistFlagOrder(task, order);        // 'top' flag-mode ranks flagged by flaggedAt
+    // The default 'bottom' mode ranks flagged tasks by list/manual position (pos),
+    // not flaggedAt — so persist the full visible order too, or the drag would have
+    // no effect in that mode. One source of truth for bottom; both modes now honour it.
+    _applyChecklistManualOrder(task, fullOrder);
   } else {
     // Batch-aware drop: whichever ▣ heading the row now sits under is its batch —
     // landing under a different one re-homes the task (job-level, like the manager).
