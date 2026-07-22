@@ -2721,7 +2721,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.203';
+const APP_VERSION = '2026-06-21.204';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -14382,7 +14382,7 @@ function clSwipeEnd(e) {
 function _startClDrag(row, task, startY, flagged) {
   _clSwipe = null;
   const rect = row.getBoundingClientRect();
-  _clDrag = { row, task, grabOffset: startY - rect.top, flagged: !!flagged };
+  _clDrag = { row, task, grabOffset: startY - rect.top, flagged: !!flagged, scroller: row.closest('#cl-organise-body') || row.closest('#run-checklist-scroll') || null };
   _clSwipeBlockClickUntil = Date.now() + 600;
   row.style.transition = 'none';
   row.style.opacity = '0.95';
@@ -14392,7 +14392,7 @@ function _startClDrag(row, task, startY, flagged) {
   row.style.transform = 'scale(1.03)';
   if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
 }
-function _clDragMove(clientY) {
+function _clDragReposition(clientY) {
   const dragged = _clDrag.row, parent = dragged.parentNode, flagged = _clDrag.flagged;
   const _br = _batchRec(_clDrag.task); const _hasB = !!(_br && _br.order.length);
   // With batches, flags live INSIDE their batch, so any row (flagged or not) moves
@@ -14408,7 +14408,40 @@ function _clDragMove(clientY) {
   const ty = clientY - _clDrag.grabOffset - dragged.getBoundingClientRect().top;
   dragged.style.transform = 'translateY(' + ty + 'px) scale(1.03)';
 }
+function _clDragMove(clientY) {
+  _clDrag.lastY = clientY;
+  _clDragReposition(clientY);
+  // Hold near the top/bottom edge → keep scrolling so a batch below the fold comes
+  // into reach; re-run the reposition each scrolled frame against the last finger Y.
+  _clEdgeScroll(_clDrag.scroller, clientY, () => { if (_clDrag) _clDragReposition(_clDrag.lastY); });
+}
+// Edge auto-scroll shared by the task drag and the batch-heading drag. rAF loop
+// scrolls `el` while the finger sits within EDGE px of its top/bottom; the pull is
+// stronger the deeper into the zone. `onScroll` (optional) runs each scrolled frame.
+let _clScrollTimer = null, _clScrollStep = 0, _clScrollFn = null, _clScrollEl = null;
+function _clEdgeScroll(el, clientY, onScroll) {
+  if (!el) { _clStopEdgeScroll(); return; }
+  const r = el.getBoundingClientRect(), EDGE = 64;
+  let step = 0;
+  if (clientY < r.top + EDGE) step = -Math.ceil((r.top + EDGE - clientY) / 5) - 3;
+  else if (clientY > r.bottom - EDGE) step = Math.ceil((clientY - (r.bottom - EDGE)) / 5) + 3;
+  step = Math.max(-24, Math.min(24, step));
+  _clScrollStep = step; _clScrollFn = onScroll || null; _clScrollEl = el;
+  if (!step) { _clStopEdgeScroll(); return; }
+  if (_clScrollTimer != null) return;                      // loop already running (step updated above)
+  _clScrollTimer = setInterval(() => {
+    if (!_clScrollStep || !_clScrollEl || (!_clDrag && !_clHeadDrag)) { _clStopEdgeScroll(); return; }   // drag ended → stop
+    const before = _clScrollEl.scrollTop;
+    _clScrollEl.scrollTop += _clScrollStep;
+    if (_clScrollEl.scrollTop !== before && _clScrollFn) _clScrollFn();
+  }, 16);
+}
+function _clStopEdgeScroll() {
+  if (_clScrollTimer != null) { clearInterval(_clScrollTimer); _clScrollTimer = null; }
+  _clScrollStep = 0; _clScrollFn = null; _clScrollEl = null;
+}
 function _endClDrag() {
+  _clStopEdgeScroll();
   const dragged = _clDrag.row, task = _clDrag.task, parent = dragged.parentNode, flagged = _clDrag.flagged;
   _clDrag = null;
   dragged.style.transition = 'transform 0.15s, box-shadow 0.15s, opacity 0.15s';
@@ -14471,7 +14504,7 @@ function clHeadStart(e) {
   _clHeadPress = setTimeout(() => { _clHeadPress = null; _startClHeadDrag(row); }, _CL_HEAD_HOLD_MS);
 }
 function clHeadMove(e) {
-  if (_clHeadDrag) { e.preventDefault(); _clHeadDrag.lastY = e.touches[0].clientY; if (_clHeadDrag.clone) _clHeadDrag.clone.style.top = (e.touches[0].clientY - 20) + 'px'; return; }
+  if (_clHeadDrag) { e.preventDefault(); const cy = e.touches[0].clientY; _clHeadDrag.lastY = cy; if (_clHeadDrag.clone) _clHeadDrag.clone.style.top = (cy - 20) + 'px'; _clEdgeScroll(document.getElementById('cl-organise-body'), cy, null); return; }
   const s = _clHeadInfo; if (!s) return;
   if (_clHeadPress && (Math.abs(e.touches[0].clientX - s.x) > 8 || Math.abs(e.touches[0].clientY - s.y) > 8)) { clearTimeout(_clHeadPress); _clHeadPress = null; _clHeadInfo = null; } // scroll → cancel
 }
@@ -14495,21 +14528,27 @@ function _startClHeadDrag(row) {
 }
 function _endClHeadDrag() {
   const d = _clHeadDrag; _clHeadDrag = null;
+  _clStopEdgeScroll();
   if (d.clone) d.clone.remove();
   document.querySelectorAll('[data-batch-sec]').forEach(h => { h.style.opacity = ''; });
-  // Which rendered heading is the finger over? (index into d.names, which skips
-  // empty/unrendered batches.) Clamp above-first → 0, below-last → last.
-  let to = d.names.indexOf(d.name);
-  for (let i = 0; i < d.rects.length; i++) { const r = d.rects[i]; if (r && d.lastY >= r.top && d.lastY <= r.bottom) { to = i; break; } }
-  if (d.rects.length) {
-    if (d.rects[0] && d.lastY < d.rects[0].top) to = 0;
-    const last = d.rects[d.rects.length - 1]; if (last && d.lastY > last.bottom) to = d.rects.length - 1;
+  // Recompute from LIVE heading positions (the sheet may have auto-scrolled since
+  // grab, making the captured rects stale). Names still skip empty/unrendered
+  // batches. Which rendered heading is the finger over? Clamp above→0, below→last.
+  const body = document.getElementById('cl-organise-body');
+  const liveHeads = body ? [...body.querySelectorAll('[data-batch-sec]:not([data-batch-loose])')] : [];
+  const names = liveHeads.map(h => h.dataset.batchName);
+  const rects = liveHeads.map(h => h.getBoundingClientRect());
+  let to = names.indexOf(d.name);
+  for (let i = 0; i < rects.length; i++) { const r = rects[i]; if (r && d.lastY >= r.top && d.lastY <= r.bottom) { to = i; break; } }
+  if (rects.length) {
+    if (rects[0] && d.lastY < rects[0].top) to = 0;
+    const last = rects[rects.length - 1]; if (last && d.lastY > last.bottom) to = rects.length - 1;
   }
-  const from = d.names.indexOf(d.name);
+  const from = names.indexOf(d.name);
   if (from !== -1 && to !== -1 && from !== to) {
     const all = getTaskBatches(); const r2 = all[_clOrganiseTask];
     if (r2 && Array.isArray(r2.order)) {
-      const newNames = d.names.slice(); newNames.splice(from, 1); newNames.splice(to, 0, d.name);
+      const newNames = names.slice(); newNames.splice(from, 1); newNames.splice(to, 0, d.name);
       const empties = r2.order.filter(bn => !newNames.includes(bn));   // batches with no members stay at the end
       r2.order = newNames.concat(empties);
       saveTaskBatches(all); autoBackup();
