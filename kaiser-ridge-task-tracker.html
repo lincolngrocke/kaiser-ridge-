@@ -2721,7 +2721,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.200';
+const APP_VERSION = '2026-06-21.201';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -14394,13 +14394,13 @@ function _startClDrag(row, task, startY, flagged) {
 }
 function _clDragMove(clientY) {
   const dragged = _clDrag.row, parent = dragged.parentNode, flagged = _clDrag.flagged;
-  // Reorder only among rows of the same flag-group (flagged stay above the rest).
-  // ▣ batch headings also act as drop boundaries for unflagged rows: dropping just
-  // above a heading lands at the END of the previous batch, just below it at the
-  // TOP of that heading's batch.
+  const _br = _batchRec(_clDrag.task); const _hasB = !!(_br && _br.order.length);
+  // With batches, flags live INSIDE their batch, so any row (flagged or not) moves
+  // among all rows with ▣ headings as boundaries — dropping under a heading re-homes
+  // it. Without batches, reorder only among the same flag-group (flagged stay above).
   const others = [...parent.children].filter(c => c !== dragged && (
-    (c.classList && c.classList.contains('cl-row') && (c.dataset.clFlagged === '1') === flagged) ||
-    (!flagged && c.dataset && c.dataset.batchSec)));
+    (c.classList && c.classList.contains('cl-row') && (_hasB || (c.dataset.clFlagged === '1') === flagged)) ||
+    ((_hasB || !flagged) && c.dataset && c.dataset.batchSec)));
   const target = others.find(r => { const b = r.getBoundingClientRect(); return clientY < b.top + b.height / 2; });
   if (target) { parent.insertBefore(dragged, target); }
   else { const last = others[others.length - 1]; if (last) parent.insertBefore(dragged, last.nextSibling); }
@@ -14414,21 +14414,22 @@ function _endClDrag() {
   dragged.style.transition = 'transform 0.15s, box-shadow 0.15s, opacity 0.15s';
   dragged.style.transform = ''; dragged.style.opacity = ''; dragged.style.boxShadow = '';
   dragged.style.position = ''; dragged.style.zIndex = '';
-  if (flagged) {
-    // Capture BOTH orders from the current DOM before any re-render detaches it.
+  const bRec = _batchRec(task); const hasBatches = !!(bRec && bRec.order.length);
+  if (flagged && !hasBatches) {
+    // No batches: flagged live in a top "done first" pile. Capture BOTH orders from
+    // the DOM before any re-render detaches it, and persist flaggedAt ('top' mode)
+    // plus the full manual order ('bottom' mode — v200).
     const rows = [...parent.children].filter(c => c.classList && c.classList.contains('cl-row'));
     const order = rows.filter(c => c.dataset.clFlagged === '1').map(c => c.dataset.clItem);
     const fullOrder = rows.map(c => c.dataset.clItem);
-    _applyChecklistFlagOrder(task, order);        // 'top' flag-mode ranks flagged by flaggedAt
-    // The default 'bottom' mode ranks flagged tasks by list/manual position (pos),
-    // not flaggedAt — so persist the full visible order too, or the drag would have
-    // no effect in that mode. One source of truth for bottom; both modes now honour it.
+    _applyChecklistFlagOrder(task, order);
     _applyChecklistManualOrder(task, fullOrder);
   } else {
-    // Batch-aware drop: whichever ▣ heading the row now sits under is its batch —
-    // landing under a different one re-homes the task (job-level, like the manager).
-    const bRec = _batchRec(task);
-    if (bRec && bRec.order.length) {
+    // Batch-aware drop (any row when batches exist; plain unflagged otherwise):
+    // whichever ▣ heading the row now sits under is its batch — landing under a
+    // different one re-homes the task (job-level, like the manager). Flags stay
+    // with the task, so a flagged row just moves to the top of its new batch.
+    if (hasBatches) {
       let secEl = dragged.previousElementSibling;
       while (secEl && !(secEl.dataset && secEl.dataset.batchSec)) secEl = secEl.previousElementSibling;
       if (secEl) {
@@ -14448,8 +14449,10 @@ function _endClDrag() {
         }
       }
     }
-    // Persist the full visible order (flagged first, then the rest as arranged).
-    const fullOrder = [...parent.children].filter(c => c.classList && c.classList.contains('cl-row')).map(c => c.dataset.clItem);
+    // Persist the full visible order; keep 'top' mode's flaggedAt in sync if flagged.
+    const rows = [...parent.children].filter(c => c.classList && c.classList.contains('cl-row'));
+    const fullOrder = rows.map(c => c.dataset.clItem);
+    if (flagged) _applyChecklistFlagOrder(task, rows.filter(c => c.dataset.clFlagged === '1').map(c => c.dataset.clItem));
     _applyChecklistManualOrder(task, fullOrder);
   }
 }
@@ -14615,7 +14618,7 @@ function _renderClOrganiseBody() {
   }
   const _bRec = _batchRec(task);
   const _hasBatches = !!(_bRec && _bRec.order.length);
-  const intro = `<div style="font-size:11px;color:var(--subtext);margin:${_clOrganisePlanId ? '8px' : '12px'} 0 8px;">Hold &amp; drag any item to set the order it’s done in · swipe an item right to 🚩 flag it to the top.${_hasBatches ? ' Drag a task under a different ▣ batch heading to move it into that batch.' : ''}</div>`;
+  const intro = `<div style="font-size:11px;color:var(--subtext);margin:${_clOrganisePlanId ? '8px' : '12px'} 0 8px;">Hold &amp; drag any item to set the order it’s done in · swipe an item right to 🚩 flag it${_hasBatches ? ' (it stays in its batch, floated to the top). Drag a task under a different ▣ batch heading to move it into that batch.' : ' to the top.'}</div>`;
   // 🔁 Planned-laps stepper — plan scope only, on flagged repeat tasks: the block
   // estimate counts these once per lap. Default N is learned (typical laps/run).
   const _lapPlan = (pid && _clEditScope === 'plan') ? _plannerPlans.find(p => p.id === pid) : null;
@@ -14635,29 +14638,37 @@ function _renderClOrganiseBody() {
       ${lapChip}
       <span style="font-size:12px;color:var(--subtext);flex-shrink:0;">⠿</span></div>`;
   };
-  const flaggedBlock = flagged.length
-    ? `<div style="font-size:12px;color:#FFD60A;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;margin:4px 0 8px;">🚩 Flagged · done first</div>${flagged.map(rowHtml).join('')}`
-    : `<div style="padding:18px 0;color:var(--subtext);text-align:center;font-size:14px;">No flagged items yet — swipe one right to flag it.</div>`;
-  const rest = ordered.filter(s => !flags[s]);
-  let restBlock = '';
-  if (rest.length && _hasBatches) {
-    // Batch-aware: the rest of the tasks group under ▣ headings. Rows keep the
-    // same drag machinery — landing under another heading re-homes the task
-    // (membership is job-level, applied in _endClDrag).
-    const secHd = (label, looseAttr) => `<div data-batch-sec="1"${looseAttr ? ' data-batch-loose="1"' : ''} data-batch-name="${_attr(label)}" style="font-size:12px;color:var(--subtext);font-weight:700;letter-spacing:0.4px;margin:16px 0 8px;">▣ ${_escHtml(label)}</div>`;
+  const secHd = (label, looseAttr) => `<div data-batch-sec="1"${looseAttr ? ' data-batch-loose="1"' : ''} data-batch-name="${_attr(label)}" style="font-size:12px;color:var(--subtext);font-weight:700;letter-spacing:0.4px;margin:16px 0 8px;">▣ ${_escHtml(label)}</div>`;
+  let bodyHtml;
+  if (_hasBatches) {
+    // Batches are the organisation — a flagged task STAYS in its batch (floated to
+    // the top of that batch, 🚩), it's never pulled into a separate pile. `ordered`
+    // already sorts flagged-first, so filtering by batch keeps flags at the top of
+    // each one. Rows keep the drag machinery: dropping under a different ▣ heading
+    // re-homes the task (applied in _endClDrag).
     const used = new Set();
+    let blocks = '';
     _bRec.order.forEach(bn => {
-      const members = rest.filter(s => _bRec.items[s] === bn);
+      const members = ordered.filter(s => _bRec.items[s] === bn);
       if (!members.length) return;
       members.forEach(s => used.add(s));
-      restBlock += secHd(bn, false) + members.map(rowHtml).join('');
+      blocks += secHd(bn, false) + members.map(rowHtml).join('');
     });
-    const loose = rest.filter(s => !used.has(s));
-    if (loose.length) restBlock += secHd('Unbatched', true) + loose.map(rowHtml).join('');
-  } else if (rest.length) {
-    restBlock = `<div style="font-size:12px;color:var(--subtext);font-weight:700;text-transform:uppercase;letter-spacing:0.4px;margin:16px 0 8px;">Rest of the tasks</div>${rest.map(rowHtml).join('')}`;
+    const loose = ordered.filter(s => !used.has(s));
+    if (loose.length) blocks += secHd('Unbatched', true) + loose.map(rowHtml).join('');
+    bodyHtml = blocks || `<div style="padding:18px 0;color:var(--subtext);text-align:center;font-size:14px;">No tasks on this job yet.</div>`;
+  } else {
+    // No batches: flagged float into a top "done first" section, then the rest.
+    const flaggedBlock = flagged.length
+      ? `<div style="font-size:12px;color:#FFD60A;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;margin:4px 0 8px;">🚩 Flagged · done first</div>${flagged.map(rowHtml).join('')}`
+      : `<div style="padding:18px 0;color:var(--subtext);text-align:center;font-size:14px;">No flagged items yet — swipe one right to flag it.</div>`;
+    const rest = ordered.filter(s => !flags[s]);
+    const restBlock = rest.length
+      ? `<div style="font-size:12px;color:var(--subtext);font-weight:700;text-transform:uppercase;letter-spacing:0.4px;margin:16px 0 8px;">Rest of the tasks</div>${rest.map(rowHtml).join('')}`
+      : '';
+    bodyHtml = flaggedBlock + restBlock;
   }
-  body.innerHTML = '<div class="cl-sticky-top">' + scopeToggle + estLine + intro + '</div>' + flaggedBlock + restBlock;
+  body.innerHTML = '<div class="cl-sticky-top">' + scopeToggle + estLine + intro + '</div>' + bodyHtml;
 }
 
 function openPlannerDetail(planId) {
