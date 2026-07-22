@@ -2721,7 +2721,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.201';
+const APP_VERSION = '2026-06-21.202';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -14554,6 +14554,20 @@ function _refreshChecklistSurfaces(task) {
   if (org && org.classList.contains('open') && _clOrganiseTask === task) _renderClOrganiseBody();
 }
 let _clOrganiseTask = null, _clOrganisePlanId = null, _clEditScope = 'plan';
+// Which ▣ batches are collapsed in the Organise sheet (by batch name; 'Unbatched'
+// for the loose group). View-only state, reset each time the sheet opens.
+let _clOrgCollapsed = {};
+function _clToggleBatchCollapse(name) {
+  if (Date.now() < _clSwipeBlockClickUntil) return;   // a drag just finished — not a tap
+  _clOrgCollapsed[name] = !_clOrgCollapsed[name];
+  _renderClOrganiseBody();
+}
+function _clSetAllBatchesCollapsed(collapse) {
+  const rec = _batchRec(_clOrganiseTask);
+  _clOrgCollapsed = {};
+  if (collapse && rec) { rec.order.forEach(bn => { _clOrgCollapsed[bn] = true; }); _clOrgCollapsed['Unbatched'] = true; }
+  _renderClOrganiseBody();
+}
 // Which flags map the open organise editor targets: a planner block (plan scope);
 // else null = the running session's override or the job's global flags.
 function _clTargetPlanId() {
@@ -14571,6 +14585,7 @@ function openChecklistOrganise(e) {
   if (!clockState || !clockState.task) return;
   _clOrganiseTask = clockState.task;
   _clOrganisePlanId = null;
+  _clOrgCollapsed = {};
   document.getElementById('cl-organise-title').textContent = clockState.task;
   _renderClOrganiseBody();
   openModal('modal-cl-organise');
@@ -14584,6 +14599,7 @@ function openChecklistOrganiseForPlan(planId) {
   _clOrganiseTask = plan.task;
   _clOrganisePlanId = planId;
   _clEditScope = 'plan';
+  _clOrgCollapsed = {};
   const m = getPlannerChecklist();
   if (!m[planId]) { m[planId] = { flags: { ...(getChecklistFlags()[plan.task] || {}) } }; savePlannerChecklist(m); }
   _applyBlockEstimate(planId);   // size the block from history on open (flagged sum, else job average)
@@ -14638,7 +14654,13 @@ function _renderClOrganiseBody() {
       ${lapChip}
       <span style="font-size:12px;color:var(--subtext);flex-shrink:0;">⠿</span></div>`;
   };
-  const secHd = (label, looseAttr) => `<div data-batch-sec="1"${looseAttr ? ' data-batch-loose="1"' : ''} data-batch-name="${_attr(label)}" style="font-size:12px;color:var(--subtext);font-weight:700;letter-spacing:0.4px;margin:16px 0 8px;">▣ ${_escHtml(label)}</div>`;
+  // ▣ heading — tap to open/close the batch (chevron + task count). Still a drop
+  // boundary: dropping a task under a heading re-homes it, so a collapsed batch is
+  // a compact target. `count` shown; `collapsed` hides the rows below.
+  const secHd = (label, looseAttr, count, collapsed) => `<div data-batch-sec="1"${looseAttr ? ' data-batch-loose="1"' : ''} data-batch-name="${_attr(label)}" onclick="_clToggleBatchCollapse(decodeURIComponent('${encodeURIComponent(label).replace(/'/g, '%27')}'))" style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--subtext);font-weight:700;letter-spacing:0.4px;margin:16px 0 8px;">
+    <span style="font-size:13px;width:12px;flex-shrink:0;">${collapsed ? '▸' : '▾'}</span>
+    <span style="flex:1;min-width:0;">▣ ${_escHtml(label)}</span>
+    <span style="font-weight:600;color:#616a7e;background:rgba(127,127,127,0.14);border-radius:9px;padding:1px 8px;flex-shrink:0;">${count}</span></div>`;
   let bodyHtml;
   if (_hasBatches) {
     // Batches are the organisation — a flagged task STAYS in its batch (floated to
@@ -14652,10 +14674,11 @@ function _renderClOrganiseBody() {
       const members = ordered.filter(s => _bRec.items[s] === bn);
       if (!members.length) return;
       members.forEach(s => used.add(s));
-      blocks += secHd(bn, false) + members.map(rowHtml).join('');
+      const col = !!_clOrgCollapsed[bn];
+      blocks += secHd(bn, false, members.length, col) + (col ? '' : members.map(rowHtml).join(''));
     });
     const loose = ordered.filter(s => !used.has(s));
-    if (loose.length) blocks += secHd('Unbatched', true) + loose.map(rowHtml).join('');
+    if (loose.length) { const col = !!_clOrgCollapsed['Unbatched']; blocks += secHd('Unbatched', true, loose.length, col) + (col ? '' : loose.map(rowHtml).join('')); }
     bodyHtml = blocks || `<div style="padding:18px 0;color:var(--subtext);text-align:center;font-size:14px;">No tasks on this job yet.</div>`;
   } else {
     // No batches: flagged float into a top "done first" section, then the rest.
@@ -14668,7 +14691,13 @@ function _renderClOrganiseBody() {
       : '';
     bodyHtml = flaggedBlock + restBlock;
   }
-  body.innerHTML = '<div class="cl-sticky-top">' + scopeToggle + estLine + intro + '</div>' + bodyHtml;
+  let collapseAllCtl = '';
+  if (_hasBatches) {
+    const names = _bRec.order.concat(['Unbatched']);
+    const allCol = names.every(n => _clOrgCollapsed[n] || !ordered.some(s => (n === 'Unbatched') ? !(_bRec.items[s] && _bRec.order.includes(_bRec.items[s])) : _bRec.items[s] === n));
+    collapseAllCtl = `<div style="display:flex;justify-content:flex-end;padding:2px 0 2px;"><span onclick="_clSetAllBatchesCollapsed(${allCol ? 'false' : 'true'})" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">${allCol ? '⤢ Expand all batches' : '⤡ Collapse all batches'}</span></div>`;
+  }
+  body.innerHTML = '<div class="cl-sticky-top">' + scopeToggle + estLine + intro + collapseAllCtl + '</div>' + bodyHtml;
 }
 
 function openPlannerDetail(planId) {
