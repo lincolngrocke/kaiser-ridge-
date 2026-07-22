@@ -2721,7 +2721,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.197';
+const APP_VERSION = '2026-06-21.198';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -14024,8 +14024,13 @@ function _sortPins(arr, task) {
   return arr.slice().sort((a, b) => {
     const fa = a.flagged ? 1 : 0, fb = b.flagged ? 1 : 0;
     if (fa !== fb) return fb - fa;
-    if (fa && flagTop) return (b.flaggedAt || 0) - (a.flaggedAt || 0);   // 'top' → newest flag first; 'bottom' falls through to base order (you flag top-to-bottom, they stay in that order)
-    if (manual) {   // non-flagged (and 'bottom'-mode flagged): manually-ordered ids first (in order), un-ordered by time after
+    // Flagged to-dos order by flaggedAt — that's the order you flagged them, and
+    // it's also where a manual drag stores its arrangement (_applyFlagOrder). A
+    // to-do has no learned base order, so this (not caught-time) is the sort.
+    // 'top' → newest flag first; 'bottom' → oldest flag first (a new flag lands
+    // at the bottom of the group, and dragging to organise takes priority).
+    if (fa) return flagTop ? (b.flaggedAt || 0) - (a.flaggedAt || 0) : (a.flaggedAt || 0) - (b.flaggedAt || 0);
+    if (manual) {   // non-flagged: manually-ordered ids first (in order), un-ordered by time after
       const ia = manual.indexOf(a.id), ib = manual.indexOf(b.id);
       if (ia !== -1 || ib !== -1) {
         if (ia === -1) return 1;
@@ -14174,14 +14179,20 @@ function _applyPinManualOrder(task, restIds) {
   const all = getPinOrder(); all[task] = restIds.slice(); savePinOrder(all);
   _refreshPinSurfaces(task);
 }
-// Encode a manual order of flagged notes into flaggedAt so _sortPins keeps it.
+// Encode a manual order of flagged notes into flaggedAt so _sortPins keeps it —
+// a dragged order takes priority over the default. The encoding matches the
+// sort direction so first-listed is always the top item in either mode: 'top'
+// sorts flaggedAt-desc (first = highest), 'bottom' sorts asc (first = lowest,
+// last = base so a later new flag still appends below it).
 function _applyFlagOrder(task, orderedIds) {
   const tn = getTaskNotes();
   const arr = tn[task]; if (!arr) return;
   const base = Date.now();
+  const bottom = _flagNewPos() !== 'top';
+  const n = orderedIds.length;
   orderedIds.forEach((id, i) => {
-    const note = arr.find(n => n.id === id);
-    if (note && note.flagged) note.flaggedAt = base - i * 1000; // first listed = highest = top
+    const note = arr.find(n2 => n2.id === id);
+    if (note && note.flagged) note.flaggedAt = bottom ? base - (n - 1 - i) * 1000 : base - i * 1000; // first listed = top in both modes
   });
   saveTaskNotes(tn);
   _refreshPinSurfaces(task);
