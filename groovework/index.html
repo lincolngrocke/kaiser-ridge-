@@ -2721,7 +2721,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.202';
+const APP_VERSION = '2026-06-21.203';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -14456,6 +14456,69 @@ function _endClDrag() {
     _applyChecklistManualOrder(task, fullOrder);
   }
 }
+// ── Reorder ▣ batches by holding & dragging a heading in the Organise sheet ──
+// (Lincoln: "once contracted you can arrange the batches in a specific order.")
+// A finger-following clone + captured heading rects, like the batch manager, so
+// it's clean whether batches are open or collapsed. Tap still toggles collapse;
+// a hold starts the drag. Persists _bRec.order → the jobs page.
+let _clHeadDrag = null, _clHeadPress = null, _clHeadInfo = null;
+const _CL_HEAD_HOLD_MS = 250;
+function clHeadStart(e) {
+  const row = e.currentTarget;
+  const y = e.touches[0].clientY;
+  clearTimeout(_clHeadPress);
+  _clHeadInfo = { row, name: row.dataset.batchName, x: e.touches[0].clientX, y };
+  _clHeadPress = setTimeout(() => { _clHeadPress = null; _startClHeadDrag(row); }, _CL_HEAD_HOLD_MS);
+}
+function clHeadMove(e) {
+  if (_clHeadDrag) { e.preventDefault(); _clHeadDrag.lastY = e.touches[0].clientY; if (_clHeadDrag.clone) _clHeadDrag.clone.style.top = (e.touches[0].clientY - 20) + 'px'; return; }
+  const s = _clHeadInfo; if (!s) return;
+  if (_clHeadPress && (Math.abs(e.touches[0].clientX - s.x) > 8 || Math.abs(e.touches[0].clientY - s.y) > 8)) { clearTimeout(_clHeadPress); _clHeadPress = null; _clHeadInfo = null; } // scroll → cancel
+}
+function clHeadEnd() {
+  clearTimeout(_clHeadPress); _clHeadPress = null;
+  if (_clHeadDrag) _endClHeadDrag();
+  _clHeadInfo = null;
+}
+function _startClHeadDrag(row) {
+  const rec = _batchRec(_clOrganiseTask); if (!rec) return;
+  _clSwipeBlockClickUntil = Date.now() + 600;   // suppress the tap-collapse click after a drag
+  const heads = [...row.parentNode.querySelectorAll('[data-batch-sec]:not([data-batch-loose])')];
+  const clone = document.createElement('div');
+  clone.textContent = '▣ ' + row.dataset.batchName;
+  clone.style.cssText = 'position:fixed;left:24px;right:24px;background:var(--card);padding:12px 16px;border-radius:10px;font-weight:700;font-size:14px;color:var(--text);box-shadow:0 8px 28px rgba(0,0,0,0.45);z-index:999;pointer-events:none;';
+  clone.style.top = ((_clHeadInfo ? _clHeadInfo.y : row.getBoundingClientRect().top) - 20) + 'px';
+  document.body.appendChild(clone);
+  row.style.opacity = '0.4';
+  _clHeadDrag = { name: row.dataset.batchName, clone, rects: heads.map(h => h.getBoundingClientRect()), names: heads.map(h => h.dataset.batchName), lastY: _clHeadInfo ? _clHeadInfo.y : 0 };
+  if (navigator.vibrate) { try { navigator.vibrate(20); } catch (e) {} }
+}
+function _endClHeadDrag() {
+  const d = _clHeadDrag; _clHeadDrag = null;
+  if (d.clone) d.clone.remove();
+  document.querySelectorAll('[data-batch-sec]').forEach(h => { h.style.opacity = ''; });
+  // Which rendered heading is the finger over? (index into d.names, which skips
+  // empty/unrendered batches.) Clamp above-first → 0, below-last → last.
+  let to = d.names.indexOf(d.name);
+  for (let i = 0; i < d.rects.length; i++) { const r = d.rects[i]; if (r && d.lastY >= r.top && d.lastY <= r.bottom) { to = i; break; } }
+  if (d.rects.length) {
+    if (d.rects[0] && d.lastY < d.rects[0].top) to = 0;
+    const last = d.rects[d.rects.length - 1]; if (last && d.lastY > last.bottom) to = d.rects.length - 1;
+  }
+  const from = d.names.indexOf(d.name);
+  if (from !== -1 && to !== -1 && from !== to) {
+    const all = getTaskBatches(); const r2 = all[_clOrganiseTask];
+    if (r2 && Array.isArray(r2.order)) {
+      const newNames = d.names.slice(); newNames.splice(from, 1); newNames.splice(to, 0, d.name);
+      const empties = r2.order.filter(bn => !newNames.includes(bn));   // batches with no members stay at the end
+      r2.order = newNames.concat(empties);
+      saveTaskBatches(all); autoBackup();
+      showToast('▣ Batch order updated');
+      if (clockState && clockState.running && clockState.task === _clOrganiseTask) renderRunChecklist();
+    }
+  }
+  _renderClOrganiseBody();
+}
 // Encode a manual order of flagged items into flaggedAt (top = newest).
 function _applyChecklistFlagOrder(task, orderedItems) {
   const base = Date.now();
@@ -14634,7 +14697,7 @@ function _renderClOrganiseBody() {
   }
   const _bRec = _batchRec(task);
   const _hasBatches = !!(_bRec && _bRec.order.length);
-  const intro = `<div style="font-size:11px;color:var(--subtext);margin:${_clOrganisePlanId ? '8px' : '12px'} 0 8px;">Hold &amp; drag any item to set the order it’s done in · swipe an item right to 🚩 flag it${_hasBatches ? ' (it stays in its batch, floated to the top). Drag a task under a different ▣ batch heading to move it into that batch.' : ' to the top.'}</div>`;
+  const intro = `<div style="font-size:11px;color:var(--subtext);margin:${_clOrganisePlanId ? '8px' : '12px'} 0 8px;">Hold &amp; drag any item to set the order it’s done in · swipe an item right to 🚩 flag it${_hasBatches ? ' (it stays in its batch, floated to the top). Tap a ▣ heading to open/close it; hold &amp; drag a heading to reorder batches; drag a task under a heading to move it there.' : ' to the top.'}</div>`;
   // 🔁 Planned-laps stepper — plan scope only, on flagged repeat tasks: the block
   // estimate counts these once per lap. Default N is learned (typical laps/run).
   const _lapPlan = (pid && _clEditScope === 'plan') ? _plannerPlans.find(p => p.id === pid) : null;
@@ -14657,10 +14720,10 @@ function _renderClOrganiseBody() {
   // ▣ heading — tap to open/close the batch (chevron + task count). Still a drop
   // boundary: dropping a task under a heading re-homes it, so a collapsed batch is
   // a compact target. `count` shown; `collapsed` hides the rows below.
-  const secHd = (label, looseAttr, count, collapsed) => `<div data-batch-sec="1"${looseAttr ? ' data-batch-loose="1"' : ''} data-batch-name="${_attr(label)}" onclick="_clToggleBatchCollapse(decodeURIComponent('${encodeURIComponent(label).replace(/'/g, '%27')}'))" style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--subtext);font-weight:700;letter-spacing:0.4px;margin:16px 0 8px;">
+  const secHd = (label, looseAttr, count, collapsed) => `<div data-batch-sec="1"${looseAttr ? ' data-batch-loose="1"' : ''} data-batch-name="${_attr(label)}" onclick="_clToggleBatchCollapse(decodeURIComponent('${encodeURIComponent(label).replace(/'/g, '%27')}'))"${looseAttr ? '' : ' ontouchstart="clHeadStart(event)" ontouchmove="clHeadMove(event)" ontouchend="clHeadEnd(event)"'} style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--subtext);font-weight:700;letter-spacing:0.4px;margin:16px 0 8px;">
     <span style="font-size:13px;width:12px;flex-shrink:0;">${collapsed ? '▸' : '▾'}</span>
     <span style="flex:1;min-width:0;">▣ ${_escHtml(label)}</span>
-    <span style="font-weight:600;color:#616a7e;background:rgba(127,127,127,0.14);border-radius:9px;padding:1px 8px;flex-shrink:0;">${count}</span></div>`;
+    <span style="font-weight:600;color:#616a7e;background:rgba(127,127,127,0.14);border-radius:9px;padding:1px 8px;flex-shrink:0;">${count}</span>${looseAttr ? '' : '<span style="font-size:13px;color:#616a7e;flex-shrink:0;">⠿</span>'}</div>`;
   let bodyHtml;
   if (_hasBatches) {
     // Batches are the organisation — a flagged task STAYS in its batch (floated to
