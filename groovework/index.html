@@ -2721,7 +2721,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.198';
+const APP_VERSION = '2026-06-21.199';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4137,6 +4137,7 @@ function deleteRunItem() {
     const tn = getTaskNotes();
     if (Array.isArray(tn[task])) tn[task] = tn[task].filter(p => p.id !== ref.pinId);
     saveTaskNotes(tn);
+    _removeTodoFromBatches(task, ref.pinId);   // ▣ drop its batch membership too
     if (clockState.pinDone) { delete clockState.pinDone[ref.pinId]; _safeSetItem('kr_clock', JSON.stringify(clockState)); }
   }
   _runAddMode = 'add'; _runEditRef = null;
@@ -4444,7 +4445,7 @@ function renderRunChecklist() {
       const _allExp = _visPins.every(p => _expandedNotes.has(p.id));
       expandLink = `<span onclick="toggleAllPinsExpanded()" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">${_allExp ? '⤡ Collapse all' : '⤢ Expand all'}</span>`;
     }
-    rows = pinned.map(p => {
+    const buildPinRow = (p) => {
       const isDone = !!pinDone[p.id];
       if (isDone) return '';   // ticked this session → moves to the ✓ chip / Completed view
       const safe = _linkifyText(p.text);
@@ -4467,7 +4468,32 @@ function renderRunChecklist() {
         <span onclick="event.stopPropagation();openRunEdit('notes','${p.id}')" style="flex-shrink:0;color:#9aa3b7;font-size:23px;line-height:1;cursor:pointer;padding:10px 14px 10px 12px;align-self:flex-start;">✎</span>
         ${durStr}
       </div>`;
-    }).join('');
+    };
+    if (_jobHasTodoBatches(clockState.task)) {
+      // Batches lens for to-dos — same shared batch list as tasks, collapsible
+      // sections. A batch holding a flagged to-do floats up and starts open.
+      const _bRec = _batchRec(clockState.task);
+      const _vis = pinned.filter(p => !pinDone[p.id]);
+      const groups = _bRec.order
+        .map(name => ({ key: 'pb:' + name, name, members: _vis.filter(p => _todoBatchOf(clockState.task, p.id) === name) }))
+        .filter(g => g.members.length);
+      const loose = _vis.filter(p => { const b = _todoBatchOf(clockState.task, p.id); return !(b && _bRec.order.includes(b)); });
+      if (loose.length) groups.push({ key: 'pb:~loose', name: 'Other to-dos', members: loose, loose: true });
+      const _gHasFlag = g => g.members.some(p => p.flagged);
+      groups.sort((a, b) => _gHasFlag(b) - _gHasFlag(a));   // stable — flagged batches float, saved order otherwise
+      rows = groups.map(g => {
+        const fl = _gHasFlag(g);
+        const col = (g.key in _runGroupCollapsed) ? !!_runGroupCollapsed[g.key] : !fl;
+        const hd = `<div onclick="toggleRunGroup(decodeURIComponent('${encodeURIComponent(g.key).replace(/'/g, '%27')}'), ${col})" style="display:flex;align-items:center;gap:8px;padding:15px 0 6px;cursor:pointer;">
+          <span style="color:#8b93a7;font-size:13px;">${col ? '▸' : '▾'}</span>
+          <span style="font-size:13px;font-weight:700;letter-spacing:0.3px;color:${g.loose ? '#8b93a7' : '#dfe3ec'};">${fl ? '🚩 ' : ''}${_escHtml(g.name)}</span>
+          <span style="font-size:11px;color:#616a7e;background:rgba(255,255,255,0.06);border-radius:9px;padding:1px 7px;">${g.members.length}</span>
+          <span style="flex:1;"></span></div>`;
+        return hd + (col ? '' : g.members.map(buildPinRow).join(''));
+      }).join('');
+    } else {
+      rows = pinned.map(buildPinRow).join('');
+    }
   }
 
   if (!rows) {
@@ -9324,6 +9350,20 @@ function _batchRec(job) {
   return (r && Array.isArray(r.order) && r.items) ? r : null;
 }
 function _jobHasBatches(job) { const r = _batchRec(job); return !!(r && r.order.length); }
+// To-dos share a job's batch list (.order) with tasks but keep their own
+// membership map (.todoItems: pinId → batchName) so a to-do's id can't collide
+// with a task's text. Rides kr_task_batches, so it syncs in the library already.
+function _todoBatchOf(job, pinId) { const r = _batchRec(job); return (r && r.todoItems && r.todoItems[pinId]) || null; }
+function _jobHasTodoBatches(job) {
+  const r = _batchRec(job);
+  if (!r || !r.todoItems || !r.order.length) return false;
+  return Object.keys(r.todoItems).some(id => r.order.includes(r.todoItems[id]));
+}
+// A to-do was deleted — drop its batch membership so stale ids don't linger.
+function _removeTodoFromBatches(job, pinId) {
+  const all = getTaskBatches(); const rec = all[job];
+  if (rec && rec.todoItems && rec.todoItems[pinId] != null) { delete rec.todoItems[pinId]; saveTaskBatches(all); }
+}
 // A task was renamed (newName) or deleted (newName = null) — keep membership with it.
 function _migrateBatchTaskName(oldName, newName) {
   const all = getTaskBatches(); let ch = false;
@@ -9355,25 +9395,35 @@ function renderBatchManager() {
   const tasks = _subtaskItems.slice();
   const ro = isWorker();
   const enc = s => encodeURIComponent(s).replace(/'/g, '%27');   // %27: apostrophes survive encodeURIComponent and would break the onclick string
+  const notes = getTaskNotes()[job] || [];
   const cards = rec.order.map((bn, bi) => {
     const members = tasks.filter(t => rec.items[t] === bn);
+    const ti = rec.todoItems || {};
+    const todoMembers = notes.filter(p => ti[p.id] === bn);
     const rows = members.map(t => `
       <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--border);">
         <span style="font-size:14px;color:var(--text);flex:1;min-width:0;">${_escTxt(t)}</span>
         ${ro ? '' : `<button onclick="removeTaskFromBatch(decodeURIComponent('${enc(t)}'))" title="Remove from batch (task stays on the job)" style="background:none;border:none;color:var(--subtext);font-size:15px;cursor:pointer;padding:2px 4px;flex-shrink:0;">✕</button>`}
       </div>`).join('');
+    const todoRows = todoMembers.map(p => `
+      <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--border);">
+        <span style="font-size:14px;color:var(--text);flex:1;min-width:0;">📌 ${_escTxt((p.text || '').split('\n')[0])}</span>
+        ${ro ? '' : `<button onclick="removeTodoFromBatch('${p.id}')" title="Remove from batch (to-do stays on the job)" style="background:none;border:none;color:var(--subtext);font-size:15px;cursor:pointer;padding:2px 4px;flex-shrink:0;">✕</button>`}
+      </div>`).join('');
+    const nT = members.length, nD = todoMembers.length;
+    const countLbl = [nT ? nT + ' task' + (nT === 1 ? '' : 's') : '', nD ? nD + ' to-do' + (nD === 1 ? '' : 's') : ''].filter(Boolean).join(' · ') || '0 items';
     return `
     <div id="bmcard-${bi}" style="border:1px solid var(--border);border-radius:12px;padding:10px 14px;margin-bottom:10px;">
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
         ${ro ? '' : `<span ontouchstart="bmTouchStart(event,${bi})" style="color:var(--subtext);font-size:20px;padding:2px 6px 2px 0;user-select:none;-webkit-user-select:none;cursor:grab;flex-shrink:0;">≡</span>`}
         <span style="font-size:15px;font-weight:700;color:var(--text);flex:1;min-width:0;">▣ ${_escTxt(bn)}</span>
-        <span style="font-size:12px;color:var(--subtext);">${members.length} task${members.length === 1 ? '' : 's'}</span>
+        <span style="font-size:12px;color:var(--subtext);">${countLbl}</span>
         ${ro ? '' : `
         <button onclick="renameBatch(${bi})" title="Rename" style="background:none;border:none;color:var(--subtext);font-size:15px;cursor:pointer;padding:2px 5px;">✎</button>
-        <button onclick="deleteBatch(${bi})" title="Delete batch (tasks stay on the job)" style="background:none;border:none;color:var(--red);font-size:15px;cursor:pointer;padding:2px 5px;">✕</button>`}
+        <button onclick="deleteBatch(${bi})" title="Delete batch (tasks &amp; to-dos stay on the job)" style="background:none;border:none;color:var(--red);font-size:15px;cursor:pointer;padding:2px 5px;">✕</button>`}
       </div>
-      ${rows || '<div style="font-size:13px;color:var(--subtext);padding:6px 0;">No tasks in this batch yet.</div>'}
-      ${ro ? '' : `<div onclick="openBatchTaskPicker(${bi})" style="color:var(--blue);font-size:13px;font-weight:600;cursor:pointer;padding:8px 0 2px;">＋ Add tasks</div>`}
+      ${rows + todoRows || '<div style="font-size:13px;color:var(--subtext);padding:6px 0;">Nothing in this batch yet.</div>'}
+      ${ro ? '' : `<div onclick="openBatchTaskPicker(${bi})" style="color:var(--blue);font-size:13px;font-weight:600;cursor:pointer;padding:8px 0 2px;">＋ Add tasks &amp; to-dos</div>`}
     </div>`;
   }).join('');
   const loose = tasks.filter(t => !(rec.items[t] && rec.order.includes(rec.items[t])));
@@ -9550,7 +9600,7 @@ function renderBatchTaskPicker() {
   if (!listEl) return;
   const rec = _batchRec(job) || { order: [], items: {} };
   const enc = s => encodeURIComponent(s).replace(/'/g, '%27');   // %27: apostrophes survive encodeURIComponent and would break the onclick string
-  listEl.innerHTML = _subtaskItems.map(t => {
+  const taskRows = _subtaskItems.map(t => {
     const inThis = rec.items[t] === _batchPickTarget;
     const other = !inThis && rec.items[t] && rec.order.includes(rec.items[t]) ? rec.items[t] : '';
     return `<div onclick="toggleBatchTask(decodeURIComponent('${enc(t)}'))" style="display:flex;align-items:center;gap:10px;padding:13px 4px;border-bottom:1px solid var(--border);cursor:pointer;">
@@ -9558,7 +9608,37 @@ function renderBatchTaskPicker() {
       <span style="flex:1;min-width:0;font-size:15px;color:var(--text);">${_escTxt(t)}</span>
       ${other ? `<span style="font-size:11px;color:var(--subtext);background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:2px 7px;flex-shrink:0;">▣ ${_escTxt(other)}</span>` : ''}
     </div>`;
-  }).join('') || '<div style="padding:24px;text-align:center;color:var(--subtext);font-size:14px;">No tasks on this job yet.</div>';
+  }).join('');
+  // To-dos on this job can join the same batch. Keyed by pin id (todoItems).
+  const notes = getTaskNotes()[job] || [];
+  const ti = rec.todoItems || {};
+  const todoRows = notes.map(p => {
+    const inThis = ti[p.id] === _batchPickTarget;
+    const other = !inThis && ti[p.id] && rec.order.includes(ti[p.id]) ? ti[p.id] : '';
+    const label = (p.text || '').split('\n')[0];
+    return `<div onclick="toggleBatchTodo('${p.id}')" style="display:flex;align-items:center;gap:10px;padding:13px 4px;border-bottom:1px solid var(--border);cursor:pointer;">
+      <span style="width:22px;height:22px;border-radius:7px;flex-shrink:0;display:flex;align-items:center;justify-content:center;${inThis ? 'background:var(--blue);' : 'border:1.5px solid var(--border);'}">${inThis ? '<span style="color:#fff;font-size:13px;">✓</span>' : ''}</span>
+      <span style="flex:1;min-width:0;font-size:15px;color:var(--text);">📌 ${_escTxt(label)}</span>
+      ${other ? `<span style="font-size:11px;color:var(--subtext);background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:2px 7px;flex-shrink:0;">▣ ${_escTxt(other)}</span>` : ''}
+    </div>`;
+  }).join('');
+  const _hdr = txt => `<div style="font-size:11px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:var(--subtext);padding:14px 2px 4px;">${txt}</div>`;
+  listEl.innerHTML =
+    (taskRows ? _hdr('Tasks') + taskRows : '') +
+    (todoRows ? _hdr('To-dos') + todoRows : '') ||
+    '<div style="padding:24px;text-align:center;color:var(--subtext);font-size:14px;">No tasks or to-dos on this job yet.</div>';
+}
+function toggleBatchTodo(pinId) {
+  if (isWorker()) return;
+  const job = _dirJobName(); const all = getTaskBatches();
+  const rec = all[job] || (all[job] = { order: [], items: {} });
+  if (!_batchPickTarget || !rec.order.includes(_batchPickTarget)) return;
+  const ti = rec.todoItems || (rec.todoItems = {});
+  if (ti[pinId] === _batchPickTarget) delete ti[pinId];
+  else ti[pinId] = _batchPickTarget;   // also moves it out of another batch
+  saveTaskBatches(all);
+  autoBackup();
+  renderBatchTaskPicker();
 }
 function toggleBatchTask(taskText) {
   if (isWorker()) return;
@@ -9587,6 +9667,16 @@ function removeTaskFromBatch(taskText) {
   autoBackup();
   renderBatchManager();
   renderDirSubtaskList();
+}
+function removeTodoFromBatch(pinId) {
+  if (isWorker()) return;
+  const job = _dirJobName(); const all = getTaskBatches(); const rec = all[job];
+  if (!rec || !rec.todoItems || rec.todoItems[pinId] == null) return;
+  delete rec.todoItems[pinId];
+  saveTaskBatches(all);
+  autoBackup();
+  renderBatchManager();
+  if (clockState && clockState.running && clockState.task === job) renderRunChecklist();
 }
 
 // ══════════════════════════════════════════════
