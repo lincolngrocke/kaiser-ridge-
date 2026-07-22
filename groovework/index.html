@@ -1714,16 +1714,32 @@
   </div>
 </div>
 
-<!-- Robots: stop a run at an earlier time (forgot to hit Stop) -->
+<!-- Robots: log the finish — by the minutes it ran (from the robot app) or by finish time -->
 <div class="modal-backdrop" id="modal-agent-stop" style="z-index:360;">
   <div class="modal-sheet" style="padding:16px 20px 24px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
       <button onclick="closeModal('modal-agent-stop')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;">Cancel</button>
-      <span style="font-size:17px;font-weight:600;">Stop at an earlier time</span>
-      <button onclick="saveAgentRunStop()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Stop</button>
+      <span style="font-size:17px;font-weight:600;">Log finish</span>
+      <button onclick="saveAgentRunStop()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Save</button>
     </div>
-    <div style="font-size:13px;color:var(--subtext);margin-bottom:10px;line-height:1.45;">Forgot to hit Stop? Set when it actually finished — it logs to your Timesheets ending then.</div>
-    <input type="time" id="agent-stop-input" style="width:100%;font-size:20px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);-webkit-appearance:none;">
+    <div id="agent-stop-started" style="font-size:13px;color:var(--subtext);margin-bottom:12px;line-height:1.45;"></div>
+    <div style="display:flex;gap:8px;background:rgba(127,127,127,0.12);border-radius:12px;padding:4px;margin-bottom:14px;">
+      <div id="agstop-tab-duration" onclick="setAgentStopMode('duration')" style="flex:1;text-align:center;padding:9px 6px;border-radius:9px;font-size:14px;font-weight:600;cursor:pointer;">By duration</div>
+      <div id="agstop-tab-finish" onclick="setAgentStopMode('finish')" style="flex:1;text-align:center;padding:9px 6px;border-radius:9px;font-size:14px;font-weight:600;cursor:pointer;">By finish time</div>
+    </div>
+    <div id="agent-stop-dur-wrap">
+      <label style="font-size:13px;color:var(--subtext);">Minutes it ran</label>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:8px;">
+        <button onclick="agentStopDurAdj(-1)" style="width:46px;height:46px;border-radius:12px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:24px;font-weight:700;cursor:pointer;flex-shrink:0;">−</button>
+        <input type="number" id="agent-stop-dur-input" inputmode="numeric" min="1" max="1440" oninput="renderAgentStopFinish()" style="flex:1;min-width:0;font-size:24px;font-weight:600;text-align:center;padding:11px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);-webkit-appearance:none;">
+        <button onclick="agentStopDurAdj(1)" style="width:46px;height:46px;border-radius:12px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:24px;font-weight:700;cursor:pointer;flex-shrink:0;">＋</button>
+      </div>
+      <div id="agent-stop-finish-preview" style="margin-top:12px;padding:11px 12px;border-radius:10px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.35);font-size:15px;color:var(--text);text-align:center;font-weight:700;"></div>
+    </div>
+    <div id="agent-stop-fin-wrap" style="display:none;">
+      <label style="font-size:13px;color:var(--subtext);">Finished at</label>
+      <input type="time" id="agent-stop-input" style="width:100%;margin-top:8px;font-size:20px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);-webkit-appearance:none;">
+    </div>
   </div>
 </div>
 
@@ -2721,7 +2737,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.204';
+const APP_VERSION = '2026-06-21.205';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -12062,27 +12078,64 @@ function saveAgentRunStart() {
 }
 // Stop a running robot at an EARLIER time — for when you forgot to hit Stop and it
 // kept counting. Logs the run ending at the chosen time instead of now.
-let _agentStopRunId = null;
+let _agentStopRunId = null, _agentStopMode = 'duration';
 function stopAgentRunEarlier(runId) {
   const run = getAgentRuns().find(r => r.runId === runId);
   if (!run) return;
   _agentStopRunId = runId;
+  document.getElementById('agent-stop-started').textContent = 'Started ' + _agHM(new Date(run.startMs)) + '. Enter the minutes it ran (from the robot app) and we’ll work out the finish — or switch to set the finish time.';
+  const elapsedMin = Math.max(1, Math.round((Date.now() - run.startMs) / 60000));
+  document.getElementById('agent-stop-dur-input').value = elapsedMin;
   document.getElementById('agent-stop-input').value = _agHM(new Date());
+  setAgentStopMode('duration');
   openModal('modal-agent-stop');
 }
+// Toggle the stop sheet between entering the minutes it ran and picking a finish time.
+function setAgentStopMode(mode) {
+  _agentStopMode = (mode === 'finish') ? 'finish' : 'duration';
+  const on = el => { el.style.background = 'var(--card)'; el.style.color = 'var(--text)'; el.style.boxShadow = '0 1px 3px rgba(0,0,0,0.12)'; };
+  const off = el => { el.style.background = 'transparent'; el.style.color = 'var(--subtext)'; el.style.boxShadow = 'none'; };
+  const dt = document.getElementById('agstop-tab-duration'), ft = document.getElementById('agstop-tab-finish');
+  if (dt && ft) { (_agentStopMode === 'duration' ? on : off)(dt); (_agentStopMode === 'finish' ? on : off)(ft); }
+  const dw = document.getElementById('agent-stop-dur-wrap'), fw = document.getElementById('agent-stop-fin-wrap');
+  if (dw) dw.style.display = _agentStopMode === 'duration' ? '' : 'none';
+  if (fw) fw.style.display = _agentStopMode === 'finish' ? '' : 'none';
+  if (_agentStopMode === 'duration') renderAgentStopFinish();
+}
+function agentStopDurAdj(delta) {
+  const inp = document.getElementById('agent-stop-dur-input');
+  inp.value = Math.max(1, Math.min(1440, (parseInt(inp.value, 10) || 0) + delta));
+  renderAgentStopFinish();
+}
+// Live preview: finish = the run's start + the minutes entered.
+function renderAgentStopFinish() {
+  const el = document.getElementById('agent-stop-finish-preview'); if (!el) return;
+  const run = getAgentRuns().find(r => r.runId === _agentStopRunId);
+  const mins = parseInt((document.getElementById('agent-stop-dur-input') || {}).value, 10);
+  if (!run || !mins || mins <= 0) { el.textContent = 'Enter the minutes it ran'; return; }
+  el.textContent = '🏁 Finish ' + _agHM(new Date(run.startMs + mins * 60000)) + ' · ran ' + fmtMin(mins);
+}
 function saveAgentRunStop() {
-  const v = document.getElementById('agent-stop-input').value;
-  if (!v) { showToast('Pick a time'); return; }
   const runs = getAgentRuns();
   const i = runs.findIndex(r => r.runId === _agentStopRunId);
   if (i < 0) { closeModal('modal-agent-stop'); return; }
   const run = runs[i];
-  const [h, m] = v.split(':').map(Number);
-  const d = new Date(run.startMs);   // end lands on the run's day (handles crossing midnight)
-  d.setHours(h, m, 0, 0);
-  let endMs = d.getTime();
-  if (endMs < run.startMs) endMs += 24 * 3600000;   // a time before the start = next day
-  if (endMs > Date.now()) endMs = Date.now();       // never log into the future
+  let endMs;
+  if (_agentStopMode === 'duration') {
+    // The minutes ARE the truth (e.g. the Lymow app says 12 min) → finish = start + minutes, honoured exactly.
+    const mins = parseInt(document.getElementById('agent-stop-dur-input').value, 10);
+    if (!mins || mins <= 0) { showToast('Enter the minutes it ran'); return; }
+    endMs = run.startMs + mins * 60000;
+  } else {
+    const v = document.getElementById('agent-stop-input').value;
+    if (!v) { showToast('Pick a time'); return; }
+    const [h, m] = v.split(':').map(Number);
+    const d = new Date(run.startMs);   // end lands on the run's day (handles crossing midnight)
+    d.setHours(h, m, 0, 0);
+    endMs = d.getTime();
+    if (endMs < run.startMs) endMs += 24 * 3600000;   // a time before the start = next day
+    if (endMs > Date.now()) endMs = Date.now();       // never log into the future
+  }
   if (endMs <= run.startMs) { showToast('End must be after the start'); return; }
   _logAgentEntry({ agentId: run.agentId, activity: run.activity }, run.startMs, endMs);
   runs.splice(i, 1); saveAgentRuns(runs);
