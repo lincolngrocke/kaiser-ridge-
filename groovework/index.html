@@ -2761,7 +2761,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.207';
+const APP_VERSION = '2026-06-21.208';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4686,28 +4686,33 @@ function renderChecklistAvg(filter) {
     </div>`).join('');
 }
 
-// ── Task Trend: one task's time on each day it was done (X=days, Y=minutes) ──
-// Aggregates all completions of a task per day into that day's total minutes, so
-// laps/repeats within a day sum. Answers "how often, and how variable in time?".
+// ── Task Trend: one task's time each time it was done (X=days, Y=minutes) ──
+// One point PER completion — laps done on the same day stack at that day's X
+// (they are NOT summed), so the average and spread reflect real per-run times.
+// Answers "how often, and how variable in time?".
 let _taskTrendKey = null;       // normalised (lowercase) task label being charted
 let _taskTrendPts = [];         // [{x, y, s}] hit regions for tap-to-inspect
-function _taskDaySeries(normKey) {
-  const byDay = {};   // 'DD/MM/YYYY' -> { date, epoch, minutes, count }
+function _taskCompletions(normKey) {
+  const items = [];   // { dayEpoch, at, minutes }  — one per completion
   entries.forEach(e => {
     const d = _entryChecklistDurations(e);   // { occKey: minutes }
-    const ds = e.date;
+    const p = String(e.date).split('/').map(Number);   // DD/MM/YYYY
+    const dayEpoch = new Date(p[2], (p[1] || 1) - 1, p[0] || 1).getTime();
+    if (!isFinite(dayEpoch)) return;
+    const atOf = {};   // occKey -> completion timestamp, to order laps within a day
+    (Array.isArray(e.checklist) ? e.checklist : []).forEach(c => { atOf[_occKey(c)] = c.at; });
     Object.keys(d).forEach(occ => {
       const label = _stripLap(occ).trim().replace(/\s+/g, ' ').toLowerCase();
       if (label !== normKey) return;
-      if (!byDay[ds]) {
-        const p = String(ds).split('/').map(Number);   // DD/MM/YYYY
-        byDay[ds] = { date: ds, epoch: new Date(p[2], (p[1] || 1) - 1, p[0] || 1).getTime(), minutes: 0, count: 0 };
-      }
-      byDay[ds].minutes += d[occ];
-      byDay[ds].count++;
+      items.push({ dayEpoch, at: atOf[occ] || null, minutes: d[occ] });
     });
   });
-  return Object.values(byDay).filter(x => isFinite(x.epoch)).sort((a, b) => a.epoch - b.epoch);
+  items.sort((a, b) => (a.dayEpoch - b.dayEpoch) || (new Date(a.at || 0) - new Date(b.at || 0)));
+  // Tag each completion with its lap position within its day (for the tap caption)
+  const dayCount = {}, seen = {};
+  items.forEach(c => { dayCount[c.dayEpoch] = (dayCount[c.dayEpoch] || 0) + 1; });
+  items.forEach(c => { seen[c.dayEpoch] = (seen[c.dayEpoch] || 0) + 1; c.lapIdx = seen[c.dayEpoch]; c.dayCount = dayCount[c.dayEpoch]; });
+  return items;
 }
 function openTaskTrend(i) {
   const r = _taskAvgRowsShown && _taskAvgRowsShown[i];
@@ -4722,7 +4727,7 @@ function renderTaskTrend() {
   const canvas = document.getElementById('task-trend-canvas');
   if (!canvas || !_taskTrendKey) return;
   const statsEl = document.getElementById('task-trend-stats');
-  const series = _taskDaySeries(_taskTrendKey);
+  const series = _taskCompletions(_taskTrendKey);
   const dpr = window.devicePixelRatio || 1;
   const W = canvas.parentElement.clientWidth;
   const H = 240;
@@ -4748,18 +4753,21 @@ function renderTaskTrend() {
   const mins = series.map(s => s.minutes);
   const maxV = Math.max(...mins), minV = Math.min(...mins);
   const avg = mins.reduce((a, b) => a + b, 0) / mins.length;
-  const totalDone = series.reduce((a, s) => a + s.count, 0);
-  statsEl.innerHTML = `Done on <b style="color:var(--text)">${series.length}</b> ${series.length === 1 ? 'day' : 'days'}`
-    + (totalDone > series.length ? ` · ${totalDone}× total` : '')
+  // Distinct days → one X column each; laps share their day's column (stacked).
+  const days = [...new Set(series.map(s => s.dayEpoch))].sort((a, b) => a - b);
+  const dayCol = new Map(days.map((d, i) => [d, i]));
+  const nDays = days.length;
+  const nDone = series.length;
+  statsEl.innerHTML = `Done <b style="color:var(--text)">${nDone}×</b>`
+    + (nDone > nDays ? ` over ${nDays} ${nDays === 1 ? 'day' : 'days'}` : ` on ${nDays} ${nDays === 1 ? 'day' : 'days'}`)
     + ` · avg <b style="color:var(--text)">${fmtMin(avg)}</b>`
     + (maxV > minV ? ` · ${fmtMin(minV)}–${fmtMin(maxV)}` : '');
 
   const padL = 40, padR = 12, padT = 16, padB = 30;
   const chartW = W - padL - padR, chartH = H - padT - padB;
   const yMax = Math.max(1, maxV * 1.12);
-  const n = series.length;
   const yOf = v => padT + chartH - (v / yMax) * chartH;
-  const xOf = i => n === 1 ? padL + chartW / 2 : padL + (i / (n - 1)) * chartW;
+  const colX = ep => nDays === 1 ? padL + chartW / 2 : padL + (dayCol.get(ep) / (nDays - 1)) * chartW;
 
   // Y grid + minute labels
   const steps = 4;
@@ -4779,33 +4787,34 @@ function renderTaskTrend() {
   ctx.fillStyle = avgColor; ctx.textAlign = 'left'; ctx.font = '9px -apple-system, sans-serif';
   ctx.fillText('avg ' + fmtMin(avg), padL + 2, Math.max(padT + 8, ya - 4));
 
-  // Connecting trend line
-  if (n > 1) {
-    ctx.strokeStyle = blue; ctx.globalAlpha = 0.45; ctx.lineWidth = 2;
+  // Connecting trend line — completions in chronological order (same-day laps
+  // sit at the same X, so the link between them reads as a vertical spread).
+  if (nDone > 1) {
+    ctx.strokeStyle = blue; ctx.globalAlpha = 0.4; ctx.lineWidth = 2;
     ctx.beginPath();
-    series.forEach((s, i) => { const x = xOf(i), y = yOf(s.minutes); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    series.forEach((s, i) => { const x = colX(s.dayEpoch), y = yOf(s.minutes); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
     ctx.stroke(); ctx.globalAlpha = 1;
   }
-  // Dots
-  series.forEach((s, i) => {
-    const x = xOf(i), y = yOf(s.minutes);
+  // Dots — one per completion
+  series.forEach(s => {
+    const x = colX(s.dayEpoch), y = yOf(s.minutes);
     ctx.fillStyle = blue; ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
     _taskTrendPts.push({ x, y, s });
   });
-  // X date labels — sample up to ~6 so they never crowd; align the edge labels
-  // inward so the first/last don't clip past the chart edges.
+  // X date labels — one per day column, sampled to ~6 so they never crowd;
+  // align the edge labels inward so the first/last don't clip past the edges.
   ctx.fillStyle = textColor; ctx.font = '9px -apple-system, sans-serif';
-  const stepL = Math.max(1, Math.ceil(n / 6));
-  series.forEach((s, i) => {
-    if (i % stepL !== 0 && i !== n - 1) return;
-    const dt = new Date(s.epoch);
+  const stepL = Math.max(1, Math.ceil(nDays / 6));
+  days.forEach((ep, i) => {
+    if (i % stepL !== 0 && i !== nDays - 1) return;
+    const dt = new Date(ep);
     const lbl = dt.getDate() + ' ' + dt.toLocaleString('en-AU', { month: 'short' });
-    if (n > 1 && i === n - 1) { ctx.textAlign = 'right'; ctx.fillText(lbl, W - padR, H - padB + 16); }
+    if (nDays > 1 && i === nDays - 1) { ctx.textAlign = 'right'; ctx.fillText(lbl, W - padR, H - padB + 16); }
     else if (i === 0) { ctx.textAlign = 'left'; ctx.fillText(lbl, padL, H - padB + 16); }
-    else { ctx.textAlign = 'center'; ctx.fillText(lbl, xOf(i), H - padB + 16); }
+    else { ctx.textAlign = 'center'; ctx.fillText(lbl, colX(ep), H - padB + 16); }
   });
 
-  // Tap a point → show its exact date + minutes below the chart
+  // Tap a point → show its exact date + minutes (and which lap) below the chart
   canvas.onclick = (ev) => {
     const rect = canvas.getBoundingClientRect();
     const tx = ev.clientX - rect.left, ty = ev.clientY - rect.top;
@@ -4813,9 +4822,9 @@ function renderTaskTrend() {
     _taskTrendPts.forEach(p => { const dd = (p.x - tx) * (p.x - tx) + (p.y - ty) * (p.y - ty); if (dd < bd) { bd = dd; best = p; } });
     const cap = document.getElementById('task-trend-caption');
     if (best && bd <= 900) {
-      const s = best.s, dt = new Date(s.epoch);
+      const s = best.s, dt = new Date(s.dayEpoch);
       cap.innerHTML = `<b style="color:var(--text)">${dt.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</b> — ${fmtMin(s.minutes)}`
-        + (s.count > 1 ? ` · ${s.count} runs` : '');
+        + (s.dayCount > 1 ? ` · lap ${s.lapIdx} of ${s.dayCount}` : '');
     }
   };
 }
