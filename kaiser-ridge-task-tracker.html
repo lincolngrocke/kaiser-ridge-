@@ -2761,7 +2761,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.208';
+const APP_VERSION = '2026-06-21.209';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -14652,17 +14652,31 @@ function _clDragMove(clientY) {
   // into reach; re-run the reposition each scrolled frame against the last finger Y.
   _clEdgeScroll(_clDrag.scroller, clientY, () => { if (_clDrag) _clDragReposition(_clDrag.lastY); });
 }
-// Edge auto-scroll shared by the task drag and the batch-heading drag. rAF loop
-// scrolls `el` while the finger sits within EDGE px of its top/bottom; the pull is
-// stronger the deeper into the zone. `onScroll` (optional) runs each scrolled frame.
+// Edge auto-scroll shared by the task drag and the batch-heading drag. A loop
+// scrolls `el` while the finger sits within EDGE px of the (usable) top/bottom;
+// the pull is stronger the deeper into the zone. `onScroll` (optional) runs each
+// scrolled frame so the dragged row re-homes against the last finger position.
 let _clScrollTimer = null, _clScrollStep = 0, _clScrollFn = null, _clScrollEl = null;
 function _clEdgeScroll(el, clientY, onScroll) {
   if (!el) { _clStopEdgeScroll(); return; }
-  const r = el.getBoundingClientRect(), EDGE = 64;
+  const r = el.getBoundingClientRect();
+  // The pinned .cl-sticky-top header (tabs/estimate/intro) overlays the top of the
+  // scroller, so the real top-of-list sits BELOW it. Start the up-scroll zone at
+  // its lower edge — otherwise the finger can never reach a trigger band near
+  // r.top while over a real row, and up-scroll never fires (you'd have to drop,
+  // scroll and re-grab — the "very slow" bug).
+  const sticky = el.querySelector('.cl-sticky-top');
+  const topLine = r.top + (sticky ? sticky.offsetHeight : 0);
+  const EDGE = 72;
   let step = 0;
-  if (clientY < r.top + EDGE) step = -Math.ceil((r.top + EDGE - clientY) / 5) - 3;
-  else if (clientY > r.bottom - EDGE) step = Math.ceil((clientY - (r.bottom - EDGE)) / 5) + 3;
-  step = Math.max(-24, Math.min(24, step));
+  if (clientY < topLine + EDGE) {
+    const depth = Math.min(1.3, (topLine + EDGE - clientY) / EDGE);   // deeper → faster
+    step = -(6 + Math.round(28 * depth));
+  } else if (clientY > r.bottom - EDGE) {
+    const depth = Math.min(1.3, (clientY - (r.bottom - EDGE)) / EDGE);
+    step = 6 + Math.round(28 * depth);
+  }
+  step = Math.max(-42, Math.min(42, step));
   _clScrollStep = step; _clScrollFn = onScroll || null; _clScrollEl = el;
   if (!step) { _clStopEdgeScroll(); return; }
   if (_clScrollTimer != null) return;                      // loop already running (step updated above)
