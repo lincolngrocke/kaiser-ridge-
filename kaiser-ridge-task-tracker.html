@@ -2761,7 +2761,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.210';
+const APP_VERSION = '2026-06-21.211';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -14401,7 +14401,7 @@ function _pinnedNotesHtml(task, compact, search) {
   return `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">
     <div style="font-size:12px;color:#FFD60A;margin-bottom:2px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">📌 To-dos</div>
     <div style="font-size:11px;color:var(--subtext);margin-bottom:8px;">${compact ? 'Hold &amp; drag any to-do to reorder · swipe right to 🚩 flag it to the top' : 'Swipe a to-do right to 🚩 flag it to the top · hold &amp; drag a 🚩 to-do to reorder'}</div>
-    ${compact ? `<div style="position:sticky;top:0;z-index:3;background:var(--card);padding:2px 0 10px;"><div onclick="togglePinSort()" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--border);border-radius:999px;font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;">↕ ${_pinSortLabel()}</div></div>` : ''}
+    ${compact ? `<div class="cl-sticky-top" style="position:sticky;top:0;z-index:3;background:var(--card);padding:2px 0 10px;"><div onclick="togglePinSort()" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--border);border-radius:999px;font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;">↕ ${_pinSortLabel()}</div></div>` : ''}
     ${pins.map(p => {
       const safe = p.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const _pinnedTs = (p.caught && p.ts && p.ts !== p.caught) ? p.ts : null;
@@ -14462,7 +14462,7 @@ function pinSwipeEnd(e) {
 function _startPinDrag(row, task, startY, flagged) {
   _pinSwipe = null;
   const rect = row.getBoundingClientRect();
-  _pinDrag = { row, task, grabOffset: startY - rect.top, flagged: !!flagged };
+  _pinDrag = { row, task, grabOffset: startY - rect.top, flagged: !!flagged, scroller: row.closest('#pin-preview-body') || row.closest('#run-checklist-scroll') || null };
   _pinSwipeBlockClickUntil = Date.now() + 600;
   row.style.transition = 'none';
   row.style.opacity = '0.95';
@@ -14475,7 +14475,7 @@ function _startPinDrag(row, task, startY, flagged) {
 // Each move: slot the row among its flagged siblings by finger position, then
 // float it under the finger — measured from its (possibly new) natural slot, so
 // the follow stays accurate no matter how the order shifts.
-function _pinDragMove(clientY) {
+function _pinDragReposition(clientY) {
   const dragged = _pinDrag.row, parent = dragged.parentNode, flagged = _pinDrag.flagged;
   // Reorder only within the same flag-group (flagged stay above the rest).
   const others = [...parent.children].filter(c => c.classList && c.classList.contains('pin-row') && (c.dataset.pinFlagged === '1') === flagged && c !== dragged);
@@ -14486,8 +14486,16 @@ function _pinDragMove(clientY) {
   const ty = clientY - _pinDrag.grabOffset - dragged.getBoundingClientRect().top;
   dragged.style.transform = 'translateY(' + ty + 'px) scale(1.03)';
 }
+function _pinDragMove(clientY) {
+  _pinDrag.lastY = clientY;
+  _pinDragReposition(clientY);
+  // Hold near the top/bottom edge → keep scrolling (same engine as the task drag),
+  // re-slotting the row each scrolled frame against the last finger position.
+  _clEdgeScroll(_pinDrag.scroller, clientY, () => { if (_pinDrag) _pinDragReposition(_pinDrag.lastY); });
+}
 // Release — read the new on-screen order and persist it.
 function _endPinDrag() {
+  _clStopEdgeScroll();
   const dragged = _pinDrag.row, task = _pinDrag.task, parent = dragged.parentNode, flagged = _pinDrag.flagged;
   _pinDrag = null;
   dragged.style.transition = 'transform 0.15s, box-shadow 0.15s, opacity 0.15s';
@@ -14665,7 +14673,10 @@ function _clEdgeScroll(el, clientY, onScroll) {
   // its lower edge — otherwise the finger can never reach a trigger band near
   // r.top while over a real row, and up-scroll never fires (you'd have to drop,
   // scroll and re-grab — the "very slow" bug).
-  const sticky = el.querySelector('.cl-sticky-top');
+  // Any pinned header counts, not just .cl-sticky-top — the to-do sheet's sort
+  // chip is an inline position:sticky first child, and it too eats the top edge.
+  let sticky = el.querySelector('.cl-sticky-top');
+  if (!sticky && el.firstElementChild && getComputedStyle(el.firstElementChild).position === 'sticky') sticky = el.firstElementChild;
   const topLine = r.top + (sticky ? sticky.offsetHeight : 0);
   const EDGE = 72;
   let step = 0;
@@ -14689,7 +14700,7 @@ function _clEdgeScroll(el, clientY, onScroll) {
 }
 function _clScrollTick(fromMove) {
   if (!fromMove) _clScrollRAF = null;
-  if (!_clScrollStep || !_clScrollEl || (!_clDrag && !_clHeadDrag)) { _clStopEdgeScroll(); return; }   // drag ended → stop
+  if (!_clScrollStep || !_clScrollEl || (!_clDrag && !_clHeadDrag && !_pinDrag)) { _clStopEdgeScroll(); return; }   // drag ended → stop
   const before = _clScrollEl.scrollTop;
   _clScrollEl.scrollTop += _clScrollStep;
   if (_clScrollEl.scrollTop !== before && _clScrollFn) _clScrollFn();
