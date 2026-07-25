@@ -2761,7 +2761,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.209';
+const APP_VERSION = '2026-06-21.210';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -14656,7 +14656,7 @@ function _clDragMove(clientY) {
 // scrolls `el` while the finger sits within EDGE px of the (usable) top/bottom;
 // the pull is stronger the deeper into the zone. `onScroll` (optional) runs each
 // scrolled frame so the dragged row re-homes against the last finger position.
-let _clScrollTimer = null, _clScrollStep = 0, _clScrollFn = null, _clScrollEl = null;
+let _clScrollRAF = null, _clScrollStep = 0, _clScrollFn = null, _clScrollEl = null;
 function _clEdgeScroll(el, clientY, onScroll) {
   if (!el) { _clStopEdgeScroll(); return; }
   const r = el.getBoundingClientRect();
@@ -14679,16 +14679,24 @@ function _clEdgeScroll(el, clientY, onScroll) {
   step = Math.max(-42, Math.min(42, step));
   _clScrollStep = step; _clScrollFn = onScroll || null; _clScrollEl = el;
   if (!step) { _clStopEdgeScroll(); return; }
-  if (_clScrollTimer != null) return;                      // loop already running (step updated above)
-  _clScrollTimer = setInterval(() => {
-    if (!_clScrollStep || !_clScrollEl || (!_clDrag && !_clHeadDrag)) { _clStopEdgeScroll(); return; }   // drag ended → stop
-    const before = _clScrollEl.scrollTop;
-    _clScrollEl.scrollTop += _clScrollStep;
-    if (_clScrollEl.scrollTop !== before && _clScrollFn) _clScrollFn();
-  }, 16);
+  // Nudge one step immediately so even a moving finger scrolls right away, then let
+  // the rAF loop carry the continuous scroll while the finger is HELD STILL. iOS
+  // Safari starves setInterval during an active touch-drag (the scroll only crept
+  // forward as the finger moved — the "very slow / drag then go again" bug), so we
+  // drive it off requestAnimationFrame, which keeps ticking through the gesture.
+  _clScrollTick(true);
+  if (_clScrollRAF == null) _clScrollRAF = requestAnimationFrame(() => _clScrollTick(false));
+}
+function _clScrollTick(fromMove) {
+  if (!fromMove) _clScrollRAF = null;
+  if (!_clScrollStep || !_clScrollEl || (!_clDrag && !_clHeadDrag)) { _clStopEdgeScroll(); return; }   // drag ended → stop
+  const before = _clScrollEl.scrollTop;
+  _clScrollEl.scrollTop += _clScrollStep;
+  if (_clScrollEl.scrollTop !== before && _clScrollFn) _clScrollFn();
+  if (!fromMove) _clScrollRAF = requestAnimationFrame(() => _clScrollTick(false));   // keep going while step != 0
 }
 function _clStopEdgeScroll() {
-  if (_clScrollTimer != null) { clearInterval(_clScrollTimer); _clScrollTimer = null; }
+  if (_clScrollRAF != null) { cancelAnimationFrame(_clScrollRAF); _clScrollRAF = null; }
   _clScrollStep = 0; _clScrollFn = null; _clScrollEl = null;
 }
 function _endClDrag() {
