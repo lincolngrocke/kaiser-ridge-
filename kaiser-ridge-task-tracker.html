@@ -2798,7 +2798,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.224';
+const APP_VERSION = '2026-06-21.225';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6264,7 +6264,12 @@ function confirmTime(choice) {
     const taskInfo = _pendingTaskInfo || {};
     const now = new Date();
     const [h, m] = timeStr.split(':').map(Number);
-    const chosenMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0).getTime();
+    // A "now" clock-in starts the timer at 0:00 — anchoring to the minute
+    // boundary made it inherit the wall clock's seconds (clock in at 6:43:47 →
+    // it instantly read 0:47). A backdated start keeps the minute boundary,
+    // because elapsed-since-then is exactly what it should show.
+    const chosenMinute = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0).getTime();
+    const chosenMs = (Math.floor(now.getTime() / 60000) * 60000 === chosenMinute) ? now.getTime() : chosenMinute;
     clockState = {
       running: true,
       startMs: chosenMs,
