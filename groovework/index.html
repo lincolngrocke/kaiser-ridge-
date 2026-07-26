@@ -2798,7 +2798,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.225';
+const APP_VERSION = '2026-06-21.226';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3325,6 +3325,7 @@ function clockOut(overrideTime) {
     projectStepId: clockState.projectStepId || '',
     notes: clockState.notes,
     clockIn: clockState.startTime,
+    startMs: clockState.startMs || null,   // second-precise clock-in (v226) — HH:MM above stays the display/sheet value
     clockOut: overrideTime || new Date().toTimeString().slice(0,5),
     durationHours: parseFloat(durationHours.toFixed(2)),
     break: parseFloat(breakHours.toFixed(2)),
@@ -3457,6 +3458,10 @@ function renderClockState() {
 // or the previous tick (later items) is its duration. Tap a done item to undo.
 function _clockInEpoch() {
   if (!clockState) return Date.now();
+  // startMs is the second-precise truth (v225); the HH:MM parse below is the
+  // fallback for sessions created before it existed. Without this, the FIRST
+  // task of a run absorbed the wall clock's leftover seconds (up to ±59s).
+  if (isFinite(clockState.startMs) && clockState.startMs > 0) return clockState.startMs;
   const dp = String(clockState.date || '').split('/').map(Number);   // DD/MM/YYYY
   const tp = String(clockState.startTime || '00:00').split(':').map(Number);
   const d = new Date(dp[2], (dp[1] || 1) - 1, dp[0] || 1, tp[0] || 0, tp[1] || 0, 0);
@@ -4607,6 +4612,9 @@ function renderRunChecklist() {
 
 // ── Per-item checklist averages (Dashboard → Checklist Item Times) ──────────
 function _entryClockInEpoch(e) {
+  // Prefer the second-precise start stored at clock-out (v226); fall back to the
+  // HH:MM parse for every entry recorded before it existed.
+  if (e && isFinite(e.startMs) && e.startMs > 0) return e.startMs;
   const dp = String(e.date || '').split('/').map(Number);          // DD/MM/YYYY
   const tp = String(e.clockIn || '00:00').split(':').map(Number);
   const d = new Date(dp[2], (dp[1] || 1) - 1, dp[0] || 1, tp[0] || 0, tp[1] || 0, 0);
