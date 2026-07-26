@@ -2791,7 +2791,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.220';
+const APP_VERSION = '2026-06-21.221';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -13669,20 +13669,47 @@ function renderPlannerWeek() {
     days.push(d);
     const head = document.createElement('div');
     head.className = 'pw-dayhead' + (plannerDateStr(d) === todayStr ? ' pw-today' : '');
-    // All-day events covering this day → thin colour bars under the date (tap the
-    // header to open the day and see the full banners).
-    const _ad = _allDayEventsFor(plannerDateStr(d));
-    const _adBars = _ad.length ? `<div style="display:flex;gap:2px;justify-content:center;margin-top:2px;">${_ad.slice(0, 3).map(p => `<span title="${_attr(p.task)}" style="width:14px;height:4px;border-radius:2px;background:${plannerColorFor(p.task)};"></span>`).join('')}</div>` : '';
     head.innerHTML = `<div class="pw-dow">${d.toLocaleDateString('en-AU', { weekday: 'short' })}</div>
-      <div class="pw-dom">${d.getDate()}</div>${_adBars}`;
+      <div class="pw-dom">${d.getDate()}</div>`;
     head.onclick = () => _pwGoToDay(d);
     grid.appendChild(head);
   }
 
-  // Hour-label column (sticky left)
+  // ── All-day banner lane (Google-Calendar style) ── bars spanning the covered
+  // day columns, stacked into as many lanes as overlaps need. ‹ › marks a booking
+  // continuing beyond this week. Tap a bar to edit it. The time columns shift
+  // down by however many lanes the week needs.
+  const _wkEndD = new Date(ws); _wkEndD.setDate(ws.getDate() + 6);
+  const _wsT = new Date(ws.getFullYear(), ws.getMonth(), ws.getDate()).getTime();
+  const _weT = new Date(_wkEndD.getFullYear(), _wkEndD.getMonth(), _wkEndD.getDate()).getTime();
+  const _adWeek = _plannerPlans.filter(p => p.allDay)
+    .map(p => ({ p, s: _dmyToDate(p.date).getTime(), e: _dmyToDate(p.endDate || p.date).getTime() }))
+    .filter(x => isFinite(x.s) && isFinite(x.e) && x.e >= _wsT && x.s <= _weT)
+    .sort((a, b) => a.s - b.s || b.e - a.e);
+  const _adLanes = [];   // per lane: the last occupied column index
+  _adWeek.forEach(x => {
+    x.c0 = Math.max(0, Math.round((Math.max(x.s, _wsT) - _wsT) / 86400000));
+    x.c1 = Math.min(6, Math.round((Math.min(x.e, _weT) - _wsT) / 86400000));
+    let li = _adLanes.findIndex(endIdx => x.c0 > endIdx);
+    if (li < 0) { li = _adLanes.length; _adLanes.push(-1); }
+    _adLanes[li] = x.c1; x.lane = li;
+  });
+  _adWeek.forEach(x => {
+    const bar = document.createElement('div');
+    bar.style.cssText = `grid-row:${2 + x.lane};grid-column:${2 + x.c0} / ${3 + x.c1};position:sticky;top:${45 + x.lane * 24}px;z-index:5;margin:2px 3px;background:${plannerColorFor(x.p.task)};color:#fff;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.18);`;   // per-lane sticky offset — otherwise every lane pins to the same y when scrolled and they pile onto one line
+    bar.textContent = (x.s < _wsT ? '‹ ' : '') + x.p.task + (x.e > _weT ? ' ›' : '');
+    bar.onclick = () => openAllDayModal(x.p.id);
+    grid.appendChild(bar);
+  });
+  const _pwBodyRow = 2 + _adLanes.length;
+
+  // Hour-label column (sticky left) — explicit grid position so the banner
+  // lane(s) above can't knock the body row out of auto-flow alignment.
   const hourCol = document.createElement('div');
   hourCol.className = 'pw-hourcol';
   hourCol.style.height = colH + 'px';
+  hourCol.style.gridRow = String(_pwBodyRow);
+  hourCol.style.gridColumn = '1';
   for (let h = PLANNER_START_HOUR; h <= PLANNER_END_HOUR; h++) {
     const lab = document.createElement('div');
     lab.className = 'pw-hourlabel';
@@ -13694,11 +13721,13 @@ function renderPlannerWeek() {
   grid.appendChild(hourCol);
 
   // One column per day
-  days.forEach(d => {
+  days.forEach((d, _di) => {
     const dStr = plannerDateStr(d);
     const col = document.createElement('div');
     col.className = 'pw-daycol';
     col.style.height = colH + 'px';
+    col.style.gridRow = String(_pwBodyRow);
+    col.style.gridColumn = String(2 + _di);
     // Planned blocks → tap drops into that day with the block open (all-day
     // events show as bars in the day header instead of timed blocks)
     _plannerPlans.filter(p => p.date === dStr && !p.parked && !p.allDay).forEach(p => {
