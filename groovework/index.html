@@ -2762,7 +2762,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.215';
+const APP_VERSION = '2026-06-21.216';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -9719,7 +9719,8 @@ function deleteBatch(bi) {
   if (!confirm('Delete the batch "' + name + '"?\n\nIts tasks stay on the job — they just become unbatched.')) return;
   rec.order.splice(bi, 1);
   Object.keys(rec.items).forEach(t => { if (rec.items[t] === name) delete rec.items[t]; });
-  if (!rec.order.length && !Object.keys(rec.items).length) delete all[job];
+  if (rec.todoItems) Object.keys(rec.todoItems).forEach(id => { if (rec.todoItems[id] === name) delete rec.todoItems[id]; });   // else a later same-named batch would resurrect its old to-dos
+  if (!rec.order.length && !Object.keys(rec.items).length && !(rec.todoItems && Object.keys(rec.todoItems).length)) delete all[job];
   saveTaskBatches(all);
   autoBackup();
   renderBatchManager();
