@@ -2795,7 +2795,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.222';
+const APP_VERSION = '2026-06-21.223';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -5748,7 +5748,7 @@ function renderCreateTaskList() {
   list.innerHTML = rows.map((r, i) => {
     const auto = autoMap[r.task];
     const avg = getTaskAvgDuration(r.task);
-    const sub = [r.group, avg ? 'avg ' + avg + 'h' : (auto ? auto.freq : r.frequency)].filter(Boolean).join(' · ');
+    const sub = [r.group, avg ? '~' + fmtMin(avg * 60) : (auto ? auto.freq : r.frequency), counts[r.task] ? '🔂 ' + counts[r.task] + '×' : ''].filter(Boolean).join(' · ');
     const badge = auto ? ` <span style="display:inline-block;background:#5856D6;color:#fff;font-size:9px;font-weight:700;letter-spacing:0.5px;padding:1px 5px;border-radius:5px;vertical-align:middle;">AUTO</span>` : '';
     const isSel = selected && r.task === selected;
     const matchSubs = q ? (SUBTASKS[r.task] || []).filter(s => s.toLowerCase().includes(q)) : [];
@@ -14552,7 +14552,7 @@ function renderPlannerTaskList() {
   }
   list.innerHTML = filtered.map(r => {
     const avg = getTaskAvgDuration(r.task);
-    const avgStr = avg ? ` · avg ${avg}h` : '';
+    const avgStr = (avg ? ` · ~${fmtMin(avg * 60)}` : '') + (counts[r.task] ? ` · 🔂 ${counts[r.task]}×` : '');
     const isSelected = _plannerAddTask && _plannerAddTask.task === r.task;
     const matchSubs = query ? (SUBTASKS[r.task] || []).filter(s => s.toLowerCase().includes(query)) : [];
     const matchEquip = query ? taskEquipmentList(r.task).filter(e => e.toLowerCase().includes(query)) : [];
