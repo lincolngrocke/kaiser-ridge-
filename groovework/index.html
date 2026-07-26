@@ -2761,7 +2761,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.211';
+const APP_VERSION = '2026-06-21.212';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3752,7 +3752,7 @@ function toggleChecklistStep(item, step) {
 }
 // ── Focus-ring clock: tab state + ring helpers ──
 let _runTab = 'tasks', _runTabUserSet = false, _runLastTask = null;
-let _runGroupBy = 'flag', _runGroupCollapsed = {};   // clock Tasks list: 'flag' order vs 'lastdone' recency buckets
+let _runGroupBy = 'flag', _runGroupCollapsed = {};   // clock Tasks list: 'flag' order vs 'batch' sections (last-done recency lives INSIDE batches now)
 let _expandedNotes = new Set();
 function _escHtml(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 // Escape a note for display, then turn any pasted URL into a tappable link — a
@@ -3769,7 +3769,7 @@ function _linkifyText(s) {
 }
 let _runSegBlockTapUntil = 0;
 function setRunTab(tab) { if (Date.now() < _runSegBlockTapUntil) return; _runTabUserSet = true; _runTab = tab; renderRunChecklist(); }
-function setRunGroupBy(k) { _runGroupBy = (k === 'lastdone' || k === 'batch') ? k : 'flag'; renderRunChecklist(); }
+function setRunGroupBy(k) { _runGroupBy = (k === 'batch') ? k : 'flag'; renderRunChecklist(); }
 function toggleRunGroup(k, cur) { _runGroupCollapsed[k] = (cur === undefined) ? !_runGroupCollapsed[k] : !cur; renderRunChecklist(); }
 
 // ── Drag the Tasks/To-dos section up to cover the clock (bigger list). Snaps
@@ -4345,13 +4345,12 @@ function renderRunChecklist() {
       const _allExp = _expandableTasks.every(s => _expandedChecklistItems.has(s));
       expandLink = `<span onclick="toggleAllTasksExpanded()" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">${_allExp ? '⤡ Collapse all' : '⤢ Expand all'}</span>`;
     }
-    // Group-by toggle — only worth offering on a longer list.
-    const GROUP_MIN = 4;
+    // View toggle — Batches vs Flagged, only when the job has batches (last-done
+    // recency now lives INSIDE each batch, so the separate lens + label are gone).
     const _hasBatches = _jobHasBatches(clockState.task);
-    if (items.length >= GROUP_MIN || _hasBatches) {
+    if (_hasBatches) {
       const _gopt = (k, label) => `<span onclick="setRunGroupBy('${k}')" style="padding:5px 12px;border-radius:14px;font-size:12px;font-weight:600;cursor:pointer;${_runGroupBy === k ? 'background:rgba(90,200,250,0.18);color:#5ac8fa;' : 'color:#8b93a7;'}">${label}</span>`;
-      rows += `<div style="display:flex;gap:5px;align-items:center;padding:2px 0 8px;">
-        <span style="font-size:11px;color:#616a7e;margin-right:3px;">Group</span>${_hasBatches ? _gopt('batch', 'Batches') : ''}${_gopt('flag', 'Flagged')}${_gopt('lastdone', 'Last done')}</div>`;
+      rows += `<div style="display:flex;gap:5px;align-items:center;padding:2px 0 8px;">${_gopt('batch', 'Batches')}${_gopt('flag', 'Flagged')}</div>`;
     }
     // ↺ Reset reps — subtle, shown once any repeatable task has reps on this run.
     if (jobHasReps(clockState.task)) {
@@ -4439,6 +4438,27 @@ function renderRunChecklist() {
       if (loose.length) groups.push({ key: 'b:~loose', name: 'Other tasks', members: loose, loose: true });
       const _gHasFlag = g => g.members.some(s => clFlags[s] && !_isDoneRow(s));
       groups.sort((a, b) => _gHasFlag(b) - _gHasFlag(a));   // stable — flagged batches float, saved order otherwise
+      // Inside an open batch, rows group by how long since each task was last done
+      // (the old "Last done" lens, folded in here). Sub-headings only appear when a
+      // batch spans 2+ recency buckets — a batch that's all-recent stays a plain list.
+      // Within each bucket the saved flag/learned order is kept (stable split).
+      const _now = Date.now();
+      const _batchBody = (members) => {
+        const built = members.map(s => ({ html: buildTaskRow(s), last: itemLastDone[s] })).filter(x => x.html);
+        const bk = { recent: [], week: [], old: [], never: [] };
+        built.forEach(x => {
+          if (!x.last) { bk.never.push(x); return; }
+          const d = new Date(x.last);
+          const days = Math.floor((_now - new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()) / 86400000);
+          if (days <= 3) bk.recent.push(x); else if (days <= 7) bk.week.push(x); else bk.old.push(x);
+        });
+        const defs = [['recent', '✅ Last 3 days'], ['week', '🕒 3–7 days ago'], ['old', '⚠️ Over a week'], ['never', '⬜ Never done']];
+        const present = defs.filter(([k]) => bk[k].length);
+        if (present.length < 2) return built.map(x => x.html).join('');
+        return present.map(([k, label]) =>
+          `<div style="font-size:11px;font-weight:700;letter-spacing:0.3px;color:#7f8798;padding:9px 0 2px 4px;">${label} <span style="color:#616a7e;font-weight:600;">· ${bk[k].length}</span></div>`
+          + bk[k].map(x => x.html).join('')).join('');
+      };
       rows += groups.map(g => {
         const doneN = g.members.filter(_isDoneRow).length;
         const est = g.members.reduce((t, s) => { const a = itemAvg[s.trim().replace(/\s+/g, ' ').toLowerCase()]; return t + (isFinite(a) && a > 0 ? a : 0); }, 0);
@@ -4450,29 +4470,7 @@ function renderRunChecklist() {
           <span style="font-size:13px;font-weight:700;letter-spacing:0.3px;color:${g.loose ? '#8b93a7' : (allDone ? '#30d158' : '#dfe3ec')};">${fl ? '🚩 ' : ''}${allDone ? '✓ ' : ''}${_escHtml(g.name)}</span>
           <span style="font-size:11px;color:#616a7e;background:rgba(255,255,255,0.06);border-radius:9px;padding:1px 7px;">${doneN}/${g.members.length}${est ? ' · ~' + fmtMin(est) : ''}</span>
           <span style="flex:1;"></span></div>`;
-        return hd + (col ? '' : g.members.map(buildTaskRow).join(''));
-      }).join('');
-    } else if (_runGroupBy === 'lastdone' && items.length >= GROUP_MIN) {
-      // Group the visible tasks by how long since each was last done — a lens to
-      // surface neglected tasks; it doesn't touch the saved flag order.
-      const _now = Date.now();
-      const _built = items.map(s => ({ s, html: buildTaskRow(s), last: itemLastDone[s] })).filter(x => x.html);
-      const _bk = { recent: [], week: [], old: [], never: [] };
-      _built.forEach(x => {
-        if (!x.last) { _bk.never.push(x); return; }
-        const _d = new Date(x.last);
-        const _days = Math.floor((_now - new Date(_d.getFullYear(), _d.getMonth(), _d.getDate()).getTime()) / 86400000);
-        if (_days <= 3) _bk.recent.push(x); else if (_days <= 7) _bk.week.push(x); else _bk.old.push(x);
-      });
-      const _defs = [['recent', '✅ Done in the last 3 days'], ['week', '🕒 3–7 days ago'], ['old', '⚠️ Over a week ago'], ['never', '⬜ Never done']];
-      rows += _defs.map(([k, label]) => {
-        const arr = _bk[k]; if (!arr.length) return '';
-        const _col = !!_runGroupCollapsed[k];
-        const hd = `<div onclick="toggleRunGroup('${k}')" style="display:flex;align-items:center;gap:8px;padding:15px 0 6px;cursor:pointer;">
-          <span style="font-size:12px;font-weight:700;letter-spacing:0.3px;color:#9aa3b7;">${label}</span>
-          <span style="font-size:11px;color:#616a7e;background:rgba(255,255,255,0.06);border-radius:9px;padding:1px 7px;">${arr.length}</span>
-          <span style="flex:1;"></span><span style="color:#8b93a7;font-size:13px;">${_col ? '▸' : '▾'}</span></div>`;
-        return hd + (_col ? '' : arr.map(x => x.html).join(''));
+        return hd + (col ? '' : _batchBody(g.members));
       }).join('');
     } else {
       rows += items.map(buildTaskRow).join('');
