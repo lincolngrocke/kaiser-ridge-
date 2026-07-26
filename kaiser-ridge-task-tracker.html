@@ -2762,7 +2762,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.217';
+const APP_VERSION = '2026-06-21.218';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3084,7 +3084,7 @@ function showScreen(id, tab) {
   if (tab) tab.classList.add('active');
   if (id === 'timesheets') renderTimesheets();
   if (id === 'settings') { updateStats(); updateLastBackupLabel(); updateBackupReminder(); updateStorageUsage(); }
-  if (id === 'planner') { _plannerDate = new Date(); renderPlannerScreen(); }
+  if (id === 'planner') { _plannerDate = new Date(); renderPlannerScreen(); _calRearmDirty(true); }
   else document.body.classList.remove('kr-wide');
   if (id === 'clock') updateBackupBanner();
   if (id === 'robots') { renderRobotsScreen(); startRobotTick(); } else { stopRobotTick(); }
@@ -13722,8 +13722,12 @@ function _applyBlockEstimate(planId) {
   if (!plan) return null;
   const est = _estimateBlockMins(plan);
   if (!est) return null;
+  const _prevDur = plan.durationHours;
   plan.durationHours = Math.max(0.05, parseFloat((est.mins / 60).toFixed(2)));
   savePlanner();
+  // The estimate resized the block → the calendar event must follow (closes the
+  // v162 caveat). Only when it actually changed, so opening the sheet is free.
+  if (plan.durationHours !== _prevDur && !plan.parked) scheduleCalendarAutoPush(plan.date);
   const inp = document.getElementById('planner-edit-duration');   // keep the detail popup's field in sync
   if (inp) inp.value = plan.durationHours;
   return est;
@@ -15430,6 +15434,7 @@ function applyPlannerReorder() {
     cursor += (Number(block.durationHours) || 1) * 60;
   });
   savePlanner();
+  scheduleCalendarAutoPush(plannerDateStr(_plannerDate));   // re-ordered start times → mirror to the calendar
   closeModal('modal-planner-reorder');
   renderPlannerScreen();
   showToast('Day re-ordered ✓');
@@ -15566,6 +15571,7 @@ function plannerDragEnd(e) {
     const clamped = Math.min(Math.max(absH, PLANNER_START_HOUR), PLANNER_END_HOUR - 1);
     plan.startTime = `${String(clamped).padStart(2,'0')}:${String(absM).padStart(2,'0')}`;
     savePlanner();
+    scheduleCalendarAutoPush(plan.date);   // drag-to-new-time must mirror to the calendar too
     renderPlannerScreen();
   } else if (block) {
     block.style.opacity = '';
@@ -15725,7 +15731,7 @@ function hoursBetweenTimes(a, b) {
 async function syncCalendarForDate(dateStr, opts) {
   opts = opts || {};
   const url = localStorage.getItem('kr_sheet_url');
-  if (!url) { if (!opts.silent) showToast('Add your Apps Script URL in Settings first'); return; }
+  if (!url) { if (!opts.silent) showToast('Add your Apps Script URL in Settings first'); return false; }
 
   const items = [];
 
@@ -15761,7 +15767,7 @@ async function syncCalendarForDate(dateStr, opts) {
     });
   }
 
-  if (!items.length && opts.requireItems) { if (!opts.silent) showToast('Nothing on this day to push'); return; }
+  if (!items.length && opts.requireItems) { if (!opts.silent) showToast('Nothing on this day to push'); return false; }
 
   if (!opts.silent) showToast('Pushing ' + items.length + ' item' + (items.length === 1 ? '' : 's') + ' to Google Calendar…');
   try {
@@ -15784,11 +15790,14 @@ async function syncCalendarForDate(dateStr, opts) {
       }
       localStorage.setItem('kr_cal_used', '1'); // opt-in flag for auto refresh
       if (!opts.silent) showToast('Synced to Google Calendar ✓');
+      return true;
     } else {
       if (!opts.silent) showToast('Calendar sync failed' + (json && json.error ? ': ' + json.error : ''));
+      return false;
     }
   } catch (err) {
     if (!opts.silent) showToast('Calendar sync failed — check connection & URL');
+    return false;
   }
 }
 
@@ -15797,9 +15806,16 @@ async function syncCalendarForDate(dateStr, opts) {
 // calendar. Manager + My Day only — the calendar is the manager's, so Ethan's
 // Day is never pushed. The 60s wait batches rapid edits into one sync.
 let _calAutoTimers = {};
-function scheduleCalendarAutoPush(dateStr) {
+// Days edited but not yet successfully pushed, PERSISTED — a pending 60s timer
+// dies if the app closes first; on next open the dirty days re-arm and push, so
+// an edit can never be silently lost to the calendar again.
+function _calDirtyDates() { try { return JSON.parse(localStorage.getItem('kr_cal_dirty') || '[]') || []; } catch (e) { return []; } }
+function _calMarkDirty(dateStr) { const d = _calDirtyDates(); if (!d.includes(dateStr)) { d.push(dateStr); _safeSetItem('kr_cal_dirty', JSON.stringify(d)); } }
+function _calClearDirty(dateStr) { const d = _calDirtyDates().filter(x => x !== dateStr); _safeSetItem('kr_cal_dirty', JSON.stringify(d)); }
+function scheduleCalendarAutoPush(dateStr, delayMs) {
   if (isWorker() || _plannerView !== 'me' || !dateStr) return;
   if (!localStorage.getItem('kr_sheet_url')) return;
+  _calMarkDirty(dateStr);
   if (_calAutoTimers[dateStr]) clearTimeout(_calAutoTimers[dateStr]);
   _calAutoTimers[dateStr] = setTimeout(function fire() {
     if (!localStorage.getItem('kr_sheet_url')) { delete _calAutoTimers[dateStr]; return; }
@@ -15807,9 +15823,17 @@ function scheduleCalendarAutoPush(dateStr) {
     // Day — if the manager flipped to Ethan's Day, wait and retry, never push his.
     if (_plannerView !== 'me') { _calAutoTimers[dateStr] = setTimeout(fire, 60000); return; }
     delete _calAutoTimers[dateStr];
-    syncCalendarForDate(dateStr, { silent: true });
-  }, 60000);
+    syncCalendarForDate(dateStr, { silent: true }).then(ok => { if (ok) _calClearDirty(dateStr); });
+  }, delayMs || 60000);
 }
+// Re-arm pushes for any still-dirty days — on app start (a killed timer's edits
+// catch up) and on opening the planner (quick 5s, so "refresh the planner"
+// visibly brings the calendar up to date).
+function _calRearmDirty(quick) {
+  if (isWorker() || !localStorage.getItem('kr_sheet_url')) return;
+  _calDirtyDates().forEach(d => scheduleCalendarAutoPush(d, quick ? 5000 : undefined));
+}
+setTimeout(() => _calRearmDirty(false), 12000);   // app start — after boot settles
 
 // Planner renders when showScreen('planner') is called — hooked via showScreen's existing id check
 </script>
