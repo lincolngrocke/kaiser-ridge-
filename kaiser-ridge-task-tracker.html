@@ -1231,6 +1231,8 @@
   </div>
   <!-- Worker only: banner when the manager has planned tasks for today -->
   <div class="update-banner" id="assign-banner" onclick="ackAssignmentBanner()" style="display:none;background:var(--green);margin:0 16px 8px;"></div>
+  <!-- All-day events (guest bookings etc.) — banner bars above the timed grid -->
+  <div id="planner-allday-strip" style="display:none;padding:0 16px 6px;"></div>
   <div id="planner-day-wrap" style="display:flex;flex:1;min-height:0;">
     <div class="scroll-area" id="planner-scroll" style="position:relative;overflow-y:auto;flex:1;touch-action:pan-y;">
       <div id="planner-grid" style="position:relative;margin:0 16px;"></div>
@@ -1243,6 +1245,33 @@
     <div id="pw-scroll" style="flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;">
       <div class="pw-grid" id="planner-week"></div>
     </div>
+  </div>
+</div>
+
+<!-- ══════════════ ALL-DAY EVENT (guest bookings etc.) ══════════════ -->
+<div class="modal-backdrop" id="modal-allday" style="z-index:320;" onclick="if(event.target===this)closeModal('modal-allday')">
+  <div class="modal-sheet" style="padding:16px 20px 28px;" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:12px;">
+      <button onclick="closeModal('modal-allday')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;">Cancel</button>
+      <span id="allday-heading" style="font-size:17px;font-weight:600;">All-day</span>
+      <button onclick="saveAllDay()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:700;cursor:pointer;">Save</button>
+    </div>
+    <div style="font-size:13px;color:var(--subtext);font-weight:600;margin-bottom:6px;">WHAT IS IT?</div>
+    <input id="allday-text" type="text" placeholder="e.g. Nicole Hartley — Kaiser" autocomplete="off" autocorrect="on" autocapitalize="words" spellcheck="false"
+      style="width:100%;box-sizing:border-box;padding:12px 14px;border:1px solid var(--border);border-radius:12px;font-size:16px;color:var(--text);background:var(--bg);outline:none;margin-bottom:14px;">
+    <div style="display:flex;gap:10px;margin-bottom:8px;">
+      <div style="flex:1;">
+        <div style="font-size:13px;color:var(--subtext);font-weight:600;margin-bottom:6px;">FIRST DAY</div>
+        <input type="date" id="allday-from" style="width:100%;box-sizing:border-box;font-size:15px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--bg);color:var(--text);font-family:inherit;">
+      </div>
+      <div style="flex:1;">
+        <div style="font-size:13px;color:var(--subtext);font-weight:600;margin-bottom:6px;">LAST DAY</div>
+        <input type="date" id="allday-until" style="width:100%;box-sizing:border-box;font-size:15px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--bg);color:var(--text);font-family:inherit;">
+      </div>
+    </div>
+    <div style="font-size:12px;color:var(--subtext);margin-bottom:14px;">Shows as a banner on every day it covers, and mirrors to Google Calendar as an all-day event.</div>
+    <button id="allday-delete" onclick="deleteAllDay()" style="display:none;width:100%;background:none;border:1px solid #FF3B30;color:#FF3B30;border-radius:12px;padding:11px;font-size:15px;font-weight:600;cursor:pointer;">Delete</button>
   </div>
 </div>
 
@@ -2762,7 +2791,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.219';
+const APP_VERSION = '2026-06-21.220';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -13532,6 +13561,91 @@ function _pwGoToDay(d, planId) {
   if (planId) openPlannerDetail(planId);
 }
 
+// ── All-day events (guest bookings etc.) ──
+// A plan with allDay:true has date = first day and endDate = LAST day (both
+// inclusive, DD/MM/YYYY) and no start time — it renders as a banner bar above
+// the day grid on every day it covers, never as a timed block. Mirrors to
+// Google Calendar as a true all-day event via the allDayPlans payload field
+// (the pre-v220 Apps Script ignores that field until it's redeployed).
+function _dmyToDate(s) { const p = String(s || '').split('/').map(Number); return new Date(p[2], (p[1] || 1) - 1, p[0] || 1); }
+function _allDayEventsFor(dateStr) {
+  const t = _dmyToDate(dateStr).getTime();
+  if (!isFinite(t)) return [];
+  return _plannerPlans.filter(p => p.allDay).filter(p => {
+    const s = _dmyToDate(p.date).getTime(), e = _dmyToDate(p.endDate || p.date).getTime();
+    return isFinite(s) && isFinite(e) && t >= s && t <= e;
+  });
+}
+let _allDayEditId = null;
+function openAllDayModal(id) {
+  _allDayEditId = id || null;
+  const p = id ? _plannerPlans.find(x => x.id === id) : null;
+  document.getElementById('allday-heading').textContent = p ? 'Edit all-day' : 'New all-day';
+  document.getElementById('allday-text').value = p ? p.task : '';
+  document.getElementById('allday-from').value = _ymd(p ? _dmyToDate(p.date) : _plannerDate);
+  document.getElementById('allday-until').value = _ymd(p ? _dmyToDate(p.endDate || p.date) : _plannerDate);
+  document.getElementById('allday-delete').style.display = p ? 'block' : 'none';
+  openModal('modal-allday');
+}
+function _ymdToDmy(v) { const p = String(v || '').split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : ''; }
+function saveAllDay() {
+  const title = (document.getElementById('allday-text').value || '').trim();
+  if (!title) { showToast('Give it a name'); return; }
+  let from = _ymdToDmy(document.getElementById('allday-from').value);
+  let until = _ymdToDmy(document.getElementById('allday-until').value);
+  if (!from) { showToast('Pick the first day'); return; }
+  if (!until) until = from;
+  if (_dmyToDate(until) < _dmyToDate(from)) { const t = from; from = until; until = t; }   // swapped dates → fix silently
+  let p = _allDayEditId ? _plannerPlans.find(x => x.id === _allDayEditId) : null;
+  const oldStart = p ? p.date : null;
+  if (p) {
+    // Dates changed → drop the old calendar event first so the next push creates
+    // it cleanly on the new days (the script sweeps per-day and would miss it).
+    if ((p.date !== from || (p.endDate || p.date) !== until) && p.calEventId) { deletePlannerCalendarEvent(p); p.calEventId = ''; }
+    p.task = title; p.date = from; p.endDate = until;
+  } else {
+    p = { id: 'ad' + Date.now() + Math.random().toString(36).slice(2, 5), allDay: true, task: title, date: from, endDate: until, startTime: '', durationHours: 0, parked: false };
+    _plannerPlans.push(p);
+  }
+  savePlanner();
+  scheduleCalendarAutoPush(from);
+  if (oldStart && oldStart !== from) scheduleCalendarAutoPush(oldStart);
+  closeModal('modal-allday');
+  _allDayEditId = null;
+  renderPlannerScreen();
+}
+function deleteAllDay() {
+  const p = _allDayEditId ? _plannerPlans.find(x => x.id === _allDayEditId) : null;
+  if (!p) { closeModal('modal-allday'); return; }
+  if (!confirm('Delete "' + p.task + '"?')) return;
+  if (p.calEventId) deletePlannerCalendarEvent(p);
+  _plannerPlans = _plannerPlans.filter(x => x.id !== p.id);
+  savePlanner();
+  closeModal('modal-allday');
+  _allDayEditId = null;
+  renderPlannerScreen();
+  showToast('Deleted');
+}
+function renderAllDayStrip() {
+  const el = document.getElementById('planner-allday-strip');
+  if (!el) return;
+  if (_plannerMode === 'week') { el.style.display = 'none'; return; }
+  const evs = _allDayEventsFor(plannerDateStr(_plannerDate));
+  // Bookings belong to My Day — no add affordance for workers or on Ethan's view.
+  const canAdd = !isWorker() && _plannerView === 'me';
+  if (!evs.length && !canAdd) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = 'block';
+  const bars = evs.map(p => {
+    const s = _dmyToDate(p.date), e = _dmyToDate(p.endDate || p.date);
+    const multi = e.getTime() > s.getTime();
+    const range = multi ? `${s.getDate()} ${s.toLocaleString('en-AU', { month: 'short' })} – ${e.getDate()} ${e.toLocaleString('en-AU', { month: 'short' })}` : '';
+    return `<div onclick="openAllDayModal('${p.id}')" style="background:${plannerColorFor(p.task)};color:#fff;border-radius:8px;padding:7px 10px;margin-bottom:4px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:8px;">
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_escHtml(p.task)}</span>
+      ${range ? `<span style="font-size:11px;opacity:0.9;flex-shrink:0;">${range}</span>` : ''}</div>`;
+  }).join('');
+  const addPill = canAdd ? `<div style="text-align:right;"><span onclick="openAllDayModal()" style="display:inline-block;color:var(--blue);font-size:12px;font-weight:600;cursor:pointer;padding:3px 2px;">＋ All-day / booking</span></div>` : '';
+  el.innerHTML = bars + addPill;
+}
 function renderPlannerWeek() {
   clearInterval(_plannerWeekTimer);
   const grid = document.getElementById('planner-week');
@@ -13555,8 +13669,12 @@ function renderPlannerWeek() {
     days.push(d);
     const head = document.createElement('div');
     head.className = 'pw-dayhead' + (plannerDateStr(d) === todayStr ? ' pw-today' : '');
+    // All-day events covering this day → thin colour bars under the date (tap the
+    // header to open the day and see the full banners).
+    const _ad = _allDayEventsFor(plannerDateStr(d));
+    const _adBars = _ad.length ? `<div style="display:flex;gap:2px;justify-content:center;margin-top:2px;">${_ad.slice(0, 3).map(p => `<span title="${_attr(p.task)}" style="width:14px;height:4px;border-radius:2px;background:${plannerColorFor(p.task)};"></span>`).join('')}</div>` : '';
     head.innerHTML = `<div class="pw-dow">${d.toLocaleDateString('en-AU', { weekday: 'short' })}</div>
-      <div class="pw-dom">${d.getDate()}</div>`;
+      <div class="pw-dom">${d.getDate()}</div>${_adBars}`;
     head.onclick = () => _pwGoToDay(d);
     grid.appendChild(head);
   }
@@ -13581,8 +13699,9 @@ function renderPlannerWeek() {
     const col = document.createElement('div');
     col.className = 'pw-daycol';
     col.style.height = colH + 'px';
-    // Planned blocks → tap drops into that day with the block open
-    _plannerPlans.filter(p => p.date === dStr && !p.parked).forEach(p => {
+    // Planned blocks → tap drops into that day with the block open (all-day
+    // events show as bars in the day header instead of timed blocks)
+    _plannerPlans.filter(p => p.date === dStr && !p.parked && !p.allDay).forEach(p => {
       _pwBlock(col, p.startTime, p.durationHours, p.task, () => _pwGoToDay(d, p.id), false);
     });
     // Completed entries + the live clock belong only on my own planner
@@ -13812,6 +13931,7 @@ function renderPlannerScreen() {
   if (dayActions) dayActions.style.display = weekMode ? 'none' : 'contents';
   if (modeBtn) modeBtn.textContent = weekMode ? '🗓 Day' : '📅 Week';
   document.body.classList.toggle('kr-wide', weekMode);
+  renderAllDayStrip();   // bookings banner above the day grid (self-hides in week mode)
   if (weekMode) {
     const ws = _weekStart(_plannerDate);
     const we = new Date(ws); we.setDate(we.getDate() + 6);
@@ -13864,8 +13984,9 @@ function renderPlannerScreen() {
 
   const dateStr = plannerDateStr(_plannerDate);
 
-  // Render all planned blocks for this day (parked ones live in the holding column)
-  const dayPlans = _plannerPlans.filter(p => p.date === dateStr);
+  // Render all planned blocks for this day (parked ones live in the holding
+  // column; all-day events render as banners above the grid, never as blocks)
+  const dayPlans = _plannerPlans.filter(p => p.date === dateStr && !p.allDay);
   dayPlans.filter(p => !p.parked).forEach(p => renderPlannerBlock(p, grid));
   renderPlannerHolding(dateStr);
 
@@ -15405,7 +15526,7 @@ let _reorderItems = [];
 function _planStartMins(p) { const [h, m] = String(p.startTime || '0:0').split(':').map(Number); return (h || 0) * 60 + (m || 0); }
 function openPlannerReorder() {
   const dateStr = plannerDateStr(_plannerDate);
-  _reorderItems = _plannerPlans.filter(p => p.date === dateStr && !p.parked).slice().sort((a, b) => _planStartMins(a) - _planStartMins(b));
+  _reorderItems = _plannerPlans.filter(p => p.date === dateStr && !p.parked && !p.allDay).slice().sort((a, b) => _planStartMins(a) - _planStartMins(b));
   if (!_reorderItems.length) { showToast('No tasks to reorder on this day'); return; }
   document.getElementById('planner-reorder-start').value = _reorderItems[0].startTime || '06:00';
   renderReorderList();
@@ -15748,7 +15869,7 @@ async function syncCalendarForDate(dateStr, opts) {
 
   // 1. Planned blocks (id prefixed so completed/live can coexist). Parked tasks
   // sit in the holding bay — not yet scheduled, so they're kept off the calendar.
-  _plannerPlans.filter(p => p.date === dateStr && !p.parked).forEach(p => {
+  _plannerPlans.filter(p => p.date === dateStr && !p.parked && !p.allDay).forEach(p => {
     items.push({
       id: 'plan:' + p.id, task: p.task,
       group: p.group || '', frequency: p.frequency || '',
@@ -15756,6 +15877,14 @@ async function syncCalendarForDate(dateStr, opts) {
       startTime: p.startTime, durationHours: p.durationHours,
     });
   });
+
+  // 1b. All-day events COVERING this day (bookings) — separate payload field so
+  // they become true all-day calendar events. Must include mid-span days, or the
+  // script's per-day reconciliation would delete the event when those days sync.
+  // A pre-v220 Apps Script simply ignores this field until it's redeployed.
+  const adItems = _allDayEventsFor(dateStr).map(p => ({
+    id: 'plan:' + p.id, task: p.task, startDate: p.date, endDate: p.endDate || p.date,
+  }));
 
   // 2. Completed timesheet entries for this day (✓ prefix)
   entries.filter(e => e.date === dateStr && e.clockIn && e.clockOut).forEach(e => {
@@ -15778,14 +15907,14 @@ async function syncCalendarForDate(dateStr, opts) {
     });
   }
 
-  if (!items.length && opts.requireItems) { if (!opts.silent) showToast('Nothing on this day to push'); return false; }
+  if (!items.length && !adItems.length && opts.requireItems) { if (!opts.silent) showToast('Nothing on this day to push'); return false; }
 
-  if (!opts.silent) showToast('Pushing ' + items.length + ' item' + (items.length === 1 ? '' : 's') + ' to Google Calendar…');
+  if (!opts.silent) { const n = items.length + adItems.length; showToast('Pushing ' + n + ' item' + (n === 1 ? '' : 's') + ' to Google Calendar…'); }
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'calendar', date: dateStr, plans: items }),
+      body: JSON.stringify({ action: 'calendar', date: dateStr, plans: items, allDayPlans: adItems }),
     });
     const json = await res.json();
     if (json && json.success) {

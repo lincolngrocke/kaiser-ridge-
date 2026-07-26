@@ -384,12 +384,37 @@ function handleCalendarSync(data) {
     result[p.id] = ev.getId();
   });
 
+  // All-day events (guest bookings etc., v220+) — one spanning calendar event per
+  // item. startDate/endDate are DD/MM/YYYY and INCLUSIVE; Google's all-day end is
+  // exclusive, so add a day. The day sweep above catches all-day events covering
+  // this date, so updates and the delete-reconciliation below work for them too.
+  (data.allDayPlans || []).forEach(p => {
+    incoming[p.id] = true;
+    const sp = String(p.startDate).split('/'), ep = String(p.endDate || p.startDate).split('/');
+    const s = new Date(parseInt(sp[2], 10), parseInt(sp[1], 10) - 1, parseInt(sp[0], 10));
+    const eIncl = new Date(parseInt(ep[2], 10), parseInt(ep[1], 10) - 1, parseInt(ep[0], 10));
+    if (isNaN(s.getTime()) || isNaN(eIncl.getTime())) return;
+    const eExcl = new Date(eIncl.getFullYear(), eIncl.getMonth(), eIncl.getDate() + 1);
+    const matches = existing[p.id] || [];
+    let ev = matches.shift();
+    matches.forEach(dup => dup.deleteEvent());
+    if (ev) {
+      ev.setTitle(p.task);
+      ev.setAllDayDates(s, eExcl);
+    } else {
+      ev = cal.createAllDayEvent(p.task, s, eExcl, { description: '— Groovework' });
+      ev.setTag('krApp', '1');
+      ev.setTag('krPlanId', p.id);
+    }
+    result[p.id] = ev.getId();
+  });
+
   // Remove app events (all of them) whose blocks were deleted in the app
   Object.keys(existing).forEach(pid => {
     if (!incoming[pid]) existing[pid].forEach(ev => ev.deleteEvent());
   });
 
-  return jsonResponse({ success: true, count: plans.length, events: result });
+  return jsonResponse({ success: true, count: plans.length + (data.allDayPlans || []).length, events: result });
 }
 
 // ── Delete one planner block's calendar event ──
