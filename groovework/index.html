@@ -2762,7 +2762,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.214';
+const APP_VERSION = '2026-06-21.215';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -14447,18 +14447,66 @@ function _pinnedNotesHtml(task, compact, search) {
     if (!pins.length) return `<div style="margin-top:12px;padding:22px 0;text-align:center;color:var(--subtext);font-size:14px;">No to-dos match “${_escHtml(search.trim())}”.</div>`;
   }
   const taskAttr = _attr(task);
-  return `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">
-    <div style="font-size:12px;color:#FFD60A;margin-bottom:2px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">📌 To-dos</div>
-    <div style="font-size:11px;color:var(--subtext);margin-bottom:8px;">${compact ? 'Hold &amp; drag any to-do to reorder · swipe right to 🚩 flag it to the top' : 'Swipe a to-do right to 🚩 flag it to the top · hold &amp; drag a 🚩 to-do to reorder'}</div>
-    ${compact ? `<div class="cl-sticky-top" style="position:sticky;top:0;z-index:3;background:var(--card);padding:2px 0 10px;"><div onclick="togglePinSort()" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--border);border-radius:999px;font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;">↕ ${_pinSortLabel()}</div></div>` : ''}
-    ${pins.map(p => {
+  const rowFn = (p) => {
       const safe = p.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const _pinnedTs = (p.caught && p.ts && p.ts !== p.caught) ? p.ts : null;
       const caught = (p.caught || p.ts) ? `<div style="font-size:11px;color:var(--subtext);margin-top:2px;">Caught ${_inboxStamp(p.caught || p.ts)}${_pinnedTs ? ' · 📌 Pinned ' + _inboxStamp(_pinnedTs) : ''}${p.editedTs ? ' · ✏️ Edited ' + _inboxStamp(p.editedTs) : ''}</div>` : '';
       const thumb = _photosHtml(p, compact ? 54 : 90);
       return `<div class="pin-row" data-pin-id="${p.id}" data-pin-task="${taskAttr}" data-pin-flagged="${p.flagged ? '1' : ''}" ontouchstart="pinSwipeStart(event)" ontouchmove="pinSwipeMove(event)" ontouchend="pinSwipeEnd(event)" style="margin-bottom:8px;padding:8px;border-radius:8px;overflow-wrap:anywhere;${p.flagged ? 'background:rgba(255,214,10,0.12);' : ''}"><span style="font-size:14px;color:#FFD60A;">${p.flagged ? '🚩 ' : ''}📌 ${_hlSearch(safe, q)}</span>${caught}${thumb}</div>`;
-    }).join('')}
+  };
+  // ▣ To-do batches — Organise sheet only (compact), and only while not searching
+  // (a search cuts across batches, so it stays a flat filtered list). Shares the
+  // job's batch list with tasks; membership keyed by pin id (todoItems). Empty
+  // batches STAY visible — a fresh batch needs to exist as a drop target.
+  const _bRec = compact && !q ? _batchRec(task) : null;
+  const _useBatches = !!(_bRec && _bRec.order.length);
+  let body;
+  if (_useBatches) {
+    const pinHd = (label, loose, count, collapsed) => `<div data-pbatch-sec="1"${loose ? ' data-pbatch-loose="1"' : ''} data-pbatch-name="${_attr(label)}" onclick="_pinToggleBatchCollapse(decodeURIComponent('${encodeURIComponent(label).replace(/'/g, '%27')}'))" style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--subtext);font-weight:700;letter-spacing:0.4px;margin:14px 0 6px;">
+      <span style="font-size:13px;width:12px;flex-shrink:0;">${collapsed ? '▸' : '▾'}</span>
+      <span style="flex:1;min-width:0;">▣ ${_escHtml(label)}</span>
+      <span style="font-weight:600;color:#616a7e;background:rgba(127,127,127,0.14);border-radius:9px;padding:1px 8px;flex-shrink:0;">${count}</span></div>`;
+    const used = new Set();
+    let blocks = '';
+    _bRec.order.forEach(bn => {
+      const members = pins.filter(p => _todoBatchOf(task, p.id) === bn);
+      members.forEach(p => used.add(p.id));
+      const col = !!_pinOrgCollapsed[bn];
+      blocks += pinHd(bn, false, members.length, col) + (col ? '' : members.map(rowFn).join(''));
+    });
+    const loose = pins.filter(p => !used.has(p.id));
+    if (loose.length) { const col = !!_pinOrgCollapsed['Unbatched']; blocks += pinHd('Unbatched', true, loose.length, col) + (col ? '' : loose.map(rowFn).join('')); }
+    body = blocks;
+  } else {
+    body = pins.map(rowFn).join('');
+  }
+  const hint = compact
+    ? (_useBatches ? 'Hold &amp; drag a to-do — drop it under a ▣ heading to move it there · swipe right to 🚩 flag it' : 'Hold &amp; drag any to-do to reorder · swipe right to 🚩 flag it to the top')
+    : 'Swipe a to-do right to 🚩 flag it to the top · hold &amp; drag a 🚩 to-do to reorder';
+  const newBatchLink = compact ? `<div onclick="pinCreateBatch()" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--border);border-radius:999px;font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;margin-left:6px;">▣ ＋ New batch</div>` : '';
+  return `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">
+    <div style="font-size:12px;color:#FFD60A;margin-bottom:2px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">📌 To-dos</div>
+    <div style="font-size:11px;color:var(--subtext);margin-bottom:8px;">${hint}</div>
+    ${compact ? `<div class="cl-sticky-top" style="position:sticky;top:0;z-index:3;background:var(--card);padding:2px 0 10px;"><div onclick="togglePinSort()" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--border);border-radius:999px;font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;">↕ ${_pinSortLabel()}</div>${newBatchLink}</div>` : ''}
+    ${body}
   </div>`;
+}
+// ▣ To-do batch helpers for the Organise sheet — collapse state + create-a-batch.
+let _pinOrgCollapsed = {};
+function _pinToggleBatchCollapse(name) { _pinOrgCollapsed[name] = !_pinOrgCollapsed[name]; _renderPinPreview(); }
+function pinCreateBatch() {
+  if (isWorker()) { showToast('Batches are set up by the manager'); return; }
+  const job = _pinPreviewTask; if (!job) return;
+  const name = (prompt('New batch name (e.g. App ideas — UI)') || '').trim();
+  if (!name) return;
+  const all = getTaskBatches();
+  const rec = all[job] || (all[job] = { order: [], items: {} });
+  if (rec.order.some(b => b.toLowerCase() === name.toLowerCase())) { showToast('That batch already exists'); return; }
+  rec.order.push(name);
+  saveTaskBatches(all);
+  autoBackup();
+  _renderPinPreview();
+  showToast('▣ ' + name + ' — drag to-dos under it');
 }
 
 // ── Pinned-note gestures (run on the running clock, planner detail, and the
@@ -14526,8 +14574,13 @@ function _startPinDrag(row, task, startY, flagged) {
 // the follow stays accurate no matter how the order shifts.
 function _pinDragReposition(clientY) {
   const dragged = _pinDrag.row, parent = dragged.parentNode, flagged = _pinDrag.flagged;
-  // Reorder only within the same flag-group (flagged stay above the rest).
-  const others = [...parent.children].filter(c => c.classList && c.classList.contains('pin-row') && (c.dataset.pinFlagged === '1') === flagged && c !== dragged);
+  // With ▣ batch sections (Organise sheet), ANY to-do moves among all rows with the
+  // headings as drop boundaries — landing under a different heading re-homes it.
+  // Without batches, reorder only within the same flag-group (flagged stay above).
+  const _hasB = !!(parent.querySelector && parent.querySelector('[data-pbatch-sec]'));
+  const others = [...parent.children].filter(c => c !== dragged && (
+    (c.classList && c.classList.contains('pin-row') && (_hasB || (c.dataset.pinFlagged === '1') === flagged)) ||
+    (_hasB && c.dataset && c.dataset.pbatchSec)));
   const target = others.find(r => { const b = r.getBoundingClientRect(); return clientY < b.top + b.height / 2; });
   if (target) { parent.insertBefore(dragged, target); }
   else { const last = others[others.length - 1]; if (last) parent.insertBefore(dragged, last.nextSibling); }
@@ -14550,6 +14603,28 @@ function _endPinDrag() {
   dragged.style.transition = 'transform 0.15s, box-shadow 0.15s, opacity 0.15s';
   dragged.style.transform = ''; dragged.style.opacity = ''; dragged.style.boxShadow = '';
   dragged.style.position = ''; dragged.style.zIndex = '';
+  // ▣ Batch-aware drop (Organise sheet): whichever heading the row now sits under
+  // is its batch — landing under a different one re-homes the to-do (todoItems).
+  // Dropping under "Unbatched" clears it. The flag/manual order persists below as
+  // usual (it's a global order; each batch shows its members in that order).
+  if (parent.querySelector && parent.querySelector('[data-pbatch-sec]') && !isWorker()) {
+    let secEl = dragged.previousElementSibling;
+    while (secEl && !(secEl.dataset && secEl.dataset.pbatchSec)) secEl = secEl.previousElementSibling;
+    if (secEl) {
+      const pinId = dragged.dataset.pinId;
+      const dest = secEl.dataset.pbatchLoose ? null : secEl.dataset.pbatchName;
+      const all = getTaskBatches(); const rec = all[task];
+      if (rec && Array.isArray(rec.order)) {
+        const ti = rec.todoItems || (rec.todoItems = {});
+        const cur = (ti[pinId] && rec.order.includes(ti[pinId])) ? ti[pinId] : null;
+        if (dest !== cur) {
+          if (dest === null) delete ti[pinId]; else ti[pinId] = dest;
+          saveTaskBatches(all);
+          autoBackup();
+        }
+      }
+    }
+  }
   if (flagged) {
     const order = [...parent.children].filter(c => c.dataset && c.dataset.pinFlagged === '1').map(c => c.dataset.pinId);
     _applyFlagOrder(task, order);   // flagged order → flaggedAt
@@ -14623,6 +14698,7 @@ function showPinnedNotesPopupTask(task) {
   if (!task) return;
   _pinPreviewTask = task;
   _pinPreviewSearch = '';
+  _pinOrgCollapsed = {};
   const si = document.getElementById('pin-preview-search'); if (si) si.value = '';
   document.getElementById('pin-preview-title').textContent = task;
   _renderPinPreview();
