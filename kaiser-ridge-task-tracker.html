@@ -2762,7 +2762,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.216';
+const APP_VERSION = '2026-06-21.217';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -9864,9 +9864,10 @@ function renderBatchTaskPicker() {
     const inThis = ti[p.id] === _batchPickTarget;
     const other = !inThis && ti[p.id] && rec.order.includes(ti[p.id]) ? ti[p.id] : '';
     const label = (p.text || '').split('\n')[0];
+    const thumb = _photosHtml(p, 54);   // attached screenshots — tapping one opens the gallery, not the toggle
     return `<div onclick="toggleBatchTodo('${p.id}')" style="display:flex;align-items:center;gap:10px;padding:13px 4px;border-bottom:1px solid var(--border);cursor:pointer;">
       <span style="width:22px;height:22px;border-radius:7px;flex-shrink:0;display:flex;align-items:center;justify-content:center;${inThis ? 'background:var(--blue);' : 'border:1.5px solid var(--border);'}">${inThis ? '<span style="color:#fff;font-size:13px;">✓</span>' : ''}</span>
-      <span style="flex:1;min-width:0;font-size:15px;color:var(--text);">📌 ${_escTxt(label)}</span>
+      <span style="flex:1;min-width:0;font-size:15px;color:var(--text);">📌 ${_escTxt(label)}${thumb}</span>
       ${other ? `<span style="font-size:11px;color:var(--subtext);background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:2px 7px;flex-shrink:0;">▣ ${_escTxt(other)}</span>` : ''}
     </div>`;
   }).join('');
@@ -9875,6 +9876,7 @@ function renderBatchTaskPicker() {
     (taskRows ? _hdr('Tasks') + taskRows : '') +
     (todoRows ? _hdr('To-dos') + todoRows : '') ||
     '<div style="padding:24px;text-align:center;color:var(--subtext);font-size:14px;">No tasks or to-dos on this job yet.</div>';
+  _loadPhotoThumbs();   // hydrate the lazy screenshot placeholders just rendered
 }
 function toggleBatchTodo(pinId) {
   if (isWorker()) return;
