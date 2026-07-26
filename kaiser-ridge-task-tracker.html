@@ -2761,7 +2761,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.212';
+const APP_VERSION = '2026-06-21.213';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4452,9 +4452,12 @@ function renderRunChecklist() {
           const days = Math.floor((_now - new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()) / 86400000);
           if (days <= 3) bk.recent.push(x); else if (days <= 7) bk.week.push(x); else bk.old.push(x);
         });
+        // Within each dated bucket, most recently done first (Lincoln 2026-07-26);
+        // 'never' has no date so it keeps the saved learned/flag order.
+        ['recent', 'week', 'old'].forEach(k => bk[k].sort((a, b) => (b.last || 0) - (a.last || 0)));
         const defs = [['recent', '✅ Last 3 days'], ['week', '🕒 3–7 days ago'], ['old', '⚠️ Over a week'], ['never', '⬜ Never done']];
         const present = defs.filter(([k]) => bk[k].length);
-        if (present.length < 2) return built.map(x => x.html).join('');
+        if (present.length < 2) return present.map(([k]) => bk[k].map(x => x.html).join('')).join('');   // no headings, but recency order still applies
         return present.map(([k, label]) =>
           `<div style="font-size:11px;font-weight:700;letter-spacing:0.3px;color:#7f8798;padding:9px 0 2px 4px;">${label} <span style="color:#616a7e;font-weight:600;">· ${bk[k].length}</span></div>`
           + bk[k].map(x => x.html).join('')).join('');
