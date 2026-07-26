@@ -2762,7 +2762,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.218';
+const APP_VERSION = '2026-06-21.219';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6935,7 +6935,18 @@ const KR_BACKUP_KEYS = [
   'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
   'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_task_videos', 'kr_checklist_flags', 'kr_task_merges', 'kr_subtask_origin', 'kr_pins_applied',
   'kr_agents', 'kr_agent_runs', 'kr_planner_checklist', 'kr_pin_order', 'kr_subtask_photos', 'kr_job_reminders', 'kr_task_reminders',
-  'kr_task_types', 'kr_job_runs', 'kr_job_flags', 'kr_task_moves', 'kr_job_horizon', 'kr_job_links', 'kr_task_batches'
+  'kr_task_types', 'kr_job_runs', 'kr_job_flags', 'kr_task_moves', 'kr_job_horizon', 'kr_job_links', 'kr_task_batches',
+  // Added v219 — these were silently LOST on restore (Lincoln's icon re-add restore
+  // dropped team mode → the Ethan tab vanished). Team/role, Ethan's planned day +
+  // sent-state, the shared last-done map, view/sort preferences, and the one-time
+  // migration + library-sync markers (so a restore doesn't re-run migrations or
+  // show a false "new library" banner). Deliberately still excluded: kr_clock
+  // (live clock), trash cans, kr_cal_dirty, backup timestamps, kr_lib_prepull_backup.
+  'kr_team_enabled', 'kr_role', 'kr_planner_ethan', 'kr_planner_ethan_sent', 'kr_planner_ethan_sent_arr',
+  'kr_lastdone', 'kr_flag_new_pos', 'kr_checklist_order', 'kr_pin_sort', 'kr_dir_sort',
+  'kr_planner_task_sort', 'kr_create_task_sort', 'kr_assign_task_sort', 'kr_planner_mode', 'kr_planner_zoom',
+  'kr_onboarded', 'kr_cal_used', 'kr_lib_applied_version', 'kr_lib_synced',
+  'kr_inbox_assigned_migrated', 'kr_inbox_pinnedtasks_backfilled'
 ];
 
 function buildBackupSnapshot() {
