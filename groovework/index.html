@@ -1124,6 +1124,7 @@
     <button id="chip-reminders" onclick="openRemindersOverview()" class="dir-chip" style="color:var(--blue);font-weight:600;">🔔 Reminders</button>
     <button id="chip-horizon" onclick="openHorizonReview()" class="dir-chip" style="color:var(--blue);font-weight:600;">🗓 Horizon</button>
     <button id="chip-filters" onclick="openDirFilters()" class="dir-chip">⚲ Filter</button>
+    <button id="chip-dir-sort" onclick="cycleDirSort()" class="dir-chip">↕ Grouped</button>
   </div>
   <div class="scroll-area" id="dir-scroll-area">
     <div id="dir-list"></div>
@@ -2761,7 +2762,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.213';
+const APP_VERSION = '2026-06-21.214';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -7840,9 +7841,27 @@ function computeAutoFrequencies() {
   return out;
 }
 
+// Jobs screen ordering — 'grouped' (Repeats → Area sections, the default),
+// 'recent' (last done first) or 'used' (most often done first) — the same
+// Recent / Most-used ordering the inbox-assign and planner pickers use.
+// One chip cycles the three; the choice sticks (device-local).
+let _dirSort = localStorage.getItem('kr_dir_sort') || 'grouped';
+function cycleDirSort() {
+  _dirSort = _dirSort === 'grouped' ? 'recent' : (_dirSort === 'recent' ? 'used' : 'grouped');
+  localStorage.setItem('kr_dir_sort', _dirSort);
+  renderDirectory();
+}
+function _syncDirSortChip() {
+  const c = document.getElementById('chip-dir-sort');
+  if (!c) return;
+  c.textContent = _dirSort === 'recent' ? '🕘 Recent' : (_dirSort === 'used' ? '⭐ Most used' : '↕ Grouped');
+  c.style.color = _dirSort === 'grouped' ? '' : 'var(--blue)';
+  c.style.fontWeight = _dirSort === 'grouped' ? '' : '600';
+}
 function renderDirectory() {
   const list = document.getElementById('dir-list');
   if (!list) return;
+  _syncDirSortChip();
 
   const searchTerm = (document.getElementById('dir-search')?.value || '').toLowerCase().trim();
   const autoMap = computeAutoFrequencies();
@@ -7929,6 +7948,7 @@ function renderDirectory() {
   });
 
   const jobFlags = getJobFlags();
+  const _dirCounts = _taskUsageMaps().counts;   // times each job was clocked — the ⭐ Most used sort + row line
   const _dirStepsMap = getSubtaskSteps();
   // One row renderer, shared by the 🚩 Flagged section and the normal freq/area groups.
   const rowHtml = (freq, grp, task) => {
@@ -7975,6 +7995,7 @@ function renderDirectory() {
                 <div style="font-size:15px;font-weight:500;color:var(--text);">${isFlagged ? '🚩 ' : ''}${task}${autoBadge}${pinBadge}${videoBadge}${linkBadge}</div>
                 ${autoSub}
                 ${usedLine}
+                ${_dirSort === 'used' && _dirCounts[task] ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔂 Done ${_dirCounts[task]}×</div>` : ''}
                 ${taskAvg[task] ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">⏱ Avg ${fmtMin(taskAvg[task])}</div>` : ''}
                 ${jobHorizon(task) ? `<div style="font-size:12px;color:#5ac8fa;margin-top:2px;">🗓 ${_horizonLabel(jobHorizon(task))}</div>` : ''}
                 ${meta.client ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">👤 For ${_escHtml(meta.client)}</div>` : ''}
@@ -8006,6 +8027,33 @@ function renderDirectory() {
         </div>
       </div>
     </div>` : '';
+
+  // 🕘 Recent / ⭐ Most used — one flat list instead of the Repeats/Area sections.
+  // 🚩 Flagged stays on top (it's the hand-arranged working set); the rest sort by
+  // last done or times done. No drag-reorder here — the sort IS the order.
+  if (_dirSort !== 'grouped') {
+    const counts = _dirCounts;
+    const flat = [];
+    const _seen = new Set();
+    freqs.forEach(f => Object.keys(grouped[f]).forEach(g => Object.keys(grouped[f][g]).forEach(t => {
+      if (!jobFlags[t] && !_seen.has(t)) { _seen.add(t); flat.push({ f, g, t }); }
+    })));
+    flat.sort((a, b) => _dirSort === 'used'
+      ? (((counts[b.t] || 0) - (counts[a.t] || 0)) || ((lastUsed[b.t] || 0) - (lastUsed[a.t] || 0)))
+      : (((lastUsed[b.t] || 0) - (lastUsed[a.t] || 0)) || ((counts[b.t] || 0) - (counts[a.t] || 0))));
+    const cap = _dirSort === 'used' ? '⭐ Most used first' : '🕘 Most recently done first';
+    list.innerHTML = flaggedHtml + `
+      <div style="margin-bottom:8px;">
+        <div style="padding:8px 16px 4px;font-size:11px;font-weight:700;color:var(--subtext);letter-spacing:0.5px;text-transform:uppercase;">${cap}</div>
+        <div style="margin:0 12px 8px;background:var(--card);border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+          ${flat.map(x => rowHtml(x.f, x.g, x.t)).join('')}
+        </div>
+      </div>`;
+    const _badge = document.getElementById('dir-freq-badge');
+    if (_badge) _badge.style.display = 'none';
+    if (window._dirFreqObserver) window._dirFreqObserver.disconnect();
+    return;
+  }
 
   list.innerHTML = flaggedHtml + freqs.map(freq => {
     const groupsHtml = Object.keys(grouped[freq]).map(grp => {
