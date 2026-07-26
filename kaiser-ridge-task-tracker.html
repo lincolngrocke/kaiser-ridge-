@@ -1493,7 +1493,7 @@
   <!-- What-got-done / task-times / charts entry points -->
   <div style="display:flex;gap:8px;padding:8px 16px;background:var(--card);border-bottom:1px solid var(--border);">
     <button onclick="openDayView()" style="flex:1;background:none;border:1px solid var(--blue);border-radius:8px;padding:9px;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">📅 What got done</button>
-    <button onclick="openChecklistAvg()" style="flex:1;background:none;border:1px solid var(--blue);border-radius:8px;padding:9px;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">⏱ Task Times</button>
+    <button onclick="openChecklistAvg()" style="flex:1;background:none;border:1px solid var(--blue);border-radius:8px;padding:9px;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">⏱ Times</button>
     <button id="dash-charts-btn" onclick="toggleDashCharts()" style="flex:1;background:none;border:1px solid var(--blue);border-radius:8px;padding:9px;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">📊 Charts</button>
   </div>
   <!-- THE BRIEF — the dashboard's front page: am I improving, and what needs me? -->
@@ -1540,16 +1540,20 @@
   <div class="modal-sheet" style="padding:16px 0 24px;" onclick="event.stopPropagation()">
     <div class="modal-handle"></div>
     <div style="padding:0 20px 4px;display:flex;align-items:center;justify-content:space-between;">
-      <span style="font-size:17px;font-weight:600;">Task Times</span>
+      <span style="font-size:17px;font-weight:600;">Times</span>
       <span onclick="closeModal('modal-checklist-avg')" style="color:var(--blue);font-size:16px;cursor:pointer;">Done</span>
     </div>
-    <div style="padding:0 20px 8px;font-size:13px;color:var(--subtext);">Average time per task, across every job where you timed it on the running clock. <b>Tap a task</b> for its day-by-day trend.</div>
+    <div style="display:flex;gap:6px;background:rgba(127,127,127,0.12);border-radius:12px;padding:4px;margin:6px 20px 8px;">
+      <div id="times-tab-jobs" onclick="setTimesMode('jobs')" style="flex:1;text-align:center;padding:8px 6px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;color:var(--subtext);">Jobs</div>
+      <div id="times-tab-tasks" onclick="setTimesMode('tasks')" style="flex:1;text-align:center;padding:8px 6px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;color:var(--subtext);">Tasks</div>
+    </div>
+    <div id="times-sub" style="padding:0 20px 8px;font-size:13px;color:var(--subtext);"></div>
     <div style="padding:0 20px 10px;">
-      <input id="checklist-avg-search" type="search" placeholder="Search tasks…" autocomplete="off" autocapitalize="none" spellcheck="false"
+      <input id="checklist-avg-search" type="search" placeholder="Search…" autocomplete="off" autocapitalize="none" spellcheck="false"
         oninput="renderChecklistAvg(this.value)"
         style="width:100%;box-sizing:border-box;padding:10px 14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;">
     </div>
-    <div id="checklist-avg-list" style="max-height:56vh;overflow-y:auto;"></div>
+    <div id="checklist-avg-list" style="max-height:52vh;overflow-y:auto;"></div>
   </div>
 </div>
 
@@ -1566,7 +1570,7 @@
       <canvas id="task-trend-canvas" style="width:100%;height:240px;display:block;"></canvas>
     </div>
     <div id="task-trend-caption" style="padding:10px 20px 0;font-size:12px;color:var(--subtext);text-align:center;min-height:16px;"></div>
-    <div style="padding:6px 20px 0;font-size:11px;color:var(--subtext);text-align:center;">X: days done &nbsp;·&nbsp; Y: minutes &nbsp;·&nbsp; tap a point for the date</div>
+    <div style="padding:6px 20px 0;font-size:11px;color:var(--subtext);text-align:center;">X: days done &nbsp;·&nbsp; Y: time taken &nbsp;·&nbsp; tap a point for the date</div>
   </div>
 </div>
 
@@ -2791,7 +2795,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.221';
+const APP_VERSION = '2026-06-21.222';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4625,9 +4629,47 @@ function _aggregateChecklistTimes() {
     .map(k => ({ item: agg[k].label, count: agg[k].count, avg: agg[k].total / agg[k].count, last: agg[k].last }))
     .sort((a, b) => b.count - a.count || b.avg - a.avg);
 }
+// The ⏱ Times sheet has two tabs: Jobs (whole clocked runs) and Tasks (items
+// timed on the running clock). Both share the search box, list layout and the
+// tap-through trend chart.
+let _timesMode = 'tasks';
+function setTimesMode(m) {
+  _timesMode = m === 'jobs' ? 'jobs' : 'tasks';
+  _syncTimesTabs();
+  const s = document.getElementById('checklist-avg-search');
+  renderChecklistAvg(s ? s.value : '');
+}
+function _syncTimesTabs() {
+  const j = document.getElementById('times-tab-jobs'), t = document.getElementById('times-tab-tasks');
+  const on = el => { el.style.background = 'var(--card)'; el.style.color = 'var(--text)'; el.style.boxShadow = '0 1px 3px rgba(0,0,0,0.12)'; };
+  const off = el => { el.style.background = 'none'; el.style.color = 'var(--subtext)'; el.style.boxShadow = 'none'; };
+  if (j && t) { (_timesMode === 'jobs' ? on : off)(j); (_timesMode === 'jobs' ? off : on)(t); }
+  const sub = document.getElementById('times-sub');
+  if (sub) sub.innerHTML = _timesMode === 'jobs'
+    ? 'Average time per job, across every clocked run. <b>Tap a job</b> for its day-by-day trend.'
+    : 'Average time per task, across every job where you timed it on the running clock. <b>Tap a task</b> for its day-by-day trend.';
+  const si = document.getElementById('checklist-avg-search');
+  if (si) si.placeholder = _timesMode === 'jobs' ? 'Search jobs…' : 'Search tasks…';
+}
+// Average minutes per JOB — one sample per clocked entry (robots excluded, same
+// as the dashboard brief). Sorted most-done first, like the tasks list.
+function _aggregateJobTimes() {
+  const agg = {};
+  entries.forEach(e => {
+    if (e.bot || !e.task || !(e.durationHours > 0)) return;
+    const mins = e.durationHours * 60;
+    if (!isFinite(mins) || mins > 24 * 60) return;   // drop outliers, same cap as tasks
+    const a = agg[e.task] || (agg[e.task] = { label: e.task, count: 0, total: 0 });
+    a.count++; a.total += mins;
+  });
+  return Object.values(agg)
+    .map(a => ({ item: a.label, count: a.count, avg: a.total / a.count }))
+    .sort((x, y) => y.count - x.count || y.avg - x.avg);
+}
 function openChecklistAvg() {
   const s = document.getElementById('checklist-avg-search');
   if (s) s.value = '';
+  _syncTimesTabs();
   renderChecklistAvg('');
   openModal('modal-checklist-avg');
 }
@@ -4693,17 +4735,20 @@ let _taskAvgRowsShown = [];   // the rows currently rendered — index maps to o
 function renderChecklistAvg(filter) {
   const list = document.getElementById('checklist-avg-list');
   if (!list) return;
-  const all = _aggregateChecklistTimes();
+  const jobsMode = _timesMode === 'jobs';
+  const all = jobsMode ? _aggregateJobTimes() : _aggregateChecklistTimes();
   if (!all.length) {
     _taskAvgRowsShown = [];
-    list.innerHTML = '<div style="padding:32px 24px;text-align:center;color:var(--subtext);line-height:1.6;">No task timings yet.<br>On the running clock, tap each task as you finish it — those times build this list.</div>';
+    list.innerHTML = jobsMode
+      ? '<div style="padding:32px 24px;text-align:center;color:var(--subtext);line-height:1.6;">No clocked jobs yet.<br>Clock in and out of a job — those runs build this list.</div>'
+      : '<div style="padding:32px 24px;text-align:center;color:var(--subtext);line-height:1.6;">No task timings yet.<br>On the running clock, tap each task as you finish it — those times build this list.</div>';
     return;
   }
   const q = String(filter == null ? '' : filter).trim().toLowerCase();
   const rows = q ? all.filter(r => r.item.toLowerCase().includes(q)) : all;
   _taskAvgRowsShown = rows;
   if (!rows.length) {
-    list.innerHTML = `<div style="padding:32px 24px;text-align:center;color:var(--subtext);line-height:1.6;">No task matches “${_escHtml(q)}”.</div>`;
+    list.innerHTML = `<div style="padding:32px 24px;text-align:center;color:var(--subtext);line-height:1.6;">No ${jobsMode ? 'job' : 'task'} matches “${_escHtml(q)}”.</div>`;
     return;
   }
   list.innerHTML = rows.map((r, i) => `
@@ -4721,8 +4766,28 @@ function renderChecklistAvg(filter) {
 // One point PER completion — laps done on the same day stack at that day's X
 // (they are NOT summed), so the average and spread reflect real per-run times.
 // Answers "how often, and how variable in time?".
-let _taskTrendKey = null;       // normalised (lowercase) task label being charted
+let _taskTrendKey = null;       // task: normalised lowercase label · job: exact job name
+let _trendMode = 'task';        // 'task' (checklist item) or 'job' (whole clocked runs)
 let _taskTrendPts = [];         // [{x, y, s}] hit regions for tap-to-inspect
+// One point per clocked RUN of a job (robots excluded) — same-day runs stack at
+// that day's X, mirroring how task laps plot (v208 rule: never sum them).
+function _jobSessions(job) {
+  const items = [];
+  entries.forEach(e => {
+    if (e.bot || e.task !== job || !(e.durationHours > 0)) return;
+    const mins = e.durationHours * 60;
+    if (!isFinite(mins) || mins > 24 * 60) return;
+    const p = String(e.date).split('/').map(Number);
+    const dayEpoch = new Date(p[2], (p[1] || 1) - 1, p[0] || 1).getTime();
+    if (!isFinite(dayEpoch)) return;
+    items.push({ dayEpoch, at: e.clockIn || '', minutes: mins });
+  });
+  items.sort((a, b) => (a.dayEpoch - b.dayEpoch) || String(a.at).localeCompare(String(b.at)));
+  const dayCount = {}, seen = {};
+  items.forEach(c => { dayCount[c.dayEpoch] = (dayCount[c.dayEpoch] || 0) + 1; });
+  items.forEach(c => { seen[c.dayEpoch] = (seen[c.dayEpoch] || 0) + 1; c.lapIdx = seen[c.dayEpoch]; c.dayCount = dayCount[c.dayEpoch]; });
+  return items;
+}
 function _taskCompletions(normKey) {
   const items = [];   // { dayEpoch, at, minutes }  — one per completion
   entries.forEach(e => {
@@ -4748,7 +4813,8 @@ function _taskCompletions(normKey) {
 function openTaskTrend(i) {
   const r = _taskAvgRowsShown && _taskAvgRowsShown[i];
   if (!r) return;
-  _taskTrendKey = r.item.toLowerCase();
+  _trendMode = _timesMode === 'jobs' ? 'job' : 'task';
+  _taskTrendKey = _trendMode === 'job' ? r.item : r.item.toLowerCase();
   document.getElementById('task-trend-title').textContent = r.item;
   document.getElementById('task-trend-caption').textContent = '';
   openModal('modal-task-trend');
@@ -4758,7 +4824,7 @@ function renderTaskTrend() {
   const canvas = document.getElementById('task-trend-canvas');
   if (!canvas || !_taskTrendKey) return;
   const statsEl = document.getElementById('task-trend-stats');
-  const series = _taskCompletions(_taskTrendKey);
+  const series = _trendMode === 'job' ? _jobSessions(_taskTrendKey) : _taskCompletions(_taskTrendKey);
   const dpr = window.devicePixelRatio || 1;
   const W = canvas.parentElement.clientWidth;
   const H = 240;
@@ -4776,7 +4842,7 @@ function renderTaskTrend() {
 
   if (!series.length) {
     ctx.fillStyle = textColor; ctx.font = '14px -apple-system, sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText('No timed completions yet', W / 2, H / 2);
+    ctx.fillText(_trendMode === 'job' ? 'No clocked runs yet' : 'No timed completions yet', W / 2, H / 2);
     if (statsEl) statsEl.textContent = '';
     return;
   }
@@ -4800,15 +4866,17 @@ function renderTaskTrend() {
   const yOf = v => padT + chartH - (v / yMax) * chartH;
   const colX = ep => nDays === 1 ? padL + chartW / 2 : padL + (dayCol.get(ep) / (nDays - 1)) * chartW;
 
-  // Y grid + minute labels
+  // Y grid + labels — minutes for short work, hours once the scale passes 2h
+  // (a 7-hour carting run reads as "7h", not "420m")
   const steps = 4;
+  const _tick = v => yMax >= 120 ? ((Math.round(v / 6) / 10) + 'h').replace(/^0h$/, '0') : Math.round(v) + 'm';
   ctx.lineWidth = 1; ctx.font = '10px -apple-system, sans-serif';
   for (let i = 0; i <= steps; i++) {
     const v = yMax * i / steps, y = yOf(v);
     ctx.strokeStyle = gridColor;
     ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
     ctx.fillStyle = textColor; ctx.textAlign = 'right';
-    ctx.fillText(Math.round(v) + 'm', padL - 5, y + 3);
+    ctx.fillText(_tick(v), padL - 5, y + 3);
   }
 
   // Average line (dashed) — the reference the spread is read against
@@ -4855,7 +4923,7 @@ function renderTaskTrend() {
     if (best && bd <= 900) {
       const s = best.s, dt = new Date(s.dayEpoch);
       cap.innerHTML = `<b style="color:var(--text)">${dt.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</b> — ${fmtMin(s.minutes)}`
-        + (s.dayCount > 1 ? ` · lap ${s.lapIdx} of ${s.dayCount}` : '');
+        + (s.dayCount > 1 ? ` · ${_trendMode === 'job' ? 'run' : 'lap'} ${s.lapIdx} of ${s.dayCount}` : '');
     }
   };
 }
