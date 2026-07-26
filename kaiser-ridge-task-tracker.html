@@ -267,6 +267,8 @@
   #run-clockedin-text { font-size: 12.5px; color: #8b93a7; margin-top: 3px; }
   #run-ring-label { font-size: 11px; color: #5ac8fa; font-weight: 600; margin-top: 7px; letter-spacing: 0.2px; }
   .run-ring.over ~ .run-ring-ctr #run-ring-label { color: #ff9f0a; }
+  /* Estimated finish clock-time — the trust hook: learned from YOUR averages */
+  #run-ring-finish { font-size: 13px; color: #30d158; font-weight: 700; margin-top: 4px; letter-spacing: 0.2px; }
   .run-job-title { font-size: 20px; font-weight: 600; color: #fff; letter-spacing: -0.3px; margin-top: 16px; text-align: center; padding: 0 24px; text-wrap: balance; }
   .run-job-meta { font-size: 13px; color: #8b93a7; margin-top: 5px; text-align: center; padding: 0 20px; }
   .run-job-meta .loc { color: #30d158; text-decoration: none; }
@@ -1650,6 +1652,7 @@
         <div class="running-big-timer" id="run-timer">0:00</div>
         <div id="run-clockedin-text">Clocked in --:--</div>
         <div id="run-ring-label"></div>
+        <div id="run-ring-finish"></div>
       </div>
     </div>
     <div class="run-job-title" id="run-job-title"></div>
@@ -2795,7 +2798,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.223';
+const APP_VERSION = '2026-06-21.224';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4289,10 +4292,12 @@ function updateRunRing(netElapsedSec) {
     elapsed = Math.max(0, total - brk);
   }
   const est = _runEstSec();
+  const finishEl = document.getElementById('run-ring-finish');
   if (!est || elapsed == null) {
     fg.style.strokeDashoffset = C;                      // empty ring — faint track only
     ring.classList.remove('over');
     if (label) { label.textContent = 'building your average'; label.style.color = '#8b93a7'; }
+    if (finishEl) finishEl.textContent = '';
     return;
   }
   const frac = elapsed / est;
@@ -4303,6 +4308,18 @@ function updateRunRing(netElapsedSec) {
     label.style.color = over ? '#ff9f0a' : '#5ac8fa';
     const _flagCue = _runEstCache.basis === 'flagged' ? ' 🚩' : '';   // estimate comes from the flagged tasks
     label.textContent = (over ? ('over ~' + fmtEstHours(est / 3600) + ' est') : (Math.round(frac * 100) + '% of ~' + fmtEstHours(est / 3600))) + _flagCue;
+  }
+  // 🏁 Estimated finish CLOCK-TIME — the trust hook: clock-in + breaks + the
+  // learned estimate. Holds steady mid-job (only breaks or a flag re-target move
+  // it), so the user learns to plan around it. Past the estimate → "was".
+  if (finishEl && clockState && clockState.startMs) {
+    const brkMs = (clockState.breakTotal || 0) + (clockState.onBreak && clockState.breakStartMs ? Date.now() - clockState.breakStartMs : 0);
+    const fd = new Date(clockState.startMs + brkMs + est * 1000);
+    const ft = formatTimeAmPm(String(fd.getHours()).padStart(2, '0') + ':' + String(fd.getMinutes()).padStart(2, '0'));
+    finishEl.textContent = over ? '🏁 was ~' + ft : '🏁 finish ~' + ft;
+    finishEl.style.color = over ? '#ff9f0a' : '#30d158';
+  } else if (finishEl) {
+    finishEl.textContent = '';
   }
 }
 function renderRunChecklist() {
