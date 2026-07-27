@@ -2133,17 +2133,6 @@
 </div>
 
 <!-- ══════════════ SUBTASK MODAL ══════════════ -->
-<div class="modal-backdrop" id="modal-subtask" style="z-index:200;">
-  <div class="modal-sheet" style="padding:16px 20px 24px;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-      <button onclick="closeModal('modal-subtask')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;">Skip</button>
-      <span style="font-size:17px;font-weight:600;">Tasks</span>
-      <button onclick="confirmSubtasks()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Add</button>
-    </div>
-    <div id="subtask-list" style="display:flex;flex-direction:column;gap:2px;max-height:60vh;overflow-y:auto;"></div>
-  </div>
-</div>
-
 <!-- ══════════════ NOTE MODAL ══════════════ -->
 <div class="modal-backdrop" id="modal-note">
   <div class="modal-sheet" style="padding:16px 20px 24px;">
@@ -2798,7 +2787,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.233';
+const APP_VERSION = '2026-06-21.234';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -5898,8 +5887,6 @@ function selectSearchedTask(sel) {
   document.getElementById('task-search-clear').style.display = 'flex';
   renderCreateTaskList();
 
-  if (SUBTASKS[task] && SUBTASKS[task].length > 0) openSubtaskModal();
-
   showToast(`"${task}" loaded`);
 }
 
@@ -5960,69 +5947,8 @@ function onTaskChange() {
     .filter(r => r.frequency === freq && r.group === group && r.task === task)
     .map(r => r.equipment).filter(Boolean))];
   setEquipOptions(equip, equip.length === 1 ? equip : []);
-
-  if (SUBTASKS[task] && SUBTASKS[task].length > 0) openSubtaskModal();
 }
 
-function openSubtaskModal() {
-  const task = (clockState && clockState.task) || document.getElementById('f-task')?.value || '';
-  const taskSubtasks = SUBTASKS[task] || [];
-  // Refresh clockState from localStorage in case notes were updated
-  const saved = localStorage.getItem('kr_clock');
-  if (saved) clockState = JSON.parse(saved);
-  // Work out which subtasks have already been added to notes
-  const existingNotes = (clockState && clockState.notes) || document.getElementById('f-notes')?.value || '';
-  const remaining = taskSubtasks.filter(s => !existingNotes.includes(s));
-
-  if (taskSubtasks.length === 0) {
-    showToast('No tasks found — add them in Jobs');
-    return;
-  }
-  if (remaining.length === 0) {
-    showToast('All tasks completed!');
-    return;
-  }
-
-  const guides = getSubtaskGuides();
-  const list = document.getElementById('subtask-list');
-  list.innerHTML = remaining.map((s, i) => {
-    const hasGuide = guides[s] && (_guideInstructionsToSteps(guides[s].instructions).length > 0 || guides[s].url);
-    const enc = s.replace(/'/g,"\\'");
-    return `<div style="display:flex;align-items:center;gap:8px;padding:12px 4px;border-bottom:1px solid var(--border);">
-      <label style="display:flex;align-items:center;gap:12px;flex:1;cursor:pointer;">
-        <input type="checkbox" id="st-${i}" value="${s}" style="width:20px;height:20px;accent-color:var(--blue);flex-shrink:0;">
-        <span style="font-size:15px;">${s}</span>
-      </label>
-      ${hasGuide ? `<button onclick="viewSubtaskGuide('${enc}')" style="background:none;border:1px solid var(--blue);border-radius:8px;padding:4px 10px;color:var(--blue);font-size:13px;cursor:pointer;flex-shrink:0;">Guide</button>` : ''}
-    </div>`;
-  }).join('');
-  openModal('modal-subtask');
-}
-
-function confirmSubtasks() {
-  const task = (clockState && clockState.task) || document.getElementById('f-task')?.value || '';
-  const taskSubtasks = SUBTASKS[task] || [];
-  const existingNotes = (clockState && clockState.notes) || document.getElementById('f-notes')?.value || '';
-  const remaining = taskSubtasks.filter(s => !existingNotes.includes(s));
-  const checked = remaining.filter((s, i) => document.getElementById('st-' + i)?.checked);
-  closeModal('modal-subtask');
-  if (checked.length === 0) return;
-  const time = new Date().toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: true });
-  const note = `[${time}] ${checked.join(', ')}`;
-
-  if (clockState && clockState.running) {
-    // Called from running screen — save directly to clockState
-    clockState.notes = clockState.notes ? clockState.notes + '\n' + note : note;
-    _safeSetItem('kr_clock', JSON.stringify(clockState));
-    renderClockState();
-    showToast('Tasks added');
-  } else {
-    // Called from new entry form — write to textarea then save
-    const textarea = document.getElementById('f-notes');
-    textarea.value = textarea.value ? textarea.value + '\n' + note : note;
-    saveEntry();
-  }
-}
 
 function updateTaskOptions() { onGroupChange(); }
 
