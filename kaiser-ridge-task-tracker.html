@@ -2776,7 +2776,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.235';
+const APP_VERSION = '2026-06-21.236';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -15470,7 +15470,19 @@ function openPlannerDetail(planId) {
   const planOv = getPlannerChecklist()[planId];
   const hasPlanArr = !!(planOv && planOv.flags && Object.keys(planOv.flags).length);
   const clFlags = hasPlanArr ? planOv.flags : (getChecklistFlags()[plan.task] || {});
-  const orderedSubs = subtasks.length ? _orderedChecklistItems(plan.task, subtasks, clFlags) : [];
+  // Same ordering pipeline as the Organise sheet: the block's drag-arranged order
+  // when it has one, then the ▣ batch layout (batch by batch, flagged floated
+  // within each, unbatched last) — so this preview reads top-to-bottom exactly
+  // like the sheet that arranged it.
+  const _povOrder = (planOv && Array.isArray(planOv.order) && planOv.order.length) ? planOv.order : null;
+  let orderedSubs = subtasks.length ? _orderedChecklistItems(plan.task, subtasks, clFlags, _povOrder) : [];
+  const _pdBRec = _batchRec(plan.task);
+  if (_pdBRec && _pdBRec.order.length && orderedSubs.length) {
+    const _used = new Set(), _seq = [];
+    _pdBRec.order.forEach(bn => orderedSubs.forEach(s => { if (_pdBRec.items[s] === bn && !_used.has(s)) { _used.add(s); _seq.push(s); } }));
+    orderedSubs.forEach(s => { if (!_used.has(s)) _seq.push(s); });
+    orderedSubs = _seq;
+  }
   const subtaskHtml = subtasks.length > 0
     ? `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
