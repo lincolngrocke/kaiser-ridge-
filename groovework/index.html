@@ -2798,7 +2798,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.228';
+const APP_VERSION = '2026-06-21.229';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4123,7 +4123,7 @@ function _runDoneAllRows() {
   const pinDone = clockState.pinDone || {};
   const dur = _checklistDurations();
   const pins = (getTaskNotes()[clockState.task]) || [];
-  const tasks = done.map(d => ({ kind: 'task', text: ((d.rep || d.lap) ? 'Lap ' + (d.rep || d.lap) + ' · ' : '') + d.item, at: d.at, dur: dur[_occKey(d)] }));
+  const tasks = done.map(d => ({ kind: 'task', item: d.item, rep: (d.rep || d.lap || 0), text: ((d.rep || d.lap) ? 'Lap ' + (d.rep || d.lap) + ' · ' : '') + d.item, at: d.at, dur: dur[_occKey(d)] }));
   const notes = Object.keys(pinDone).map(id => {
     const p = pins.find(x => x.id === id);
     return { kind: 'note', id, text: p ? p.text : '(removed to-do)', at: pinDone[id], dur: dur['pin:' + id], missing: !p };
@@ -4169,8 +4169,9 @@ function renderRunDone() {
     const tag = r.kind === 'task' ? 'Task' : 'To-do';
     let stepInfo = '';
     if (r.kind === 'task') {
-      const total = (getSubtaskSteps()[r.text] || []).length;
-      if (total) { const dn = (clockState.stepDone || []).filter(x => x.item === r.text).length; stepInfo = `<div style="font-size:12px;color:#30d158;margin-top:3px;">✓ ${dn}/${total} steps done</div>`; }
+      const _ri = r.item || r.text;   // raw item — the display text may carry a "Lap N · " prefix
+      const total = (getSubtaskSteps()[_ri] || []).length;
+      if (total) { const dn = (clockState.stepDone || []).filter(x => x.item === _ri).length; stepInfo = `<div style="font-size:12px;color:#30d158;margin-top:3px;">✓ ${dn}/${total} steps done</div>`; }
     }
     const tick = `<span onclick="reviveDoneItem(${i})" title="Tap to un-tick" style="width:24px;height:24px;border-radius:${r.kind === 'task' ? '50%' : '7px'};background:#30d158;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#05070c;font-size:14px;cursor:pointer;margin-top:1px;">✓</span>`;
     return `<div style="display:flex;gap:12px;padding:14px 0;border-top:0.5px solid rgba(255,255,255,0.08);">
@@ -4188,7 +4189,13 @@ function renderRunDone() {
 function reviveDoneItem(i) {
   const r = _runDoneRows[i];
   if (!r) return;
-  if (r.kind === 'task') markChecklistItemDone(r.text);   // currently done → toggles it off
+  if (r.kind === 'task') {
+    // Lap completions revive via the rep-undo (drops the newest lap + its count);
+    // once-tasks toggle off. NB pass the RAW item — the display text carries a
+    // "Lap N · " prefix, and toggling THAT used to create a phantom completion.
+    if (r.rep) undoTaskRep(r.item);
+    else markChecklistItemDone(r.item);   // currently done → toggles it off
+  }
   else togglePinnedNote(r.id);                            // currently done → toggles it off
   renderRunDone();                                         // refresh the list in place (keeps the tab)
   const all = _runDoneAllRows();
