@@ -2798,7 +2798,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.230';
+const APP_VERSION = '2026-06-21.231';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4483,7 +4483,8 @@ function renderRunChecklist() {
       if (_la) {
         const _d = new Date(_la);
         const _days = Math.floor((Date.now() - new Date(_d.getFullYear(), _d.getMonth(), _d.getDate()).getTime()) / 86400000);
-        const _ago = _days <= 0 ? 'today' : _days === 1 ? 'yesterday' : _days + ' days ago';
+        // Done TODAY → the actual clock time ("done 7:42pm"); older → relative days.
+        const _ago = _days <= 0 ? _timeShort(_la) : _days === 1 ? 'yesterday' : _days + ' days ago';
         _metaBits.push(`🗓 done ${_ago}`);
       }
       if (_avgMin) _metaBits.push(`<span title="average so far">~${fmtMin(_avgMin)}</span>`);
