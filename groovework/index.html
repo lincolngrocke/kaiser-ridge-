@@ -2798,7 +2798,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.229';
+const APP_VERSION = '2026-06-21.230';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3688,6 +3688,16 @@ function _checklistItemLastDone(job) {
       if (!isNaN(t) && (!map[d.item] || t > map[d.item])) map[d.item] = t;
     });
   });
+  // Ticks from the CURRENT session stamp immediately — "🗓 done today" the moment
+  // you tick, not only after clock-out (entries exist only then). Matters for
+  // repeat tasks, which stay on the list mid-run showing their last-done age.
+  if (clockState && clockState.running && clockState.task === job && Array.isArray(clockState.checklistDone)) {
+    clockState.checklistDone.forEach(d => {
+      if (!d || !d.item || !d.at) return;
+      const t = new Date(d.at).getTime();
+      if (!isNaN(t) && (!map[d.item] || t > map[d.item])) map[d.item] = t;
+    });
+  }
   return map;
 }
 function _checklistDurations() {
