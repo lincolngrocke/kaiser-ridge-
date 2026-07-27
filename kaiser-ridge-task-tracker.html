@@ -296,17 +296,6 @@
     gap: 12px;
     flex-shrink: 0;
   }
-  .btn-create {
-    flex: 1;
-    height: 56px;
-    border-radius: 28px;
-    border: none;
-    background: #E5E5EA;
-    color: var(--text);
-    font-size: 18px;
-    font-weight: 600;
-    cursor: pointer;
-  }
   .btn-clock-in {
     flex: 1.6;
     height: 56px;
@@ -1038,9 +1027,9 @@
     </div>
   </div>
 
-  <!-- Buttons -->
+  <!-- One button — Clock In already opens the same New Entry sheet the old
+       Create button did, so Create was a duplicate (removed v235) -->
   <div class="clock-buttons">
-    <button class="btn-create" onclick="openCreate()">Create</button>
     <button class="btn-clock-in" id="btn-main" onclick="handleMainBtn()">Clock In</button>
   </div>
 </div>
@@ -2787,7 +2776,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.234';
+const APP_VERSION = '2026-06-21.235';
 
 // ════════════════════════════════
 //  DIRECTORY
