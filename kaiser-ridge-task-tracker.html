@@ -2798,7 +2798,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.226';
+const APP_VERSION = '2026-06-21.227';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4462,7 +4462,25 @@ function renderRunChecklist() {
         _metaBits.push(`🗓 done ${_ago}`);
       }
       if (_avgMin) _metaBits.push(`<span title="average so far">~${fmtMin(_avgMin)}</span>`);
-      if (_isRep) _metaBits.push(`<span onclick="event.stopPropagation();undoTaskRep('${enc}')" title="${_reps} done — tap to undo last" style="display:inline-flex;align-items:center;padding:1px 8px;border-radius:9px;font-weight:700;cursor:pointer;background:${_reps ? 'rgba(48,209,88,0.22)' : 'transparent'};border:1px solid ${_reps ? 'rgba(48,209,88,0.6)' : 'rgba(255,255,255,0.22)'};color:${_reps ? '#30d158' : '#8b93a7'};">🔁${_reps ? ' ' + _reps : ''}</span>`);
+      if (_isRep) {
+        // Planned run → the chip counts DOWN what's left of the planned laps
+        // ("🔁 3 left" → "✓ 4 done"); ad-hoc run → counts up as always.
+        const _tgt = clockState && clockState.lapTargets ? clockState.lapTargets[s] : 0;
+        let _chipTxt, _chipOn, _chipTitle;
+        if (_tgt >= 1) {
+          // Counts DOWN to the plan, then back UP past it: "3 left" → "✓ 4 done"
+          // → "✓ 4 +1" for each extra lap the user decides to run.
+          const _left = _tgt - _reps;
+          _chipTxt = _left > 0 ? `🔁 ${_left} left` : (_reps === _tgt ? `✓ ${_tgt} done` : `✓ ${_tgt} +${_reps - _tgt}`);
+          _chipOn = _left <= 0 || _reps > 0;
+          _chipTitle = `planned ×${_tgt} — ${_reps} done, tap to undo last`;
+        } else {
+          _chipTxt = `🔁${_reps ? ' ' + _reps : ''}`;
+          _chipOn = _reps > 0;
+          _chipTitle = `${_reps} done — tap to undo last`;
+        }
+        _metaBits.push(`<span onclick="event.stopPropagation();undoTaskRep('${enc}')" title="${_chipTitle}" style="display:inline-flex;align-items:center;padding:1px 8px;border-radius:9px;font-weight:700;cursor:pointer;background:${_chipOn ? 'rgba(48,209,88,0.22)' : 'transparent'};border:1px solid ${_chipOn ? 'rgba(48,209,88,0.6)' : 'rgba(255,255,255,0.22)'};color:${_chipOn ? '#30d158' : '#8b93a7'};">${_chipTxt}</span>`);
+      }
       if (_metaBits.length) html += `<div style="font-size:11px;color:#616a7e;padding:1px 0 7px 36px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${_metaBits.join('<span style="opacity:0.6;">·</span>')}</div>`;
       const refPhotos = subPhotos[s] || [];
       if (refPhotos.length) html += `<div style="padding:0 0 10px 36px;" onclick="event.stopPropagation();">${_photosHtml({ photos: refPhotos }, 64)}</div>`;   // reference photo
@@ -6309,7 +6327,20 @@ function confirmTime(choice) {
       if (rec) {
         if (rec.flags && Object.keys(rec.flags).length) clockState.flagOverride = { ...rec.flags };
         if (Array.isArray(rec.order) && rec.order.length) clockState.orderOverride = rec.order.slice();
-        if (clockState.flagOverride || clockState.orderOverride) { _safeSetItem('kr_clock', JSON.stringify(clockState)); renderRunChecklist(); }
+        // 🔁 Lap TARGETS — the planned laps for each flagged repeat task (the
+        // explicit ×N, else the learned typical), captured while the block still
+        // exists. On the clock these count DOWN ("3 left") instead of up — the
+        // pre-planned run knows how much work it holds. Ad-hoc runs still count up.
+        const _plan = _plannerPlans.find(p => p.id === taskInfo._planId);
+        if (_plan && rec.flags) {
+          const _reps = _taskRepsPerRunMap();
+          const lt = {};
+          Object.keys(rec.flags).forEach(item => {
+            if (isRepeatTask(_plan.task, item)) { const n = _plannedLapsFor(_plan, item, _reps); if (n >= 1) lt[item] = n; }
+          });
+          if (Object.keys(lt).length) clockState.lapTargets = lt;
+        }
+        if (clockState.flagOverride || clockState.orderOverride || clockState.lapTargets) { _safeSetItem('kr_clock', JSON.stringify(clockState)); renderRunChecklist(); }
         delete pcm[taskInfo._planId]; savePlannerChecklist(pcm);
       }
       _plannerPlans = _plannerPlans.filter(p => p.id !== taskInfo._planId);
