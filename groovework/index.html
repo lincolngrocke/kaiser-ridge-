@@ -2798,7 +2798,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.227';
+const APP_VERSION = '2026-06-21.228';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4267,19 +4267,27 @@ function _runEstSec() {
   const task = clockState.task;
   const flagged = Object.keys(_sessionOrGlobalFlags(task));
   const sig = task + '\u0001' + flagged.slice().sort().join('\u0001');
-  if (_runEstCache.sig === sig) return _runEstCache.sec;
+  const _ltSig = clockState.lapTargets ? JSON.stringify(clockState.lapTargets) : '';   // planned laps change the estimate → bust the cache
+  if (_runEstCache.sig === sig + _ltSig) return _runEstCache.sec;
   let sec = 0, basis = 'job';
   if (flagged.length) {
     const map = _taskHistAvgMap();
     let sum = 0;
-    flagged.forEach(item => { const a = map[_normTaskKey(item)]; if (isFinite(a) && a > 0) sum += a; });
+    // A planned run counts each repeat task once per PLANNED lap (lapTargets,
+    // v227) — the same math that sized the block (v196), so the ring and the
+    // finish time match what the planner promised.
+    const _lt = clockState.lapTargets || {};
+    flagged.forEach(item => {
+      const a = map[_normTaskKey(item)];
+      if (isFinite(a) && a > 0) sum += a * (_lt[item] >= 1 ? _lt[item] : 1);
+    });
     if (sum > 0) { sec = sum * 60; basis = 'flagged'; }   // minutes → seconds
   }
   if (!sec) {
     const avg = getTaskAvgDuration(task);     // hours
     sec = avg ? avg * 3600 : 0;
   }
-  _runEstCache = { sig, sec, basis };
+  _runEstCache = { sig: sig + _ltSig, sec, basis };
   return sec;
 }
 // Fill the ring: elapsed vs this job's average. Past the average the ring
