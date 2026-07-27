@@ -2798,7 +2798,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.231';
+const APP_VERSION = '2026-06-21.232';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4412,8 +4412,8 @@ function renderRunChecklist() {
     const stepsMap = getSubtaskSteps();
     const subPhotos = getSubtaskPhotos();
     const itemLastDone = _checklistItemLastDone(clockState && clockState.task);
-    const itemAvg = {};   // normalised item text → average minutes (from history)
-    _aggregateChecklistTimes().forEach(a => { itemAvg[a.item.trim().replace(/\s+/g, ' ').toLowerCase()] = a.avg; });
+    const itemAvg = {}, itemCount = {};   // normalised item text → average minutes / times done (from history)
+    _aggregateChecklistTimes().forEach(a => { const k = a.item.trim().replace(/\s+/g, ' ').toLowerCase(); itemAvg[k] = a.avg; itemCount[k] = a.count; });
     const stepChecks = (clockState && clockState.stepChecks) || {};
     const stepDur = _stepDurations();   // timed sub-steps this session → minutes per step
     const taskAttr = (clockState && clockState.task) ? _attr(clockState.task) : '';
@@ -4487,7 +4487,10 @@ function renderRunChecklist() {
         const _ago = _days <= 0 ? _timeShort(_la) : _days === 1 ? 'yesterday' : _days + ' days ago';
         _metaBits.push(`🗓 done ${_ago}`);
       }
-      if (_avgMin) _metaBits.push(`<span title="average so far">~${fmtMin(_avgMin)}</span>`);
+      if (_avgMin) {
+        const _cnt = itemCount[s.trim().replace(/\s+/g, ' ').toLowerCase()];
+        _metaBits.push(`<span title="average so far · times done">~${fmtMin(_avgMin)}${_cnt ? ' · ' + _cnt + '×' : ''}</span>`);   // same read as the Dashboard Times list
+      }
       if (_isRep) {
         // Planned run → the chip counts DOWN what's left of the planned laps
         // ("🔁 3 left" → "✓ 4 done"); ad-hoc run → counts up as always.
