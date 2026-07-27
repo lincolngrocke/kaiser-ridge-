@@ -2798,7 +2798,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.232';
+const APP_VERSION = '2026-06-21.233';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4489,7 +4489,7 @@ function renderRunChecklist() {
       }
       if (_avgMin) {
         const _cnt = itemCount[s.trim().replace(/\s+/g, ' ').toLowerCase()];
-        _metaBits.push(`<span title="average so far · times done">~${fmtMin(_avgMin)}${_cnt ? ' · ' + _cnt + '×' : ''}</span>`);   // same read as the Dashboard Times list
+        _metaBits.push(`<span title="average so far · times done">~${fmtMin(_avgMin)} avg${_cnt ? ' · ' + _cnt + '×' : ''}</span>`);   // same read as the Dashboard Times list — "avg" says the ~time is the mean across the ×count
       }
       if (_isRep) {
         // Planned run → the chip counts DOWN what's left of the planned laps
