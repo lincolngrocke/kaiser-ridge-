@@ -2777,7 +2777,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.239';
+const APP_VERSION = '2026-06-21.240';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -10840,8 +10840,41 @@ function toggleInboxDone(id) {
   if (n.done) { n.done = false; delete n.doneTs; delete n.assigned; } // revive → back to "to action", keep its journey
   else { n.done = true; n.doneTs = new Date().toISOString(); delete n.assigned; } // ticking = completed
   saveInbox(arr);
+  // Completion travels BOTH ways: ticking here clears the to-do off the job(s)
+  // it was filed to (the reverse of finalizeDonePins). Reviving does nothing —
+  // re-file it from the note if you want it back on a job.
+  const _cleared = n.done ? _removePinsForInboxNote(n) : 0;
   renderInbox();
   updateReminderBanners();   // completing a note clears its reminder (reviving may restore it)
+  if (_cleared) showToast('✓ Done — also cleared from ' + _cleared + ' job' + (_cleared === 1 ? '' : 's'));
+}
+// Ticking an inbox note off removes the to-dos it spawned from their jobs, and
+// clears the same item from any running clock session. Returns how many jobs
+// were touched. (Permanent tasks are NOT removed — they're part of the job.)
+function _removePinsForInboxNote(note) {
+  if (!note || !note.id) return 0;
+  const tn = getTaskNotes();
+  let jobs = 0;
+  Object.keys(tn).forEach(task => {
+    const list = tn[task] || [];
+    const keep = list.filter(p => p.inboxId !== note.id);
+    if (keep.length !== list.length) {
+      jobs++;
+      if (keep.length) tn[task] = keep; else delete tn[task];
+      // Live session on that job → drop it from the running list too
+      if (clockState && clockState.running && clockState.task === task) {
+        const goneIds = list.filter(p => p.inboxId === note.id).map(p => p.id);
+        if (clockState.pinDone) goneIds.forEach(gid => { delete clockState.pinDone[gid]; });
+        _safeSetItem('kr_clock', JSON.stringify(clockState));
+      }
+    }
+  });
+  if (jobs) {
+    saveTaskNotes(tn);
+    if (clockState && clockState.running) renderRunChecklist();
+    _refreshPinSurfaces(clockState && clockState.task);
+  }
+  return jobs;
 }
 // ── Quiet date reminders (in-app nag banner) ────────────────────────────────
 // A reminder is `remindOn` (YYYY-MM-DD) stored on an inbox note. From that date
