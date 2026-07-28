@@ -2778,7 +2778,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.248';
+const APP_VERSION = '2026-06-21.249';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -15585,7 +15585,12 @@ function _refreshChecklistSurfaces(task) {
   const org = document.getElementById('modal-cl-organise');
   if (org && org.classList.contains('open') && _clOrganiseTask === task) _renderClOrganiseBody();
 }
-let _clOrganiseTask = null, _clOrganisePlanId = null, _clEditScope = 'plan';
+// _clEditScope is pinned to 'plan' since v249 — the "🗂 Whole job" scope was
+// removed, so a planner-block Organise always arranges that block. Kept as the
+// gate the plan-targeting reads (a clock-opened sheet has no planId and so
+// edits the job directly, as before).
+let _clOrganiseTask = null, _clOrganisePlanId = null;
+const _clEditScope = 'plan';
 // Which ▣ batches are collapsed in the Organise sheet (by batch name; 'Unbatched'
 // for the loose group). View-only state, reset each time the sheet opens.
 let _clOrgCollapsed = {};
@@ -15630,7 +15635,6 @@ function openChecklistOrganiseForPlan(planId) {
   if (!plan) return;
   _clOrganiseTask = plan.task;
   _clOrganisePlanId = planId;
-  _clEditScope = 'plan';
   _clOrgCollapsed = {};
   const m = getPlannerChecklist();
   if (!m[planId]) { m[planId] = { flags: { ...(getChecklistFlags()[plan.task] || {}) } }; savePlannerChecklist(m); }
@@ -15639,7 +15643,6 @@ function openChecklistOrganiseForPlan(planId) {
   openModal('modal-cl-organise');   // open FIRST — _clTargetPlanId() needs the open modal, else the first render shows the job's flags instead of this block's arrangement
   _renderClOrganiseBody();
 }
-function setClEditScope(scope) { _clEditScope = scope; _renderClOrganiseBody(); }
 function _renderClOrganiseBody() {
   const task = _clOrganiseTask;
   const body = document.getElementById('cl-organise-body');
@@ -15651,11 +15654,13 @@ function _renderClOrganiseBody() {
   const ordered = _orderedChecklistItems(task, all, flags, orderArg);
   const taskAttr = _attr(task);
   const flagged = ordered.filter(s => flags[s]);
-  const scopeToggle = _clOrganisePlanId ? `
-    <div style="display:flex;gap:6px;background:rgba(127,127,127,0.12);border-radius:12px;padding:4px;margin:12px 0 4px;">
-      ${[['plan', '📅 This block'], ['job', '🗂 Whole job']].map(([k, l]) => `<div onclick="setClEditScope('${k}')" style="flex:1;text-align:center;padding:8px 6px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;${_clEditScope === k ? 'background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,0.12);' : 'color:var(--subtext);'}">${l}</div>`).join('')}
-    </div>
-    <div style="font-size:11px;color:var(--subtext);margin-bottom:4px;">${_clEditScope === 'plan' ? 'Arranges just this planned run — the job stays as it is.' : 'Changes this job’s checklist everywhere.'}</div>` : '';
+  // Opened from a planner block → always arranges THAT block. The old
+  // "🗂 Whole job" scope was removed (v249): the job's order is learned at
+  // clock-out and editable in Edit Job, and job-level flags are cleared each
+  // clock-out anyway — so it promised a permanence the model doesn't have.
+  const scopeToggle = _clOrganisePlanId
+    ? `<div style="font-size:11px;color:var(--subtext);margin:12px 0 4px;">Arranges just this planned run — the job stays as it is.</div>`
+    : '';
   let estLine = '';
   if (_clOrganisePlanId && _clEditScope === 'plan') {
     const plan = _plannerPlans.find(p => p.id === _clOrganisePlanId);
