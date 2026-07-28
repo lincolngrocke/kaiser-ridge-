@@ -2391,7 +2391,7 @@
         <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">🎥 HOW-TO VIDEO</div>
         <input class="form-select" id="dir-video" type="url" placeholder="Paste a YouTube link…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
           inputmode="url" data-lpignore="true" data-1p-ignore oninput="updateDirVideoPreview()"
-          style="font-size:15px;border:1px solid var(--border);border-radius:8px;width:100%;padding:10px;background:var(--bg);color:var(--text);">
+          style="font-size:15px;border:1px solid var(--border);border-radius:8px;width:100%;padding:10px;background:var(--bg);color:var(--text);text-align:left;box-sizing:border-box;">
         <div id="dir-video-hint" style="font-size:12px;color:var(--subtext);margin-top:6px;">Record the job, upload to YouTube (unlisted), then paste the link here. Everyone can watch it from the job and the running clock.</div>
         <button id="dir-video-watch" onclick="playVideoForTask(document.getElementById('dir-task').value.trim())" style="display:none;margin-top:8px;background:none;border:1px solid var(--blue);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">▶ Watch how-to</button>
       </div>
@@ -2777,7 +2777,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.242';
+const APP_VERSION = '2026-06-21.243';
 
 // ════════════════════════════════
 //  DIRECTORY
