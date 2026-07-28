@@ -2778,7 +2778,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.251';
+const APP_VERSION = '2026-06-21.252';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3794,6 +3794,7 @@ function markChecklistItemDone(item) {
   if (didComplete) _chipHold++;              // hold the counter number until the bubble lands
   _safeSetItem('kr_clock', JSON.stringify(clockState));
   renderRunChecklist();
+  updateRunRing();                           // re-forecast: one less task to do → finish time moves
   if (didComplete) flyDoneBubble(undoFn, doneOcc ? _checklistDurations()[_occKey(doneOcc)] : null);   // bubble floats up w/ the time it took + Undo
 }
 // Undo the most recent rep of a repeatable task (drops the count + its timed entry).
@@ -3808,6 +3809,7 @@ function undoTaskRep(item) {
   if (taskRepCount(job, item) === 0) _setTaskReminderDone(job, item, false);
   _safeSetItem('kr_clock', JSON.stringify(clockState));
   renderRunChecklist();
+  updateRunRing();                           // a lap came back → so does its time
 }
 function toggleChecklistExpand(item) {
   if (Date.now() < _clSwipeBlockClickUntil) return;   // a swipe/drag just happened — not a tap
@@ -4426,8 +4428,37 @@ function _runEstSec() {
   _runEstCache = { sig: sig + _ltSig, sec, basis };
   return sec;
 }
-// Fill the ring: elapsed vs this job's average. Past the average the ring
-// completes and turns amber rather than overflowing.
+// Estimated work STILL TO DO this session, in seconds — the sum of the flagged
+// tasks' learned averages for everything not yet ticked (repeat tasks: whatever
+// laps are left of the target). Returns null when there's no per-task basis to
+// forecast from, so callers fall back to the static job-average estimate.
+function _runRemainingSec() {
+  if (!clockState || !clockState.running || !clockState.task) return null;
+  const task = clockState.task;
+  const flagged = Object.keys(_sessionOrGlobalFlags(task));
+  if (!flagged.length) return null;
+  const map = _taskHistAvgMap();
+  const lt = clockState.lapTargets || {};
+  const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
+  const carried = new Set(Array.isArray(clockState.checklistCarried) ? clockState.checklistCarried : []);
+  let sum = 0, any = false;
+  flagged.forEach(item => {
+    const a = map[_normTaskKey(item)];
+    if (!(isFinite(a) && a > 0)) return;   // no history → contributes nothing, same as the block estimate
+    any = true;
+    let left;
+    if (isRepeatTask(task, item)) {
+      const target = lt[item] >= 1 ? lt[item] : 1;
+      left = Math.max(0, target - taskRepCount(task, item));
+    } else {
+      left = (_isTaskDoneNow(task, item, done) || carried.has(item)) ? 0 : 1;
+    }
+    sum += a * left;
+  });
+  return any ? sum * 60 : null;
+}
+// Fill the ring: elapsed vs the live forecast (elapsed + work remaining), so
+// ticking a task off — or dwelling on one — re-forecasts the finish time.
 function updateRunRing(netElapsedSec) {
   const fg = document.getElementById('run-ring-fg');
   const ring = document.getElementById('run-ring');
@@ -4440,7 +4471,13 @@ function updateRunRing(netElapsedSec) {
     const brk = ((clockState.breakTotal || 0) + (clockState.onBreak && clockState.breakStartMs ? Date.now() - clockState.breakStartMs : 0)) / 1000;
     elapsed = Math.max(0, total - brk);
   }
-  const est = _runEstSec();
+  const baseEst = _runEstSec();                 // what the job was planned/expected to take
+  const remaining = _runRemainingSec();         // live: work still to tick off (null = no per-task basis)
+  const live = (remaining != null && elapsed != null);
+  // The forecast total: time already spent + time still to do. Ticking a task off
+  // drops the remaining side; dwelling on one grows the elapsed side — either way
+  // the total (and the finish time) re-forecast themselves.
+  const est = live ? (elapsed + remaining) : baseEst;
   const finishEl = document.getElementById('run-ring-finish');
   if (!est || elapsed == null) {
     fg.style.strokeDashoffset = C;                      // empty ring — faint track only
@@ -4451,21 +4488,30 @@ function updateRunRing(netElapsedSec) {
   }
   const frac = elapsed / est;
   fg.style.strokeDashoffset = C * (1 - Math.max(0, Math.min(1, frac)));
-  const over = frac >= 1;
+  // Live mode: "over" means the forecast has grown past what was planned (you're
+  // running late), not that a fixed timer expired. Fallback mode: as before.
+  const over = live ? (baseEst > 0 && est > baseEst) : (frac >= 1);
   ring.classList.toggle('over', over);
   if (label) {
     label.style.color = over ? '#ff9f0a' : '#5ac8fa';
     const _flagCue = _runEstCache.basis === 'flagged' ? ' 🚩' : '';   // estimate comes from the flagged tasks
-    label.textContent = (over ? ('over ~' + fmtEstHours(est / 3600) + ' est') : (Math.round(frac * 100) + '% of ~' + fmtEstHours(est / 3600))) + _flagCue;
+    label.textContent = (live
+      ? (Math.round(frac * 100) + '% of ~' + fmtEstHours(est / 3600))
+      : (over ? ('over ~' + fmtEstHours(est / 3600) + ' est') : (Math.round(frac * 100) + '% of ~' + fmtEstHours(est / 3600)))) + _flagCue;
   }
-  // 🏁 Estimated finish CLOCK-TIME — the trust hook: clock-in + breaks + the
-  // learned estimate. Holds steady mid-job (only breaks or a flag re-target move
-  // it), so the user learns to plan around it. Past the estimate → "was".
+  // 🏁 Estimated finish CLOCK-TIME — the trust hook. Live mode forecasts from NOW
+  // plus the work left, so it moves out if a task runs long and pulls in when you
+  // get ahead. Fallback keeps the old clock-in + estimate maths.
   if (finishEl && clockState && clockState.startMs) {
-    const brkMs = (clockState.breakTotal || 0) + (clockState.onBreak && clockState.breakStartMs ? Date.now() - clockState.breakStartMs : 0);
-    const fd = new Date(clockState.startMs + brkMs + est * 1000);
+    let fd;
+    if (live) {
+      fd = new Date(Date.now() + remaining * 1000);
+    } else {
+      const brkMs = (clockState.breakTotal || 0) + (clockState.onBreak && clockState.breakStartMs ? Date.now() - clockState.breakStartMs : 0);
+      fd = new Date(clockState.startMs + brkMs + est * 1000);
+    }
     const ft = formatTimeAmPm(String(fd.getHours()).padStart(2, '0') + ':' + String(fd.getMinutes()).padStart(2, '0'));
-    finishEl.textContent = over ? '🏁 was ~' + ft : '🏁 finish ~' + ft;
+    finishEl.textContent = (!live && over) ? '🏁 was ~' + ft : '🏁 finish ~' + ft;
     finishEl.style.color = over ? '#ff9f0a' : '#30d158';
   } else if (finishEl) {
     finishEl.textContent = '';
@@ -14152,9 +14198,14 @@ function getTaskAvgDuration(taskName) {
 // Per-task average durations in minutes, pooled by normalised task text — the
 // same history behind the ⏱ Checklist Item Times list and the day-view pills.
 function _normTaskKey(s) { return String(s).trim().replace(/\s+/g, ' ').toLowerCase(); }
+// Cached on entries.length (entries only append) — the live ring reads this every
+// tick, and rebuilding it walks the whole timesheet history.
+let _histAvgCache = { len: -1, map: null };
 function _taskHistAvgMap() {
+  if (_histAvgCache.len === entries.length && _histAvgCache.map) return _histAvgCache.map;
   const map = {};
   _aggregateChecklistTimes().forEach(a => { map[_normTaskKey(a.item)] = a.avg; });
+  _histAvgCache = { len: entries.length, map };
   return map;
 }
 // Typical laps per run for each checklist item, learned from history: within one
