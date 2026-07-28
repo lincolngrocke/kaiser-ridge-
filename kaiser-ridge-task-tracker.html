@@ -2778,7 +2778,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.249';
+const APP_VERSION = '2026-06-21.250';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -7887,7 +7887,8 @@ function undoClockIn() {
 // stamped, the job's 🚩 flags and its task order, and resumes the session where
 // it left off. Offered for 15 minutes — long enough to notice, short enough that
 // it never resurrects yesterday's work.
-const _UNDO_CLOCKOUT_MINS = 15;
+const _UNDO_CLOCKOUT_MINS = 1;
+let _undoBannerTimer = null;
 function _undoClockOutRec() {
   try {
     const r = JSON.parse(localStorage.getItem('kr_clockout_undo') || 'null');
@@ -7947,8 +7948,13 @@ function undoClockOut() {
 function updateUndoClockOutBanner() {
   const el = document.getElementById('undo-clockout-banner');
   if (!el) return;
+  if (_undoBannerTimer) { clearTimeout(_undoBannerTimer); _undoBannerTimer = null; }
   const r = (clockState && clockState.running) ? null : _undoClockOutRec();
   if (!r) { el.style.display = 'none'; return; }
+  // Nothing re-renders the idle Clock screen, so retire the banner on its own
+  // clock — otherwise it would sit there looking tappable past the window.
+  const msLeft = (new Date(r.at).getTime() + _UNDO_CLOCKOUT_MINS * 60000) - Date.now();
+  _undoBannerTimer = setTimeout(updateUndoClockOutBanner, Math.max(500, msLeft + 250));
   const nPins = Object.keys((r.clock && r.clock.pinDone) || {}).length;
   const nTasks = ((r.clock && r.clock.checklistDone) || []).length;
   const bits = [];
