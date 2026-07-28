@@ -987,6 +987,7 @@
   <div class="update-banner" id="update-banner" onclick="forceAppUpdate()" style="display:none;">🔄 New version available — tap to update</div>
   <div class="update-banner" id="library-banner" onclick="pullLibrary()" style="display:none;background:var(--green);">📋 New job library available — tap to update</div>
   <div class="update-banner" id="restore-clock-banner" onclick="restoreDiscardedClock()" style="display:none;background:var(--green);"></div>
+  <div class="update-banner" id="undo-clockout-banner" onclick="undoClockOut()" style="display:none;background:var(--blue);"></div>
   <div class="backup-banner" id="backup-banner-clock" onclick="exportBackup()" style="display:none;"></div>
   <div class="update-banner" id="assign-banner-clock" onclick="ackAssignmentBanner()" style="display:none;background:var(--green);"></div>
 
@@ -2777,7 +2778,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.247';
+const APP_VERSION = '2026-06-21.248';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3289,6 +3290,24 @@ function clockOut(overrideTime) {
     endMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0).getTime();
   }
   _clampCompletionsTo(endMs);
+  // Snapshot everything clock-out is about to mutate, so an accidental clock-out
+  // can be fully reversed (see undoClockOut). Taken BEFORE finalizeDonePins strips
+  // the ticked to-dos off the job and stamps them done in the inbox.
+  const _undo = {
+    at: new Date().toISOString(),
+    clock: JSON.parse(JSON.stringify(clockState)),
+    task: clockState.task,
+    pins: JSON.parse(JSON.stringify((getTaskNotes()[clockState.task]) || [])),   // job's to-dos as they stand now
+    inbox: {},                                                                    // inboxId → {done, doneTs, assigned, completions}
+    flags: JSON.parse(JSON.stringify(getChecklistFlags()[clockState.task] || null)),
+    subtasks: Array.isArray(SUBTASKS[clockState.task]) ? SUBTASKS[clockState.task].slice() : null,
+  };
+  Object.keys(clockState.pinDone || {}).forEach(id => {
+    const p = _undo.pins.find(x => x.id === id);
+    if (!p || !p.inboxId) return;
+    const n = getInbox().find(x => x.id === p.inboxId);
+    if (n) _undo.inbox[p.inboxId] = { done: n.done, doneTs: n.doneTs, assigned: n.assigned, completions: JSON.parse(JSON.stringify(n.completions || [])) };
+  });
   finalizeDonePins();   // fold any ticked-off pinned notes into the entry + clear them
   _satisfyJobReminder(clockState.task);   // clocking out = job done → clear its reminder (daily re-arms tomorrow)
   // Clocking out = job done → clear this job's 🚩 done-first TASK flags so next run is a
@@ -3310,7 +3329,7 @@ function clockOut(overrideTime) {
   const totalHours = (endMs - clockState.startMs) / 3600000;
   const durationHours = Math.max(0, totalHours - breakHours);
   const entry = {
-    id: clockState.tempId,
+    id: clockState.tempId || ('e' + Date.now() + Math.random().toString(36).slice(2, 6)),   // never id-less: undo/edit/delete all key on it
     date: clockState.date,
     personnel: getUserName(),
     location: clockState.location,
@@ -3370,6 +3389,8 @@ function clockOut(overrideTime) {
   }
   entries.unshift(entry);
   saveEntries();
+  _undo.entryId = entry.id;
+  _safeSetItem('kr_clockout_undo', JSON.stringify(_undo));   // arms the "↩ Undo clock-out" banner
   clockState = null;
   localStorage.removeItem('kr_clock');
   renderClockState();
@@ -3460,6 +3481,7 @@ function renderClockState() {
     timer.classList.remove('running');
   }
   updateRestoreClockBanner();
+  updateUndoClockOutBanner();
   updateSummary();
 }
 
@@ -7859,6 +7881,82 @@ function undoClockIn() {
 }
 
 // Bring back an accidentally-discarded running session (kept for 48h)
+// ── Undo clock-out ──────────────────────────────────────────────────────────
+// Reverses an accidental clock-out completely: deletes the entry, puts the
+// ticked to-dos back on the job (un-ticked), restores the inbox records they
+// stamped, the job's 🚩 flags and its task order, and resumes the session where
+// it left off. Offered for 15 minutes — long enough to notice, short enough that
+// it never resurrects yesterday's work.
+const _UNDO_CLOCKOUT_MINS = 15;
+function _undoClockOutRec() {
+  try {
+    const r = JSON.parse(localStorage.getItem('kr_clockout_undo') || 'null');
+    if (!r || !r.at) return null;
+    if ((Date.now() - new Date(r.at).getTime()) / 60000 > _UNDO_CLOCKOUT_MINS) { localStorage.removeItem('kr_clockout_undo'); return null; }
+    return r;
+  } catch (e) { return null; }
+}
+function undoClockOut() {
+  const r = _undoClockOutRec();
+  if (!r) { localStorage.removeItem('kr_clockout_undo'); updateUndoClockOutBanner(); return; }
+  if (clockState && clockState.running) { showToast('Clock out of the running job first'); return; }
+  // 1. Drop the entry this clock-out created
+  if (r.entryId) { entries = entries.filter(e => e.id !== r.entryId); saveEntries(); }
+  // 2. Put the job's to-dos back exactly as they were (ticked ones return un-ticked)
+  if (r.task && Array.isArray(r.pins)) {
+    const tn = getTaskNotes();
+    if (r.pins.length) tn[r.task] = r.pins; else delete tn[r.task];
+    saveTaskNotes(tn);
+  }
+  // 3. Un-complete the inbox records those to-dos stamped
+  if (r.inbox && Object.keys(r.inbox).length) {
+    const arr = getInbox();
+    Object.keys(r.inbox).forEach(id => {
+      const n = arr.find(x => x.id === id); if (!n) return;
+      const was = r.inbox[id];
+      if (was.done) n.done = was.done; else delete n.done;
+      if (was.doneTs) n.doneTs = was.doneTs; else delete n.doneTs;
+      if (was.assigned) n.assigned = was.assigned; else delete n.assigned;
+      if (was.completions && was.completions.length) n.completions = was.completions; else delete n.completions;
+    });
+    saveInbox(arr);
+  }
+  // 4. Restore the job's 🚩 flags and the task order clock-out re-learned
+  if (r.task) {
+    const f = getChecklistFlags();
+    if (r.flags) f[r.task] = r.flags; else delete f[r.task];
+    saveChecklistFlags(f);
+    if (Array.isArray(r.subtasks)) { SUBTASKS[r.task] = r.subtasks; _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS)); }
+  }
+  // 5. Resume the session
+  clockState = r.clock;
+  clockState.running = true;
+  _safeSetItem('kr_clock', JSON.stringify(clockState));
+  localStorage.removeItem('kr_clockout_undo');
+  renderClockState();
+  startTimerTick();
+  renderRunChecklist();
+  renderTimesheets();
+  updateSummary();
+  updateUndoClockOutBanner();
+  if (localStorage.getItem('kr_cal_used') === '1' && localStorage.getItem('kr_sheet_url') && r.clock && r.clock.date) {
+    syncCalendarForDate(r.clock.date, { silent: true });   // the ✓ event goes back to ▶ live
+  }
+  showToast('↩ Clock-out undone — back on ' + (r.task || 'the job'));
+}
+function updateUndoClockOutBanner() {
+  const el = document.getElementById('undo-clockout-banner');
+  if (!el) return;
+  const r = (clockState && clockState.running) ? null : _undoClockOutRec();
+  if (!r) { el.style.display = 'none'; return; }
+  const nPins = Object.keys((r.clock && r.clock.pinDone) || {}).length;
+  const nTasks = ((r.clock && r.clock.checklistDone) || []).length;
+  const bits = [];
+  if (nTasks) bits.push(nTasks + ' task' + (nTasks === 1 ? '' : 's'));
+  if (nPins) bits.push(nPins + ' to-do' + (nPins === 1 ? '' : 's'));
+  el.textContent = '↩ Undo clock-out — ' + (r.task || 'job') + (bits.length ? ' · restores ' + bits.join(' + ') : '') + ' — tap to resume';
+  el.style.display = 'block';
+}
 function restoreDiscardedClock() {
   const raw = localStorage.getItem('kr_clock_trash');
   if (!raw) return;
