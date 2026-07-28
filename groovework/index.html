@@ -2777,7 +2777,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.244';
+const APP_VERSION = '2026-06-21.245';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4148,6 +4148,7 @@ function _renameChecklistItem(task, oldName, newName) {
   let clockChanged = false;
   if (Array.isArray(clockState.checklistDone)) clockState.checklistDone.forEach(d => { if (d.item === oldName) { d.item = newName; clockChanged = true; } });
   if (Array.isArray(clockState.checklistCarried)) clockState.checklistCarried = clockState.checklistCarried.map(s => { if (s === oldName) { clockChanged = true; return newName; } return s; });
+  if (clockState.checklistCarriedInfo && clockState.checklistCarriedInfo[oldName]) { clockState.checklistCarriedInfo[newName] = clockState.checklistCarriedInfo[oldName]; delete clockState.checklistCarriedInfo[oldName]; clockChanged = true; }
   if (clockState.stepChecks && clockState.stepChecks[oldName]) { clockState.stepChecks[newName] = clockState.stepChecks[oldName]; delete clockState.stepChecks[oldName]; clockChanged = true; }
   if (Array.isArray(clockState.stepDone)) clockState.stepDone.forEach(d => { if (d.item === oldName) { d.item = newName; clockChanged = true; } });
   if (_expandedChecklistItems.has(oldName)) { _expandedChecklistItems.delete(oldName); _expandedChecklistItems.add(newName); }
@@ -4506,10 +4507,15 @@ function renderRunChecklist() {
       // / "Completed this session" view instead (revive it there).
       if (isDone) return '';
       if (carried.has(s)) {
+        // Show WHEN it was finished and how long it took — not a vague "earlier"
+        const _ci = (clockState.checklistCarriedInfo || {})[s];
+        const _cTime = _ci && _ci.at ? _timeShort(_ci.at) : '';
+        const _cMins = _ci && typeof _ci.mins === 'number' && isFinite(_ci.mins) && _ci.mins > 0 ? fmtMin(_ci.mins) : '';
+        const _cLabel = _cTime ? (_cTime + (_cMins ? ' · ' + _cMins : '')) : 'earlier';
         return `<div style="display:flex;align-items:center;gap:12px;padding:13px 0;border-top:0.5px solid rgba(255,255,255,0.08);opacity:0.5;">
           <span style="width:24px;height:24px;border-radius:50%;background:#30d158;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#05070c;font-size:14px;">✓</span>
           <span style="flex:1;font-size:16px;color:#8b93a7;text-decoration:line-through;">${_escHtml(s)}</span>
-          <span style="font-size:12px;color:#616a7e;white-space:nowrap;">earlier</span></div>`;
+          <span style="font-size:12px;color:#616a7e;white-space:nowrap;">${_cLabel}</span></div>`;
       }
       const steps = stepsMap[s] || [];
       const expanded = _expandedChecklistItems.has(s);
@@ -6356,7 +6362,10 @@ function confirmTime(choice) {
     localStorage.removeItem('kr_clock_trash'); // fresh session supersedes any discarded one
     // Resuming a finished entry → keep what was already ticked off ticked off,
     // whatever start time was chosen above.
-    if (Array.isArray(taskInfo._resumeCarried)) clockState.checklistCarried = taskInfo._resumeCarried;
+    if (Array.isArray(taskInfo._resumeCarried)) {
+      clockState.checklistCarried = taskInfo._resumeCarried;
+      if (taskInfo._resumeCarriedInfo) clockState.checklistCarriedInfo = taskInfo._resumeCarriedInfo;   // when + how long, per item
+    }
     _safeSetItem('kr_clock', JSON.stringify(clockState));
     renderClockState();
     startTimerTick();
@@ -14553,10 +14562,20 @@ function plannerResume() {
     alert('You’re already clocked into “' + clockState.task + '”.\n\nClock out of that task first, then resume this one.');
     return;
   }
-  // Which checklist items were already done — prefer the structured field, else notes
-  let carried = [];
+  // Which checklist items were already done — prefer the structured field, else notes.
+  // carriedInfo keeps WHEN each was finished and how long it took, so the resumed
+  // session shows "✓ 10:40 am · 8m" instead of a vague "earlier" (flagged 13 Jul).
+  let carried = [], carriedInfo = {};
   if (Array.isArray(entry.checklist) && entry.checklist.length) {
     carried = entry.checklist.map(c => c.item).filter(Boolean);
+    const _dmap = _entryChecklistDurations(entry);
+    entry.checklist.forEach(c => {
+      if (!c || !c.item) return;
+      const mins = _dmap[_occKey(c)];
+      const prev = carriedInfo[c.item];
+      // Same item done twice (laps) → keep the LATEST completion
+      if (!prev || new Date(c.at) > new Date(prev.at)) carriedInfo[c.item] = { at: c.at, mins: (isFinite(mins) ? mins : null) };
+    });
   } else if (entry.notes) {
     entry.notes.split('\n').forEach(line => {
       const m = line.match(/^\[.+?\]\s*(?:\(.*?\)\s*)?(.+)$/);
@@ -14570,7 +14589,7 @@ function plannerResume() {
   openTimeModal('in', {
     location: entry.location, frequency: entry.frequency || '', group: entry.group,
     task: entry.task, subtask: entry.subtask || '', tool: entry.tool || '', notes: '',
-    _resumeCarried: carried,
+    _resumeCarried: carried, _resumeCarriedInfo: carriedInfo,
   });
 }
 
