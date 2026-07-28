@@ -2778,7 +2778,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.252';
+const APP_VERSION = '2026-06-21.253';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4457,8 +4457,25 @@ function _runRemainingSec() {
   });
   return any ? sum * 60 : null;
 }
-// Fill the ring: elapsed vs the live forecast (elapsed + work remaining), so
-// ticking a task off — or dwelling on one — re-forecasts the finish time.
+// When the forecast was last re-anchored: the most recent completion this
+// session, else clock-in. The forecast is measured from HERE (not from "now"),
+// so it holds steady between ticks and only re-computes when you finish
+// something — an overrun is absorbed at that moment, not dribbled out minute by
+// minute.
+function _runAnchorMs() {
+  if (!clockState) return 0;
+  let anchor = clockState.startMs || 0;
+  (Array.isArray(clockState.checklistDone) ? clockState.checklistDone : []).forEach(d => {
+    const t = new Date(d && d.at).getTime(); if (isFinite(t) && t > anchor) anchor = t;
+  });
+  Object.values(clockState.pinDone || {}).forEach(v => {
+    const t = new Date(v).getTime(); if (isFinite(t) && t > anchor) anchor = t;
+  });
+  return anchor;
+}
+// Fill the ring: elapsed vs the forecast total (work done by the last tick +
+// work still to do). Ticking a task re-forecasts it; the ring keeps filling in
+// real time so you can see yourself running past it.
 function updateRunRing(netElapsedSec) {
   const fg = document.getElementById('run-ring-fg');
   const ring = document.getElementById('run-ring');
@@ -4474,10 +4491,17 @@ function updateRunRing(netElapsedSec) {
   const baseEst = _runEstSec();                 // what the job was planned/expected to take
   const remaining = _runRemainingSec();         // live: work still to tick off (null = no per-task basis)
   const live = (remaining != null && elapsed != null);
-  // The forecast total: time already spent + time still to do. Ticking a task off
-  // drops the remaining side; dwelling on one grows the elapsed side — either way
-  // the total (and the finish time) re-forecast themselves.
-  const est = live ? (elapsed + remaining) : baseEst;
+  // Forecast total = work already banked by the last tick + work still to do.
+  // Measured from the anchor, NOT from now, so it stays put between ticks and
+  // re-forecasts when you complete something (absorbing any overrun then).
+  let anchorMs = 0, elapsedAtAnchor = 0;
+  if (live) {
+    anchorMs = _runAnchorMs();
+    const brkToAnchor = _breakOverlapMs(clockState.breaks, clockState.startMs, anchorMs)
+      + ((clockState.onBreak && clockState.breakStartMs && clockState.breakStartMs < anchorMs) ? (anchorMs - clockState.breakStartMs) : 0);
+    elapsedAtAnchor = Math.max(0, (anchorMs - clockState.startMs - brkToAnchor) / 1000);
+  }
+  const est = live ? (elapsedAtAnchor + remaining) : baseEst;
   const finishEl = document.getElementById('run-ring-finish');
   if (!est || elapsed == null) {
     fg.style.strokeDashoffset = C;                      // empty ring — faint track only
@@ -4488,9 +4512,9 @@ function updateRunRing(netElapsedSec) {
   }
   const frac = elapsed / est;
   fg.style.strokeDashoffset = C * (1 - Math.max(0, Math.min(1, frac)));
-  // Live mode: "over" means the forecast has grown past what was planned (you're
-  // running late), not that a fixed timer expired. Fallback mode: as before.
-  const over = live ? (baseEst > 0 && est > baseEst) : (frac >= 1);
+  // Over = you've worked past the forecast total (the current task is running
+  // longer than its average) — the same meaning in both modes now.
+  const over = frac >= 1;
   ring.classList.toggle('over', over);
   if (label) {
     label.style.color = over ? '#ff9f0a' : '#5ac8fa';
@@ -4505,7 +4529,10 @@ function updateRunRing(netElapsedSec) {
   if (finishEl && clockState && clockState.startMs) {
     let fd;
     if (live) {
-      fd = new Date(Date.now() + remaining * 1000);
+      // From the anchor, so it holds still between ticks. Never show a time
+      // that's already passed — once you're over, it tracks the soonest you
+      // could realistically still finish.
+      fd = new Date(Math.max(anchorMs + remaining * 1000, Date.now()));
     } else {
       const brkMs = (clockState.breakTotal || 0) + (clockState.onBreak && clockState.breakStartMs ? Date.now() - clockState.breakStartMs : 0);
       fd = new Date(clockState.startMs + brkMs + est * 1000);
