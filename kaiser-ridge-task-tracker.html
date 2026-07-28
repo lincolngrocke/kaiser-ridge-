@@ -2149,10 +2149,11 @@
     </div>
     <div id="run-add-hint" style="font-size:13px;color:var(--subtext);margin-bottom:10px;"></div>
     <textarea id="run-add-input" rows="2" placeholder="" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmRunAdd();}" style="width:100%;min-height:60px;border:1px solid var(--border);border-radius:12px;padding:12px;font-size:16px;font-family:inherit;resize:none;outline:none;color:var(--text);background:var(--bg);" autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true"></textarea>
-    <label style="display:inline-flex;align-items:center;gap:6px;margin-top:12px;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">
+    <label id="run-add-photo-label" style="display:inline-flex;align-items:center;gap:6px;margin-top:12px;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">
       📷 Add photo
       <input type="file" accept="image/*" multiple onchange="onCapturePhoto(event)" style="display:none;">
     </label>
+    <button id="run-add-comment" onclick="openItemComment()" style="display:none;margin-top:12px;margin-left:18px;background:none;border:none;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">💬 Comment</button>
     <button id="run-add-steps" onclick="openRunTaskSteps()" style="display:none;margin-top:12px;margin-left:18px;background:none;border:none;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">≣ Steps</button>
     <button id="run-add-remind" onclick="openReminderPicker(_runEditRef && _runEditRef.inboxId)" style="display:none;margin-top:12px;margin-left:18px;background:none;border:none;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">🔔 Remind me</button>
     <div id="run-add-photo-preview"></div>
@@ -2776,7 +2777,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.236';
+const APP_VERSION = '2026-06-21.237';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3336,6 +3337,18 @@ function clockOut(overrideTime) {
     const block = lines.join('\n');
     entry.notes = entry.notes ? entry.notes + '\n' + block : block;
   }
+  // 💬 Per-task comments left mid-run — fold them in timestamped, named to their
+  // task, so they persist on the entry and sync to the sheet like other comments.
+  if (clockState.itemComments) {
+    const cLines = [];
+    Object.keys(clockState.itemComments).forEach(item => {
+      (clockState.itemComments[item] || []).forEach(c => {
+        const t = new Date(c.at).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true });
+        cLines.push(`[${t}] 💬 ${item}: ${c.text}`);
+      });
+    });
+    if (cLines.length) entry.notes = entry.notes ? entry.notes + '\n' + cLines.join('\n') : cLines.join('\n');
+  }
   entries.unshift(entry);
   saveEntries();
   clockState = null;
@@ -3876,6 +3889,8 @@ function openRunAdd(kind) {
   const rb0 = document.getElementById('run-add-remind'); if (rb0) rb0.style.display = 'none';
   const db0 = document.getElementById('run-add-delete'); if (db0) db0.style.display = 'none';
   const stb0 = document.getElementById('run-add-steps'); if (stb0) stb0.style.display = 'none';
+  const cb0 = document.getElementById('run-add-comment'); if (cb0) cb0.style.display = 'none';
+  const pl0 = document.getElementById('run-add-photo-label'); if (pl0) pl0.style.display = 'inline-flex';
   const inp = document.getElementById('run-add-input');
   inp.value = '';
   inp.placeholder = isTask ? 'e.g. Wipe down the benches' : 'e.g. Order more filters';
@@ -3893,6 +3908,8 @@ function openRunEdit(kind, ref) {
   document.getElementById('run-add-title').textContent = isTask ? 'Edit task' : 'Edit to-do';
   const sb = document.getElementById('run-add-save'); if (sb) sb.textContent = 'Save';
   const rb = document.getElementById('run-add-remind'); if (rb) rb.style.display = 'none';
+  const cb = document.getElementById('run-add-comment'); if (cb) cb.style.display = 'inline-flex';   // 💬 attach a stamped comment to this item
+  const pl = document.getElementById('run-add-photo-label'); if (pl) pl.style.display = 'inline-flex';
   const db = document.getElementById('run-add-delete'); if (db) { db.style.display = 'block'; db.textContent = isTask ? 'Delete task' : 'Delete to-do'; }
   const inp = document.getElementById('run-add-input');
   inp.placeholder = '';
@@ -3934,10 +3951,55 @@ function openRunTaskSteps() {
   _runAddMode = 'add'; _runEditRef = null;
   openSubtaskStepsEditor(ref.oldText);
 }
+// 💬 Attach a timestamped comment to the task/to-do being edited (Lincoln's
+// "called Jack Miles, the update belongs on that to-do" flow). Re-skins the
+// open edit sheet in place — Save stamps and attaches, Cancel just closes.
+function openItemComment() {
+  const ref = _runEditRef;
+  if (!ref) return;
+  _runAddMode = 'comment';
+  document.getElementById('run-add-title').textContent = '💬 Comment';
+  const sb = document.getElementById('run-add-save'); if (sb) sb.textContent = 'Save';
+  const label = ref.kind === 'tasks' ? ref.oldText : String(ref.oldText || '').split('\n')[0];
+  document.getElementById('run-add-hint').innerHTML = 'Attached to “<b>' + _escHtml(label) + '</b>” with a timestamp' + (ref.kind === 'tasks' ? ' — folds into the timesheet at clock-out.' : '.');
+  ['run-add-steps', 'run-add-remind', 'run-add-delete', 'run-add-comment', 'run-add-photo-label'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+  _capturePhotos = []; _captureRemovedIds = [];
+  const pv = document.getElementById('run-add-photo-preview'); if (pv) pv.innerHTML = '';
+  const inp = document.getElementById('run-add-input');
+  inp.value = '';
+  inp.placeholder = 'e.g. Spoke to Jack — docs coming Friday';
+  setTimeout(() => inp.focus(), 80);
+}
+function saveItemComment() {
+  const ref = _runEditRef;
+  const txt = (document.getElementById('run-add-input').value || '').trim();
+  _runAddMode = 'add';
+  if (!ref || !txt) { closeModal('modal-run-add'); _runEditRef = null; return; }
+  const now = new Date();
+  if (ref.kind === 'notes') {
+    // To-do: the comment lives ON the pinned note (visible everywhere it shows,
+    // rides into the completion record when it's ticked off).
+    const stamp = now.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true }) + ' ' + now.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+    const tn = getTaskNotes();
+    const p = (tn[ref.task] || []).find(x => x.id === ref.pinId);
+    if (p) { p.text = p.text + '\n💬 ' + txt + ' — ' + stamp; p.editedTs = now.toISOString(); saveTaskNotes(tn); _refreshPinSurfaces(ref.task); }
+  } else {
+    // Task: session comments live on the run and fold into the entry's notes at
+    // clock-out (timestamped), so they sync to the sheet like other comments.
+    if (!clockState.itemComments) clockState.itemComments = {};
+    (clockState.itemComments[ref.oldText] = clockState.itemComments[ref.oldText] || []).push({ text: txt, at: now.toISOString() });
+    _safeSetItem('kr_clock', JSON.stringify(clockState));
+    renderRunChecklist();
+  }
+  closeModal('modal-run-add');
+  _runEditRef = null;
+  showToast('💬 Comment added');
+}
 // Add a Task/To-do from the clock: it's born as an Inbox note, then filed to the
 // job (same as the Inbox assign flow) so the capture ledger stays complete.
 let _savingRunAdd = false;
 async function confirmRunAdd() {
+  if (_runAddMode === 'comment') return saveItemComment();
   if (_runAddMode === 'edit') return confirmRunEdit();
   if (_savingRunAdd) return;
   const inp = document.getElementById('run-add-input');
@@ -4489,6 +4551,9 @@ function renderRunChecklist() {
         _metaBits.push(`<span onclick="event.stopPropagation();undoTaskRep('${enc}')" title="${_chipTitle}" style="display:inline-flex;align-items:center;padding:1px 8px;border-radius:9px;font-weight:700;cursor:pointer;background:${_chipOn ? 'rgba(48,209,88,0.22)' : 'transparent'};border:1px solid ${_chipOn ? 'rgba(48,209,88,0.6)' : 'rgba(255,255,255,0.22)'};color:${_chipOn ? '#30d158' : '#8b93a7'};">${_chipTxt}</span>`);
       }
       if (_metaBits.length) html += `<div style="font-size:11px;color:#616a7e;padding:1px 0 7px 36px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${_metaBits.join('<span style="opacity:0.6;">·</span>')}</div>`;
+      // 💬 Session comments attached to this task (fold into the entry at clock-out)
+      const _cmts = (clockState.itemComments && clockState.itemComments[s]) || [];
+      if (_cmts.length) html += _cmts.map(c => `<div style="font-size:12px;color:#9aa3b7;padding:0 14px 6px 36px;line-height:1.4;">💬 ${_escHtml(c.text)} <span style="color:#616a7e;white-space:nowrap;">· ${_timeShort(c.at)}</span></div>`).join('');
       const refPhotos = subPhotos[s] || [];
       if (refPhotos.length) html += `<div style="padding:0 0 10px 36px;" onclick="event.stopPropagation();">${_photosHtml({ photos: refPhotos }, 64)}</div>`;   // reference photo
       if (expanded && steps.length && !isDone) {
