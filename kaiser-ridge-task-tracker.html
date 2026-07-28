@@ -2777,7 +2777,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.237';
+const APP_VERSION = '2026-06-21.238';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3894,6 +3894,7 @@ function openRunAdd(kind) {
   const inp = document.getElementById('run-add-input');
   inp.value = '';
   inp.placeholder = isTask ? 'e.g. Wipe down the benches' : 'e.g. Order more filters';
+  inp.rows = 2; inp.style.minHeight = '';   // back to compact after a 💬 comment sizing
   openModal('modal-run-add');
   setTimeout(() => inp.focus(), 120);
 }
@@ -3913,6 +3914,7 @@ function openRunEdit(kind, ref) {
   const db = document.getElementById('run-add-delete'); if (db) { db.style.display = 'block'; db.textContent = isTask ? 'Delete task' : 'Delete to-do'; }
   const inp = document.getElementById('run-add-input');
   inp.placeholder = '';
+  inp.rows = 2; inp.style.minHeight = '';   // back to compact after a 💬 comment sizing
   const stb = document.getElementById('run-add-steps');
   if (isTask) {
     _runEditRef = { kind: 'tasks', task: clockState.task, oldText: ref };
@@ -3968,6 +3970,7 @@ function openItemComment() {
   const inp = document.getElementById('run-add-input');
   inp.value = '';
   inp.placeholder = 'e.g. Spoke to Jack — docs coming Friday';
+  inp.rows = 10; inp.style.minHeight = '230px';   // room to write a proper update (10 lines)
   setTimeout(() => inp.focus(), 80);
 }
 function saveItemComment() {
@@ -4648,7 +4651,7 @@ function renderRunChecklist() {
       return `<div class="pin-row" data-pin-id="${p.id}" data-pin-task="${pinTaskAttr}" data-pin-flagged="${p.flagged && !isDone ? '1' : ''}" ontouchstart="pinSwipeStart(event)" ontouchmove="pinSwipeMove(event)" ontouchend="pinSwipeEnd(event)" style="display:flex;gap:12px;padding:14px 0;border-top:0.5px solid rgba(255,255,255,0.08);${p.flagged && !isDone ? 'background:rgba(255,214,10,0.06);' : ''}${isDone ? 'opacity:0.55;' : ''}">
         ${box}
         <div onclick="toggleNoteExpand('${p.id}')" style="flex:1;min-width:0;cursor:pointer;">
-          <div style="font-size:15px;line-height:1.4;${isDone ? 'color:#616a7e;text-decoration:line-through;' : 'color:#dfe3ec;'}${clamp}">${p.flagged ? '🚩 ' : ''}${safe}</div>
+          <div style="font-size:15px;line-height:1.4;white-space:pre-line;${isDone ? 'color:#616a7e;text-decoration:line-through;' : 'color:#dfe3ec;'}${clamp}">${p.flagged ? '🚩 ' : ''}${safe}</div>
           <div style="font-size:12px;color:#616a7e;margin-top:5px;">${shortDate}${fullMeta}</div>
           ${thumb}
         </div>
@@ -10915,7 +10918,9 @@ function saveReminder() {
   const date = document.getElementById('reminder-date').value;
   const time = document.getElementById('reminder-time').value;
   if (!date) { showToast('Pick a date'); return; }
-  if (_reminderRepeatDaily && !time) { showToast('Set a time for a daily reminder'); return; }
+  // Daily WITHOUT a time is valid — the banner simply nags on every app-open
+  // (_isReminderDue skips the time check). The old "set a time" gate here made
+  // Save feel dead: it silently toasted and returned.
   const arr = getInbox(); const n = arr.find(x => x.id === _reminderNoteId);
   if (n) {
     n.remindOn = date;
@@ -10929,7 +10934,7 @@ function saveReminder() {
   if (document.getElementById('modal-inbox').classList.contains('open')) renderInbox();
   updateReminderBanners();
   showToast(_reminderRepeatDaily
-    ? '🔁 Daily reminder set for ' + formatTimeAmPm(time)
+    ? (time ? '🔁 Daily reminder set for ' + formatTimeAmPm(time) : '🔁 Daily reminder set — every app-open')
     : '🔔 Reminder set for ' + new Date(date + 'T00:00:00').toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) + (time ? ' · ' + formatTimeAmPm(time) : ''));
 }
 function clearReminder() {
@@ -14758,7 +14763,7 @@ function _pinnedNotesHtml(task, compact, search) {
       const _pinnedTs = (p.caught && p.ts && p.ts !== p.caught) ? p.ts : null;
       const caught = (p.caught || p.ts) ? `<div style="font-size:11px;color:var(--subtext);margin-top:2px;">Caught ${_inboxStamp(p.caught || p.ts)}${_pinnedTs ? ' · 📌 Pinned ' + _inboxStamp(_pinnedTs) : ''}${p.editedTs ? ' · ✏️ Edited ' + _inboxStamp(p.editedTs) : ''}</div>` : '';
       const thumb = _photosHtml(p, compact ? 54 : 90);
-      return `<div class="pin-row" data-pin-id="${p.id}" data-pin-task="${taskAttr}" data-pin-flagged="${p.flagged ? '1' : ''}" ontouchstart="pinSwipeStart(event)" ontouchmove="pinSwipeMove(event)" ontouchend="pinSwipeEnd(event)" style="margin-bottom:8px;padding:8px;border-radius:8px;overflow-wrap:anywhere;${p.flagged ? 'background:rgba(255,214,10,0.12);' : ''}"><span style="font-size:14px;color:#FFD60A;">${p.flagged ? '🚩 ' : ''}📌 ${_hlSearch(safe, q)}</span>${caught}${thumb}</div>`;
+      return `<div class="pin-row" data-pin-id="${p.id}" data-pin-task="${taskAttr}" data-pin-flagged="${p.flagged ? '1' : ''}" ontouchstart="pinSwipeStart(event)" ontouchmove="pinSwipeMove(event)" ontouchend="pinSwipeEnd(event)" style="margin-bottom:8px;padding:8px;border-radius:8px;overflow-wrap:anywhere;${p.flagged ? 'background:rgba(255,214,10,0.12);' : ''}"><span style="font-size:14px;color:#FFD60A;white-space:pre-line;">${p.flagged ? '🚩 ' : ''}📌 ${_hlSearch(safe, q)}</span>${caught}${thumb}</div>`;
   };
   // ▣ To-do batches — Organise sheet only (compact), and only while not searching
   // (a search cuts across batches, so it stays a flat filtered list). Shares the
