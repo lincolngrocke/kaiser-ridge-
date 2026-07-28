@@ -2777,7 +2777,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.238';
+const APP_VERSION = '2026-06-21.239';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3979,13 +3979,17 @@ function saveItemComment() {
   _runAddMode = 'add';
   if (!ref || !txt) { closeModal('modal-run-add'); _runEditRef = null; return; }
   const now = new Date();
+  const stamp = now.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true }) + ' ' + now.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
   if (ref.kind === 'notes') {
-    // To-do: the comment lives ON the pinned note (visible everywhere it shows,
-    // rides into the completion record when it's ticked off).
-    const stamp = now.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true }) + ' ' + now.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+    // To-do: the comment lives ON the pinned note — routed through _editPinnedNote
+    // so it ALSO pushes back to the origin inbox record (inboxId) and any sibling
+    // copies, stamping ✏️. The capture ledger carries the update, searchably.
     const tn = getTaskNotes();
     const p = (tn[ref.task] || []).find(x => x.id === ref.pinId);
-    if (p) { p.text = p.text + '\n💬 ' + txt + ' — ' + stamp; p.editedTs = now.toISOString(); saveTaskNotes(tn); _refreshPinSurfaces(ref.task); }
+    if (p) {
+      _editPinnedNote(ref.task, ref.pinId, p.text + '\n💬 ' + txt + ' — ' + stamp, _notePhotos(p));
+      _refreshPinSurfaces(ref.task);
+    }
   } else {
     // Task: session comments live on the run and fold into the entry's notes at
     // clock-out (timestamped), so they sync to the sheet like other comments.
@@ -3993,6 +3997,15 @@ function saveItemComment() {
     (clockState.itemComments[ref.oldText] = clockState.itemComments[ref.oldText] || []).push({ text: txt, at: now.toISOString() });
     _safeSetItem('kr_clock', JSON.stringify(clockState));
     renderRunChecklist();
+    // Inbox-born task (kr_subtask_origin) → push the comment onto the origin inbox
+    // note too, matched by its filed text. Appending diverges the note's text from
+    // the task name, which safely turns OFF future rename-propagation for it (the
+    // note has become a log) — _propagateNoteEdit just finds nothing to rename.
+    if (getSubtaskOrigin()[ref.oldText]) {
+      const inbox = getInbox();
+      const n = inbox.find(x => x.text === ref.oldText || String(x.text || '').split('\n')[0] === ref.oldText);
+      if (n) { n.text = n.text + '\n💬 ' + txt + ' — ' + stamp; n.editedTs = now.toISOString(); saveInbox(inbox); }
+    }
   }
   closeModal('modal-run-add');
   _runEditRef = null;
