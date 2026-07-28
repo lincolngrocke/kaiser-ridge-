@@ -2085,7 +2085,7 @@
     <div style="padding:20px;">
       <button onclick="plannerClockIn()" style="width:100%;background:var(--green);color:#fff;border:none;border-radius:14px;padding:14px;font-size:17px;font-weight:700;cursor:pointer;margin-bottom:8px;">▶ Clock In</button>
       <button id="planner-resume-btn" onclick="plannerResume()" style="display:none;width:100%;background:var(--blue);color:#fff;border:none;border-radius:14px;padding:14px;font-size:17px;font-weight:700;cursor:pointer;margin-bottom:8px;">▶ Resume This Task</button>
-      <div id="planner-resume-note" style="display:none;font-size:12px;color:var(--subtext);text-align:center;margin:0 0 14px;">Starts a new session now and keeps the tasks you already finished ticked off, so you can work through the rest.</div>
+      <div id="planner-resume-note" style="display:none;font-size:12px;color:var(--subtext);text-align:center;margin:0 0 14px;">Starts a new session — now, or backdated if you picked the job up earlier — and keeps the tasks you already finished ticked off, so you can work through the rest.</div>
       <div id="planner-detail-info" style="font-size:14px;color:var(--subtext);margin-bottom:16px;"></div>
       <div id="planner-detail-edit" style="margin-bottom:18px;">
         <div style="font-size:12px;color:var(--subtext);margin-bottom:6px;">Adjust time for this day</div>
@@ -2777,7 +2777,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.243';
+const APP_VERSION = '2026-06-21.244';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6354,10 +6354,17 @@ function confirmTime(choice) {
       tempId: Date.now().toString(),
     };
     localStorage.removeItem('kr_clock_trash'); // fresh session supersedes any discarded one
+    // Resuming a finished entry → keep what was already ticked off ticked off,
+    // whatever start time was chosen above.
+    if (Array.isArray(taskInfo._resumeCarried)) clockState.checklistCarried = taskInfo._resumeCarried;
     _safeSetItem('kr_clock', JSON.stringify(clockState));
     renderClockState();
     startTimerTick();
     captureClockInLocation();
+    if (Array.isArray(taskInfo._resumeCarried)) {
+      const _n = taskInfo._resumeCarried.length;
+      showToast('Resumed ' + clockState.task + (_n ? ' — ' + _n + ' already done' : ''));
+    }
     if (taskInfo._planId != null) {
       // Carry any per-block checklist arrangement into this session (it reverts after
       // — the job's global flags stay untouched), then consume the block.
@@ -14557,14 +14564,14 @@ function plannerResume() {
     });
   }
   closeModal('modal-planner-detail');
-  startClock({
+  // Route through the Clock In time picker so a resume can be BACKDATED — you
+  // often pick the job back up before you get to your phone (flagged note 10 Jul).
+  // _resumeCarried rides on the pending info and is applied once clockState exists.
+  openTimeModal('in', {
     location: entry.location, frequency: entry.frequency || '', group: entry.group,
     task: entry.task, subtask: entry.subtask || '', tool: entry.tool || '', notes: '',
+    _resumeCarried: carried,
   });
-  clockState.checklistCarried = carried;
-  _safeSetItem('kr_clock', JSON.stringify(clockState));
-  renderClockState();
-  showToast('Resumed ' + entry.task + (carried.length ? ' — ' + carried.length + ' already done' : ''));
 }
 
 // ── Live in-progress block ──
