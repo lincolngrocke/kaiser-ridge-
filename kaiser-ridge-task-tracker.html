@@ -2777,7 +2777,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.240';
+const APP_VERSION = '2026-06-21.241';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4828,6 +4828,15 @@ function renderDayView() {
   entries.filter(e => e.date === ddmmyyyy).forEach(e => {
     const job = e.task || '(no job)';
     const arr = byJob[job] || (byJob[job] = []);
+    // 🤖 Robot runs have no checklist — the RUN itself is the thing that got done,
+    // so log one row with who ran it and how long (flagged note 5 Jul).
+    if (e.bot) {
+      const _bMs = _entryClockInEpoch(e);
+      arr.push({ ts: _bMs || 0, time: formatTimeAmPm(e.clockIn), text: (e.botEmoji || '🤖') + ' ' + (e.personnel || 'Robot'),
+                 kind: 'bot', dur: (e.durationHours > 0) ? e.durationHours * 60 : null });
+      total++;
+      return;
+    }
     const dmap = _entryChecklistDurations(e);   // { occKey: minutes } — how long each took
     (Array.isArray(e.checklist) ? e.checklist : []).forEach(c => {
       arr.push({ ts: new Date(c.at).getTime() || 0, time: _timeShort(c.at), text: c.item, kind: 'task', dur: dmap[_occKey(c)] }); total++;
@@ -4847,12 +4856,14 @@ function renderDayView() {
     const rows = byJob[job].sort((a, b) => a.ts - b.ts).map(it => {
       const badge = it.kind === 'task'
         ? '<span style="font-size:10px;font-weight:700;color:#1D9E75;background:rgba(29,158,117,0.15);padding:1px 6px;border-radius:6px;">TASK</span>'
+        : it.kind === 'bot'
+        ? '<span style="font-size:10px;font-weight:700;color:#8E7BEF;background:rgba(142,123,239,0.18);padding:1px 6px;border-radius:6px;">ROBOT</span>'
         : '<span style="font-size:10px;font-weight:700;color:#BA7517;background:rgba(186,117,23,0.18);padding:1px 6px;border-radius:6px;">TO-DO</span>';
       const durPill = (typeof it.dur === 'number' && isFinite(it.dur) && it.dur > 0)
         ? `<span style="font-size:11px;font-weight:600;color:var(--blue);background:rgba(59,130,246,0.12);padding:1px 6px;border-radius:6px;white-space:nowrap;flex-shrink:0;">⏱ ${fmtMin(it.dur)}</span>`
         : '';
       return `<div style="display:flex;align-items:baseline;gap:8px;padding:8px 0;border-top:1px solid var(--border);">
-        <span style="color:var(--green);font-size:14px;flex-shrink:0;">✓</span>
+        <span style="color:${it.kind === 'bot' ? '#8E7BEF' : 'var(--green)'};font-size:14px;flex-shrink:0;">✓</span>
         <span style="flex:1;font-size:14px;color:var(--text);min-width:0;">${_escHtml(it.text)}</span>
         ${durPill}
         ${badge}
