@@ -2777,7 +2777,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.246';
+const APP_VERSION = '2026-06-21.247';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3262,8 +3262,33 @@ function _learnTaskOrderOnClockOut(job) {
     }
   } catch (e) {}
 }
+// Pull every completion stamped after `endMs` back to it — tasks, to-dos and
+// steps alike. Used when clocking out earlier than the last tick, so nothing in
+// the entry sits outside the session (and no task can out-run the session length).
+function _clampCompletionsTo(endMs) {
+  if (!clockState || !isFinite(endMs)) return;
+  const cap = new Date(endMs).toISOString();
+  const late = t => { const v = new Date(t).getTime(); return isFinite(v) && v > endMs; };
+  if (Array.isArray(clockState.checklistDone)) clockState.checklistDone.forEach(d => { if (d && late(d.at)) d.at = cap; });
+  if (Array.isArray(clockState.stepDone)) clockState.stepDone.forEach(d => { if (d && late(d.at)) d.at = cap; });
+  if (clockState.pinDone) Object.keys(clockState.pinDone).forEach(id => { if (late(clockState.pinDone[id])) clockState.pinDone[id] = cap; });
+  if (clockState.itemComments) Object.keys(clockState.itemComments).forEach(k => {
+    (clockState.itemComments[k] || []).forEach(c => { if (c && late(c.at)) c.at = cap; });
+  });
+}
 function clockOut(overrideTime) {
   if (!clockState || !clockState.running) return;
+  // Work out the finish time FIRST, then pull any completion stamped after it back
+  // to it. Clocking out EARLIER than your last tick (you finish the job, then set
+  // the clock-out back to when you actually stopped) otherwise leaves a task
+  // stamped outside the session, with a duration longer than the session itself.
+  let endMs = Date.now();
+  if (overrideTime) {
+    const now = new Date();
+    const [h, m] = overrideTime.split(':').map(Number);
+    endMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0).getTime();
+  }
+  _clampCompletionsTo(endMs);
   finalizeDonePins();   // fold any ticked-off pinned notes into the entry + clear them
   _satisfyJobReminder(clockState.task);   // clocking out = job done → clear its reminder (daily re-arms tomorrow)
   // Clocking out = job done → clear this job's 🚩 done-first TASK flags so next run is a
@@ -3272,12 +3297,6 @@ function clockOut(overrideTime) {
   const _doneFlags = getChecklistFlags();
   if (_doneFlags[clockState.task]) { delete _doneFlags[clockState.task]; saveChecklistFlags(_doneFlags); }
   _learnTaskOrderOnClockOut(clockState.task);   // remember the order you did the tasks in → pre-populates next run's clock + the Jobs screen
-  let endMs = Date.now();
-  if (overrideTime) {
-    const now = new Date();
-    const [h, m] = overrideTime.split(':').map(Number);
-    endMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0).getTime();
-  }
   // If still on break, close it out
   let breakTotal = clockState.breakTotal || 0;
   if (!Array.isArray(clockState.breaks)) clockState.breaks = [];
