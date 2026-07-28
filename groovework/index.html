@@ -2778,7 +2778,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.250';
+const APP_VERSION = '2026-06-21.251';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4668,30 +4668,11 @@ function renderRunChecklist() {
       if (loose.length) groups.push({ key: 'b:~loose', name: 'Other tasks', members: loose, loose: true });
       const _gHasFlag = g => g.members.some(s => clFlags[s] && !_isDoneRow(s));
       groups.sort((a, b) => _gHasFlag(b) - _gHasFlag(a));   // stable — flagged batches float, saved order otherwise
-      // Inside an open batch, rows group by how long since each task was last done
-      // (the old "Last done" lens, folded in here). Sub-headings only appear when a
-      // batch spans 2+ recency buckets — a batch that's all-recent stays a plain list.
-      // Within each bucket the saved flag/learned order is kept (stable split).
-      const _now = Date.now();
-      const _batchBody = (members) => {
-        const built = members.map(s => ({ html: buildTaskRow(s), last: itemLastDone[s] })).filter(x => x.html);
-        const bk = { recent: [], week: [], old: [], never: [] };
-        built.forEach(x => {
-          if (!x.last) { bk.never.push(x); return; }
-          const d = new Date(x.last);
-          const days = Math.floor((_now - new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()) / 86400000);
-          if (days <= 3) bk.recent.push(x); else if (days <= 7) bk.week.push(x); else bk.old.push(x);
-        });
-        // Within each dated bucket, most recently done first (Lincoln 2026-07-26);
-        // 'never' has no date so it keeps the saved learned/flag order.
-        ['recent', 'week', 'old'].forEach(k => bk[k].sort((a, b) => (b.last || 0) - (a.last || 0)));
-        const defs = [['recent', '✅ Last 3 days'], ['week', '🕒 3–7 days ago'], ['old', '⚠️ Over a week'], ['never', '⬜ Never done']];
-        const present = defs.filter(([k]) => bk[k].length);
-        if (present.length < 2) return present.map(([k]) => bk[k].map(x => x.html).join('')).join('');   // no headings, but recency order still applies
-        return present.map(([k, label]) =>
-          `<div style="font-size:11px;font-weight:700;letter-spacing:0.3px;color:#7f8798;padding:9px 0 2px 4px;">${label} <span style="color:#616a7e;font-weight:600;">· ${bk[k].length}</span></div>`
-          + bk[k].map(x => x.html).join('')).join('');
-      };
+      // A batch renders in the order you arranged it — flags floated, then your
+      // learned/manual order. The recency sub-headings (v212/213) were removed in
+      // v251: bucketing re-sorted the rows and fought the arranged order. Each row
+      // still carries its own "🗓 done …" age, so nothing informational is lost.
+      const _batchBody = (members) => members.map(buildTaskRow).join('');
       rows += groups.map(g => {
         const doneN = g.members.filter(_isDoneRow).length;
         const est = g.members.reduce((t, s) => { const a = itemAvg[s.trim().replace(/\s+/g, ' ').toLowerCase()]; return t + (isFinite(a) && a > 0 ? a : 0); }, 0);
