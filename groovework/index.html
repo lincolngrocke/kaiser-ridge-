@@ -2777,7 +2777,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.241';
+const APP_VERSION = '2026-06-21.242';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4831,8 +4831,11 @@ function renderDayView() {
     // 🤖 Robot runs have no checklist — the RUN itself is the thing that got done,
     // so log one row with who ran it and how long (flagged note 5 Jul).
     if (e.bot) {
-      const _bMs = _entryClockInEpoch(e);
-      arr.push({ ts: _bMs || 0, time: formatTimeAmPm(e.clockIn), text: (e.botEmoji || '🤖') + ' ' + (e.personnel || 'Robot'),
+      // Stamp the FINISH time — every other row shows when the item was completed,
+      // and a robot run is "done" when it stops.
+      const _bStart = _entryClockInEpoch(e);
+      const _bEnd = (_bStart != null && e.durationHours > 0) ? _bStart + e.durationHours * 3600000 : _bStart;
+      arr.push({ ts: _bEnd || 0, time: formatTimeAmPm(e.clockOut || e.clockIn), text: (e.botEmoji || '🤖') + ' ' + (e.personnel || 'Robot'),
                  kind: 'bot', dur: (e.durationHours > 0) ? e.durationHours * 60 : null });
       total++;
       return;
