@@ -2778,7 +2778,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.253';
+const APP_VERSION = '2026-06-21.254';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4529,10 +4529,14 @@ function updateRunRing(netElapsedSec) {
   if (finishEl && clockState && clockState.startMs) {
     let fd;
     if (live) {
-      // From the anchor, so it holds still between ticks. Never show a time
-      // that's already passed — once you're over, it tracks the soonest you
-      // could realistically still finish.
-      fd = new Date(Math.max(anchorMs + remaining * 1000, Date.now()));
+      // From the anchor, so it holds still between ticks — plus any time NOT
+      // worked since then. A break doesn't reduce the work left, it just pushes
+      // everything back, so while you're on one the finish counts up in real
+      // time. Never show a time that's already passed.
+      const _now = Date.now();
+      let idleMs = _breakOverlapMs(clockState.breaks, anchorMs, _now);
+      if (clockState.onBreak && clockState.breakStartMs) idleMs += Math.max(0, _now - Math.max(clockState.breakStartMs, anchorMs));
+      fd = new Date(Math.max(anchorMs + idleMs + remaining * 1000, _now));
     } else {
       const brkMs = (clockState.breakTotal || 0) + (clockState.onBreak && clockState.breakStartMs ? Date.now() - clockState.breakStartMs : 0);
       fd = new Date(clockState.startMs + brkMs + est * 1000);
