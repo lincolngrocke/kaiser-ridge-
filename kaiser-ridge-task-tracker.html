@@ -2778,7 +2778,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.254';
+const APP_VERSION = '2026-06-21.255';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -15737,6 +15737,20 @@ function _renderClOrganiseBody() {
     estLine = est
       ? `<div style="margin:10px 0 2px;padding:9px 12px;border-radius:10px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.35);font-size:13px;color:var(--text);">⏱ Block sized to <b>~${fmtMin(est.mins)}</b> · ${est.basis === 'flagged' ? 'from ' + est.n + ' flagged task' + (est.n === 1 ? '' : 's') + (est.lapped ? ' · 🔁 laps counted' : '') : 'from this job’s history'}<div style="font-size:11px;color:var(--subtext);margin-top:2px;">Auto-filled from your timed history — you can still edit the block’s duration.</div></div>`
       : `<div style="margin:10px 0 2px;padding:9px 12px;border-radius:10px;background:rgba(127,127,127,0.1);font-size:12px;color:var(--subtext);">⏱ No timed history yet — flag tasks you’ve timed before (or clock this job once) to size the block automatically.</div>`;
+  } else if (!_clOrganisePlanId && clockState && clockState.running && clockState.task === task) {
+    // Clock-opened sheet: the same accumulating total the planner shows — the sum
+    // of the flagged tasks' learned averages (laps counted), live as you flag.
+    // This is exactly what the ring's % and the 🏁 finish time are targeting.
+    const _eMap = _taskHistAvgMap();
+    const _eLt = clockState.lapTargets || {};
+    let _eSum = 0, _eN = 0, _eLapped = false;
+    Object.keys(flags).forEach(item => {
+      const a = _eMap[_normTaskKey(item)];
+      if (isFinite(a) && a > 0) { const l = _eLt[item] >= 1 ? _eLt[item] : 1; _eSum += a * l; _eN++; if (l > 1) _eLapped = true; }
+    });
+    if (_eN > 0 && _eSum > 0) {
+      estLine = `<div style="margin:10px 0 2px;padding:9px 12px;border-radius:10px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.35);font-size:13px;color:var(--text);">⏱ Flagged work <b>~${fmtMin(_eSum)}</b> · from ${_eN} flagged task${_eN === 1 ? '' : 's'}${_eLapped ? ' · 🔁 laps counted' : ''}<div style="font-size:11px;color:var(--subtext);margin-top:2px;">The clock ring and 🏁 finish time target this — flag or unflag to adjust.</div></div>`;
+    }
   }
   const _bRec = _batchRec(task);
   const _hasBatches = !!(_bRec && _bRec.order.length);
