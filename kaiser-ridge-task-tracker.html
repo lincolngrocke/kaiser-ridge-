@@ -1,4 +1,22 @@
 <!DOCTYPE html>
+<!--
+  ══════════════════════════════════════════════════════════════════════════
+   Groovework™ — proprietary software
+   Copyright © 2026 Lincoln Grocke. All rights reserved.
+
+   NOT open source. No licence, express or implied, is granted to any person
+   by the publication or transmission of this file. Being able to read this
+   source does not confer any right to use it.
+
+   Copying, modifying, adapting, distributing, publishing, sublicensing or
+   creating derivative works from this source code — in whole or in part —
+   is prohibited without the prior written permission of the copyright owner.
+
+   "Groovework" is claimed as a trade mark of Lincoln Grocke.
+
+   Enquiries: lincolngrocke@gmail.com
+  ══════════════════════════════════════════════════════════════════════════
+-->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -2775,10 +2793,18 @@
 <input type="checkbox" id="haptic-tick" switch tabindex="-1" aria-hidden="true" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;pointer-events:none;">
 
 <script>
+// ════════════════════════════════════════════════════════════════════════
+//  Groovework™ — Copyright © 2026 Lincoln Grocke. All rights reserved.
+//  Proprietary and confidential. NOT open source; no licence granted.
+//  Copying, modification or distribution of this code, in whole or in part,
+//  is prohibited without prior written permission. See the notice at the
+//  top of this file.
+// ════════════════════════════════════════════════════════════════════════
+
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.255';
+const APP_VERSION = '2026-06-21.256';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -2799,14 +2825,14 @@ function sanitizeDirectory() {
     r && String(r.frequency || '').trim() && String(r.group || '').trim()
   );
   if (DIRECTORY.length !== before) {
-    localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
+    _storeSet('kr_directory', JSON.stringify(DIRECTORY));
   }
 }
 sanitizeDirectory();
 
 // ── PROJECTS (one-off initiatives; a name + ordered checklist of steps) ──
 let PROJECTS = JSON.parse(localStorage.getItem('kr_projects') || '[]');
-function saveProjects() { localStorage.setItem('kr_projects', JSON.stringify(PROJECTS)); }
+function saveProjects() { _storeSet('kr_projects', JSON.stringify(PROJECTS)); }
 let _dirMode = 'tasks';   // 'tasks' | 'projects'
 let _projDraft = null;    // working copy while the editor modal is open
 
@@ -2893,7 +2919,7 @@ let timerInterval = null;
 // ════════════════════════════════
 function toggleDarkMode(on) {
   document.body.classList.toggle('dark', on);
-  localStorage.setItem('kr_dark_mode', on ? '1' : '0');
+  _storeSet('kr_dark_mode', on ? '1' : '0');
   const track = document.getElementById('dark-mode-track');
   const thumb = document.getElementById('dark-mode-thumb');
   if (track) track.style.background = on ? '#007AFF' : '#E5E5EA';
@@ -2916,7 +2942,7 @@ function getUserName() {
 
 function saveName() {
   const val = document.getElementById('user-name').value.trim();
-  localStorage.setItem('kr_user_name', val);
+  _storeSet('kr_user_name', val);
 }
 
 // ── First-run onboarding + starter packs ──
@@ -2949,15 +2975,15 @@ function seedStarterPack(key) {
   const dir = [], subs = {};
   pack.jobs.forEach(j => { dir.push({ frequency:j.frequency, group:j.group, task:j.task, equipment:'' }); subs[j.task] = j.tasks.slice(); });
   DIRECTORY = dir; SUBTASKS = subs;
-  localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
-  _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
+  _storeSet('kr_directory', JSON.stringify(DIRECTORY));
+  _storeSet('kr_subtasks', JSON.stringify(SUBTASKS));
   if (pack.steps && Object.keys(pack.steps).length) { const st = getSubtaskSteps(); Object.assign(st, pack.steps); saveSubtaskSteps(st); }
 }
 function onboardPick(key) {
   const name = (document.getElementById('onboard-name').value || '').trim();
-  if (name) { localStorage.setItem('kr_user_name', name); const ni = document.getElementById('user-name'); if (ni) ni.value = name; }
+  if (name) { _storeSet('kr_user_name', name); const ni = document.getElementById('user-name'); if (ni) ni.value = name; }
   if (key !== 'empty') seedStarterPack(key);
-  localStorage.setItem('kr_onboarded', '1');
+  _storeSet('kr_onboarded', '1');
   closeModal('modal-onboard');
   renderDirectory();
   renderClockState();
@@ -2966,7 +2992,7 @@ function onboardPick(key) {
 // Show the welcome only on a genuinely fresh install (no data, never onboarded).
 function maybeShowOnboarding() {
   if (localStorage.getItem('kr_onboarded') === '1') return;
-  if (DIRECTORY && DIRECTORY.length) { localStorage.setItem('kr_onboarded', '1'); return; } // existing user — skip
+  if (DIRECTORY && DIRECTORY.length) { _storeSet('kr_onboarded', '1'); return; } // existing user — skip
   const nameEl = document.getElementById('onboard-name');
   if (nameEl) nameEl.value = getUserName();
   openModal('modal-onboard');
@@ -2981,14 +3007,14 @@ window.addEventListener('load', () => {
   const url = localStorage.getItem('kr_sheet_url');
   if (url) document.getElementById('sheet-url').value = url;
   document.getElementById('sheet-url').addEventListener('input', e => {
-    localStorage.setItem('kr_sheet_url', e.target.value);
+    _storeSet('kr_sheet_url', e.target.value);
   });
 
   // Load Google Maps API key (for the pin map picker)
   const gkey = localStorage.getItem('kr_gmaps_key');
   if (gkey) document.getElementById('gmaps-key').value = gkey;
   document.getElementById('gmaps-key').addEventListener('input', e => {
-    localStorage.setItem('kr_gmaps_key', e.target.value.trim());
+    _storeSet('kr_gmaps_key', e.target.value.trim());
   });
 
   initDarkMode();
@@ -3190,8 +3216,8 @@ function startClock(taskInfo) {
     flagOverride: {},   // clock in with NO flags; only a planner-block preset adds them (a job's global flags stay off the clock)
     tempId: Date.now().toString(),
   };
-  localStorage.removeItem('kr_clock_trash'); // fresh session supersedes any discarded one
-  _safeSetItem('kr_clock', JSON.stringify(clockState));
+  _storeRemove('kr_clock_trash'); // fresh session supersedes any discarded one
+  _storeSet('kr_clock', JSON.stringify(clockState));
   renderClockState();
   startTimerTick();
   captureClockInLocation();
@@ -3207,7 +3233,7 @@ function captureClockInLocation() {
   if (clockState.pin && clockState.pin.url) return;        // already pinned (manual)
   if (!navigator.geolocation) return;
   clockState._pinPending = true;
-  _safeSetItem('kr_clock', JSON.stringify(clockState));
+  _storeSet('kr_clock', JSON.stringify(clockState));
   renderClockState();
   navigator.geolocation.getCurrentPosition(
     pos => {
@@ -3215,13 +3241,13 @@ function captureClockInLocation() {
       const lat = pos.coords.latitude.toFixed(6), lng = pos.coords.longitude.toFixed(6);
       clockState.pin = { lat, lng, url: 'https://maps.google.com/?q=' + lat + ',' + lng, auto: true, at: new Date().toISOString() };
       delete clockState._pinPending;
-      _safeSetItem('kr_clock', JSON.stringify(clockState));
+      _storeSet('kr_clock', JSON.stringify(clockState));
       renderClockState();
     },
     () => {                                                 // denied / unavailable — quietly skip
       if (!clockState) return;
       delete clockState._pinPending;
-      _safeSetItem('kr_clock', JSON.stringify(clockState));
+      _storeSet('kr_clock', JSON.stringify(clockState));
       renderClockState();
     },
     { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
@@ -3259,7 +3285,7 @@ function _learnTaskOrderOnClockOut(job) {
     if (next.length !== cur.length || !next.every(v => curSet.has(v)) || !cur.every(v => nextSet.has(v))) return;
     if (next.some((v, i) => v !== cur[i])) {              // only write when the order actually changed
       SUBTASKS[job] = next;
-      _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
+      _storeSet('kr_subtasks', JSON.stringify(SUBTASKS));
     }
   } catch (e) {}
 }
@@ -3390,9 +3416,9 @@ function clockOut(overrideTime) {
   entries.unshift(entry);
   saveEntries();
   _undo.entryId = entry.id;
-  _safeSetItem('kr_clockout_undo', JSON.stringify(_undo));   // arms the "↩ Undo clock-out" banner
+  _storeSet('kr_clockout_undo', JSON.stringify(_undo));   // arms the "↩ Undo clock-out" banner
   clockState = null;
-  localStorage.removeItem('kr_clock');
+  _storeRemove('kr_clock');
   renderClockState();
   autoBackup();
   autoBackupToDrive();   // silent ☁️ safety net — full snapshot to Drive
@@ -3534,7 +3560,7 @@ function _computeChecklistDurations(sorted, clockInMs, breaks) {
 // Checklist display order: 'manual' (editor order) or 'typical' (avg completion
 // order across this task's recent entries). Display-only; never changes SUBTASKS.
 function setChecklistOrder(mode) {
-  localStorage.setItem('kr_checklist_order', mode);
+  _storeSet('kr_checklist_order', mode);
   _syncChecklistOrderUI();
   renderRunChecklist();
 }
@@ -3549,7 +3575,7 @@ function _syncChecklistOrderUI() {
   (mode === 'typical' ? on : off)(t);
 }
 function setFlagNewPos(pos) {
-  localStorage.setItem('kr_flag_new_pos', pos === 'top' ? 'top' : 'bottom');
+  _storeSet('kr_flag_new_pos', pos === 'top' ? 'top' : 'bottom');
   _syncFlagNewPosUI();
   if (clockState && clockState.running) renderRunChecklist();   // re-order the live flagged tasks + to-dos
   const pop = document.getElementById('modal-pin-preview');
@@ -3629,7 +3655,7 @@ function _orderedChecklistItems(task, items, flagsArg, orderArg) {
 // Per-task checklist-item flags — { task: { itemText: flaggedAtMs } }. Device-local
 // (like pinned-note flags), never written to SUBTASKS or synced.
 function getChecklistFlags() { return JSON.parse(localStorage.getItem('kr_checklist_flags') || '{}'); }
-function saveChecklistFlags(o) { return _safeSetItem('kr_checklist_flags', JSON.stringify(o)); }
+function saveChecklistFlags(o) { return _storeSet('kr_checklist_flags', JSON.stringify(o)); }
 // Where a freshly-swiped flag sits within the flagged group, everywhere you can
 // swipe-to-flag. 'bottom' (default): new flag appends below the current flags,
 // keeping the learned list order — flag top-to-bottom and they stay in that
@@ -3639,7 +3665,7 @@ function _flagNewPos() { return localStorage.getItem('kr_flag_new_pos') === 'top
 // Lets you plan a block's checklist ahead; carried into clockState.flagOverride at
 // clock-in, then reverts (the job's global flags stay untouched). Device-local.
 function getPlannerChecklist() { try { return JSON.parse(localStorage.getItem('kr_planner_checklist') || '{}') || {}; } catch (e) { return {}; } }
-function savePlannerChecklist(m) { return _safeSetItem('kr_planner_checklist', JSON.stringify(m)); }
+function savePlannerChecklist(m) { return _storeSet('kr_planner_checklist', JSON.stringify(m)); }
 // The flags a live/queued run should use: a session override (from a planner block)
 // if present, else the job's global flags. Readers use this; never the plan-edit target.
 function _sessionOrGlobalFlags(task) {
@@ -3671,7 +3697,7 @@ function _occKey(d) { const r = d && (d.rep || d.lap); return r ? d.item + _LAPS
 function _stripLap(k) { const i = String(k).indexOf(_LAPSEP); return i < 0 ? String(k) : String(k).slice(0, i); }
 
 function getTaskTypes() { try { return JSON.parse(localStorage.getItem('kr_task_types') || '{}') || {}; } catch (e) { return {}; } }
-function saveTaskTypes(o) { return _safeSetItem('kr_task_types', JSON.stringify(o)); }
+function saveTaskTypes(o) { return _storeSet('kr_task_types', JSON.stringify(o)); }
 function _taskTypeKey(job, task) { return job + '\u0001' + task; }
 // Legacy 'lap'/'optional' both collapse to the single 'repeat' type.
 function taskTypeOf(job, task) { const t = getTaskTypes()[_taskTypeKey(job, task)]; return (t === 'repeat' || t === 'lap' || t === 'optional') ? 'repeat' : 'once'; }
@@ -3680,7 +3706,7 @@ function isRepeatTask(job, task) { return taskTypeOf(job, task) === 'repeat'; }
 // Per-task rep counts live on a RUN (kr_job_runs) so they carry across clock sessions:
 // clock in tomorrow and "Load truck" resumes at rep 3 (= Load #3). Reset to start fresh.
 function getJobRuns() { try { return JSON.parse(localStorage.getItem('kr_job_runs') || '{}') || {}; } catch (e) { return {}; } }
-function saveJobRuns(o) { return _safeSetItem('kr_job_runs', JSON.stringify(o)); }
+function saveJobRuns(o) { return _storeSet('kr_job_runs', JSON.stringify(o)); }
 function taskRepCount(job, task) { const r = getJobRuns()[job]; return (r && r.reps && r.reps[task]) || 0; }
 function _bumpTaskRep(job, task, delta) {
   const all = getJobRuns();
@@ -3792,7 +3818,7 @@ function markChecklistItemDone(item) {
     else { doneOcc = { item, at: new Date().toISOString() }; clockState.checklistDone.push(doneOcc); _expandedChecklistItems.delete(item); _setTaskReminderDone(job, item, true); didComplete = true; undoFn = () => markChecklistItemDone(item); }
   }
   if (didComplete) _chipHold++;              // hold the counter number until the bubble lands
-  _safeSetItem('kr_clock', JSON.stringify(clockState));
+  _storeSet('kr_clock', JSON.stringify(clockState));
   renderRunChecklist();
   updateRunRing();                           // re-forecast: one less task to do → finish time moves
   if (didComplete) flyDoneBubble(undoFn, doneOcc ? _checklistDurations()[_occKey(doneOcc)] : null);   // bubble floats up w/ the time it took + Undo
@@ -3807,7 +3833,7 @@ function undoTaskRep(item) {
   done.splice(li, 1);
   _bumpTaskRep(job, item, -1);
   if (taskRepCount(job, item) === 0) _setTaskReminderDone(job, item, false);
-  _safeSetItem('kr_clock', JSON.stringify(clockState));
+  _storeSet('kr_clock', JSON.stringify(clockState));
   renderRunChecklist();
   updateRunRing();                           // a lap came back → so does its time
 }
@@ -3833,7 +3859,7 @@ function toggleChecklistStep(item, step) {
     clockState.stepChecks[item][step] = true;                                     // tick → time it
     clockState.stepDone.push({ item, step, at: new Date().toISOString() });
   }
-  _safeSetItem('kr_clock', JSON.stringify(clockState));
+  _storeSet('kr_clock', JSON.stringify(clockState));
   renderRunChecklist();
 }
 // ── Focus-ring clock: tab state + ring helpers ──
@@ -4059,7 +4085,7 @@ function saveItemComment() {
     // clock-out (timestamped), so they sync to the sheet like other comments.
     if (!clockState.itemComments) clockState.itemComments = {};
     (clockState.itemComments[ref.oldText] = clockState.itemComments[ref.oldText] || []).push({ text: txt, at: now.toISOString() });
-    _safeSetItem('kr_clock', JSON.stringify(clockState));
+    _storeSet('kr_clock', JSON.stringify(clockState));
     renderRunChecklist();
     // Inbox-born task (kr_subtask_origin) → push the comment onto the origin inbox
     // note too, matched by its filed text. Appending diverges the note's text from
@@ -4112,7 +4138,7 @@ async function confirmRunAdd() {
     _applyJobItem(note, task, mode, tn, orig, { v: Date.now() });
     _stampNoteFiled(note, [task], mode);
     if (mode === 'permanent') {
-      _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS)); saveSubtaskOrigin(orig);
+      _storeSet('kr_subtasks', JSON.stringify(SUBTASKS)); saveSubtaskOrigin(orig);
       if (photos.length) { const sp = getSubtaskPhotos(); sp[text] = (sp[text] || []).concat(photos); saveSubtaskPhotos(sp); }   // reference photo on the task
     }
     else saveTaskNotes(tn);
@@ -4197,7 +4223,7 @@ function _renameChecklistItem(task, oldName, newName) {
       SUBTASKS[t] = SUBTASKS[t].filter(s => { const k = s.trim().toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
     }
   });
-  _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
+  _storeSet('kr_subtasks', JSON.stringify(SUBTASKS));
   const steps = getSubtaskSteps();
   if (steps[oldName]) { if (!steps[newName]) steps[newName] = steps[oldName]; delete steps[oldName]; saveSubtaskSteps(steps); }
   const guides = getSubtaskGuides();
@@ -4216,7 +4242,7 @@ function _renameChecklistItem(task, oldName, newName) {
   if (clockState.stepChecks && clockState.stepChecks[oldName]) { clockState.stepChecks[newName] = clockState.stepChecks[oldName]; delete clockState.stepChecks[oldName]; clockChanged = true; }
   if (Array.isArray(clockState.stepDone)) clockState.stepDone.forEach(d => { if (d.item === oldName) { d.item = newName; clockChanged = true; } });
   if (_expandedChecklistItems.has(oldName)) { _expandedChecklistItems.delete(oldName); _expandedChecklistItems.add(newName); }
-  if (clockChanged) _safeSetItem('kr_clock', JSON.stringify(clockState));
+  if (clockChanged) _storeSet('kr_clock', JSON.stringify(clockState));
   const pi = _subtaskItems.indexOf(oldName); if (pi !== -1) _subtaskItems[pi] = newName;
 }
 // Edit a pinned to-do's text/photos in place. If it came from the Inbox, edit the
@@ -4342,7 +4368,7 @@ function deleteRunItem() {
   if (isTask) {
     const item = ref.oldText;
     if (Array.isArray(SUBTASKS[task])) SUBTASKS[task] = SUBTASKS[task].filter(s => s !== item);
-    _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
+    _storeSet('kr_subtasks', JSON.stringify(SUBTASKS));
     const flags = getChecklistFlags(); if (flags[task] && flags[task][item] != null) { delete flags[task][item]; if (!Object.keys(flags[task]).length) delete flags[task]; saveChecklistFlags(flags); }
     const tbat = getTaskBatches(); if (tbat[task] && tbat[task].items && tbat[task].items[item] != null) { delete tbat[task].items[item]; saveTaskBatches(tbat); }   // ▣ this job's batch only
     const sp = getSubtaskPhotos(); if (sp[item]) { delete sp[item]; saveSubtaskPhotos(sp); }
@@ -4352,13 +4378,13 @@ function deleteRunItem() {
     if (Array.isArray(clockState.checklistCarried)) clockState.checklistCarried = clockState.checklistCarried.filter(s => s !== item);
     if (clockState.flagOverride && clockState.flagOverride[item]) delete clockState.flagOverride[item];
     if (Array.isArray(clockState.orderOverride)) clockState.orderOverride = clockState.orderOverride.filter(s => s !== item);
-    _safeSetItem('kr_clock', JSON.stringify(clockState));
+    _storeSet('kr_clock', JSON.stringify(clockState));
   } else {
     const tn = getTaskNotes();
     if (Array.isArray(tn[task])) tn[task] = tn[task].filter(p => p.id !== ref.pinId);
     saveTaskNotes(tn);
     _removeTodoFromBatches(task, ref.pinId);   // ▣ drop its batch membership too
-    if (clockState.pinDone) { delete clockState.pinDone[ref.pinId]; _safeSetItem('kr_clock', JSON.stringify(clockState)); }
+    if (clockState.pinDone) { delete clockState.pinDone[ref.pinId]; _storeSet('kr_clock', JSON.stringify(clockState)); }
   }
   _runAddMode = 'add'; _runEditRef = null;
   closeModal('modal-run-add');
@@ -5683,7 +5709,7 @@ function saveEntry() {
     if (currentPin) clockState.pin = currentPin;
     if (clockIn) clockState.startTime = clockIn;
     // Break is managed live via Start/End Break — don't overwrite breakTotal here.
-    _safeSetItem('kr_clock', JSON.stringify(clockState));
+    _storeSet('kr_clock', JSON.stringify(clockState));
     renderClockState();
     closeModal('modal-task');
     showToast('Active entry updated');
@@ -5744,7 +5770,7 @@ function deleteEntry() {
   if (removed) {
     const trash = JSON.parse(localStorage.getItem('kr_entry_trash') || '[]');
     trash.unshift({ ...removed, deletedAt: new Date().toISOString() });
-    localStorage.setItem('kr_entry_trash', JSON.stringify(trash.slice(0, 20)));
+    _storeSet('kr_entry_trash', JSON.stringify(trash.slice(0, 20)));
   }
   closeModal('modal-task');
   renderTimesheets();
@@ -5761,7 +5787,7 @@ function restoreDeletedEntry() {
   entries.unshift(item);
   entries.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
   saveEntries();
-  localStorage.setItem('kr_entry_trash', JSON.stringify(trash));
+  _storeSet('kr_entry_trash', JSON.stringify(trash));
   renderTimesheets();
   updateSummary();
   showToast('Entry restored');
@@ -5777,7 +5803,7 @@ function updateRestoreEntryBanner() {
   const now = Date.now();
   let trash = JSON.parse(localStorage.getItem('kr_entry_trash') || '[]');
   const fresh = trash.filter(t => now - new Date(t.deletedAt).getTime() <= RESTORE_WINDOW_MS);
-  if (fresh.length !== trash.length) localStorage.setItem('kr_entry_trash', JSON.stringify(fresh));
+  if (fresh.length !== trash.length) _storeSet('kr_entry_trash', JSON.stringify(fresh));
   if (!fresh.length) { el.style.display = 'none'; return; }
   const newest = fresh[0];
   const more = fresh.length > 1 ? ` (+${fresh.length - 1} more)` : '';
@@ -5981,7 +6007,7 @@ function onTaskSearchInput() {
 let _ceTaskSort = localStorage.getItem('kr_create_task_sort') || 'used';
 function setCreateTaskSort(mode) {
   _ceTaskSort = mode;
-  localStorage.setItem('kr_create_task_sort', mode);
+  _storeSet('kr_create_task_sort', mode);
   renderCreateTaskList();
 }
 function _syncCeSortButtons() {
@@ -6319,7 +6345,7 @@ async function saveNote() {
         for (const p of _capturePhotos) { if (p.id) photos.push({ id: p.id }); else if (p.data) { const id = await _uploadPhoto(p.data); photos.push(id ? { id } : { data: p.data }); } }
         clockState.commentPhotos = (clockState.commentPhotos || []).concat(photos);
       }
-      _safeSetItem('kr_clock', JSON.stringify(clockState));
+      _storeSet('kr_clock', JSON.stringify(clockState));
     }
     _capturePhotos = []; _captureRemovedIds = [];
     closeModal('modal-note');
@@ -6479,14 +6505,14 @@ function confirmTime(choice) {
       flagOverride: {},   // clock in with NO flags; a planner block (_planId) fills these below
       tempId: Date.now().toString(),
     };
-    localStorage.removeItem('kr_clock_trash'); // fresh session supersedes any discarded one
+    _storeRemove('kr_clock_trash'); // fresh session supersedes any discarded one
     // Resuming a finished entry → keep what was already ticked off ticked off,
     // whatever start time was chosen above.
     if (Array.isArray(taskInfo._resumeCarried)) {
       clockState.checklistCarried = taskInfo._resumeCarried;
       if (taskInfo._resumeCarriedInfo) clockState.checklistCarriedInfo = taskInfo._resumeCarriedInfo;   // when + how long, per item
     }
-    _safeSetItem('kr_clock', JSON.stringify(clockState));
+    _storeSet('kr_clock', JSON.stringify(clockState));
     renderClockState();
     startTimerTick();
     captureClockInLocation();
@@ -6515,7 +6541,7 @@ function confirmTime(choice) {
           });
           if (Object.keys(lt).length) clockState.lapTargets = lt;
         }
-        if (clockState.flagOverride || clockState.orderOverride || clockState.lapTargets) { _safeSetItem('kr_clock', JSON.stringify(clockState)); renderRunChecklist(); }
+        if (clockState.flagOverride || clockState.orderOverride || clockState.lapTargets) { _storeSet('kr_clock', JSON.stringify(clockState)); renderRunChecklist(); }
         delete pcm[taskInfo._planId]; savePlannerChecklist(pcm);
       }
       _plannerPlans = _plannerPlans.filter(p => p.id !== taskInfo._planId);
@@ -7012,7 +7038,7 @@ function openChartDrill(key, color) {
 
 function saveWeeklyTarget() {
   const val = document.getElementById('weekly-target').value;
-  localStorage.setItem('kr_weekly_target', val || '40');
+  _storeSet('kr_weekly_target', val || '40');
 }
 
 function getWeeklyTarget() {
@@ -7150,6 +7176,11 @@ function renderDashBrief() {
 // "fill" at half capacity. If a write fails, drop that duplicate (it's a
 // convenience copy — file export still works) and retry, so real data always
 // wins over the snapshot. Never fails silently.
+//
+// PRIVATE — call _storeSet() instead. This is the localStorage backend, not the
+// seam; only _storeSet may call it (see the write-seam note below). The two raw
+// localStorage calls inside are deliberate: routing them through the seam would
+// recurse forever.
 function _safeSetItem(key, val) {
   try { localStorage.setItem(key, val); return true; }
   catch (e) {
@@ -7196,7 +7227,25 @@ function _idbSet(key, val) {
   } catch (e) { showToast('⚠️ Could not persist to storage — export a backup to be safe'); }
 }
 function _idbDel(key) { if (_idbOk) { try { _idb.transaction('kv', 'readwrite').objectStore('kv').delete(key); } catch (e) {} } }
+// ── THE WRITE SEAM ───────────────────────────────────────────────────────────
 // Synchronous read/write facade — RAM cache first, localStorage for the rest.
+//
+// _storeSet / _storeRemove are the ONLY way the app writes persistent state.
+// Every save in this file goes through here (v256 routed the last 145 direct
+// calls in), which is what makes a second backend possible: cloud sync hooks in
+// at this one function instead of at 150 scattered call sites. Please keep it
+// that way — a new `localStorage.setItem` anywhere else is a key that silently
+// stops syncing. The handful of raw calls that remain are all inside this
+// section and all deliberate (recursion guards + the IndexedDB migration).
+//
+// Reads deliberately stay on raw localStorage.getItem outside this section:
+// _storeSet keeps localStorage current for every non-IDB key, so those reads are
+// always correct, and leaving them alone kept the v256 change to writes only.
+//
+// TDZ WARNING: _kv is a `let` declared just above, so _storeGet/_storeSet CANNOT
+// be called from top-level code that runs earlier in the file (see the `entries`
+// initialiser in the STATE section — it must stay raw, and is re-hydrated from
+// _storeGet in _krdbBoot once IndexedDB is up).
 function _storeGet(key) { return (key in _kv) ? _kv[key] : localStorage.getItem(key); }
 function _storeSet(key, val) {
   if (_idbOk && KR_IDB_KEYS.includes(key)) { _kv[key] = val; _idbSet(key, val); return true; }
@@ -7302,13 +7351,13 @@ function autoBackup() {
   try {
     const snapshot = buildBackupSnapshot();
     _storeSet('kr_last_backup', JSON.stringify(snapshot));
-    localStorage.setItem('kr_last_backup_at', snapshot.createdAt);
+    _storeSet('kr_last_backup_at', snapshot.createdAt);
     updateLastBackupLabel();
   } catch (err) {
     // Not enough room for the in-app snapshot copy — real data takes priority.
     // Surface it in Settings rather than failing silently.
     console.error('Auto-backup failed:', err);
-    localStorage.removeItem('kr_last_backup');
+    _storeRemove('kr_last_backup');
     const el = document.getElementById('last-backup-label');
     if (el) el.textContent = '⚠️ Auto-snapshot skipped — storage is tight. Export a backup file below, then free space (Settings → Storage).';
   }
@@ -7519,7 +7568,7 @@ function exportBackup() {
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
   }
-  localStorage.setItem('kr_last_export_at', new Date().toISOString());
+  _storeSet('kr_last_export_at', new Date().toISOString());
   updateBackupReminder();
   updateBackupBanner();
   showToast('Backup ready — save it somewhere safe (Drive, Files, email)');
@@ -7540,7 +7589,7 @@ async function autoBackupToDrive() {
     const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'saveBackup', who: getUserName(), json: JSON.stringify(snapshot) }) });
     const json = await res.json();
     if (json && json.success) {
-      localStorage.setItem('kr_last_drive_backup_at', new Date().toISOString());
+      _storeSet('kr_last_drive_backup_at', new Date().toISOString());
       updateBackupBanner();
       updateBackupReminder();
     }
@@ -7615,9 +7664,9 @@ function importTaskLibraryFromFile(event) {
       }
       if (!confirm(`Import this job library (made ${new Date(payload.createdAt).toLocaleString()})?\n\nThis REPLACES this phone's jobs, tasks, guides, equipment and locations with the shared list.\n\nYour timesheets, projects and settings are NOT affected.`)) return;
 
-      localStorage.setItem('kr_lib_prepull_backup', JSON.stringify({ when: new Date().toISOString(), data: buildLibraryPayload().data }));
+      _storeSet('kr_lib_prepull_backup', JSON.stringify({ when: new Date().toISOString(), data: buildLibraryPayload().data }));
       applyLibraryPayload(payload);
-      localStorage.setItem('kr_lib_synced', _currentLibraryDataJson());
+      _storeSet('kr_lib_synced', _currentLibraryDataJson());
       showToast('Job library imported — reloading…');
       setTimeout(() => location.reload(), 900);
     } catch (err) {
@@ -7640,8 +7689,8 @@ function buildLibraryPayload() {
 // Write the library keys from a bundle (full replace; never touches personal data)
 function applyLibraryPayload(payload) {
   KR_LIBRARY_KEYS.forEach(key => {
-    if (Object.prototype.hasOwnProperty.call(payload.data, key)) localStorage.setItem(key, payload.data[key]);
-    else localStorage.removeItem(key);
+    if (Object.prototype.hasOwnProperty.call(payload.data, key)) _storeSet(key, payload.data[key]);
+    else _storeRemove(key);
   });
 }
 
@@ -7674,8 +7723,8 @@ async function publishLibraryToSheet() {
     });
     const json = await res.json();
     if (json && json.success) {
-      localStorage.setItem('kr_lib_applied_version', payload.version); // don't prompt myself
-      localStorage.setItem('kr_lib_synced', _currentLibraryDataJson()); // baseline = what I just published
+      _storeSet('kr_lib_applied_version', payload.version); // don't prompt myself
+      _storeSet('kr_lib_synced', _currentLibraryDataJson()); // baseline = what I just published
       showLibraryBanner(false);
       showToast('Task list published ✓ — other phones will see the update');
     } else {
@@ -7718,10 +7767,10 @@ async function pullLibrary() {
     try { payload = JSON.parse(json.library); } catch (e) { showToast('Task list data was invalid'); return; }
     if (!payload || payload.kind !== 'task-library' || !payload.data) { showToast('Task list data was invalid'); return; }
     // Snapshot the current library before overwriting, so it can be recovered.
-    localStorage.setItem('kr_lib_prepull_backup', JSON.stringify({ when: new Date().toISOString(), data: buildLibraryPayload().data }));
+    _storeSet('kr_lib_prepull_backup', JSON.stringify({ when: new Date().toISOString(), data: buildLibraryPayload().data }));
     applyLibraryPayload(payload);
-    localStorage.setItem('kr_lib_applied_version', json.version || payload.version || '');
-    localStorage.setItem('kr_lib_synced', _currentLibraryDataJson());
+    _storeSet('kr_lib_applied_version', json.version || payload.version || '');
+    _storeSet('kr_lib_synced', _currentLibraryDataJson());
     showToast('Task list updated — reloading…');
     setTimeout(() => location.reload(), 900);
   } catch (e) {
@@ -7772,7 +7821,7 @@ function confirmClear() {
   entries = [];
   clockState = null;
   _storeRemove('kr_entries');
-  localStorage.removeItem('kr_clock');
+  _storeRemove('kr_clock');
   renderClockState();
   renderTimesheets();
   updateStats();
@@ -7904,7 +7953,7 @@ function applyBreakStart(timeStr) {
   clockState.breakStartMs = ms;
   clockState.breakStartTime = new Date(ms).toTimeString().slice(0, 5);
   clockState.breakTotal = clockState.breakTotal || 0;
-  _safeSetItem('kr_clock', JSON.stringify(clockState));
+  _storeSet('kr_clock', JSON.stringify(clockState));
   _breakBtnUI();
   showToast('Break started @ ' + formatTimeAmPm(clockState.breakStartTime));
 }
@@ -7921,7 +7970,7 @@ function applyBreakEnd(timeStr) {
   clockState.onBreak = false;
   clockState.breakStartMs = null;
   clockState.breakStartTime = null;
-  _safeSetItem('kr_clock', JSON.stringify(clockState));
+  _storeSet('kr_clock', JSON.stringify(clockState));
   _breakBtnUI();
   showToast('Break ended — ' + Math.round((ms - start) / 60000) + ' min deducted');
 }
@@ -7931,9 +7980,9 @@ function undoClockIn() {
   const elapsedH = (Date.now() - clockState.startMs) / 3600000;
   if (!confirm('Discard this clock-in?\n\nYou\'ll lose ' + elapsedH.toFixed(2) + 'h tracked. You can restore it from the Clock screen afterwards.')) return;
   // Stash so an accidental discard can be brought back
-  localStorage.setItem('kr_clock_trash', JSON.stringify({ ...clockState, discardedAt: new Date().toISOString() }));
+  _storeSet('kr_clock_trash', JSON.stringify({ ...clockState, discardedAt: new Date().toISOString() }));
   clockState = null;
-  localStorage.removeItem('kr_clock');
+  _storeRemove('kr_clock');
   renderClockState();
   showToast('Discarded — restore it from the Clock screen');
 }
@@ -7951,13 +8000,13 @@ function _undoClockOutRec() {
   try {
     const r = JSON.parse(localStorage.getItem('kr_clockout_undo') || 'null');
     if (!r || !r.at) return null;
-    if ((Date.now() - new Date(r.at).getTime()) / 60000 > _UNDO_CLOCKOUT_MINS) { localStorage.removeItem('kr_clockout_undo'); return null; }
+    if ((Date.now() - new Date(r.at).getTime()) / 60000 > _UNDO_CLOCKOUT_MINS) { _storeRemove('kr_clockout_undo'); return null; }
     return r;
   } catch (e) { return null; }
 }
 function undoClockOut() {
   const r = _undoClockOutRec();
-  if (!r) { localStorage.removeItem('kr_clockout_undo'); updateUndoClockOutBanner(); return; }
+  if (!r) { _storeRemove('kr_clockout_undo'); updateUndoClockOutBanner(); return; }
   if (clockState && clockState.running) { showToast('Clock out of the running job first'); return; }
   // 1. Drop the entry this clock-out created
   if (r.entryId) { entries = entries.filter(e => e.id !== r.entryId); saveEntries(); }
@@ -7985,13 +8034,13 @@ function undoClockOut() {
     const f = getChecklistFlags();
     if (r.flags) f[r.task] = r.flags; else delete f[r.task];
     saveChecklistFlags(f);
-    if (Array.isArray(r.subtasks)) { SUBTASKS[r.task] = r.subtasks; _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS)); }
+    if (Array.isArray(r.subtasks)) { SUBTASKS[r.task] = r.subtasks; _storeSet('kr_subtasks', JSON.stringify(SUBTASKS)); }
   }
   // 5. Resume the session
   clockState = r.clock;
   clockState.running = true;
-  _safeSetItem('kr_clock', JSON.stringify(clockState));
-  localStorage.removeItem('kr_clockout_undo');
+  _storeSet('kr_clock', JSON.stringify(clockState));
+  _storeRemove('kr_clockout_undo');
   renderClockState();
   startTimerTick();
   renderRunChecklist();
@@ -8029,8 +8078,8 @@ function restoreDiscardedClock() {
     const t = JSON.parse(raw);
     delete t.discardedAt;
     clockState = t;
-    _safeSetItem('kr_clock', JSON.stringify(clockState));
-    localStorage.removeItem('kr_clock_trash');
+    _storeSet('kr_clock', JSON.stringify(clockState));
+    _storeRemove('kr_clock_trash');
     renderClockState();
     startTimerTick();
     showToast('Session restored — clock resumed');
@@ -8052,7 +8101,7 @@ function updateRestoreClockBanner() {
         el.textContent = '↩ Restore discarded session — ' + elapsedH.toFixed(2) + 'h on ' + (t.task || 'a task') + ' — tap to resume';
         show = true;
       } else {
-        localStorage.removeItem('kr_clock_trash'); // expire stale stash
+        _storeRemove('kr_clock_trash'); // expire stale stash
       }
     } catch (e) { /* ignore */ }
   }
@@ -8274,7 +8323,7 @@ function computeAutoFrequencies() {
 let _dirSort = localStorage.getItem('kr_dir_sort') || 'grouped';
 function cycleDirSort() {
   _dirSort = _dirSort === 'grouped' ? 'recent' : (_dirSort === 'recent' ? 'used' : 'grouped');
-  localStorage.setItem('kr_dir_sort', _dirSort);
+  _storeSet('kr_dir_sort', _dirSort);
   renderDirectory();
 }
 function _syncDirSortChip() {
@@ -8564,7 +8613,7 @@ function _pickerGetOrder(type, allItems) {
   return [...saved.filter(x => allItems.includes(x)), ...allItems.filter(x => !saved.includes(x))];
 }
 function _pickerSaveOrder(type, items) {
-  localStorage.setItem(_pickerOrderKey(type), JSON.stringify(items));
+  _storeSet(_pickerOrderKey(type), JSON.stringify(items));
 }
 
 // (Picker drag-to-reorder removed — order is managed via the Manage screen)
@@ -8577,7 +8626,7 @@ function _pickerRenamePrompt(type, oldName, renderFn, propagateFn) {
   // Update saved order
   const order = JSON.parse(localStorage.getItem(_pickerOrderKey(type)) || '[]');
   const oi = order.indexOf(oldName);
-  if (oi >= 0) { order[oi] = trimmed; localStorage.setItem(_pickerOrderKey(type), JSON.stringify(order)); }
+  if (oi >= 0) { order[oi] = trimmed; _storeSet(_pickerOrderKey(type), JSON.stringify(order)); }
   renderFn();
   showToast(`Renamed to "${trimmed}"`);
 }
@@ -8600,26 +8649,26 @@ let _pkItems_frequency = [], _pkItems_group = [], _pkItems_location = [], _pkIte
 // ── Rename propagators ─────────────────────────────────────────────────────
 function _renameFrequency(oldName, newName) {
   DIRECTORY.forEach(r => { if (r.frequency === oldName) r.frequency = newName; });
-  localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
+  _storeSet('kr_directory', JSON.stringify(DIRECTORY));
   // Update extras list
   const extras = JSON.parse(localStorage.getItem('kr_extra_frequencies') || '[]');
   const i = extras.indexOf(oldName);
-  if (i >= 0) { extras[i] = newName; localStorage.setItem('kr_extra_frequencies', JSON.stringify(extras)); }
+  if (i >= 0) { extras[i] = newName; _storeSet('kr_extra_frequencies', JSON.stringify(extras)); }
   if (_selectedFrequency === oldName) setFrequencyDisplay(newName);
   renderDirectory();
 }
 function _renameGroup(oldName, newName) {
   DIRECTORY.forEach(r => { if (r.group === oldName) r.group = newName; });
-  localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
+  _storeSet('kr_directory', JSON.stringify(DIRECTORY));
   if (_selectedGroup === oldName) { _selectedGroup = newName; document.getElementById('dir-group-display').textContent = newName; }
   renderDirectory();
 }
 function _renameLocation(oldName, newName) {
   DIRECTORY.forEach(r => { if (r.location === oldName) r.location = newName; });
-  localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
+  _storeSet('kr_directory', JSON.stringify(DIRECTORY));
   const extras = JSON.parse(localStorage.getItem('kr_extra_locations') || '[]');
   const i = extras.indexOf(oldName);
-  if (i >= 0) { extras[i] = newName; localStorage.setItem('kr_extra_locations', JSON.stringify(extras)); }
+  if (i >= 0) { extras[i] = newName; _storeSet('kr_extra_locations', JSON.stringify(extras)); }
   if (_selectedLocation === oldName) setLocationDisplay(newName);
   populateLocationDropdown();
   populateTsLocationChips();
@@ -8627,13 +8676,13 @@ function _renameLocation(oldName, newName) {
 }
 function _renameEquipment(oldName, newName) {
   DIRECTORY.forEach(r => { if (r.equipment === oldName) r.equipment = newName; });
-  localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
+  _storeSet('kr_directory', JSON.stringify(DIRECTORY));
   const master = getEquipmentMaster();
   const m = master.find(e => e.name === oldName);
   if (m) { m.name = newName; saveEquipmentMaster(master); }
   ['kr_equipment_notes', 'kr_equipment_links', 'kr_equipment_guides'].forEach(k => {
     const o = JSON.parse(localStorage.getItem(k) || '{}');
-    if (o[oldName] !== undefined) { o[newName] = o[oldName]; delete o[oldName]; localStorage.setItem(k, JSON.stringify(o)); }
+    if (o[oldName] !== undefined) { o[newName] = o[oldName]; delete o[oldName]; _storeSet(k, JSON.stringify(o)); }
   });
   _equipmentItems = _equipmentItems.map(e => e === oldName ? newName : e);
   renderDirEquipmentList();
@@ -8664,7 +8713,7 @@ function renderFrequencyPickerList() {
 function selectFrequency(name, isNew) {
   if (isNew) {
     const extras = JSON.parse(localStorage.getItem('kr_extra_frequencies') || '[]');
-    if (!extras.includes(name)) { extras.push(name); localStorage.setItem('kr_extra_frequencies', JSON.stringify(extras)); }
+    if (!extras.includes(name)) { extras.push(name); _storeSet('kr_extra_frequencies', JSON.stringify(extras)); }
   }
   setFrequencyDisplay(name);
   closeModal('modal-frequency-picker');
@@ -8699,8 +8748,8 @@ function migrateLegacyLocations() {
     // Fresh Groovework install — drop any legacy built-ins that slipped in.
     extras = extras.filter(l => !_LEGACY_LOCATIONS.includes(l));
   }
-  localStorage.setItem('kr_extra_locations', JSON.stringify(extras));
-  localStorage.setItem('kr_locations_migrated_v2', '1');
+  _storeSet('kr_extra_locations', JSON.stringify(extras));
+  _storeSet('kr_locations_migrated_v2', '1');
 }
 
 function populateLocationDropdown(selectedVal) {
@@ -8754,7 +8803,7 @@ function renderLocationPickerList() {
 function selectLocation(name) {
   if (!LOCATIONS.includes(name)) {
     const extras = JSON.parse(localStorage.getItem('kr_extra_locations') || '[]');
-    if (!extras.includes(name)) { extras.push(name); localStorage.setItem('kr_extra_locations', JSON.stringify(extras)); }
+    if (!extras.includes(name)) { extras.push(name); _storeSet('kr_extra_locations', JSON.stringify(extras)); }
   }
   setLocationDisplay(name);
   populateLocationDropdown(); // keep clock dropdown in sync
@@ -8800,7 +8849,7 @@ function renderClientPickerList() {
 function selectClient(name) {
   if (name) {
     const extras = JSON.parse(localStorage.getItem('kr_extra_clients') || '[]');
-    if (!extras.includes(name) && !DIRECTORY.some(r => r.client === name)) { extras.push(name); localStorage.setItem('kr_extra_clients', JSON.stringify(extras)); }
+    if (!extras.includes(name) && !DIRECTORY.some(r => r.client === name)) { extras.push(name); _storeSet('kr_extra_clients', JSON.stringify(extras)); }
   }
   setClientDisplay(name);
   closeModal('modal-client-picker');
@@ -9015,7 +9064,7 @@ function duplicateDirTask() {
 // remove B from the directory, snapshot B to kr_task_merges for un-merge;
 // timesheet history was never re-assigned.
 function getTaskMerges() { return JSON.parse(localStorage.getItem('kr_task_merges') || '[]'); }
-function saveTaskMerges(a) { return _safeSetItem('kr_task_merges', JSON.stringify(a)); }
+function saveTaskMerges(a) { return _storeSet('kr_task_merges', JSON.stringify(a)); }
 function _uniqueDirTaskNames() { return [...new Set(DIRECTORY.map(r => r.task).filter(Boolean))]; }
 function _escTxt(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
@@ -9082,7 +9131,7 @@ function mergeTasks(primary, secondary) {
     if (!haveLower.has(s.trim().toLowerCase())) { primList.push(s); haveLower.add(s.trim().toLowerCase()); rec.addedChecklistItems.push(s); }
   });
   delete SUBTASKS[secondary];
-  _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
+  _storeSet('kr_subtasks', JSON.stringify(SUBTASKS));
   // Video — move only if primary has none of its own
   if (!vids[primary] && vids[secondary]) { vids[primary] = vids[secondary]; rec.movedVideo = true; }
   if (vids[secondary]) delete vids[secondary];
@@ -9101,11 +9150,11 @@ function mergeTasks(primary, secondary) {
   ['kr_planner', 'kr_planner_ethan'].forEach(k => {
     const arr = JSON.parse(localStorage.getItem(k) || '[]'); let ch = false;
     arr.forEach(b => { if (b.task === secondary) { b.task = primary; ch = true; } });
-    if (ch) localStorage.setItem(k, JSON.stringify(arr));
+    if (ch) _storeSet(k, JSON.stringify(arr));
   });
   // Remove secondary from the directory
   DIRECTORY = DIRECTORY.filter(r => r.task !== secondary);
-  localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
+  _storeSet('kr_directory', JSON.stringify(DIRECTORY));
   const merges = getTaskMerges(); merges.push(rec); saveTaskMerges(merges);
   closeModal('modal-merge-picker');
   renderMergedList(primary);
@@ -9134,7 +9183,7 @@ function unmergeTask(id) {
   // Directory — restore secondary's rows (skip any exact duplicate already present)
   const dup = row => DIRECTORY.some(r => r.task === row.task && (r.frequency || '') === (row.frequency || '') && (r.group || '') === (row.group || '') && (r.equipment || '') === (row.equipment || ''));
   (rec.secondaryRows || []).forEach(row => { if (!dup(row)) DIRECTORY.push({ ...row }); });
-  localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
+  _storeSet('kr_directory', JSON.stringify(DIRECTORY));
   // Checklist — restore secondary's full list; strip what we added to primary
   SUBTASKS[secondary] = (rec.secondaryChecklist || []).slice();
   if (rec.addedChecklistItems && rec.addedChecklistItems.length) {
@@ -9142,7 +9191,7 @@ function unmergeTask(id) {
     SUBTASKS[primary] = (SUBTASKS[primary] || []).filter(s => !addedLower.has(s.trim().toLowerCase()));
     if (!SUBTASKS[primary].length) delete SUBTASKS[primary];
   }
-  _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
+  _storeSet('kr_subtasks', JSON.stringify(SUBTASKS));
   // Notes — pull the tagged notes back to secondary
   const notes = getTaskNotes();
   const prim = notes[primary] || [];
@@ -9196,12 +9245,12 @@ function getEquipmentMaster() {
     });
   });
   master.sort((a, b) => a.name.localeCompare(b.name));
-  localStorage.setItem('kr_equipment_master', JSON.stringify(master));
+  _storeSet('kr_equipment_master', JSON.stringify(master));
   return master;
 }
 
 function saveEquipmentMaster(master) {
-  localStorage.setItem('kr_equipment_master', JSON.stringify(master));
+  _storeSet('kr_equipment_master', JSON.stringify(master));
 }
 
 function getAllEquipment() {
@@ -9359,7 +9408,7 @@ function deleteEquipment(name) {
   saveEquipmentMaster(master);
   ['kr_equipment_notes', 'kr_equipment_links', 'kr_equipment_guides'].forEach(k => {
     const o = JSON.parse(localStorage.getItem(k) || '{}');
-    if (o[name] !== undefined) { delete o[name]; localStorage.setItem(k, JSON.stringify(o)); }
+    if (o[name] !== undefined) { delete o[name]; _storeSet(k, JSON.stringify(o)); }
   });
   renderEquipmentManager();
   showToast('Equipment deleted');
@@ -9478,14 +9527,14 @@ function emTouchEnd(event) {
 // Both keyed by equipment name (like guides). Shared via the Task Library and
 // included in backups. Workers see them read-only.
 function getEquipmentNotes() { return JSON.parse(localStorage.getItem('kr_equipment_notes') || '{}'); }
-function saveEquipmentNotes(o) { localStorage.setItem('kr_equipment_notes', JSON.stringify(o)); }
+function saveEquipmentNotes(o) { _storeSet('kr_equipment_notes', JSON.stringify(o)); }
 function getEquipmentLinks() { return JSON.parse(localStorage.getItem('kr_equipment_links') || '{}'); }
-function saveEquipmentLinks(o) { localStorage.setItem('kr_equipment_links', JSON.stringify(o)); }
+function saveEquipmentLinks(o) { _storeSet('kr_equipment_links', JSON.stringify(o)); }
 
 // ── Files & links attached to a JOB (kr_job_links) — keyed by job (task) name,
 // mirrors equipment links. Tiny references only (URLs), never file bytes.
 function getJobLinks() { return JSON.parse(localStorage.getItem('kr_job_links') || '{}'); }
-function saveJobLinks(o) { return _safeSetItem('kr_job_links', JSON.stringify(o)); }
+function saveJobLinks(o) { return _storeSet('kr_job_links', JSON.stringify(o)); }
 
 let _equipDetailName = '';
 
@@ -9982,7 +10031,7 @@ function selectSubtask(name, isNew) {
     if (!SUBTASKS[_subtaskPickerTask]) SUBTASKS[_subtaskPickerTask] = [];
     if (!SUBTASKS[_subtaskPickerTask].includes(formatted)) {
       SUBTASKS[_subtaskPickerTask].push(formatted);
-      _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
+      _storeSet('kr_subtasks', JSON.stringify(SUBTASKS));
     }
   }
   if (!_subtaskItems.includes(formatted)) {
@@ -9997,7 +10046,7 @@ function getSubtaskGuides() {
   return JSON.parse(localStorage.getItem('kr_subtask_guides') || '{}');
 }
 function saveSubtaskGuides(guides) {
-  localStorage.setItem('kr_subtask_guides', JSON.stringify(guides));
+  _storeSet('kr_subtask_guides', JSON.stringify(guides));
 }
 
 // Sub-steps for a checklist item — a separate, ordered list keyed by item text.
@@ -10006,7 +10055,7 @@ function getSubtaskSteps() {
   return JSON.parse(localStorage.getItem('kr_subtask_steps') || '{}');
 }
 function saveSubtaskSteps(steps) {
-  localStorage.setItem('kr_subtask_steps', JSON.stringify(steps));
+  _storeSet('kr_subtask_steps', JSON.stringify(steps));
 }
 
 // ══════════════════════════════════════════════
@@ -10017,7 +10066,7 @@ function saveSubtaskSteps(steps) {
 // metadata, so a wrong grouping is a two-second undo, never data loss.
 // Store: { [jobName]: { order: [batchName, …], items: { [taskText]: batchName } } }
 function getTaskBatches() { return JSON.parse(localStorage.getItem('kr_task_batches') || '{}'); }
-function saveTaskBatches(o) { return _safeSetItem('kr_task_batches', JSON.stringify(o)); }
+function saveTaskBatches(o) { return _storeSet('kr_task_batches', JSON.stringify(o)); }
 function _batchRec(job) {
   const r = job && getTaskBatches()[job];
   return (r && Array.isArray(r.order) && r.items) ? r : null;
@@ -10414,11 +10463,11 @@ function taskActionGo(act) {
 // Reference photos on a recurring checklist item (keyed by item text) — shown on
 // the running clock when that task appears. Rides the library so Ethan gets them.
 function getSubtaskPhotos() { try { return JSON.parse(localStorage.getItem('kr_subtask_photos') || '{}') || {}; } catch (e) { return {}; } }
-function saveSubtaskPhotos(o) { return _safeSetItem('kr_subtask_photos', JSON.stringify(o)); }
+function saveSubtaskPhotos(o) { return _storeSet('kr_subtask_photos', JSON.stringify(o)); }
 // Origin of a checklist item that came from the Inbox — keyed by item text.
 // { caught, added } so the item's history is viewable (ℹ️ in the task editor).
 function getSubtaskOrigin() { return JSON.parse(localStorage.getItem('kr_subtask_origin') || '{}'); }
-function saveSubtaskOrigin(o) { return _safeSetItem('kr_subtask_origin', JSON.stringify(o)); }
+function saveSubtaskOrigin(o) { return _storeSet('kr_subtask_origin', JSON.stringify(o)); }
 function openItemOrigin(encText) {
   const text = encText.replace(/\\'/g, "'");
   const o = getSubtaskOrigin()[text];
@@ -10705,7 +10754,7 @@ function _propagateNoteEdit(note, oldText, photos) {
         if (Array.isArray(arr)) arr.forEach((it, i) => { if (it === oldText) { arr[i] = newText; subsChanged = true; } });
       });
       if (subsChanged) {
-        _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
+        _storeSet('kr_subtasks', JSON.stringify(SUBTASKS));
         orig[newText] = Object.assign({}, orig[oldText], { edited: note.editedTs });
         delete orig[oldText];
         saveSubtaskOrigin(orig);
@@ -10804,7 +10853,7 @@ function _migrateInboxAssignedOnce() {
     }
   });
   if (changed) saveInbox(arr);
-  localStorage.setItem('kr_inbox_assigned_migrated', '1');
+  _storeSet('kr_inbox_assigned_migrated', '1');
 }
 // One-time backfill: notes pinned before pinnedTasks existed only recorded
 // their last task. Rebuild the full list by scanning the task-notes store for
@@ -10831,7 +10880,7 @@ function _backfillPinnedTasksOnce() {
     changed = true;
   });
   if (changed) saveInbox(arr);
-  localStorage.setItem('kr_inbox_pinnedtasks_backfilled', '1');
+  _storeSet('kr_inbox_pinnedtasks_backfilled', '1');
 }
 function openInbox(focusId) {
   _migrateInboxAssignedOnce(); _backfillPinnedTasksOnce();
@@ -11097,7 +11146,7 @@ function _removePinsForInboxNote(note) {
       if (clockState && clockState.running && clockState.task === task) {
         const goneIds = list.filter(p => p.inboxId === note.id).map(p => p.id);
         if (clockState.pinDone) goneIds.forEach(gid => { delete clockState.pinDone[gid]; });
-        _safeSetItem('kr_clock', JSON.stringify(clockState));
+        _storeSet('kr_clock', JSON.stringify(clockState));
       }
     }
   });
@@ -11294,11 +11343,11 @@ function doneTaskReminder(idx) {
 }
 // ── Job soft reminders (opt-in per job; nudges when overdue vs its cadence) ──
 function getJobReminders() { try { return JSON.parse(localStorage.getItem('kr_job_reminders') || '{}') || {}; } catch (e) { return {}; } }
-function saveJobReminders(o) { return _safeSetItem('kr_job_reminders', JSON.stringify(o)); }
+function saveJobReminders(o) { return _storeSet('kr_job_reminders', JSON.stringify(o)); }
 // ── Task reminders (per task within a job; same date/time/daily rules) ──
 // Keyed by job name + \u0001 + task text; each record carries {job,task,remindOn,remindTime,remindRepeat}.
 function getTaskReminders() { try { return JSON.parse(localStorage.getItem('kr_task_reminders') || '{}') || {}; } catch (e) { return {}; } }
-function saveTaskReminders(o) { return _safeSetItem('kr_task_reminders', JSON.stringify(o)); }
+function saveTaskReminders(o) { return _storeSet('kr_task_reminders', JSON.stringify(o)); }
 function _taskRemKey(job, task) { return job + '\u0001' + task; }
 let _dueTaskRemCache = [];
 function _dueTaskReminders() {
@@ -11383,7 +11432,7 @@ function cycleTaskType(i) {
 // automatically; the task's reminder, lap-type and flag are re-keyed to the new
 // job. Records a "from" trail (kr_task_moves) so you always know where to send it back.
 function getTaskMoves() { try { return JSON.parse(localStorage.getItem('kr_task_moves') || '{}') || {}; } catch (e) { return {}; } }
-function saveTaskMoves(o) { return _safeSetItem('kr_task_moves', JSON.stringify(o)); }
+function saveTaskMoves(o) { return _storeSet('kr_task_moves', JSON.stringify(o)); }
 function _taskMoveKey(job, task) { return job + '\u0001' + task; }
 let _moveSel = new Set(), _moveSrcJob = '';
 function openMoveTasks() {
@@ -11487,7 +11536,7 @@ function _doMoveTasks(srcJob, destJob, tasks, opts) {
     moves[_taskMoveKey(destJob, t)] = { from: srcJob, at: new Date().toISOString(), trail: (prev && prev.trail ? prev.trail : []).concat([srcJob]) };
     delete moves[_taskMoveKey(srcJob, t)];
   });
-  _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
+  _storeSet('kr_subtasks', JSON.stringify(SUBTASKS));
   if (remCh) saveTaskReminders(rem);
   if (typCh) saveTaskTypes(types);
   if (flagCh) saveChecklistFlags(flags);
@@ -11649,7 +11698,7 @@ function saveTaskNotes(o) { return _storeSet('kr_task_notes', JSON.stringify(o))
 // { provider:'youtube', id, addedBy, addedAt }. Rides the Task Library publish so
 // everyone can watch; the video itself streams from YouTube (unlisted).
 function getTaskVideos() { return JSON.parse(localStorage.getItem('kr_task_videos') || '{}'); }
-function saveTaskVideos(o) { return _safeSetItem('kr_task_videos', JSON.stringify(o)); }
+function saveTaskVideos(o) { return _storeSet('kr_task_videos', JSON.stringify(o)); }
 
 // Pull an 11-char YouTube video id out of any common link shape (youtu.be/…,
 // watch?v=…, /shorts/…, /embed/…, /live/…), with or without timestamps/params,
@@ -11736,7 +11785,7 @@ function openInboxAssignMulti() {
 let _assignTaskSort = localStorage.getItem('kr_assign_task_sort') || 'recent';
 function setInboxAssignSort(mode) {
   _assignTaskSort = mode;
-  localStorage.setItem('kr_assign_task_sort', mode);
+  _storeSet('kr_assign_task_sort', mode);
   renderInboxAssignList();
 }
 function _syncInboxAssignSortButtons() {
@@ -11887,7 +11936,7 @@ async function assignInboxToTask(mode) {
   // Persist — quota-safe; if storage is genuinely full the toast says so and we
   // stop here (leaving the sheet open) instead of silently half-applying.
   let saved;
-  if (mode === 'permanent') { saved = _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS)); if (saved) saveSubtaskOrigin(orig); }
+  if (mode === 'permanent') { saved = _storeSet('kr_subtasks', JSON.stringify(SUBTASKS)); if (saved) saveSubtaskOrigin(orig); }
   else saved = saveTaskNotes(tn);
   if (!saved) return;
   saveInbox(arr);
@@ -11913,7 +11962,7 @@ function togglePinnedNote(id) {
   if (!clockState.pinDone) clockState.pinDone = {};
   if (clockState.pinDone[id]) delete clockState.pinDone[id];
   else clockState.pinDone[id] = new Date().toISOString();
-  _safeSetItem('kr_clock', JSON.stringify(clockState));
+  _storeSet('kr_clock', JSON.stringify(clockState));
   const _p = (getTaskNotes()[clockState.task] || []).find(x => x.id === id);
   if (_p && _p.inboxId) _setNoteReminderDone(_p.inboxId, !!clockState.pinDone[id]);
   const nowDone = !!clockState.pinDone[id];
@@ -12322,7 +12371,7 @@ function getEquipmentGuides() {
   return JSON.parse(localStorage.getItem('kr_equipment_guides') || '{}');
 }
 function saveEquipmentGuides(guides) {
-  localStorage.setItem('kr_equipment_guides', JSON.stringify(guides));
+  _storeSet('kr_equipment_guides', JSON.stringify(guides));
 }
 
 function openEquipmentGuide(name) {
@@ -12377,7 +12426,7 @@ function renameSubtaskGlobally(oldName, newName) {
       return s;
     });
   });
-  if (changed) _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
+  if (changed) _storeSet('kr_subtasks', JSON.stringify(SUBTASKS));
   // Rename guide key if exists
   const guides = getSubtaskGuides();
   if (guides[oldName]) { guides[newName] = guides[oldName]; delete guides[oldName]; saveSubtaskGuides(guides); }
@@ -12427,7 +12476,7 @@ function confirmCopyChecklist() {
   const targets = [...document.querySelectorAll('.copy-cl-target:checked')].map(c => c.value);
   if (!targets.length) { showToast('Pick at least one task to copy to'); return; }
   targets.forEach(t => { SUBTASKS[t] = [...items]; });
-  _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
+  _storeSet('kr_subtasks', JSON.stringify(SUBTASKS));
   closeModal('modal-copy-checklist');
   showToast('Tasks copied to ' + targets.length + ' job' + (targets.length === 1 ? '' : 's') + ' ✓ — Publish Library to share');
 }
@@ -12529,14 +12578,14 @@ function saveDirTask() {
         const arr = JSON.parse(localStorage.getItem(k) || '[]');
         let ch = false;
         arr.forEach(p => { if (p.task === oldTask) { p.task = task; ch = true; } });
-        if (ch) localStorage.setItem(k, JSON.stringify(arr));
+        if (ch) _storeSet(k, JSON.stringify(arr));
       });
       _plannerPlans = JSON.parse(localStorage.getItem(plannerStoreKey()) || '[]');
       // Task-order lists
       const ord = JSON.parse(localStorage.getItem('kr_task_order') || '{}');
       let ordCh = false;
       Object.keys(ord).forEach(k => { ord[k] = (ord[k] || []).map(tn => { if (tn === oldTask) { ordCh = true; return task; } return tn; }); });
-      if (ordCh) localStorage.setItem('kr_task_order', JSON.stringify(ord));
+      if (ordCh) _storeSet('kr_task_order', JSON.stringify(ord));
       if (migrated) showToast(migrated + ' past entr' + (migrated === 1 ? 'y' : 'ies') + ' kept with the renamed task');
     }
     if (SUBTASKS[oldTask] && oldTask !== task) delete SUBTASKS[oldTask];
@@ -12597,8 +12646,8 @@ function saveDirTask() {
   }
   saveJobReminders(jr);
 
-  localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
-  _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
+  _storeSet('kr_directory', JSON.stringify(DIRECTORY));
+  _storeSet('kr_subtasks', JSON.stringify(SUBTASKS));
   closeModal('modal-dir-task');
   renderDirectory();
   autoBackup();
@@ -12653,8 +12702,8 @@ function deleteDirTask() {
     const kept = mg.filter(m => m.primary !== task && m.secondary !== task);
     if (kept.length !== mg.length) saveTaskMerges(kept);
   }
-  localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
-  _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
+  _storeSet('kr_directory', JSON.stringify(DIRECTORY));
+  _storeSet('kr_subtasks', JSON.stringify(SUBTASKS));
   closeModal('modal-dir-task');
   renderDirectory();
   autoBackup();
@@ -12697,9 +12746,9 @@ function getAgents() {
   if (!Array.isArray(a)) { a = AGENT_SEED.map(x => ({ ...x, activities: [...x.activities] })); saveAgents(a); }
   return a;
 }
-function saveAgents(a) { return _safeSetItem('kr_agents', JSON.stringify(a)); }
+function saveAgents(a) { return _storeSet('kr_agents', JSON.stringify(a)); }
 function getAgentRuns() { try { return JSON.parse(localStorage.getItem('kr_agent_runs') || '[]') || []; } catch (e) { return []; } }
-function saveAgentRuns(r) { return _safeSetItem('kr_agent_runs', JSON.stringify(r)); }
+function saveAgentRuns(r) { return _storeSet('kr_agent_runs', JSON.stringify(r)); }
 function agentById(id) { return getAgents().find(a => a.id === id) || null; }
 function _agUid(p) { return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 function _agDateDMY(d) { return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear(); }
@@ -13133,7 +13182,7 @@ function isWorker() { return getRole() === 'worker'; }
 // auto-migrated ON so they're never disrupted — see the boot migration.
 function teamEnabled() { return localStorage.getItem('kr_team_enabled') === '1'; }
 function setTeamEnabled(on) {
-  localStorage.setItem('kr_team_enabled', on ? '1' : '0');
+  _storeSet('kr_team_enabled', on ? '1' : '0');
   if (!on) setRole('manager');   // solo devices are always the manager of their own data
   applyRoleUI();
   const rs = document.getElementById('settings-role-section');
@@ -13144,7 +13193,7 @@ function setTeamEnabled(on) {
   if (document.getElementById('screen-planner').classList.contains('active')) renderPlannerScreen();
 }
 function setRole(role) {
-  localStorage.setItem('kr_role', role);
+  _storeSet('kr_role', role);
   applyRoleUI();
   showToast(role === 'worker' ? 'Worker mode — editing locked' : 'Manager mode — full access');
 }
@@ -13154,7 +13203,7 @@ function setRole(role) {
 function initTeamUI() {
   if (localStorage.getItem('kr_team_enabled') === null) {
     const hadTeam = localStorage.getItem('kr_planner_ethan') !== null || getRole() === 'worker';
-    localStorage.setItem('kr_team_enabled', hadTeam ? '1' : '0');
+    _storeSet('kr_team_enabled', hadTeam ? '1' : '0');
   }
   const on = teamEnabled();
   const cb = document.getElementById('team-toggle'); if (cb) cb.checked = on;
@@ -13389,7 +13438,7 @@ const _HORIZONS = [
 ];
 function _horizonLabel(k) { const h = _HORIZONS.find(x => x.key === k); return h ? h.label : ''; }
 function getJobHorizons() { try { return JSON.parse(localStorage.getItem('kr_job_horizon') || '{}') || {}; } catch (e) { return {}; } }
-function saveJobHorizons(o) { return _safeSetItem('kr_job_horizon', JSON.stringify(o)); }
+function saveJobHorizons(o) { return _storeSet('kr_job_horizon', JSON.stringify(o)); }
 function jobHorizon(job) { return getJobHorizons()[job] || ''; }
 function setJobHorizon(job, key) {
   const all = getJobHorizons();
@@ -13441,7 +13490,7 @@ function pickHorizonFor(job) {
 // top of the Jobs list, where it can be dragged into the order you'll work it in.
 // Device-local; never touches DIRECTORY or sync. Mirrors the to-do / task gesture.
 function getJobFlags() { try { return JSON.parse(localStorage.getItem('kr_job_flags') || '{}') || {}; } catch (e) { return {}; } }
-function saveJobFlags(o) { return _safeSetItem('kr_job_flags', JSON.stringify(o)); }
+function saveJobFlags(o) { return _storeSet('kr_job_flags', JSON.stringify(o)); }
 function toggleJobFlag(task) {
   const f = getJobFlags();
   const on = !f[task];
@@ -13608,7 +13657,7 @@ function _dtTouchEnd(e) {
   const newOrder = Array.from(_dtGroupEl.querySelectorAll('.dir-task-row')).map(r => r.dataset.task);
   const taskOrder = JSON.parse(localStorage.getItem('kr_task_order') || '{}');
   taskOrder[orderKey] = newOrder;
-  localStorage.setItem('kr_task_order', JSON.stringify(taskOrder));
+  _storeSet('kr_task_order', JSON.stringify(taskOrder));
 
   // Also reorder DIRECTORY entries to match
   const [freq, grp] = orderKey.split('||');
@@ -13617,7 +13666,7 @@ function _dtTouchEnd(e) {
   const reordered = [];
   newOrder.forEach(task => groupEntries.filter(r => r.task === task).forEach(r => reordered.push(r)));
   DIRECTORY = [...otherEntries, ...reordered];
-  localStorage.setItem('kr_directory', JSON.stringify(DIRECTORY));
+  _storeSet('kr_directory', JSON.stringify(DIRECTORY));
 
   _dtCleanup();
   showToast('Order saved');
@@ -13677,7 +13726,7 @@ function plannerColorFor(task) {
 }
 
 function savePlanner() {
-  _safeSetItem(plannerStoreKey(), JSON.stringify(_plannerPlans));
+  _storeSet(plannerStoreKey(), JSON.stringify(_plannerPlans));
 }
 
 // Switch the planner between the manager's own day and the worker's planned day.
@@ -13735,8 +13784,8 @@ async function sendPlannerToEthan() {
     });
     const json = await res.json();
     if (json && json.success) {
-      localStorage.setItem('kr_planner_ethan_sent', localStorage.getItem('kr_planner_ethan') || '[]');
-      localStorage.setItem('kr_planner_ethan_sent_arr', JSON.stringify(arrMap));
+      _storeSet('kr_planner_ethan_sent', localStorage.getItem('kr_planner_ethan') || '[]');
+      _storeSet('kr_planner_ethan_sent_arr', JSON.stringify(arrMap));
       if (_plannerView === 'ethan') renderPlannerScreen();
       showToast('Sent ' + json.count + ' task' + (json.count === 1 ? '' : 's') + ' to Ethan ✓');
     } else showToast('Send failed' + (json && json.error ? ': ' + json.error : ''));
@@ -13766,7 +13815,7 @@ async function pullPins() {
     });
     if (added) {
       saveTaskNotes(tn);
-      localStorage.setItem('kr_pins_applied', JSON.stringify([...applied]));
+      _storeSet('kr_pins_applied', JSON.stringify([...applied]));
       if (clockState && clockState.running) renderRunChecklist();
       showToast(added + ' to-do' + (added === 1 ? '' : 's') + ' from your manager 📌');
     }
@@ -13793,7 +13842,7 @@ async function fetchSharedLastDone(force) {
       const ts = d.getTime();
       if (!map[task] || ts > map[task]) map[task] = ts;
     });
-    localStorage.setItem('kr_lastdone', JSON.stringify(map));
+    _storeSet('kr_lastdone', JSON.stringify(map));
     if (document.getElementById('dir-list')) renderDirectory();
   } catch (e) { /* offline — keep last cache */ }
 }
@@ -13829,8 +13878,8 @@ async function pullAssignments() {
       }
     });
     if (arrCh) savePlannerChecklist(arrM);
-    localStorage.setItem('kr_planner', JSON.stringify(plans));
-    localStorage.setItem('kr_assign_applied_v', remoteV);
+    _storeSet('kr_planner', JSON.stringify(plans));
+    _storeSet('kr_assign_applied_v', remoteV);
     if (_plannerView === 'me') _plannerPlans = plans;
     updateAssignmentBanner();
     const ps = document.getElementById('screen-planner');
@@ -13861,7 +13910,7 @@ function updateAssignmentBanner() {
 }
 // Worker tapped the banner: acknowledge this plan, hide the banner, open planner.
 function ackAssignmentBanner() {
-  localStorage.setItem('kr_assign_ack_v', localStorage.getItem('kr_assign_applied_v') || '');
+  _storeSet('kr_assign_ack_v', localStorage.getItem('kr_assign_applied_v') || '');
   ['assign-banner-clock', 'assign-banner', 'assign-banner-running'].forEach(id => {
     const el = document.getElementById(id); if (el) el.style.display = 'none';
   });
@@ -13904,7 +13953,7 @@ function rolloverParkedTasks() {
         changed++;
       }
     });
-    if (dirty) localStorage.setItem(key, JSON.stringify(arr));
+    if (dirty) _storeSet(key, JSON.stringify(arr));
   });
   if (changed) _plannerPlans = JSON.parse(localStorage.getItem(plannerStoreKey()) || '[]');
   return changed;
@@ -13933,7 +13982,7 @@ function plannerJumpToDate(v) {
 
 function togglePlannerMode() {
   _plannerMode = _plannerMode === 'week' ? 'day' : 'week';
-  localStorage.setItem('kr_planner_mode', _plannerMode);
+  _storeSet('kr_planner_mode', _plannerMode);
   _plannerSuppressAutoScroll = false;
   renderPlannerScreen();
 }
@@ -13976,7 +14025,7 @@ function _pwBlock(col, startTime, durationHours, label, onTap, done) {
 function _pwGoToDay(d, planId) {
   _plannerDate = new Date(d);
   _plannerMode = 'day';
-  localStorage.setItem('kr_planner_mode', 'day');
+  _storeSet('kr_planner_mode', 'day');
   _plannerSuppressAutoScroll = false;
   renderPlannerScreen();
   if (planId) openPlannerDetail(planId);
@@ -14549,7 +14598,7 @@ function initPlannerZoom() {
     _plannerSuppressAutoScroll = false;
     const offsetWithin = _pz.anchorContentY - scroll.scrollTop; // pre-zoom finger offset from top
     scroll.scrollTop = (_pz.anchorContentY / _pz.px0) * PLANNER_HOUR_PX - offsetWithin;
-    localStorage.setItem('kr_planner_zoom', String(Math.round(PLANNER_HOUR_PX)));
+    _storeSet('kr_planner_zoom', String(Math.round(PLANNER_HOUR_PX)));
     _pz = null;
   };
   scroll.addEventListener('touchend', end);
@@ -14894,7 +14943,7 @@ function _taskSortCmp(mode, counts, recent) {
 let _plannerTaskSort = localStorage.getItem('kr_planner_task_sort') || 'recent';
 function setPlannerTaskSort(mode) {
   _plannerTaskSort = mode;
-  localStorage.setItem('kr_planner_task_sort', mode);
+  _storeSet('kr_planner_task_sort', mode);
   renderPlannerTaskList();
 }
 function _syncPlannerSortButtons() {
@@ -14996,7 +15045,7 @@ function _pinSortLabel() { return (localStorage.getItem('kr_pin_sort') === 'newe
 // Drag-set manual order of NON-flagged to-dos, per task — { task: [pinId,...] }.
 // Device-local; when set it overrides the Newest/Oldest time sort for those pins.
 function getPinOrder() { try { return JSON.parse(localStorage.getItem('kr_pin_order') || '{}') || {}; } catch (e) { return {}; } }
-function savePinOrder(o) { return _safeSetItem('kr_pin_order', JSON.stringify(o)); }
+function savePinOrder(o) { return _storeSet('kr_pin_order', JSON.stringify(o)); }
 function _sortPins(arr, task) {
   const dir = (localStorage.getItem('kr_pin_sort') === 'newest') ? -1 : 1;
   const manual = (task && getPinOrder()[task]) || null;   // manual order of non-flagged ids
@@ -15022,7 +15071,7 @@ function _sortPins(arr, task) {
   });
 }
 function togglePinSort() {
-  localStorage.setItem('kr_pin_sort', (localStorage.getItem('kr_pin_sort') === 'newest') ? 'oldest' : 'newest');
+  _storeSet('kr_pin_sort', (localStorage.getItem('kr_pin_sort') === 'newest') ? 'oldest' : 'newest');
   // Tapping Newest/Oldest is a deliberate time-sort. A saved manual drag order
   // (kr_pin_order) otherwise silently overrides it and the toggle looks stuck, so
   // clear the viewed job's manual order — dragging a to-do sets a fresh one again.
@@ -15571,7 +15620,7 @@ function _applyChecklistFlagOrder(task, orderedItems) {
   const f = useSession ? clockState.flagOverride : (getChecklistFlags()[task] || null);
   if (!f) return;
   orderedItems.forEach((item, i) => { if (f[item]) f[item] = base - i * 1000; }); // first listed = highest = top
-  if (useSession) _safeSetItem('kr_clock', JSON.stringify(clockState));
+  if (useSession) _storeSet('kr_clock', JSON.stringify(clockState));
   else { const all = getChecklistFlags(); all[task] = f; saveChecklistFlags(all); }
   _refreshChecklistSurfaces(task);
 }
@@ -15589,13 +15638,13 @@ function _applyChecklistManualOrder(task, fullOrder) {
   const useSession = clockState && clockState.running && clockState.task === task && Array.isArray(clockState.orderOverride);
   if (useSession) {
     clockState.orderOverride = fullOrder.slice();
-    _safeSetItem('kr_clock', JSON.stringify(clockState));
+    _storeSet('kr_clock', JSON.stringify(clockState));
   } else {
     // Whole job: rewrite SUBTASKS to the new order (items not in the list kept at end).
     const cur = SUBTASKS[task] || [];
     const inList = new Set(fullOrder);
     SUBTASKS[task] = fullOrder.filter(x => cur.includes(x)).concat(cur.filter(x => !inList.has(x)));
-    _safeSetItem('kr_subtasks', JSON.stringify(SUBTASKS));
+    _storeSet('kr_subtasks', JSON.stringify(SUBTASKS));
   }
   _refreshChecklistSurfaces(task);
 }
@@ -15634,7 +15683,7 @@ function toggleChecklistFlag(task, item) {
     const f = clockState.flagOverride;
     nowFlagged = !f[item];
     if (f[item]) delete f[item]; else f[item] = Date.now();
-    _safeSetItem('kr_clock', JSON.stringify(clockState));
+    _storeSet('kr_clock', JSON.stringify(clockState));
   } else {
     const all = getChecklistFlags();
     const f = all[task] || (all[task] = {});
@@ -16251,7 +16300,7 @@ function removeParkedBlock(id) {
   showUndoToast('Removed from holding', () => {
     const arr = JSON.parse(localStorage.getItem(key) || '[]');
     arr.push(removed);
-    localStorage.setItem(key, JSON.stringify(arr));
+    _storeSet(key, JSON.stringify(arr));
     if (plannerStoreKey() === key) _plannerPlans = arr;
     renderPlannerScreen();
     showToast('Restored to holding');
@@ -16424,7 +16473,7 @@ async function syncCalendarForDate(dateStr, opts) {
         });
         if (changed) savePlanner();
       }
-      localStorage.setItem('kr_cal_used', '1'); // opt-in flag for auto refresh
+      _storeSet('kr_cal_used', '1'); // opt-in flag for auto refresh
       if (!opts.silent) showToast('Synced to Google Calendar ✓');
       return true;
     } else {
@@ -16446,8 +16495,8 @@ let _calAutoTimers = {};
 // dies if the app closes first; on next open the dirty days re-arm and push, so
 // an edit can never be silently lost to the calendar again.
 function _calDirtyDates() { try { return JSON.parse(localStorage.getItem('kr_cal_dirty') || '[]') || []; } catch (e) { return []; } }
-function _calMarkDirty(dateStr) { const d = _calDirtyDates(); if (!d.includes(dateStr)) { d.push(dateStr); _safeSetItem('kr_cal_dirty', JSON.stringify(d)); } }
-function _calClearDirty(dateStr) { const d = _calDirtyDates().filter(x => x !== dateStr); _safeSetItem('kr_cal_dirty', JSON.stringify(d)); }
+function _calMarkDirty(dateStr) { const d = _calDirtyDates(); if (!d.includes(dateStr)) { d.push(dateStr); _storeSet('kr_cal_dirty', JSON.stringify(d)); } }
+function _calClearDirty(dateStr) { const d = _calDirtyDates().filter(x => x !== dateStr); _storeSet('kr_cal_dirty', JSON.stringify(d)); }
 function scheduleCalendarAutoPush(dateStr, delayMs) {
   if (isWorker() || _plannerView !== 'me' || !dateStr) return;
   if (!localStorage.getItem('kr_sheet_url')) return;

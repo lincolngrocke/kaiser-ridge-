@@ -1,4 +1,12 @@
 // ════════════════════════════════════════════════════════
+//  Groovework™ — Copyright © 2026 Lincoln Grocke.
+//  All rights reserved. Proprietary and confidential.
+//  NOT open source; no licence granted. Copying, modification or
+//  distribution of this code, in whole or in part, is prohibited
+//  without prior written permission.  lincolngrocke@gmail.com
+// ════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════
 //  Kaiser Ridge Task Tracker — Google Apps Script
 //
 //  Setup:
