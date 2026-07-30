@@ -2804,7 +2804,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.256';
+const APP_VERSION = '2026-06-21.257';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -15663,6 +15663,40 @@ function _clLapAdj(item, delta) {
   _renderClOrganiseBody();
   if (typeof renderPlannerScreen === 'function') renderPlannerScreen();   // reflect the new duration on the timeline behind the sheet
 }
+// The same stepper, for a session already under way. Clocking in CONSUMES the
+// planner block (its arrangement is copied onto clockState and the block is
+// deleted), so mid-run there is no block left to edit — this session's own lap
+// targets are the thing to move. Bumping one plans a lap WITHOUT ticking one
+// off, which is the whole point: you realise partway through that a task needs
+// another go-round you didn't plan at clock-in, and the estimate should say so.
+// NB the fallback is 1, NOT the learned typical that _plannedLapsFor uses. It has
+// to match what the session estimate actually counts (_runEstimateSec /
+// _runRemainingSec / the sheet's flagged-work total all read lapTargets with a
+// fallback of 1), or the stepper would advertise a lap the finish time isn't
+// costing. On a run started FROM a block this is moot — clock-in seeds lapTargets
+// from _plannedLapsFor, so the learned value is already in there. On an ad-hoc run
+// there are no targets, and one lap each is exactly what the ring assumes.
+function _sessionPlannedLaps(job, item) {
+  if (!isRepeatTask(job, item)) return 1;
+  const lt = (clockState && clockState.lapTargets) || {};
+  return lt[item] >= 1 ? lt[item] : 1;
+}
+function _clSessionLapAdj(item, delta) {
+  if (!clockState || !clockState.running) return;
+  const job = clockState.task;
+  if (!isRepeatTask(job, item)) return;
+  const lt = clockState.lapTargets || (clockState.lapTargets = {});
+  const n = Math.max(1, Math.min(99, _sessionPlannedLaps(job, item) + delta));
+  lt[item] = n;
+  _storeSet('kr_clock', JSON.stringify(clockState));
+  _renderClOrganiseBody();   // the sheet's flagged-time total counts the new lap
+  renderRunChecklist();      // the clock's 🔁 chip counts down from the new target
+  updateRunRing();           // ring % and 🏁 finish time re-target immediately
+  const left = Math.max(0, n - taskRepCount(job, item));
+  const finEl = document.getElementById('run-ring-finish');
+  const fin = finEl ? (finEl.textContent || '').trim() : '';   // already carries its own 🏁
+  showToast('🔁 ' + n + ' lap' + (n === 1 ? '' : 's') + ' planned · ' + left + ' left' + (fin ? ' · ' + fin : ''));
+}
 function toggleChecklistFlag(task, item) {
   const pid = _clTargetPlanId();
   if (pid) {   // flagging within a planner block's arrangement
@@ -15804,18 +15838,23 @@ function _renderClOrganiseBody() {
   const _bRec = _batchRec(task);
   const _hasBatches = !!(_bRec && _bRec.order.length);
   const intro = `<div style="font-size:11px;color:var(--subtext);margin:${_clOrganisePlanId ? '8px' : '12px'} 0 8px;">Hold &amp; drag any item to set the order it’s done in · swipe an item right to 🚩 flag it${_hasBatches ? ' (it stays in its batch, floated to the top). Tap a ▣ heading to open/close it; hold &amp; drag a heading to reorder batches; drag a task under a heading to move it there.' : ' to the top.'}</div>`;
-  // 🔁 Planned-laps stepper — plan scope only, on flagged repeat tasks: the block
-  // estimate counts these once per lap. Default N is learned (typical laps/run).
+  // 🔁 Planned-laps stepper — on flagged repeat tasks, the estimate counts these
+  // once per lap. Two homes, one control: a planner BLOCK (edits the block's laps,
+  // re-sizing it on the timeline) and the RUNNING CLOCK (edits this session's lap
+  // targets, so a lap you forgot to plan can be added mid-run without ticking one
+  // off). Default N is learned (typical laps/run) in both.
   const _lapPlan = (pid && _clEditScope === 'plan') ? _plannerPlans.find(p => p.id === pid) : null;
-  const _lapReps = _lapPlan ? _taskRepsPerRunMap() : null;
+  const _lapSess = !_lapPlan && !!(clockState && clockState.running && clockState.task === task);
+  const _lapReps = (_lapPlan || _lapSess) ? _taskRepsPerRunMap() : null;
   const _lapEnc = s => encodeURIComponent(s).replace(/'/g, '%27');   // %27: apostrophes survive encodeURIComponent and would break the onclick string
+  const _lapAdjFn = _lapPlan ? '_clLapAdj' : '_clSessionLapAdj';
   const rowHtml = (s) => {
     const isFlagged = !!flags[s];
-    const lapChip = (_lapPlan && isFlagged && isRepeatTask(task, s))
+    const lapChip = ((_lapPlan || _lapSess) && isFlagged && isRepeatTask(task, s))
       ? `<span ontouchstart="event.stopPropagation()" style="display:inline-flex;align-items:center;flex-shrink:0;background:rgba(48,209,88,0.14);border:1px solid rgba(48,209,88,0.4);border-radius:11px;padding:1px 2px;">
-          <span onclick="event.stopPropagation();_clLapAdj(decodeURIComponent('${_lapEnc(s)}'), -1)" style="font-size:17px;font-weight:700;color:var(--subtext);padding:0 7px;cursor:pointer;">−</span>
-          <span style="font-size:12px;font-weight:700;color:#30d158;">🔁×${_plannedLapsFor(_lapPlan, s, _lapReps)}</span>
-          <span onclick="event.stopPropagation();_clLapAdj(decodeURIComponent('${_lapEnc(s)}'), 1)" style="font-size:17px;font-weight:700;color:var(--subtext);padding:0 7px;cursor:pointer;">+</span></span>`
+          <span onclick="event.stopPropagation();${_lapAdjFn}(decodeURIComponent('${_lapEnc(s)}'), -1)" style="font-size:17px;font-weight:700;color:var(--subtext);padding:0 7px;cursor:pointer;">−</span>
+          <span style="font-size:12px;font-weight:700;color:#30d158;">🔁×${_lapPlan ? _plannedLapsFor(_lapPlan, s, _lapReps) : _sessionPlannedLaps(task, s)}</span>
+          <span onclick="event.stopPropagation();${_lapAdjFn}(decodeURIComponent('${_lapEnc(s)}'), 1)" style="font-size:17px;font-weight:700;color:var(--subtext);padding:0 7px;cursor:pointer;">+</span></span>`
       : '';
     return `<div class="cl-row" data-cl-item="${_attr(s)}" data-cl-task="${taskAttr}" data-cl-flagged="${isFlagged ? '1' : ''}" ontouchstart="clSwipeStart(event)" ontouchmove="clSwipeMove(event)" ontouchend="clSwipeEnd(event)" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:11px 10px;border-radius:8px;border:1px solid var(--border);${isFlagged ? 'background:rgba(255,214,10,0.12);' : 'background:var(--card);'}">
       <span style="font-size:16px;flex-shrink:0;">${isFlagged ? '🚩' : '▫️'}</span>
