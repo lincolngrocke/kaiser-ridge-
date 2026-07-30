@@ -2079,12 +2079,12 @@
 <!-- The planned run as one timed list: a row per planned lap of every flagged task,
      each carrying the clock time it should be finished by. Full-height like the
      Organise sheet — it's a screen, not a popover. -->
-<div class="modal-backdrop" id="modal-run-sheet" style="z-index:362;" onclick="if(event.target===this)closeModal('modal-run-sheet')">
+<div class="modal-backdrop" id="modal-run-sheet" style="z-index:362;" onclick="if(event.target===this)closeRunSheet()">
   <div class="modal-sheet" style="padding:16px 0 28px;height:92vh;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;">
     <div class="modal-handle"></div>
     <div style="padding:0 20px 10px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
       <span id="run-sheet-title" style="font-size:16px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:10px;"></span>
-      <span onclick="closeModal('modal-run-sheet')" style="color:var(--blue);font-size:16px;cursor:pointer;flex-shrink:0;">Done</span>
+      <span onclick="closeRunSheet()" style="color:var(--blue);font-size:16px;cursor:pointer;flex-shrink:0;">Done</span>
     </div>
     <div id="run-sheet-body" style="padding:0 20px;overflow-y:auto;overflow-x:hidden;flex:1;"></div>
   </div>
@@ -2819,7 +2819,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.259';
+const APP_VERSION = '2026-06-21.260';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6567,7 +6567,10 @@ function confirmTime(choice) {
           });
           if (Object.keys(lt).length) clockState.lapTargets = lt;
         }
-        if (clockState.flagOverride || clockState.orderOverride || clockState.lapTargets) { _storeSet('kr_clock', JSON.stringify(clockState)); renderRunChecklist(); }
+        // 📋 The run sheet arranged on the block BEFORE the job started becomes this
+        // session's run sheet — plan it in detail the night before, work to it today.
+        if (Array.isArray(rec.runOrder) && rec.runOrder.length) clockState.runOrder = rec.runOrder.slice();
+        if (clockState.flagOverride || clockState.orderOverride || clockState.lapTargets || clockState.runOrder) { _storeSet('kr_clock', JSON.stringify(clockState)); renderRunChecklist(); }
         delete pcm[taskInfo._planId]; savePlannerChecklist(pcm);
       }
       _plannerPlans = _plannerPlans.filter(p => p.id !== taskInfo._planId);
@@ -15753,29 +15756,80 @@ function _clSessionLapAdj(item, delta) {
 const _RS_SEP = '\u0001';   // a control char can't occur in a task name, so "Travel"+12 never collides with "Travel1"+2
 function _rsKey(t, n) { return t + _RS_SEP + n; }
 
-// Which lap-instances belong on today's sheet: for each flagged task, the laps still
-// owing plus any ticked THIS session (including laps run past the plan).
-function _rsInstances() {
-  if (!clockState || !clockState.running || !clockState.task) return [];
+// The sheet runs in two scopes and the maths is identical in both — only where the
+// flags, laps, order and start time come from differs. _rsCtx() is that difference:
+//   • PLAN  — opened from a planner block's Organise sheet, before the job starts.
+//             Nothing is done yet, so every row is a forecast from the block's
+//             planned start time. Lets a job be planned in full before commencing.
+//   • CLOCK — opened from the running clock. Ticked rows keep their real times and
+//             the rest forecast from the last tick.
+// The arranged order is stored per scope (on the block, or on the session), and
+// clocking in carries the block's arrangement across — so the run sheet you planned
+// IS the run sheet you work to.
+let _rsPlanId = null;
+function _rsCtx() {
+  if (_rsPlanId) {
+    const plan = _plannerPlans.find(p => p.id === _rsPlanId);
+    if (!plan) return null;
+    const rec = getPlannerChecklist()[_rsPlanId] || {};
+    return {
+      kind: 'plan', job: plan.task, plan,
+      flags: rec.flags || {},
+      lapsFor: item => _plannedLapsFor(plan, item),
+      repsBefore: () => 0,          // nothing has been run yet
+      doneAt: () => null,
+      order: Array.isArray(rec.runOrder) ? rec.runOrder : null,
+      // Base order falls back to SUBTASKS — which IS the learned order, rewritten on
+      // clock-out from the sequence tasks were actually ticked in. That's the chain:
+      // do the work → the app learns the order → the plan opens in that order.
+      baseOrder: (Array.isArray(rec.order) && rec.order.length) ? rec.order : (SUBTASKS[plan.task] || []),
+      saveOrder: keys => { const m = getPlannerChecklist(); (m[_rsPlanId] || (m[_rsPlanId] = { flags: {} })).runOrder = keys; savePlannerChecklist(m); },
+      startMs: _rsPlanStartMs(plan)
+    };
+  }
+  if (!clockState || !clockState.running || !clockState.task) return null;
   const job = clockState.task;
-  const flags = _sessionOrGlobalFlags(job);
   const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
-  const subs = SUBTASKS[job] || [];
+  return {
+    kind: 'clock', job, plan: null,
+    flags: _sessionOrGlobalFlags(job),
+    lapsFor: item => _sessionPlannedLaps(job, item),
+    repsBefore: item => { const mine = done.filter(d => d.item === item && d.rep); return Math.max(0, taskRepCount(job, item) - mine.length); },
+    doneAt: (item, n) => {
+      const hit = n === 0 ? done.find(d => d.item === item && !d.rep && !d.lap) : done.find(d => d.item === item && d.rep === n);
+      return hit ? hit.at : null;
+    },
+    order: Array.isArray(clockState.runOrder) ? clockState.runOrder : null,
+    baseOrder: _sessionOrGlobalOrder(job) || SUBTASKS[job] || [],
+    saveOrder: keys => { clockState.runOrder = keys; _storeSet('kr_clock', JSON.stringify(clockState)); },
+    startMs: null                   // live → anchored to the last tick, see _rsRows
+  };
+}
+function _rsPlanStartMs(p) {
+  const [y, m, d] = String(p.date || '').split('-').map(Number);
+  const mins = _planStartMins(p);
+  if (!y) return Date.now();
+  return new Date(y, (m || 1) - 1, d || 1, Math.floor(mins / 60), mins % 60, 0, 0).getTime();
+}
+
+// Which lap-instances belong on the sheet: for each flagged task, the laps owing —
+// plus, on the clock, any already ticked this session (including laps run past the
+// plan). Laps from an earlier session of the same run are left off.
+function _rsInstances(ctx) {
+  if (!ctx) return [];
+  const subs = SUBTASKS[ctx.job] || [];
   const out = [];
-  Object.keys(flags).forEach(item => {
+  Object.keys(ctx.flags).forEach(item => {
     if (!subs.includes(item)) return;   // a flag can outlive the task it was set on
-    if (!isRepeatTask(job, item)) {
-      const hit = done.find(d => d.item === item && !d.rep && !d.lap);
-      out.push({ t: item, n: 0, doneAt: hit ? hit.at : null });
+    if (!isRepeatTask(ctx.job, item)) {
+      out.push({ t: item, n: 0, doneAt: ctx.doneAt(item, 0) });
       return;
     }
-    const mine = done.filter(d => d.item === item && d.rep);
-    const before = Math.max(0, taskRepCount(job, item) - mine.length);   // laps from earlier sessions — not today's business
-    const last = Math.max(_sessionPlannedLaps(job, item), before + mine.length);
-    for (let n = before + 1; n <= last; n++) {
-      const hit = mine.find(d => d.rep === n);
-      out.push({ t: item, n, doneAt: hit ? hit.at : null });
-    }
+    const before = ctx.repsBefore(item);
+    const doneNow = [];
+    for (let n = before + 1; n <= before + 99; n++) { const a = ctx.doneAt(item, n); if (!a) break; doneNow.push(n); }
+    const last = Math.max(ctx.lapsFor(item), before + doneNow.length);
+    for (let n = before + 1; n <= last; n++) out.push({ t: item, n, doneAt: ctx.doneAt(item, n) });
   });
   return out;
 }
@@ -15784,8 +15838,8 @@ function _rsInstances() {
 // pass, tasks dropping out as their laps run out. In this app a "lap" IS a pass
 // through the task set (the enduro model), so stacking all of one task's laps
 // together would fight the model — and you'd re-drag it every time.
-function _rsDefaultOrder(insts, job) {
-  const base = _sessionOrGlobalOrder(job) || SUBTASKS[job] || [];
+function _rsDefaultOrder(insts, ctx) {
+  const base = ctx.baseOrder || [];
   const byTask = new Map();
   insts.forEach(x => { if (!byTask.has(x.t)) byTask.set(x.t, []); byTask.get(x.t).push(x); });
   byTask.forEach(a => a.sort((p, q) => p.n - q.n));
@@ -15803,17 +15857,14 @@ function _rsDefaultOrder(insts, job) {
 // their position; anything new (a lap added with the 🔁 stepper, a task just
 // flagged) slots in after that task's last instance, else at the end. This is the
 // part that has to hold up when the plan changes mid-job.
-function _rsOrdered() {
-  const insts = _rsInstances();
+function _rsOrdered(ctx) {
+  const insts = _rsInstances(ctx);
   if (!insts.length) return [];
-  const job = clockState.task;
   const pool = new Map(insts.map(x => [_rsKey(x.t, x.n), x]));
   const out = [];
-  if (Array.isArray(clockState.runOrder)) {
-    clockState.runOrder.forEach(k => { if (pool.has(k)) { out.push(pool.get(k)); pool.delete(k); } });
-  }
+  if (ctx.order) ctx.order.forEach(k => { if (pool.has(k)) { out.push(pool.get(k)); pool.delete(k); } });
   if (!pool.size) return out;
-  const fresh = _rsDefaultOrder([...pool.values()], job);
+  const fresh = _rsDefaultOrder([...pool.values()], ctx);
   // Nothing arranged yet → the cycle-major default IS the order. (Applying the
   // slot-in rule below to a fresh sheet would re-group every task's laps together,
   // which is the one thing this default exists to avoid.)
@@ -15831,15 +15882,25 @@ function _rsOrdered() {
 // uses (the last tick, plus any time not worked since), so the final row and the ring
 // agree to the minute. A task with no timed history contributes nothing and shows
 // "—" rather than inventing a time.
-function _rsRows() {
-  const rows = _rsOrdered();
+function _rsRows(ctx) {
+  ctx = ctx || _rsCtx();
+  if (!ctx) return [];
+  const rows = _rsOrdered(ctx);
   if (!rows.length) return [];
   const avg = _taskHistAvgMap();
   const now = Date.now();
-  const anchor = _runAnchorMs();
-  let idle = _breakOverlapMs(clockState.breaks, anchor, now);
-  if (clockState.onBreak && clockState.breakStartMs) idle += Math.max(0, now - Math.max(clockState.breakStartMs, anchor));
-  let cursor = anchor + idle;
+  let cursor, floor;
+  if (ctx.kind === 'plan') {
+    // Planning ahead: everything forecasts forward from the block's planned start,
+    // and times are NOT floored at now — a block planned for tomorrow morning must
+    // read as tomorrow morning, not as "any second now".
+    cursor = ctx.startMs; floor = -Infinity;
+  } else {
+    const anchor = _runAnchorMs();
+    let idle = _breakOverlapMs(clockState.breaks, anchor, now);
+    if (clockState.onBreak && clockState.breakStartMs) idle += Math.max(0, now - Math.max(clockState.breakStartMs, anchor));
+    cursor = anchor + idle; floor = now;
+  }
   const perTask = {};
   rows.forEach(r => { perTask[r.t] = (perTask[r.t] || 0) + 1; });
   const seen = {};
@@ -15851,14 +15912,16 @@ function _rsRows() {
     const mins = (isFinite(a) && a > 0) ? a : 0;
     let when = null;
     if (r.doneAt) when = new Date(r.doneAt).getTime();
-    else if (mins > 0) { cursor += mins * 60000; when = Math.max(cursor, now); }
+    else if (mins > 0) { cursor += mins * 60000; when = Math.max(cursor, floor); }
     return { ...r, mins, when, isDone: !!r.doneAt, lapIdx: seen[r.t], lapTotal: perTask[r.t],
-             tappable: !r.doneAt && nextUndone[r.t] === r.n };
+             tappable: ctx.kind === 'clock' && !r.doneAt && nextUndone[r.t] === r.n };
   });
 }
 
-function openRunSheet() {
-  if (!clockState || !clockState.running) { showToast('Clock in first — the run sheet lists the job you’re on'); return; }
+// planId → plan the job before it starts; no arg → the job you're clocked into.
+function openRunSheet(planId) {
+  _rsPlanId = planId || null;
+  if (!_rsPlanId && (!clockState || !clockState.running)) { showToast('Clock in first — the run sheet lists the job you’re on'); return; }
   openModal('modal-run-sheet');
   _rsRender();
 }
@@ -15868,16 +15931,18 @@ function _rsRender() {
   const body = document.getElementById('run-sheet-body');
   if (!body) return;
   const titleEl = document.getElementById('run-sheet-title');
-  if (!clockState || !clockState.running) {
+  const ctx = _rsCtx();
+  if (!ctx) {
     if (titleEl) titleEl.textContent = 'Run sheet';
     body.innerHTML = '<div style="padding:44px 0;text-align:center;color:var(--subtext);font-size:15px;">Clock in to see the run sheet.</div>';
     return;
   }
-  if (titleEl) titleEl.textContent = clockState.task;
-  const rows = _rsRows();
+  const planning = ctx.kind === 'plan';
+  if (titleEl) titleEl.textContent = ctx.job;
+  const rows = _rsRows(ctx);
   if (!rows.length) {
     body.innerHTML = `<div style="padding:38px 6px;text-align:center;color:var(--subtext);font-size:15px;line-height:1.55;">Nothing flagged yet.<br>
-      <span style="font-size:13px;">Open <b>⤢ Organise</b> and swipe a task right to 🚩 flag it. Flagged tasks are the ones you plan to do today — they're what this sheet lists.</span></div>`;
+      <span style="font-size:13px;">Swipe a task right to 🚩 flag it${planning ? ' on this block' : ' in ⤢ Organise'}. Flagged tasks are the ones you plan to do — they're what this sheet lists.</span></div>`;
     return;
   }
   const doneN = rows.filter(r => r.isDone).length;
@@ -15887,10 +15952,16 @@ function _rsRender() {
   // being able to see "last one ~6:11am" whatever part of the day you're looking at.
   // _clEdgeScroll measures this header too, so the drag's up-scroll zone starts below
   // it rather than underneath it.
+  const summary = planning
+    ? `🗓 ${rows.length} step${rows.length === 1 ? '' : 's'} from ${_rsHM(ctx.startMs)}${lastPending ? ' · 🏁 done by ~<b>' + _rsHM(lastPending.when) + '</b>' : ''}`
+    : `✓ ${doneN} of ${rows.length} done${lastPending ? ' · 🏁 last one ~<b>' + _rsHM(lastPending.when) + '</b>' : ''}`;
+  const hint = planning
+    ? 'Hold &amp; drag a row to set the order you\'ll do them in — every time below it re-forecasts. This order carries onto the clock when you start the job.'
+    : 'Hold &amp; drag a row to set the order you\'ll actually do them in — every time below it re-forecasts. Tap a row to tick it off.';
   const head = `<div class="cl-sticky-top">
     <div style="margin:10px 0 4px;padding:9px 12px;border-radius:10px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.35);font-size:13px;color:var(--text);">
-      ✓ ${doneN} of ${rows.length} done${lastPending ? ' · 🏁 last one ~<b>' + _rsHM(lastPending.when) + '</b>' : ''}</div>
-    <div style="font-size:11px;color:var(--subtext);margin:0 0 8px;">Hold &amp; drag a row to set the order you'll actually do them in — every time below it re-forecasts. Tap a row to tick it off.</div></div>`;
+      ${summary}</div>
+    <div style="font-size:11px;color:var(--subtext);margin:0 0 8px;">${hint}</div></div>`;
   const rowsHtml = rows.map(r => {
     const key = _rsKey(r.t, r.n);
     const lap = r.lapTotal > 1 ? `<span style="font-size:11px;font-weight:700;color:#30d158;flex-shrink:0;">🔁 ${r.lapIdx}/${r.lapTotal}</span>` : '';
@@ -15967,10 +16038,11 @@ function _rsDragEnd2() {
   dragged.style.transform = ''; dragged.style.opacity = ''; dragged.style.boxShadow = '';
   dragged.style.position = ''; dragged.style.zIndex = '';
   const order = [...parent.children].filter(c => c.classList && c.classList.contains('rs-row')).map(c => c.dataset.rsKey);
-  clockState.runOrder = order;
-  _storeSet('kr_clock', JSON.stringify(clockState));
+  const ctx = _rsCtx();
+  if (ctx) ctx.saveOrder(order);   // onto the block when planning, onto the session when running
   _rsRender();   // every time below the moved row re-forecasts
 }
+function closeRunSheet() { closeModal('modal-run-sheet'); _rsPlanId = null; }
 function toggleChecklistFlag(task, item) {
   const pid = _clTargetPlanId();
   if (pid) {   // flagging within a planner block's arrangement
@@ -16179,7 +16251,14 @@ function _renderClOrganiseBody() {
     const allCol = names.every(n => _clOrgCollapsed[n] || !ordered.some(s => (n === 'Unbatched') ? !(_bRec.items[s] && _bRec.order.includes(_bRec.items[s])) : _bRec.items[s] === n));
     collapseAllCtl = `<div style="display:flex;justify-content:flex-end;padding:2px 0 2px;"><span onclick="_clSetAllBatchesCollapsed(${allCol ? 'false' : 'true'})" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">${allCol ? '⤢ Expand all batches' : '⤡ Collapse all batches'}</span></div>`;
   }
-  body.innerHTML = '<div class="cl-sticky-top">' + scopeToggle + estLine + intro + collapseAllCtl + '</div>' + bodyHtml;
+  // 📋 Run sheet from a planner BLOCK — so the job can be laid out step by step,
+  // with a finish time against each one, before it's even started. The order set
+  // there rides onto the clock at clock-in (see the _planId carry in clockIn).
+  let rsCtl = '';
+  if (pid && _plannerPlans.some(p => p.id === pid) && Object.keys(flags).length) {
+    rsCtl = `<div onclick="openRunSheet('${_attr(pid)}')" style="display:flex;align-items:center;justify-content:center;gap:7px;margin:8px 0 2px;padding:9px 12px;border-radius:10px;border:1px solid rgba(90,200,250,0.4);background:rgba(90,200,250,0.1);color:#5ac8fa;font-size:13px;font-weight:600;cursor:pointer;">📋 Run sheet — what finishes when</div>`;
+  }
+  body.innerHTML = '<div class="cl-sticky-top">' + scopeToggle + estLine + rsCtl + intro + collapseAllCtl + '</div>' + bodyHtml;
 }
 
 function openPlannerDetail(planId) {
