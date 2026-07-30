@@ -2075,6 +2075,21 @@
   </div>
 </div>
 
+<!-- ══════════════ RUN SHEET ══════════════ -->
+<!-- The planned run as one timed list: a row per planned lap of every flagged task,
+     each carrying the clock time it should be finished by. Full-height like the
+     Organise sheet — it's a screen, not a popover. -->
+<div class="modal-backdrop" id="modal-run-sheet" style="z-index:362;" onclick="if(event.target===this)closeModal('modal-run-sheet')">
+  <div class="modal-sheet" style="padding:16px 0 28px;height:92vh;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;">
+    <div class="modal-handle"></div>
+    <div style="padding:0 20px 10px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
+      <span id="run-sheet-title" style="font-size:16px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:10px;"></span>
+      <span onclick="closeModal('modal-run-sheet')" style="color:var(--blue);font-size:16px;cursor:pointer;flex-shrink:0;">Done</span>
+    </div>
+    <div id="run-sheet-body" style="padding:0 20px;overflow-y:auto;overflow-x:hidden;flex:1;"></div>
+  </div>
+</div>
+
 <!-- ══════════════ HOW-TO VIDEO PLAYER ══════════════ -->
 <div class="modal-backdrop" id="modal-video-player" style="z-index:380;" onclick="if(event.target===this)closeVideoPlayer()">
   <div class="modal-sheet" style="padding:16px 0 28px;height:92vh;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;">
@@ -2804,7 +2819,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.257';
+const APP_VERSION = '2026-06-21.258';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4861,11 +4876,22 @@ function renderRunChecklist() {
   }
   const addLink = `<span onclick="openRunAdd('${tab}')" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">+ Add ${tab === 'tasks' ? 'task' : 'to-do'}</span>`;
   const headerHtml = `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:2px 0 6px;">${addLink}${expandLink || '<span></span>'}${organiseLink || '<span></span>'}</div>`;
+  // 📋 Run sheet — its own full-width row rather than a fourth link in the header
+  // (four of them don't fit a phone). Tasks tab only, and only once something is
+  // flagged, since flagged work is all the sheet lists.
+  let runSheetHtml = '';
+  if (tab === 'tasks' && clockState && clockState.running && Object.keys(_sessionOrGlobalFlags(clockState.task)).length) {
+    runSheetHtml = `<div onclick="openRunSheet()" style="display:flex;align-items:center;justify-content:center;gap:7px;margin:0 0 8px;padding:9px 12px;border-radius:10px;border:1px solid rgba(90,200,250,0.4);background:rgba(90,200,250,0.1);color:#5ac8fa;font-size:13px;font-weight:600;cursor:pointer;">📋 Run sheet — what finishes when</div>`;
+  }
   const prevScroll = (document.getElementById('run-checklist-scroll') || {}).scrollTop || 0;
-  el.innerHTML = headerHtml + `<div id="run-checklist-scroll" onscroll="runListInteract()" style="flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;">${rows}</div>`;
+  el.innerHTML = headerHtml + runSheetHtml + `<div id="run-checklist-scroll" onscroll="runListInteract()" style="flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;">${rows}</div>`;
   const sc = document.getElementById('run-checklist-scroll');
   if (sc) sc.scrollTop = prevScroll;
   _loadPhotoThumbs();
+  // Keep the run sheet honest if it's open behind this — a tick, a flag or a lap
+  // change here must move its times too.
+  const _rsSheet = document.getElementById('modal-run-sheet');
+  if (_rsSheet && _rsSheet.classList.contains('open')) _rsRender();
 }
 
 // ── Per-item checklist averages (Dashboard → Checklist Item Times) ──────────
@@ -15696,6 +15722,243 @@ function _clSessionLapAdj(item, delta) {
   const finEl = document.getElementById('run-ring-finish');
   const fin = finEl ? (finEl.textContent || '').trim() : '';   // already carries its own 🏁
   showToast('🔁 ' + n + ' lap' + (n === 1 ? '' : 's') + ' planned · ' + left + ' left' + (fin ? ' · ' + fin : ''));
+}
+// ══════════════════════════════════════════════════════════════════════════════
+//  RUN SHEET — the planned run as one timed list
+// ══════════════════════════════════════════════════════════════════════════════
+// One row per PLANNED LAP of every 🚩 flagged task, in the order you'll actually do
+// them, each stamped with the clock time it should be finished by. Tick a row and it
+// greys out keeping the time it ACTUALLY finished, so the list is a record of the day
+// so far as well as a forecast of the rest of it.
+//
+// Deliberate scope (decided with Lincoln 2026-07-30):
+//   • flagged tasks ONLY — an unflagged task isn't part of today, so it isn't here
+//   • no to-dos — they carry no learned duration, so every row would read "—"
+//   • today's session only — laps ticked in an earlier session of the same run are
+//     left off rather than listed as history
+//   • arranging this list is INTENT, not evidence. It never feeds the learned task
+//     order, which still comes only from the sequence you tick things off in.
+//
+// Instance identity needs no new storage: a rep tick already records its lap number
+// (checklistDone holds {item, at, rep}), so lap 2 of a task finds its own tick and
+// its own timestamp. clockState.runOrder holds the arranged sequence as instance
+// keys, because orderOverride is a flat list of task NAMES and cannot express the
+// same task appearing three times.
+const _RS_SEP = '\u0001';   // a control char can't occur in a task name, so "Travel"+12 never collides with "Travel1"+2
+function _rsKey(t, n) { return t + _RS_SEP + n; }
+
+// Which lap-instances belong on today's sheet: for each flagged task, the laps still
+// owing plus any ticked THIS session (including laps run past the plan).
+function _rsInstances() {
+  if (!clockState || !clockState.running || !clockState.task) return [];
+  const job = clockState.task;
+  const flags = _sessionOrGlobalFlags(job);
+  const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
+  const subs = SUBTASKS[job] || [];
+  const out = [];
+  Object.keys(flags).forEach(item => {
+    if (!subs.includes(item)) return;   // a flag can outlive the task it was set on
+    if (!isRepeatTask(job, item)) {
+      const hit = done.find(d => d.item === item && !d.rep && !d.lap);
+      out.push({ t: item, n: 0, doneAt: hit ? hit.at : null });
+      return;
+    }
+    const mine = done.filter(d => d.item === item && d.rep);
+    const before = Math.max(0, taskRepCount(job, item) - mine.length);   // laps from earlier sessions — not today's business
+    const last = Math.max(_sessionPlannedLaps(job, item), before + mine.length);
+    for (let n = before + 1; n <= last; n++) {
+      const hit = mine.find(d => d.rep === n);
+      out.push({ t: item, n, doneAt: hit ? hit.at : null });
+    }
+  });
+  return out;
+}
+
+// Default order is CYCLE-MAJOR: one pass through every flagged task, then the next
+// pass, tasks dropping out as their laps run out. In this app a "lap" IS a pass
+// through the task set (the enduro model), so stacking all of one task's laps
+// together would fight the model — and you'd re-drag it every time.
+function _rsDefaultOrder(insts, job) {
+  const base = _sessionOrGlobalOrder(job) || SUBTASKS[job] || [];
+  const byTask = new Map();
+  insts.forEach(x => { if (!byTask.has(x.t)) byTask.set(x.t, []); byTask.get(x.t).push(x); });
+  byTask.forEach(a => a.sort((p, q) => p.n - q.n));
+  const tasks = [...byTask.keys()].sort((a, b) => {
+    const ia = base.indexOf(a), ib = base.indexOf(b);
+    return (ia < 0 ? 1e9 : ia) - (ib < 0 ? 1e9 : ib);
+  });
+  const deepest = tasks.reduce((m, t) => Math.max(m, byTask.get(t).length), 0);
+  const out = [];
+  for (let c = 0; c < deepest; c++) tasks.forEach(t => { const a = byTask.get(t); if (a[c]) out.push(a[c]); });
+  return out;
+}
+
+// Merge the arranged order with what's actually on the sheet now. Survivors keep
+// their position; anything new (a lap added with the 🔁 stepper, a task just
+// flagged) slots in after that task's last instance, else at the end. This is the
+// part that has to hold up when the plan changes mid-job.
+function _rsOrdered() {
+  const insts = _rsInstances();
+  if (!insts.length) return [];
+  const job = clockState.task;
+  const pool = new Map(insts.map(x => [_rsKey(x.t, x.n), x]));
+  const out = [];
+  if (Array.isArray(clockState.runOrder)) {
+    clockState.runOrder.forEach(k => { if (pool.has(k)) { out.push(pool.get(k)); pool.delete(k); } });
+  }
+  if (!pool.size) return out;
+  const fresh = _rsDefaultOrder([...pool.values()], job);
+  // Nothing arranged yet → the cycle-major default IS the order. (Applying the
+  // slot-in rule below to a fresh sheet would re-group every task's laps together,
+  // which is the one thing this default exists to avoid.)
+  if (!out.length) return fresh;
+  fresh.forEach(x => {
+    let at = -1;
+    for (let i = out.length - 1; i >= 0; i--) if (out[i].t === x.t) { at = i; break; }
+    if (at >= 0) out.splice(at + 1, 0, x); else out.push(x);
+  });
+  return out;
+}
+
+// Stamp each row with a clock time. Done rows keep the moment they were ticked;
+// the rest accumulate their learned averages from the SAME anchor the 🏁 finish time
+// uses (the last tick, plus any time not worked since), so the final row and the ring
+// agree to the minute. A task with no timed history contributes nothing and shows
+// "—" rather than inventing a time.
+function _rsRows() {
+  const rows = _rsOrdered();
+  if (!rows.length) return [];
+  const avg = _taskHistAvgMap();
+  const now = Date.now();
+  const anchor = _runAnchorMs();
+  let idle = _breakOverlapMs(clockState.breaks, anchor, now);
+  if (clockState.onBreak && clockState.breakStartMs) idle += Math.max(0, now - Math.max(clockState.breakStartMs, anchor));
+  let cursor = anchor + idle;
+  const perTask = {};
+  rows.forEach(r => { perTask[r.t] = (perTask[r.t] || 0) + 1; });
+  const seen = {};
+  const nextUndone = {};
+  rows.forEach(r => { if (!r.doneAt && nextUndone[r.t] === undefined) nextUndone[r.t] = r.n; });
+  return rows.map(r => {
+    seen[r.t] = (seen[r.t] || 0) + 1;
+    const a = avg[_normTaskKey(r.t)];
+    const mins = (isFinite(a) && a > 0) ? a : 0;
+    let when = null;
+    if (r.doneAt) when = new Date(r.doneAt).getTime();
+    else if (mins > 0) { cursor += mins * 60000; when = Math.max(cursor, now); }
+    return { ...r, mins, when, isDone: !!r.doneAt, lapIdx: seen[r.t], lapTotal: perTask[r.t],
+             tappable: !r.doneAt && nextUndone[r.t] === r.n };
+  });
+}
+
+function openRunSheet() {
+  if (!clockState || !clockState.running) { showToast('Clock in first — the run sheet lists the job you’re on'); return; }
+  openModal('modal-run-sheet');
+  _rsRender();
+}
+function _rsHM(ms) { const d = new Date(ms); return formatTimeAmPm(String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')); }
+
+function _rsRender() {
+  const body = document.getElementById('run-sheet-body');
+  if (!body) return;
+  const titleEl = document.getElementById('run-sheet-title');
+  if (!clockState || !clockState.running) {
+    if (titleEl) titleEl.textContent = 'Run sheet';
+    body.innerHTML = '<div style="padding:44px 0;text-align:center;color:var(--subtext);font-size:15px;">Clock in to see the run sheet.</div>';
+    return;
+  }
+  if (titleEl) titleEl.textContent = clockState.task;
+  const rows = _rsRows();
+  if (!rows.length) {
+    body.innerHTML = `<div style="padding:38px 6px;text-align:center;color:var(--subtext);font-size:15px;line-height:1.55;">Nothing flagged yet.<br>
+      <span style="font-size:13px;">Open <b>⤢ Organise</b> and swipe a task right to 🚩 flag it. Flagged tasks are the ones you plan to do today — they're what this sheet lists.</span></div>`;
+    return;
+  }
+  const doneN = rows.filter(r => r.isDone).length;
+  const lastPending = rows.filter(r => !r.isDone && r.when).slice(-1)[0];
+  const head = `<div style="margin:10px 0 4px;padding:9px 12px;border-radius:10px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.35);font-size:13px;color:var(--text);">
+      ✓ ${doneN} of ${rows.length} done${lastPending ? ' · 🏁 last one ~<b>' + _rsHM(lastPending.when) + '</b>' : ''}</div>
+    <div style="font-size:11px;color:var(--subtext);margin:0 0 10px;">Hold &amp; drag a row to set the order you'll actually do them in — every time below it re-forecasts. Tap a row to tick it off.</div>`;
+  const rowsHtml = rows.map(r => {
+    const key = _rsKey(r.t, r.n);
+    const lap = r.lapTotal > 1 ? `<span style="font-size:11px;font-weight:700;color:#30d158;flex-shrink:0;">🔁 ${r.lapIdx}/${r.lapTotal}</span>` : '';
+    const timeTxt = r.isDone
+      ? `<span style="font-size:13px;font-weight:700;color:#616a7e;white-space:nowrap;">✓ ${_rsHM(r.when)}</span>`
+      : (r.when ? `<span style="font-size:13px;font-weight:700;color:${r.tappable ? '#30d158' : 'var(--subtext)'};white-space:nowrap;">~${_rsHM(r.when)}</span>`
+                : '<span style="font-size:13px;color:var(--subtext);white-space:nowrap;" title="no timed history yet">—</span>');
+    const tap = r.tappable ? ` onclick="_rsTick(decodeURIComponent('${encodeURIComponent(r.t).replace(/'/g, '%27')}'))"` : '';
+    return `<div class="rs-row" data-rs-key="${_attr(key)}" ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)"${tap}
+      style="display:flex;align-items:center;gap:9px;margin-bottom:8px;padding:11px 10px;border-radius:8px;border:1px solid ${r.tappable ? 'rgba(48,209,88,0.45)' : 'var(--border)'};background:${r.isDone ? 'transparent' : 'var(--card)'};${r.tappable ? 'cursor:pointer;' : ''}">
+      <span style="font-size:15px;flex-shrink:0;opacity:${r.isDone ? '0.5' : '1'};">${r.isDone ? '✓' : '🚩'}</span>
+      <span style="flex:1;min-width:0;overflow-wrap:anywhere;font-size:15px;color:${r.isDone ? '#616a7e' : 'var(--text)'};">${_escHtml(r.t)}</span>
+      ${lap}${timeTxt}
+      <span style="font-size:12px;color:var(--subtext);flex-shrink:0;">⠿</span></div>`;
+  }).join('');
+  body.innerHTML = head + rowsHtml;
+}
+
+// Tick the NEXT owed lap of a task. Goes through the ordinary completion path, so
+// the sheet can never disagree with the clock about what's done.
+function _rsTick(task) {
+  if (Date.now() < _clSwipeBlockClickUntil) return;   // a drag just happened — not a tap
+  markChecklistItemDone(task);
+  _rsRender();
+}
+
+// Minimal drag for a FLAT list — no batches, no flag groups, every row eligible.
+// Commits from DOM order, which is how the Organise drag does it too.
+let _rsDrag = null, _rsHoldTimer = null, _rsTouch = null;
+function _rsDragStart(e) {
+  const row = e.currentTarget, y = e.touches[0].clientY;
+  _rsTouch = { row, y, x: e.touches[0].clientX };
+  clearTimeout(_rsHoldTimer);
+  _rsHoldTimer = setTimeout(() => {
+    _rsHoldTimer = null;
+    const rect = row.getBoundingClientRect();
+    _rsDrag = { row, grabOffset: y - rect.top, scroller: document.getElementById('run-sheet-body') };
+    _clSwipeBlockClickUntil = Date.now() + 600;
+    row.style.transition = 'none'; row.style.opacity = '0.95';
+    row.style.boxShadow = '0 6px 16px rgba(0,0,0,0.45)';
+    row.style.position = 'relative'; row.style.zIndex = '5';
+    row.style.transform = 'scale(1.03)';
+    if (navigator.vibrate) { try { navigator.vibrate(15); } catch (err) {} }
+  }, _CL_HOLD_MS);
+}
+function _rsReposition(clientY) {
+  const dragged = _rsDrag.row, parent = dragged.parentNode;
+  const others = [...parent.children].filter(c => c !== dragged && c.classList && c.classList.contains('rs-row'));
+  const target = others.find(r => { const b = r.getBoundingClientRect(); return clientY < b.top + b.height / 2; });
+  if (target) parent.insertBefore(dragged, target);
+  else { const last = others[others.length - 1]; if (last) parent.insertBefore(dragged, last.nextSibling); }
+  dragged.style.transform = 'none';
+  dragged.style.transform = 'translateY(' + (clientY - _rsDrag.grabOffset - dragged.getBoundingClientRect().top) + 'px) scale(1.03)';
+}
+function _rsDragMove2(e) {
+  if (_rsDrag) {
+    e.preventDefault();
+    _rsDrag.lastY = e.touches[0].clientY;
+    _rsReposition(_rsDrag.lastY);
+    _clEdgeScroll(_rsDrag.scroller, _rsDrag.lastY, () => { if (_rsDrag) _rsReposition(_rsDrag.lastY); });
+    return;
+  }
+  if (_rsTouch && _rsHoldTimer) {
+    const dx = Math.abs(e.touches[0].clientX - _rsTouch.x), dy = Math.abs(e.touches[0].clientY - _rsTouch.y);
+    if (dx > 8 || dy > 8) { clearTimeout(_rsHoldTimer); _rsHoldTimer = null; }   // scrolling, not holding
+  }
+}
+function _rsDragEnd2() {
+  clearTimeout(_rsHoldTimer); _rsHoldTimer = null; _rsTouch = null;
+  if (!_rsDrag) return;
+  _clStopEdgeScroll();
+  const dragged = _rsDrag.row, parent = dragged.parentNode;
+  _rsDrag = null;
+  dragged.style.transition = 'transform 0.15s, box-shadow 0.15s, opacity 0.15s';
+  dragged.style.transform = ''; dragged.style.opacity = ''; dragged.style.boxShadow = '';
+  dragged.style.position = ''; dragged.style.zIndex = '';
+  const order = [...parent.children].filter(c => c.classList && c.classList.contains('rs-row')).map(c => c.dataset.rsKey);
+  clockState.runOrder = order;
+  _storeSet('kr_clock', JSON.stringify(clockState));
+  _rsRender();   // every time below the moved row re-forecasts
 }
 function toggleChecklistFlag(task, item) {
   const pid = _clTargetPlanId();
