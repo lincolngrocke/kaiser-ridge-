@@ -2819,7 +2819,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.258';
+const APP_VERSION = '2026-06-21.259';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -15469,6 +15469,9 @@ function _clDragMove(clientY) {
 // the pull is stronger the deeper into the zone. `onScroll` (optional) runs each
 // scrolled frame so the dragged row re-homes against the last finger position.
 let _clScrollRAF = null, _clScrollStep = 0, _clScrollFn = null, _clScrollEl = null;
+// Run-sheet drag state lives up here with the other scroll-loop participants: the
+// guard in _clScrollTick below reads it, so it must be initialised before that runs.
+let _rsDrag = null, _rsHoldTimer = null, _rsTouch = null;
 function _clEdgeScroll(el, clientY, onScroll) {
   if (!el) { _clStopEdgeScroll(); return; }
   const r = el.getBoundingClientRect();
@@ -15504,7 +15507,10 @@ function _clEdgeScroll(el, clientY, onScroll) {
 }
 function _clScrollTick(fromMove) {
   if (!fromMove) _clScrollRAF = null;
-  if (!_clScrollStep || !_clScrollEl || (!_clDrag && !_clHeadDrag && !_pinDrag)) { _clStopEdgeScroll(); return; }   // drag ended → stop
+  // Every drag type that uses edge-scroll must be listed here — a missing one makes
+  // the rAF loop quit on its first frame, so the list only creeps forward as the
+  // finger moves and stops dead when it's held still (v258's run sheet had this).
+  if (!_clScrollStep || !_clScrollEl || (!_clDrag && !_clHeadDrag && !_pinDrag && !_rsDrag)) { _clStopEdgeScroll(); return; }   // drag ended → stop
   const before = _clScrollEl.scrollTop;
   _clScrollEl.scrollTop += _clScrollStep;
   if (_clScrollEl.scrollTop !== before && _clScrollFn) _clScrollFn();
@@ -15876,9 +15882,15 @@ function _rsRender() {
   }
   const doneN = rows.filter(r => r.isDone).length;
   const lastPending = rows.filter(r => !r.isDone && r.when).slice(-1)[0];
-  const head = `<div style="margin:10px 0 4px;padding:9px 12px;border-radius:10px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.35);font-size:13px;color:var(--text);">
+  // The count + finish time stay PINNED while the list scrolls (.cl-sticky-top, the
+  // same treatment the Organise sheet uses) — on a 40-row sheet the whole point is
+  // being able to see "last one ~6:11am" whatever part of the day you're looking at.
+  // _clEdgeScroll measures this header too, so the drag's up-scroll zone starts below
+  // it rather than underneath it.
+  const head = `<div class="cl-sticky-top">
+    <div style="margin:10px 0 4px;padding:9px 12px;border-radius:10px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.35);font-size:13px;color:var(--text);">
       ✓ ${doneN} of ${rows.length} done${lastPending ? ' · 🏁 last one ~<b>' + _rsHM(lastPending.when) + '</b>' : ''}</div>
-    <div style="font-size:11px;color:var(--subtext);margin:0 0 10px;">Hold &amp; drag a row to set the order you'll actually do them in — every time below it re-forecasts. Tap a row to tick it off.</div>`;
+    <div style="font-size:11px;color:var(--subtext);margin:0 0 8px;">Hold &amp; drag a row to set the order you'll actually do them in — every time below it re-forecasts. Tap a row to tick it off.</div></div>`;
   const rowsHtml = rows.map(r => {
     const key = _rsKey(r.t, r.n);
     const lap = r.lapTotal > 1 ? `<span style="font-size:11px;font-weight:700;color:#30d158;flex-shrink:0;">🔁 ${r.lapIdx}/${r.lapTotal}</span>` : '';
@@ -15907,7 +15919,6 @@ function _rsTick(task) {
 
 // Minimal drag for a FLAT list — no batches, no flag groups, every row eligible.
 // Commits from DOM order, which is how the Organise drag does it too.
-let _rsDrag = null, _rsHoldTimer = null, _rsTouch = null;
 function _rsDragStart(e) {
   const row = e.currentTarget, y = e.touches[0].clientY;
   _rsTouch = { row, y, x: e.touches[0].clientX };
