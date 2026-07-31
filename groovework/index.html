@@ -2819,7 +2819,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.264';
+const APP_VERSION = '2026-06-21.265';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -16140,7 +16140,7 @@ function _rsRender() {
       ${summary}</div>
     <div style="font-size:11px;color:var(--subtext);margin:0 0 8px;">${hint}</div></div>`;
   const avgMap = _taskHistAvgMap(), cntMap = _taskHistCountMap();   // built once, not per row
-  const stepsMap = getSubtaskSteps(), sMaps = _stepHistMaps();
+  const stepsMap = getSubtaskSteps();   // step AVERAGES aren't read here — the sheet shows no per-step times
   const rowsHtml = rows.map(r => {
     const key = _rsKey(r.t, r.n);
     const nSteps = (stepsMap[r.t] || []).length;
@@ -16179,7 +16179,7 @@ function _rsRender() {
         ${(_avgMeta(r.t, avgMap, cntMap) || nowChip || stepChip) ? `<span style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">${_avgMeta(r.t, avgMap, cntMap)}${nowChip}${stepChip}</span>` : ''}</span>
       ${lap}${timeTxt}
       <span style="font-size:12px;color:var(--subtext);flex-shrink:0;">⠿</span></div>
-      ${open ? `<div style="padding-top:6px;">${_rsStepsHtml(r, ctx, stepsMap, sMaps)}</div>` : ''}</div>`;
+      ${open ? `<div style="padding-top:6px;">${_rsStepsHtml(r, ctx, stepsMap)}</div>` : ''}</div>`;
   }).join('');
   body.innerHTML = head + rowsHtml;
 }
@@ -16204,32 +16204,31 @@ function _rsIsOpen(r, key) {
   if (r.isNow && _rsCollapsedNow !== key) return true;   // E — the row you're on opens itself
   return _rsExpanded.has(key);                            // C — anything else, by choice
 }
-// One line per step, indented under its task: ticked steps keep the time they were
-// actually ticked, the rest forecast forward from where the task starts. A step with
-// no timed history shows "—" rather than an invented minute.
-function _rsStepsHtml(r, ctx, stepsMap, sMaps) {
+// One line per step, indented under its task — NO times. A step is a slice of its
+// task, not a scheduled thing in its own right; per-step clock times added a column
+// of "—" and precision the sheet can't honour. The task's own time is the promise.
+//
+// The whole group sits in ONE box rather than outlining the current step, so the
+// steps read as belonging to their task. Blue only when it's the ▶ NOW task, since
+// blue means "you are here" everywhere else on this sheet; a row you opened yourself
+// gets a neutral box so it can't be mistaken for the one you're on.
+function _rsStepsHtml(r, ctx, stepsMap) {
   const steps = stepsMap[r.t] || [];
   if (!steps.length) return '';
   const live = ctx.kind === 'clock';
   const checks = (live && clockState.stepChecks && clockState.stepChecks[r.t]) || {};
-  const sdone = (live && Array.isArray(clockState.stepDone)) ? clockState.stepDone : [];
   const nextStep = steps.find(s => !checks[s]);
-  let cur = Math.max(r.startWhen, r.floor === -Infinity ? r.startWhen : Date.now());
-  return steps.map(s => {
+  const body = steps.map(s => {
     const ticked = !!checks[s];
-    const hit = ticked ? sdone.find(x => x.item === r.t && x.step === s) : null;
-    const avg = _stepAvgMin(r.t, s, sMaps);
-    let timeTxt;
-    if (hit) timeTxt = `<span style="font-size:12px;font-weight:700;color:#616a7e;white-space:nowrap;">✓ ${_rsHM(new Date(hit.at).getTime())}</span>`;
-    else if (avg > 0) { cur += avg * 60000; timeTxt = `<span style="font-size:12px;color:var(--subtext);white-space:nowrap;">~${_rsHM(cur)}</span>`; }
-    else timeTxt = `<span style="font-size:12px;color:var(--subtext);white-space:nowrap;" title="no timed history yet">—</span>`;
     const isCur = live && r.isNow && s === nextStep && !ticked;
-    return `<div style="display:flex;align-items:center;gap:8px;margin:0 0 5px 30px;padding:6px 9px;border-radius:7px;
-      border:1px solid ${isCur ? 'rgba(90,200,250,0.45)' : 'transparent'};background:${isCur ? 'rgba(90,200,250,0.07)' : 'transparent'};">
-      <span style="font-size:11px;flex-shrink:0;color:${ticked ? '#616a7e' : 'var(--subtext)'};">${ticked ? '✓' : '·'}</span>
-      <span style="flex:1;min-width:0;overflow-wrap:anywhere;font-size:13px;color:${ticked ? '#616a7e' : 'var(--text)'};">${_escHtml(s)}</span>
-      ${timeTxt}</div>`;
+    return `<div style="display:flex;align-items:flex-start;gap:8px;padding:5px 2px;">
+      <span style="font-size:11px;flex-shrink:0;line-height:1.5;color:${ticked ? '#616a7e' : (isCur ? '#5ac8fa' : 'var(--subtext)')};">${ticked ? '✓' : (isCur ? '▸' : '·')}</span>
+      <span style="flex:1;min-width:0;overflow-wrap:anywhere;font-size:13px;line-height:1.45;color:${ticked ? '#616a7e' : 'var(--text)'};">${_escHtml(s)}</span></div>`;
   }).join('');
+  const box = r.isNow
+    ? 'border:1px solid rgba(90,200,250,0.55);background:rgba(90,200,250,0.07);'
+    : 'border:1px solid var(--border);background:transparent;';
+  return `<div style="margin:0 0 0 22px;padding:6px 10px;border-radius:8px;${box}">${body}</div>`;
 }
 
 // Tick the NEXT owed lap of a task. Goes through the ordinary completion path, so
