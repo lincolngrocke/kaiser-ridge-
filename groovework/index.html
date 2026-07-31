@@ -2819,7 +2819,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.261';
+const APP_VERSION = '2026-06-21.262';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3182,6 +3182,7 @@ function startTimerTick() {
         } else breakEl.textContent = '';
       }
       updateRunRing(netElapsed);
+      _rsTickNowElapsed();   // keeps the run sheet's ▶ NOW figure live if the sheet is open
       updateAtTimes();
     }
   }, 1000);
@@ -15932,7 +15933,11 @@ function _rsRows(ctx) {
   const seen = {};
   const nextUndone = {};
   rows.forEach(r => { if (!r.doneAt && nextUndone[r.t] === undefined) nextUndone[r.t] = r.n; });
-  return rows.map(r => {
+  // "You are here" — the first unticked row in the ARRANGED order, i.e. the one you
+  // should be on right now. Distinct from `tappable`, which is per-task (the next
+  // owed lap of that task) and so lights up nearly every row early in a job.
+  const nowIdx = ctx.kind === 'clock' ? rows.findIndex(r => !r.doneAt) : -1;
+  return rows.map((r, i) => {
     seen[r.t] = (seen[r.t] || 0) + 1;
     const a = avg[_normTaskKey(r.t)];
     const mins = (isFinite(a) && a > 0) ? a : 0;
@@ -15940,8 +15945,26 @@ function _rsRows(ctx) {
     if (r.doneAt) when = new Date(r.doneAt).getTime();
     else if (mins > 0) { cursor += mins * 60000; when = Math.max(cursor, floor); }
     return { ...r, mins, when, isDone: !!r.doneAt, lapIdx: seen[r.t], lapTotal: perTask[r.t],
+             isNow: i === nowIdx,
              tappable: ctx.kind === 'clock' && !r.doneAt && nextUndone[r.t] === r.n };
   });
+}
+
+// How long you've been on the current row: time since the last tick, minus any of it
+// spent on a break. With no ticks yet the anchor is clock-in, which is the right
+// answer for the first row too.
+function _rsNowElapsedMin() {
+  if (!clockState || !clockState.running) return 0;
+  const a = _runAnchorMs(), now = Date.now();
+  let idle = _breakOverlapMs(clockState.breaks, a, now);
+  if (clockState.onBreak && clockState.breakStartMs) idle += Math.max(0, now - Math.max(clockState.breakStartMs, a));
+  return Math.max(0, (now - a - idle) / 60000);
+}
+// Patched in place by the per-second clock tick so the figure stays live without
+// re-rendering the list (a re-render mid-drag would drop the row being held).
+function _rsTickNowElapsed() {
+  const el = document.getElementById('rs-now-elapsed');
+  if (el) el.textContent = fmtMin(_rsNowElapsedMin());
 }
 
 // planId → plan the job before it starts; no arg → the job you're clocked into.
@@ -15997,12 +16020,23 @@ function _rsRender() {
       : (r.when ? `<span style="font-size:13px;font-weight:700;color:${r.tappable ? '#30d158' : 'var(--subtext)'};white-space:nowrap;">~${_rsHM(r.when)}</span>`
                 : '<span style="font-size:13px;color:var(--subtext);white-space:nowrap;" title="no timed history yet">—</span>');
     const tap = r.tappable ? ` onclick="_rsTick(decodeURIComponent('${encodeURIComponent(r.t).replace(/'/g, '%27')}'))"` : '';
+    // ▶ NOW — the one row you're on. Blue, so it can't be confused with the green
+    // that means "timed/forecast" elsewhere on the sheet, and calm rather than
+    // alarming: it says where you are, it doesn't chase you.
+    // Sits on the META line, not the title line: putting it beside the text squeezed a
+    // long task name into a seven-line column. The border and tint already carry the
+    // "you are here" weight, so the chip only has to label it.
+    const nowChip = r.isNow
+      ? `<span style="display:inline-flex;align-items:center;flex-shrink:0;font-size:11px;font-weight:700;color:#5ac8fa;background:rgba(90,200,250,0.18);border:1px solid rgba(90,200,250,0.5);border-radius:9px;padding:0 7px;gap:4px;"><span>▶ NOW ·</span><span id="rs-now-elapsed">${fmtMin(_rsNowElapsedMin())}</span></span>`
+      : '';
+    const border = r.isNow ? 'rgba(90,200,250,0.75)' : (r.tappable ? 'rgba(48,209,88,0.45)' : 'var(--border)');
+    const bg = r.isDone ? 'transparent' : (r.isNow ? 'rgba(90,200,250,0.10)' : 'var(--card)');
     return `<div class="rs-row" data-rs-key="${_attr(key)}" ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)"${tap}
-      style="display:flex;align-items:center;gap:9px;margin-bottom:8px;padding:11px 10px;border-radius:8px;border:1px solid ${r.tappable ? 'rgba(48,209,88,0.45)' : 'var(--border)'};background:${r.isDone ? 'transparent' : 'var(--card)'};${r.tappable ? 'cursor:pointer;' : ''}">
+      style="display:flex;align-items:center;gap:9px;margin-bottom:8px;padding:11px 10px;border-radius:8px;border:1px solid ${border};background:${bg};${r.tappable ? 'cursor:pointer;' : ''}">
       <span style="font-size:15px;flex-shrink:0;opacity:${r.isDone ? '0.5' : '1'};">${r.isDone ? '✓' : '🚩'}</span>
-      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;">
+      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;">
         <span style="overflow-wrap:anywhere;font-size:15px;color:${r.isDone ? '#616a7e' : 'var(--text)'};">${_escHtml(r.t)}</span>
-        ${_avgMeta(r.t, avgMap, cntMap)}</span>
+        ${(_avgMeta(r.t, avgMap, cntMap) || nowChip) ? `<span style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">${_avgMeta(r.t, avgMap, cntMap)}${nowChip}</span>` : ''}</span>
       ${lap}${timeTxt}
       <span style="font-size:12px;color:var(--subtext);flex-shrink:0;">⠿</span></div>`;
   }).join('');
