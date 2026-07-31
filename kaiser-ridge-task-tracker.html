@@ -2819,7 +2819,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.263';
+const APP_VERSION = '2026-06-21.264';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -14356,6 +14356,64 @@ function _avgMeta(item, avgMap, cntMap) {
   const t = _taskAvgCountLabel(item, avgMap, cntMap);
   return t ? `<span style="font-size:11px;color:#616a7e;">${t}</span>` : '';
 }
+
+// ── Learned STEP times ────────────────────────────────────────────────────────
+// Clock-out has always written the raw step ticks into the entry (steps:
+// [{item, step, at}]) — nothing aggregated them, so no surface could say how long
+// a step typically takes. These mirror the task maps above.
+//
+// Durations are recomputed here from the stored timestamps on the MERGED timeline
+// (step ticks + task ticks, in time order), the same basis _stepDurations uses
+// live. That matters: v185 fixed the computation, not the recording, so entries
+// written before it still yield correct numbers through this path.
+//
+// Caveat: an entry doesn't store to-do tick times, so a step ticked straight after
+// a to-do absorbs that to-do's slice. It inflates the odd sample rather than
+// skewing a step with a few of them behind it.
+const _STEPSEP = '~|~';
+function _stepKey(item, step) { return item + _STEPSEP + step; }
+function _entryStepDurations(e) {
+  const sd = Array.isArray(e.steps) ? e.steps : [];
+  if (!sd.length) return {};
+  const done = Array.isArray(e.checklist) ? e.checklist : [];
+  const events = sd.map(d => ({ item: _stepKey(d.item, d.step), at: d.at }))
+    .concat(done.map(d => ({ item: 't:' + _occKey(d), at: d.at })))   // anchors, discarded after
+    .sort((a, b) => new Date(a.at) - new Date(b.at));
+  const ci = _entryClockInEpoch(e);
+  const clockIn = (ci != null) ? ci : new Date(events[0].at).getTime();
+  const raw = _computeChecklistDurations(events, clockIn, e.breaks);
+  const out = {};
+  sd.forEach(d => {
+    const k = _stepKey(d.item, d.step);
+    const m = raw[k];
+    if (isFinite(m) && m >= 0 && m <= 24 * 60) out[k] = m;   // same outlier guard as tasks
+  });
+  return out;
+}
+let _stepHistCache = { len: -1, avg: null, cnt: null };
+function _stepHistMaps() {
+  if (_stepHistCache.len === entries.length && _stepHistCache.avg) return _stepHistCache;
+  const agg = {};
+  entries.forEach(e => {
+    const d = _entryStepDurations(e);
+    Object.keys(d).forEach(k => {
+      const key = _normTaskKey(_stripLap(k));   // a step done on 3 laps = 3 samples of one step
+      if (!agg[key]) agg[key] = { count: 0, total: 0 };
+      agg[key].count++; agg[key].total += d[k];
+    });
+  });
+  const avg = {}, cnt = {};
+  Object.keys(agg).forEach(k => { avg[k] = agg[k].total / agg[k].count; cnt[k] = agg[k].count; });
+  _stepHistCache = { len: entries.length, avg, cnt };
+  return _stepHistCache;
+}
+function _stepAvgMin(item, step, maps) {
+  const m = (maps || _stepHistMaps()).avg[_normTaskKey(_stepKey(item, step))];
+  return (isFinite(m) && m > 0) ? m : 0;
+}
+function _stepCount(item, step, maps) {
+  return (maps || _stepHistMaps()).cnt[_normTaskKey(_stepKey(item, step))] || 0;
+}
 // Typical laps per run for each checklist item, learned from history: within one
 // timesheet entry a repeat task leaves one lap-stamped sample per rep ("Load
 // truck", "Load truck␂2", …) — the median count across entries is how many laps
@@ -15986,10 +16044,11 @@ function _rsRows(ctx) {
     seen[r.t] = (seen[r.t] || 0) + 1;
     const a = avg[_normTaskKey(r.t)];
     const mins = (isFinite(a) && a > 0) ? a : 0;
+    const startWhen = cursor;            // when this row begins — steps accumulate from here
     let when = null;
     if (r.doneAt) when = new Date(r.doneAt).getTime();
     else if (mins > 0) { cursor += mins * 60000; when = Math.max(cursor, floor); }
-    return { ...r, mins, when, isDone: !!r.doneAt, lapIdx: seen[r.t], lapTotal: perTask[r.t],
+    return { ...r, mins, when, startWhen, floor, isDone: !!r.doneAt, lapIdx: seen[r.t], lapTotal: perTask[r.t],
              isNow: i === nowIdx,
              tappable: ctx.kind === 'clock' && !r.doneAt && nextUndone[r.t] === r.n };
   });
@@ -16081,8 +16140,16 @@ function _rsRender() {
       ${summary}</div>
     <div style="font-size:11px;color:var(--subtext);margin:0 0 8px;">${hint}</div></div>`;
   const avgMap = _taskHistAvgMap(), cntMap = _taskHistCountMap();   // built once, not per row
+  const stepsMap = getSubtaskSteps(), sMaps = _stepHistMaps();
   const rowsHtml = rows.map(r => {
     const key = _rsKey(r.t, r.n);
+    const nSteps = (stepsMap[r.t] || []).length;
+    const open = nSteps ? _rsIsOpen(r, key) : false;
+    // B — the count alone tells you a row has depth, without spending a row on it.
+    const stepChip = nSteps
+      ? `<span onclick="event.stopPropagation();_rsToggleSteps(decodeURIComponent('${encodeURIComponent(key).replace(/'/g, '%27')}'))"
+           style="display:inline-flex;align-items:center;gap:3px;flex-shrink:0;font-size:11px;font-weight:600;color:#5ac8fa;cursor:pointer;">${open ? '▾' : '▸'} ☰ ${nSteps} step${nSteps === 1 ? '' : 's'}</span>`
+      : '';
     const lap = r.lapTotal > 1 ? `<span style="font-size:11px;font-weight:700;color:#30d158;flex-shrink:0;">🔁 ${r.lapIdx}/${r.lapTotal}</span>` : '';
     const timeTxt = r.isDone
       ? `<span style="font-size:13px;font-weight:700;color:#616a7e;white-space:nowrap;">✓ ${_rsHM(r.when)}</span>`
@@ -16100,16 +16167,69 @@ function _rsRender() {
       : '';
     const border = r.isNow ? 'rgba(90,200,250,0.75)' : (r.tappable ? 'rgba(48,209,88,0.45)' : 'var(--border)');
     const bg = r.isDone ? 'transparent' : (r.isNow ? 'rgba(90,200,250,0.10)' : 'var(--card)');
-    return `<div class="rs-row" data-rs-key="${_attr(key)}" ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)"${tap}
-      style="display:flex;align-items:center;gap:9px;margin-bottom:8px;padding:11px 10px;border-radius:8px;border:1px solid ${border};background:${bg};${r.tappable ? 'cursor:pointer;' : ''}">
+    // The .rs-row is a WRAPPER holding the header line and, when open, its steps —
+    // so a drag carries the steps with it instead of stranding them. Tap-to-tick
+    // lives on the header, not the wrapper, so tapping a step can't tick the task.
+    return `<div class="rs-row" data-rs-key="${_attr(key)}" ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)"
+      style="margin-bottom:8px;">
+      <div${tap} style="display:flex;align-items:center;gap:9px;padding:11px 10px;border-radius:8px;border:1px solid ${border};background:${bg};${r.tappable ? 'cursor:pointer;' : ''}">
       <span style="font-size:15px;flex-shrink:0;opacity:${r.isDone ? '0.5' : '1'};">${r.isDone ? '✓' : '🚩'}</span>
       <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;">
         <span style="overflow-wrap:anywhere;font-size:15px;color:${r.isDone ? '#616a7e' : 'var(--text)'};">${_escHtml(r.t)}</span>
-        ${(_avgMeta(r.t, avgMap, cntMap) || nowChip) ? `<span style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">${_avgMeta(r.t, avgMap, cntMap)}${nowChip}</span>` : ''}</span>
+        ${(_avgMeta(r.t, avgMap, cntMap) || nowChip || stepChip) ? `<span style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">${_avgMeta(r.t, avgMap, cntMap)}${nowChip}${stepChip}</span>` : ''}</span>
       ${lap}${timeTxt}
-      <span style="font-size:12px;color:var(--subtext);flex-shrink:0;">⠿</span></div>`;
+      <span style="font-size:12px;color:var(--subtext);flex-shrink:0;">⠿</span></div>
+      ${open ? `<div style="padding-top:6px;">${_rsStepsHtml(r, ctx, stepsMap, sMaps)}</div>` : ''}</div>`;
   }).join('');
   body.innerHTML = head + rowsHtml;
+}
+
+// ── Steps on the run sheet ────────────────────────────────────────────────────
+// Every row with steps carries a quiet "☰ N steps" count. The ▶ NOW row opens
+// itself, because that's the one you're actually working through; any other row
+// opens on a tap of its chevron. Nothing else grows a row it didn't need.
+// _rsCollapsedNow lets you shut the NOW row despite the auto-open, so the choice
+// stays yours; it resets whenever NOW moves on.
+let _rsExpanded = new Set(), _rsCollapsedNow = null;
+function _rsToggleSteps(key) {
+  const rows = _rsRows();
+  const nowRow = rows.find(r => r.isNow);
+  const nowKey = nowRow ? _rsKey(nowRow.t, nowRow.n) : null;
+  if (key === nowKey && !_rsExpanded.has(key)) { _rsCollapsedNow = (_rsCollapsedNow === key) ? null : key; }
+  else if (_rsExpanded.has(key)) _rsExpanded.delete(key);
+  else _rsExpanded.add(key);
+  _rsRender();
+}
+function _rsIsOpen(r, key) {
+  if (r.isNow && _rsCollapsedNow !== key) return true;   // E — the row you're on opens itself
+  return _rsExpanded.has(key);                            // C — anything else, by choice
+}
+// One line per step, indented under its task: ticked steps keep the time they were
+// actually ticked, the rest forecast forward from where the task starts. A step with
+// no timed history shows "—" rather than an invented minute.
+function _rsStepsHtml(r, ctx, stepsMap, sMaps) {
+  const steps = stepsMap[r.t] || [];
+  if (!steps.length) return '';
+  const live = ctx.kind === 'clock';
+  const checks = (live && clockState.stepChecks && clockState.stepChecks[r.t]) || {};
+  const sdone = (live && Array.isArray(clockState.stepDone)) ? clockState.stepDone : [];
+  const nextStep = steps.find(s => !checks[s]);
+  let cur = Math.max(r.startWhen, r.floor === -Infinity ? r.startWhen : Date.now());
+  return steps.map(s => {
+    const ticked = !!checks[s];
+    const hit = ticked ? sdone.find(x => x.item === r.t && x.step === s) : null;
+    const avg = _stepAvgMin(r.t, s, sMaps);
+    let timeTxt;
+    if (hit) timeTxt = `<span style="font-size:12px;font-weight:700;color:#616a7e;white-space:nowrap;">✓ ${_rsHM(new Date(hit.at).getTime())}</span>`;
+    else if (avg > 0) { cur += avg * 60000; timeTxt = `<span style="font-size:12px;color:var(--subtext);white-space:nowrap;">~${_rsHM(cur)}</span>`; }
+    else timeTxt = `<span style="font-size:12px;color:var(--subtext);white-space:nowrap;" title="no timed history yet">—</span>`;
+    const isCur = live && r.isNow && s === nextStep && !ticked;
+    return `<div style="display:flex;align-items:center;gap:8px;margin:0 0 5px 30px;padding:6px 9px;border-radius:7px;
+      border:1px solid ${isCur ? 'rgba(90,200,250,0.45)' : 'transparent'};background:${isCur ? 'rgba(90,200,250,0.07)' : 'transparent'};">
+      <span style="font-size:11px;flex-shrink:0;color:${ticked ? '#616a7e' : 'var(--subtext)'};">${ticked ? '✓' : '·'}</span>
+      <span style="flex:1;min-width:0;overflow-wrap:anywhere;font-size:13px;color:${ticked ? '#616a7e' : 'var(--text)'};">${_escHtml(s)}</span>
+      ${timeTxt}</div>`;
+  }).join('');
 }
 
 // Tick the NEXT owed lap of a task. Goes through the ordinary completion path, so
