@@ -2819,7 +2819,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.262';
+const APP_VERSION = '2026-06-21.263';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -6574,11 +6574,23 @@ function confirmTime(choice) {
         if (clockState.flagOverride || clockState.orderOverride || clockState.lapTargets || clockState.runOrder) { _storeSet('kr_clock', JSON.stringify(clockState)); renderRunChecklist(); }
         delete pcm[taskInfo._planId]; savePlannerChecklist(pcm);
       }
+      // 🎯 The TARGET — what the block said this job would take, captured before a
+      // single tick. It never moves again, so the live 🏁 forecast has something
+      // honest to be measured against.
+      const _tp = _plannerPlans.find(p => p.id === taskInfo._planId);
+      if (_tp && _tp.durationHours > 0) clockState.targetMs = _rsPlanStartMs(_tp) + _tp.durationHours * 3600000;
       _plannerPlans = _plannerPlans.filter(p => p.id !== taskInfo._planId);
       savePlanner();
       showScreen('clock', document.querySelector(".nav-tab[onclick*=\"'clock'\"]"));
       showToast('Clocked in — ' + clockState.task);
     }
+    // Ad-hoc run (no block to inherit a target from): the target is what the app
+    // reckoned the job would take at the moment of clocking in.
+    if (!clockState.targetMs) {
+      const _e = _runEstSec();
+      if (_e > 0) clockState.targetMs = clockState.startMs + _e * 1000;
+    }
+    if (clockState.targetMs) _storeSet('kr_clock', JSON.stringify(clockState));
   } else {
     clockOut(timeStr);
   }
@@ -14596,6 +14608,7 @@ function renderPlannerScreen() {
           const startStr = formatTimeAmPm(clockState.startTime);
           const meta = live.querySelector('div:last-child');
           if (meta) meta.textContent = `${startStr} – now (${nowStr})`;
+          _renderLiveForecastGhost(live.parentElement, nm);   // the projection follows the now-line down
         }
       }
     }, 60000);
@@ -14938,6 +14951,38 @@ function renderPlannerLiveBlock(cs, grid) {
     <div style="font-size:10px;opacity:0.9;margin-top:2px;">${startStr} – now (${nowStr})</div>`;
 
   grid.appendChild(block);
+  _renderLiveForecastGhost(grid, nowMins);
+}
+
+// The projected remainder of the running job, drawn from the now-line down to the
+// 🏁 forecast finish. Deliberately a GHOST — faint, dashed, no fill weight — because
+// the solid block above it means "worked", and this part hasn't happened yet. It's
+// what turns the planner from a record of the morning into a view of the day.
+function _renderLiveForecastGhost(grid, nowMins) {
+  const old = document.getElementById('planner-live-forecast');
+  if (old) old.remove();
+  if (!grid) return;
+  const finMs = _runForecastFinishMs();
+  if (!finMs) return;
+  const fin = new Date(finMs);
+  // Only for a finish later today — a job forecast past midnight would otherwise
+  // compute a negative height and draw upwards over the morning.
+  const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
+  if (fin.getTime() < startOfDay.getTime() || fin.getTime() > startOfDay.getTime() + 86400000) return;
+  const finMins = (fin.getHours() - PLANNER_START_HOUR) * 60 + fin.getMinutes();
+  const h = (finMins - nowMins) / 60 * PLANNER_HOUR_PX;
+  if (h < 3) return;                                   // finishing about now — nothing to project
+  const g = document.createElement('div');
+  g.id = 'planner-live-forecast';
+  // An OUTLINE, not a fill. A projection that runs two hours would otherwise put a
+  // slab of colour across the whole screen; a dashed edge says the same thing and
+  // leaves the day readable behind it.
+  const col = plannerColorFor(clockState.task);
+  g.style.cssText = `position:absolute;top:${nowMins / 60 * PLANNER_HOUR_PX}px;height:${h}px;left:56px;right:4px;
+    border-radius:8px;padding:3px 8px;font-size:10px;overflow:hidden;z-index:1;pointer-events:none;
+    background:transparent;border:1px dashed ${col};color:${col};`;
+  g.innerHTML = `<div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:0.95;">🏁 ~${formatTimeAmPm(String(fin.getHours()).padStart(2, '0') + ':' + String(fin.getMinutes()).padStart(2, '0'))}</div>`;
+  grid.appendChild(g);
 }
 
 // ── Add task modal ──
@@ -15732,7 +15777,7 @@ function _clLapAdj(item, delta) {
 // off, which is the whole point: you realise partway through that a task needs
 // another go-round you didn't plan at clock-in, and the estimate should say so.
 // NB the fallback is 1, NOT the learned typical that _plannedLapsFor uses. It has
-// to match what the session estimate actually counts (_runEstimateSec /
+// to match what the session estimate actually counts (_runEstSec /
 // _runRemainingSec / the sheet's flagged-work total all read lapTargets with a
 // fallback of 1), or the stepper would advertise a lap the finish time isn't
 // costing. On a run started FROM a block this is moot — clock-in seeds lapTargets
@@ -15950,6 +15995,25 @@ function _rsRows(ctx) {
   });
 }
 
+// The 🏁 forecast finish as a timestamp — the same two branches the ring uses, so
+// the planner's projection and the clock's finish time can't drift apart. Live
+// (per-task) forecast when there's a flagged basis, otherwise clock-in + estimate.
+function _runForecastFinishMs() {
+  if (!clockState || !clockState.running || !clockState.startMs) return null;
+  const now = Date.now();
+  const remaining = _runRemainingSec();
+  if (remaining != null) {
+    const anchor = _runAnchorMs();
+    let idle = _breakOverlapMs(clockState.breaks, anchor, now);
+    if (clockState.onBreak && clockState.breakStartMs) idle += Math.max(0, now - Math.max(clockState.breakStartMs, anchor));
+    return Math.max(anchor + idle + remaining * 1000, now);
+  }
+  const est = _runEstSec();
+  if (!est) return null;
+  const brk = (clockState.breakTotal || 0) + (clockState.onBreak && clockState.breakStartMs ? now - clockState.breakStartMs : 0);
+  return clockState.startMs + brk + est * 1000;
+}
+
 // How long you've been on the current row: time since the last tick, minus any of it
 // spent on a break. With no ticks yet the anchor is clock-in, which is the right
 // answer for the first row too.
@@ -16001,9 +16065,14 @@ function _rsRender() {
   // being able to see "last one ~6:11am" whatever part of the day you're looking at.
   // _clEdgeScroll measures this header too, so the drag's up-scroll zone starts below
   // it rather than underneath it.
+  // 🎯 The target — what this job was reckoned to take before it started, fixed at
+  // clock-in. A guide, not a verdict: shown plainly beside the live 🏁 forecast so
+  // the drift is visible without anything shouting about it.
+  const tgt = (!planning && clockState && clockState.targetMs) ? clockState.targetMs : null;
+  const tgtBit = tgt ? ` · 🎯 ${_rsHM(tgt)}` : '';
   const summary = planning
     ? `🗓 ${rows.length} step${rows.length === 1 ? '' : 's'} from ${_rsHM(ctx.startMs)}${lastPending ? ' · 🏁 done by ~<b>' + _rsHM(lastPending.when) + '</b>' : ''}`
-    : `✓ ${doneN} of ${rows.length} done${lastPending ? ' · 🏁 last one ~<b>' + _rsHM(lastPending.when) + '</b>' : ''}`;
+    : `✓ ${doneN} of ${rows.length} done${lastPending ? ' · 🏁 last one ~<b>' + _rsHM(lastPending.when) + '</b>' : ''}${tgtBit}`;
   const hint = planning
     ? 'Hold &amp; drag a row to set the order you\'ll do them in — every time below it re-forecasts. This order carries onto the clock when you start the job.'
     : 'Hold &amp; drag a row to set the order you\'ll actually do them in — every time below it re-forecasts. Tap a row to tick it off.';
