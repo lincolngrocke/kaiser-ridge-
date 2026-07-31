@@ -2819,7 +2819,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.260';
+const APP_VERSION = '2026-06-21.261';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -14317,6 +14317,32 @@ function _taskHistAvgMap() {
   _histAvgCache = { len: entries.length, map };
   return map;
 }
+// Times each item has been completed — same pooling and same cache strategy as the
+// average above (both come out of one _aggregateChecklistTimes pass).
+let _histCountCache = { len: -1, map: null };
+function _taskHistCountMap() {
+  if (_histCountCache.len === entries.length && _histCountCache.map) return _histCountCache.map;
+  const map = {};
+  _aggregateChecklistTimes().forEach(a => { map[_normTaskKey(a.item)] = a.count; });
+  _histCountCache = { len: entries.length, map };
+  return map;
+}
+// "~12m avg · 9×" — the learned time for a task and how much evidence it rests on.
+// Same read as the clock's meta line and the Dashboard Times list, so the number is
+// the same wherever you meet it. Returns '' when there's no timed history yet, so
+// callers can drop the line rather than print a hollow "~0m".
+function _taskAvgCountLabel(item, avgMap, cntMap) {
+  const a = (avgMap || _taskHistAvgMap())[_normTaskKey(item)];
+  if (!(isFinite(a) && a > 0)) return '';
+  const c = (cntMap || _taskHistCountMap())[_normTaskKey(item)];
+  return '~' + fmtMin(a) + ' avg' + (c ? ' · ' + c + '×' : '');
+}
+// The same label as a row meta line (Organise sheet + run sheet). Empty for a task
+// with no history, so those rows just don't carry the line.
+function _avgMeta(item, avgMap, cntMap) {
+  const t = _taskAvgCountLabel(item, avgMap, cntMap);
+  return t ? `<span style="font-size:11px;color:#616a7e;">${t}</span>` : '';
+}
 // Typical laps per run for each checklist item, learned from history: within one
 // timesheet entry a repeat task leaves one lap-stamped sample per rep ("Load
 // truck", "Load truck␂2", …) — the median count across entries is how many laps
@@ -15962,6 +15988,7 @@ function _rsRender() {
     <div style="margin:10px 0 4px;padding:9px 12px;border-radius:10px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.35);font-size:13px;color:var(--text);">
       ${summary}</div>
     <div style="font-size:11px;color:var(--subtext);margin:0 0 8px;">${hint}</div></div>`;
+  const avgMap = _taskHistAvgMap(), cntMap = _taskHistCountMap();   // built once, not per row
   const rowsHtml = rows.map(r => {
     const key = _rsKey(r.t, r.n);
     const lap = r.lapTotal > 1 ? `<span style="font-size:11px;font-weight:700;color:#30d158;flex-shrink:0;">🔁 ${r.lapIdx}/${r.lapTotal}</span>` : '';
@@ -15973,7 +16000,9 @@ function _rsRender() {
     return `<div class="rs-row" data-rs-key="${_attr(key)}" ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)"${tap}
       style="display:flex;align-items:center;gap:9px;margin-bottom:8px;padding:11px 10px;border-radius:8px;border:1px solid ${r.tappable ? 'rgba(48,209,88,0.45)' : 'var(--border)'};background:${r.isDone ? 'transparent' : 'var(--card)'};${r.tappable ? 'cursor:pointer;' : ''}">
       <span style="font-size:15px;flex-shrink:0;opacity:${r.isDone ? '0.5' : '1'};">${r.isDone ? '✓' : '🚩'}</span>
-      <span style="flex:1;min-width:0;overflow-wrap:anywhere;font-size:15px;color:${r.isDone ? '#616a7e' : 'var(--text)'};">${_escHtml(r.t)}</span>
+      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;">
+        <span style="overflow-wrap:anywhere;font-size:15px;color:${r.isDone ? '#616a7e' : 'var(--text)'};">${_escHtml(r.t)}</span>
+        ${_avgMeta(r.t, avgMap, cntMap)}</span>
       ${lap}${timeTxt}
       <span style="font-size:12px;color:var(--subtext);flex-shrink:0;">⠿</span></div>`;
   }).join('');
@@ -16194,6 +16223,7 @@ function _renderClOrganiseBody() {
   const _lapReps = (_lapPlan || _lapSess) ? _taskRepsPerRunMap() : null;
   const _lapEnc = s => encodeURIComponent(s).replace(/'/g, '%27');   // %27: apostrophes survive encodeURIComponent and would break the onclick string
   const _lapAdjFn = _lapPlan ? '_clLapAdj' : '_clSessionLapAdj';
+  const _oAvg = _taskHistAvgMap(), _oCnt = _taskHistCountMap();   // built once, not per row
   const rowHtml = (s) => {
     const isFlagged = !!flags[s];
     const lapChip = ((_lapPlan || _lapSess) && isFlagged && isRepeatTask(task, s))
@@ -16204,7 +16234,9 @@ function _renderClOrganiseBody() {
       : '';
     return `<div class="cl-row" data-cl-item="${_attr(s)}" data-cl-task="${taskAttr}" data-cl-flagged="${isFlagged ? '1' : ''}" ontouchstart="clSwipeStart(event)" ontouchmove="clSwipeMove(event)" ontouchend="clSwipeEnd(event)" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:11px 10px;border-radius:8px;border:1px solid var(--border);${isFlagged ? 'background:rgba(255,214,10,0.12);' : 'background:var(--card);'}">
       <span style="font-size:16px;flex-shrink:0;">${isFlagged ? '🚩' : '▫️'}</span>
-      <span style="flex:1;min-width:0;overflow-wrap:anywhere;font-size:15px;color:var(--text);">${s}</span>
+      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;">
+        <span style="overflow-wrap:anywhere;font-size:15px;color:var(--text);">${s}</span>
+        ${_avgMeta(s, _oAvg, _oCnt)}</span>
       ${lapChip}
       <span style="font-size:12px;color:var(--subtext);flex-shrink:0;">⠿</span></div>`;
   };
