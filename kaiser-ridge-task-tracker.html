@@ -2819,7 +2819,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.267';
+const APP_VERSION = '2026-06-21.268';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -7264,8 +7264,16 @@ let _kvReadyResolve; const _kvReady = new Promise(r => { _kvReadyResolve = r; })
 function _idbOpen() {
   return new Promise((resolve, reject) => {
     if (!window.indexedDB) return reject(new Error('no idb'));
-    const req = indexedDB.open('kaiser-ridge', 1);
-    req.onupgradeneeded = () => { req.result.createObjectStore('kv'); };
+    // v2 adds the 'photos' store — Drive photos cached once, kept forever, so a
+    // network blip can't blank every photo in the app (the 1 Aug incident).
+    // An upgrade PRESERVES existing stores; the contains() guards make this safe
+    // for both a fresh install and a v1 database being upgraded in place.
+    const req = indexedDB.open('kaiser-ridge', 2);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
+      if (!db.objectStoreNames.contains('photos')) db.createObjectStore('photos');
+    };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
@@ -10551,41 +10559,102 @@ function _inboxStamp(iso) {
 // _capturePhotos mirrors that while editing; _captureRemovedIds = Drive ids to delete on save.
 let _editingInboxId = null, _capturePhotos = [], _captureRemovedIds = [];
 const _PHOTO_PLACEHOLDER = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+// Failed-fetch state: a visible ↻ tile instead of the old silent grey square, so a
+// bad-signal day reads as "tap to retry", not "my photos are gone" (1 Aug incident).
+// SVG so it scales; the gallery and tap handlers exclude it by its data: prefix.
+// NB encodeURIComponent, NOT btoa — btoa only takes Latin-1 and the ↻ glyph is
+// outside it, so the btoa version THREW AT BOOT and killed every declaration
+// after this line (caught in verification; jsc can't see runtime throws).
+const _PHOTO_RETRY = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="90" height="90"><rect width="90" height="90" rx="10" fill="#2C2C2E"/><text x="45" y="41" text-anchor="middle" font-size="22" fill="#8b93a7">&#x21bb;</text><text x="45" y="64" text-anchor="middle" font-size="10" fill="#8b93a7" font-family="-apple-system,sans-serif">tap to retry</text></svg>');
 const _photoCache = {};
+// ── Durable photo cache (IndexedDB 'photos' store) ───────────────────────────
+// A Drive photo is fetched over the network ONCE, ever. After that it serves from
+// disk: instant, offline-safe, and immune to backend blips. RAM (_photoCache) is
+// L1 for the session, the 'photos' store is L2, the network is last resort. This
+// layer is backend-agnostic — at M1 the fetch URL changes and the cache stands.
+function _photoIdbGet(id) {
+  return new Promise(resolve => {
+    if (!_idbOk) return resolve(null);
+    try {
+      const rq = _idb.transaction('photos', 'readonly').objectStore('photos').get(id);
+      rq.onsuccess = () => resolve(rq.result || null);
+      rq.onerror = () => resolve(null);
+    } catch (e) { resolve(null); }
+  });
+}
+function _photoIdbSet(id, dataUrl) {
+  if (!_idbOk) return;
+  try { _idb.transaction('photos', 'readwrite').objectStore('photos').put(dataUrl, id); } catch (e) {}
+}
+function _photoIdbDel(id) {
+  if (!_idbOk) return;
+  try { _idb.transaction('photos', 'readwrite').objectStore('photos').delete(id); } catch (e) {}
+}
 // Upload a compressed data URL to Drive (via Apps Script); returns its file id.
+// On success the cache is SEEDED with the bytes we already hold — a fresh photo
+// displays instantly and never round-trips just to show what we just sent.
 async function _uploadPhoto(dataUrl) {
   const url = localStorage.getItem('kr_sheet_url');
   if (!url) return null;
   try {
     const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'uploadPhoto', dataUrl }) });
     const json = await res.json();
-    return (json && json.success && json.id) ? json.id : null;
+    if (json && json.success && json.id) {
+      _photoCache[json.id] = dataUrl;
+      _photoIdbSet(json.id, dataUrl);
+      return json.id;
+    }
+    return null;
   } catch (e) { return null; }
 }
 function _deletePhoto(id) {
   const url = localStorage.getItem('kr_sheet_url');
   if (!url || !id) return;
+  delete _photoCache[id];
+  _photoIdbDel(id);
   fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'deletePhoto', id }) }).catch(() => {});
 }
 async function _fetchPhoto(id) {
   if (_photoCache[id]) return _photoCache[id];
+  const disk = await _photoIdbGet(id);
+  if (disk) { _photoCache[id] = disk; return disk; }
   const url = localStorage.getItem('kr_sheet_url');
   if (!url) return null;
   try {
     const res = await fetch(url + (url.includes('?') ? '&' : '?') + 'photo=' + encodeURIComponent(id));
     const json = await res.json();
-    if (json && json.success && json.dataUrl) { _photoCache[id] = json.dataUrl; return json.dataUrl; }
+    if (json && json.success && json.dataUrl) {
+      _photoCache[id] = json.dataUrl;
+      _photoIdbSet(id, json.dataUrl);
+      return json.dataUrl;
+    }
   } catch (e) {}
   return null;
 }
-// After a render, fill in any Drive-photo thumbnails (lazy, cached per session).
+// After a render, fill in any Drive-photo thumbnails. Cache misses that then fail
+// on the network get the ↻ tile and stay tappable for a retry.
 function _loadPhotoThumbs() {
   document.querySelectorAll('img[data-pid]:not([data-loaded])').forEach(img => {
     img.dataset.loaded = '1';
     const id = img.dataset.pid;
     if (_photoCache[id]) { img.src = _photoCache[id]; return; }
-    _fetchPhoto(id).then(d => { if (d) img.src = d; });
+    _fetchPhoto(id).then(d => {
+      if (d) { img.src = d; delete img.dataset.failed; }
+      else { img.dataset.failed = '1'; img.src = _PHOTO_RETRY; }
+    });
   });
+}
+// One tap handler for every photo thumb: retry a failed fetch, ignore a thumb
+// that's still loading, open the gallery on a real image.
+function _photoTap(img) {
+  if (img.dataset.failed) {
+    delete img.dataset.failed;
+    delete img.dataset.loaded;
+    img.src = _PHOTO_PLACEHOLDER;
+    _loadPhotoThumbs();
+    return;
+  }
+  if (img.src && !img.src.startsWith('data:image/gif') && !img.src.startsWith('data:image/svg')) openImageGallery(img);
 }
 // A note's photos as an ordered array of refs. Migrates legacy single-photo fields
 // (imageId / image) on read so existing notes keep working without a data migration.
@@ -10602,7 +10671,7 @@ function _photosHtml(obj, maxH) {
   if (!ph.length) return '';
   const base = `max-height:${maxH || 90}px;max-width:100%;border-radius:8px;display:block;cursor:pointer;`;
   return `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">` + ph.map(p => {
-    if (p.id) return `<img data-pid="${p.id}" src="${_PHOTO_PLACEHOLDER}" onclick="event.stopPropagation();if(this.src&&!this.src.startsWith('data:image/gif'))openImageGallery(this)" style="${base}min-height:48px;min-width:48px;background:var(--border);">`;
+    if (p.id) return `<img data-pid="${p.id}" src="${_PHOTO_PLACEHOLDER}" onclick="event.stopPropagation();_photoTap(this)" style="${base}min-height:48px;min-width:48px;background:var(--border);">`;
     if (p.data) return `<img src="${p.data}" onclick="event.stopPropagation();openImageGallery(this)" style="${base}">`;
     return '';
   }).join('') + `</div>`;
@@ -10684,7 +10753,7 @@ function openImageLightbox(src) { _ivGallery = [src]; _ivIndex = 0; _ivOpenSrc(s
 // Open from a thumbnail, gathering its sibling photos so you can swipe between them.
 function openImageGallery(imgEl) {
   let srcs = [];
-  try { const box = imgEl.closest('div'); if (box) srcs = [...box.querySelectorAll('img')].map(im => im.src).filter(s => s && !s.startsWith('data:image/gif')); } catch (_) {}
+  try { const box = imgEl.closest('div'); if (box) srcs = [...box.querySelectorAll('img')].map(im => im.src).filter(s => s && !s.startsWith('data:image/gif') && !s.startsWith('data:image/svg')); } catch (_) {}   // gif = still loading, svg = the ↻ retry tile
   if (!srcs.length) srcs = [imgEl.src];
   _ivGallery = srcs;
   _ivIndex = Math.max(0, srcs.indexOf(imgEl.src));
