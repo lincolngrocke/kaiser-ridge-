@@ -2819,7 +2819,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.265';
+const APP_VERSION = '2026-06-21.266';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -16112,9 +16112,28 @@ function _rsRender() {
   const planning = ctx.kind === 'plan';
   if (titleEl) titleEl.textContent = ctx.job;
   const rows = _rsRows(ctx);
+  // A flagged REPEAT task whose planned laps were all banked in an earlier session of
+  // the same run has nothing owing, so it isn't on the sheet — but it still looks
+  // flagged and ready on the clock, which reads as the sheet dropping tasks. Count
+  // those and say so, with the remedy (↺ Reset reps), rather than leaving a silent gap.
+  const shown = new Set(rows.map(r => r.t));
+  let banked = 0;
+  if (!planning) {
+    const subs = SUBTASKS[ctx.job] || [];
+    Object.keys(ctx.flags).forEach(item => {
+      if (!subs.includes(item) || shown.has(item)) return;
+      if (isRepeatTask(ctx.job, item) && ctx.repsBefore(item) > 0) banked++;
+    });
+  }
+  const bankedNote = banked
+    ? `<div style="font-size:11px;color:var(--subtext);margin-top:4px;">🔁 ${banked} flagged task${banked === 1 ? '' : 's'} already done this run — <b>↺ Reset reps</b> on the clock to bring ${banked === 1 ? 'it' : 'them'} back.</div>`
+    : '';
   if (!rows.length) {
-    body.innerHTML = `<div style="padding:38px 6px;text-align:center;color:var(--subtext);font-size:15px;line-height:1.55;">Nothing flagged yet.<br>
-      <span style="font-size:13px;">Swipe a task right to 🚩 flag it${planning ? ' on this block' : ' in ⤢ Organise'}. Flagged tasks are the ones you plan to do — they're what this sheet lists.</span></div>`;
+    body.innerHTML = banked
+      ? `<div style="padding:34px 6px;text-align:center;color:var(--subtext);font-size:15px;line-height:1.55;">Every flagged task is already done this run.<br>
+         <span style="font-size:13px;">🔁 ${banked} task${banked === 1 ? '' : 's'} banked ${banked === 1 ? 'its' : 'their'} planned laps in an earlier session. Tap <b>↺ Reset reps</b> on the clock to run ${banked === 1 ? 'it' : 'them'} again, or flag something else.</span></div>`
+      : `<div style="padding:38px 6px;text-align:center;color:var(--subtext);font-size:15px;line-height:1.55;">Nothing flagged yet.<br>
+         <span style="font-size:13px;">Swipe a task right to 🚩 flag it${planning ? ' on this block' : ' in ⤢ Organise'}. Flagged tasks are the ones you plan to do — they're what this sheet lists.</span></div>`;
     return;
   }
   const doneN = rows.filter(r => r.isDone).length;
@@ -16137,7 +16156,7 @@ function _rsRender() {
     : 'Hold &amp; drag a row to set the order you\'ll actually do them in — every time below it re-forecasts. Tap a row to tick it off.';
   const head = `<div class="cl-sticky-top">
     <div style="margin:10px 0 4px;padding:9px 12px;border-radius:10px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.35);font-size:13px;color:var(--text);">
-      ${summary}</div>
+      ${summary}${bankedNote}</div>
     <div style="font-size:11px;color:var(--subtext);margin:0 0 8px;">${hint}</div></div>`;
   const avgMap = _taskHistAvgMap(), cntMap = _taskHistCountMap();   // built once, not per row
   const stepsMap = getSubtaskSteps();   // step AVERAGES aren't read here — the sheet shows no per-step times
