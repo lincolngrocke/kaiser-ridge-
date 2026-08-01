@@ -2819,7 +2819,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.268';
+const APP_VERSION = '2026-06-21.269';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -5565,6 +5565,10 @@ function renderTimesheets() {
       ${(e.commentPhotos && e.commentPhotos.length) ? _photosHtml({ photos: e.commentPhotos }, 80) : ''}
     </div>`;
   }).join('');
+  // Hydrate the Drive-photo placeholders just rendered. This was MISSING — every
+  // other photo surface calls it after rendering, so timesheet comment photos sat
+  // as invisible 1px placeholders forever (only inline {data} ones ever showed).
+  _loadPhotoThumbs();
 }
 
 // ════════════════════════════════
