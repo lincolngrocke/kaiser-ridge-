@@ -2819,7 +2819,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.266';
+const APP_VERSION = '2026-06-21.267';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4532,6 +4532,15 @@ function updateRunRing(netElapsedSec) {
   }
   const baseEst = _runEstSec();                 // what the job was planned/expected to take
   const remaining = _runRemainingSec();         // live: work still to tick off (null = no per-task basis)
+  // 🎯 The target for an ad-hoc run: clock-in + the flagged work, so it and the 🏁
+  // forecast measure the same thing. It stays PROVISIONAL while nothing is ticked —
+  // flag another task and it moves with you — and locks on the first tick, which is
+  // the moment the plan stopped being a plan. A block-derived target is left alone.
+  if (clockState && clockState.running && remaining != null && !clockState.targetFromPlan
+      && !(clockState.checklistDone || []).length) {
+    const _t = clockState.startMs + remaining * 1000;
+    if (clockState.targetMs !== _t) { clockState.targetMs = _t; _storeSet('kr_clock', JSON.stringify(clockState)); }
+  }
   const live = (remaining != null && elapsed != null);
   // Forecast total = work already banked by the last tick + work still to do.
   // Measured from the anchor, NOT from now, so it stays put between ticks and
@@ -6574,23 +6583,24 @@ function confirmTime(choice) {
         if (clockState.flagOverride || clockState.orderOverride || clockState.lapTargets || clockState.runOrder) { _storeSet('kr_clock', JSON.stringify(clockState)); renderRunChecklist(); }
         delete pcm[taskInfo._planId]; savePlannerChecklist(pcm);
       }
-      // 🎯 The TARGET — what the block said this job would take, captured before a
-      // single tick. It never moves again, so the live 🏁 forecast has something
-      // honest to be measured against.
+      // 🎯 The TARGET — what the block said this job would take. This one is a real
+      // plan (and may have been hand-edited), so it's authoritative: targetFromPlan
+      // stops updateRunRing re-deriving it from the flagged tasks below.
       const _tp = _plannerPlans.find(p => p.id === taskInfo._planId);
-      if (_tp && _tp.durationHours > 0) clockState.targetMs = _rsPlanStartMs(_tp) + _tp.durationHours * 3600000;
+      if (_tp && _tp.durationHours > 0) {
+        clockState.targetMs = _rsPlanStartMs(_tp) + _tp.durationHours * 3600000;
+        clockState.targetFromPlan = true;
+        _storeSet('kr_clock', JSON.stringify(clockState));
+      }
       _plannerPlans = _plannerPlans.filter(p => p.id !== taskInfo._planId);
       savePlanner();
       showScreen('clock', document.querySelector(".nav-tab[onclick*=\"'clock'\"]"));
       showToast('Clocked in — ' + clockState.task);
     }
-    // Ad-hoc run (no block to inherit a target from): the target is what the app
-    // reckoned the job would take at the moment of clocking in.
-    if (!clockState.targetMs) {
-      const _e = _runEstSec();
-      if (_e > 0) clockState.targetMs = clockState.startMs + _e * 1000;
-    }
-    if (clockState.targetMs) _storeSet('kr_clock', JSON.stringify(clockState));
+    // An ad-hoc run gets NO target here. Clock-in deliberately starts with no flags,
+    // so anything computed at this instant falls back to the job's whole-run average
+    // and answers a different question from the 🏁 forecast (which sums the tasks you
+    // then flag). updateRunRing sets it once there's a flagged basis — see there.
   } else {
     clockOut(timeStr);
   }
