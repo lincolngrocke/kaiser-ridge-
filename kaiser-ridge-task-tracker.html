@@ -2819,7 +2819,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.269';
+const APP_VERSION = '2026-06-21.270';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -8386,14 +8386,16 @@ function computeAutoFrequencies() {
 // One chip cycles the three; the choice sticks (device-local).
 let _dirSort = localStorage.getItem('kr_dir_sort') || 'grouped';
 function cycleDirSort() {
-  _dirSort = _dirSort === 'grouped' ? 'recent' : (_dirSort === 'recent' ? 'used' : 'grouped');
+  // grouped → recent → used → least → grouped. 'least' is the cleanup lens:
+  // never-done jobs first, then oldest last-done — eat the list from the top.
+  _dirSort = _dirSort === 'grouped' ? 'recent' : (_dirSort === 'recent' ? 'used' : (_dirSort === 'used' ? 'least' : 'grouped'));
   _storeSet('kr_dir_sort', _dirSort);
   renderDirectory();
 }
 function _syncDirSortChip() {
   const c = document.getElementById('chip-dir-sort');
   if (!c) return;
-  c.textContent = _dirSort === 'recent' ? '🕘 Recent' : (_dirSort === 'used' ? '⭐ Most used' : '↕ Grouped');
+  c.textContent = _dirSort === 'recent' ? '🕘 Recent' : (_dirSort === 'used' ? '⭐ Most used' : (_dirSort === 'least' ? '🧹 Least used' : '↕ Grouped'));
   c.style.color = _dirSort === 'grouped' ? '' : 'var(--blue)';
   c.style.fontWeight = _dirSort === 'grouped' ? '' : '600';
 }
@@ -8579,8 +8581,12 @@ function renderDirectory() {
     })));
     flat.sort((a, b) => _dirSort === 'used'
       ? (((counts[b.t] || 0) - (counts[a.t] || 0)) || ((lastUsed[b.t] || 0) - (lastUsed[a.t] || 0)))
+      : _dirSort === 'least'
+      // never-done (0) sorts first — "infinitely stale" — then oldest last-done,
+      // then fewest completions; alphabetical keeps never-done ties stable.
+      ? (((lastUsed[a.t] || 0) - (lastUsed[b.t] || 0)) || ((counts[a.t] || 0) - (counts[b.t] || 0)) || a.t.localeCompare(b.t))
       : (((lastUsed[b.t] || 0) - (lastUsed[a.t] || 0)) || ((counts[b.t] || 0) - (counts[a.t] || 0))));
-    const cap = _dirSort === 'used' ? '⭐ Most used first' : '🕘 Most recently done first';
+    const cap = _dirSort === 'used' ? '⭐ Most used first' : (_dirSort === 'least' ? '🧹 Least used first — never done on top' : '🕘 Most recently done first');
     list.innerHTML = flaggedHtml + `
       <div style="margin-bottom:8px;">
         <div style="padding:8px 16px 4px;font-size:11px;font-weight:700;color:var(--subtext);letter-spacing:0.5px;text-transform:uppercase;">${cap}</div>
