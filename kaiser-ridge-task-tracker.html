@@ -2819,7 +2819,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.273';
+const APP_VERSION = '2026-06-21.274';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -15858,6 +15858,7 @@ function _clStopEdgeScroll() {
 }
 function _endClDrag() {
   _clStopEdgeScroll();
+  _clSwipeBlockClickUntil = Date.now() + 600;   // refresh at the DROP — see _rsDragEnd2; a flagged row here taps to tick too
   const dragged = _clDrag.row, task = _clDrag.task, parent = dragged.parentNode, flagged = _clDrag.flagged;
   _clDrag = null;
   dragged.style.transition = 'transform 0.15s, box-shadow 0.15s, opacity 0.15s';
@@ -15945,6 +15946,7 @@ function _startClHeadDrag(row) {
 function _endClHeadDrag() {
   const d = _clHeadDrag; _clHeadDrag = null;
   _clStopEdgeScroll();
+  _clSwipeBlockClickUntil = Date.now() + 600;   // refresh at the DROP — see _rsDragEnd2; the click here collapses the batch
   if (d.clone) d.clone.remove();
   document.querySelectorAll('[data-batch-sec]').forEach(h => { h.style.opacity = ''; });
   // Recompute from LIVE heading positions (the sheet may have auto-scrolled since
@@ -16451,6 +16453,7 @@ function _rsRender() {
 // stays yours; it resets whenever NOW moves on.
 let _rsExpanded = new Set(), _rsCollapsedNow = null;
 function _rsToggleSteps(key) {
+  if (Date.now() < _clSwipeBlockClickUntil) return;   // a drag just finished — not a tap
   const rows = _rsRows();
   const nowRow = rows.find(r => r.isNow);
   const nowKey = nowRow ? _rsKey(nowRow.t, nowRow.n) : null;
@@ -16542,6 +16545,12 @@ function _rsDragEnd2() {
   clearTimeout(_rsHoldTimer); _rsHoldTimer = null; _rsTouch = null;
   if (!_rsDrag) return;
   _clStopEdgeScroll();
+  // The browser delivers a click after the finger lifts, and on the run sheet that
+  // click lands on tap-to-tick — so a drag would tick the row you were only moving.
+  // The guard has to be refreshed HERE, at the drop: setting it when the drag began
+  // gave it 600ms of life while a real drag runs for seconds, so it was always dead
+  // by the time the click arrived. Same reason clSwipeEnd sets it at the end.
+  _clSwipeBlockClickUntil = Date.now() + 600;
   const dragged = _rsDrag.row, parent = dragged.parentNode;
   _rsDrag = null;
   dragged.style.transition = 'transform 0.15s, box-shadow 0.15s, opacity 0.15s';
