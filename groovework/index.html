@@ -2819,7 +2819,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.272';
+const APP_VERSION = '2026-06-21.273';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -16381,6 +16381,11 @@ function _rsRender() {
       ${summary}${bankedNote}</div>
     <div style="font-size:11px;color:var(--subtext);margin:0 0 8px;">${hint}</div></div>`;
   const avgMap = _taskHistAvgMap(), cntMap = _taskHistCountMap();   // built once, not per row
+  // ▣ which batch each task belongs to, and — once ticked — how long it ACTUALLY
+  // took. The actual sits beside the average on the meta line, so the comparison
+  // that matters ("~9m avg · 9× · ✓ 12m") needs no arithmetic from you.
+  const _bRec = _batchRec(ctx.job);
+  const _durs = ctx.kind === 'clock' ? _checklistDurations() : {};
   const stepsMap = getSubtaskSteps();   // step AVERAGES aren't read here — the sheet shows no per-step times
   const rowsHtml = rows.map(r => {
     const key = _rsKey(r.t, r.n);
@@ -16392,6 +16397,19 @@ function _rsRender() {
            style="display:inline-flex;align-items:center;gap:3px;flex-shrink:0;font-size:11px;font-weight:600;color:#5ac8fa;cursor:pointer;">${open ? '▾' : '▸'} ☰ ${nSteps} step${nSteps === 1 ? '' : 's'}</span>`
       : '';
     const lap = r.lapTotal > 1 ? `<span style="font-size:11px;font-weight:700;color:#30d158;flex-shrink:0;">🔁 ${r.lapIdx}/${r.lapTotal}</span>` : '';
+    // ▣ the batch this task sits in — the run sheet flattens batches away, so
+    // without this you lose which part of the job you're in.
+    const bName = (_bRec && _bRec.items && _bRec.items[r.t] && _bRec.order.includes(_bRec.items[r.t])) ? _bRec.items[r.t] : null;
+    // Shrinkable with an ellipsis, NOT flex-shrink:0 — a long batch name would
+    // otherwise refuse to give ground and overrun the lap chip and the time.
+    const batchChip = bName
+      ? `<span style="font-size:11px;color:#8b93a7;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${_attr(bName)}">▣ ${_escHtml(bName)}</span>` : '';
+    // ✓ what it ACTUALLY took, keyed by the same occurrence key the clock uses
+    // (item, or item+lap for a rep), so laps are timed individually.
+    const _dk = r.n === 0 ? r.t : _occKey({ item: r.t, rep: r.n });
+    const _actual = r.isDone ? _durs[_dk] : null;
+    const actualChip = (isFinite(_actual) && _actual > 0)
+      ? `<span style="font-size:11px;font-weight:700;color:#30d158;flex-shrink:0;" title="actual time for this one">✓ ${fmtMin(_actual)}</span>` : '';
     const timeTxt = r.isDone
       ? `<span style="font-size:13px;font-weight:700;color:#616a7e;white-space:nowrap;">✓ ${_rsHM(r.when)}</span>`
       : (r.when ? `<span style="font-size:13px;font-weight:700;color:${r.tappable ? '#30d158' : 'var(--subtext)'};white-space:nowrap;">~${_rsHM(r.when)}</span>`
@@ -16417,7 +16435,7 @@ function _rsRender() {
       <span style="font-size:15px;flex-shrink:0;opacity:${r.isDone ? '0.5' : '1'};">${r.isDone ? '✓' : '🚩'}</span>
       <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;">
         <span style="overflow-wrap:anywhere;font-size:15px;color:${r.isDone ? '#616a7e' : 'var(--text)'};">${_escHtml(r.t)}</span>
-        ${(_avgMeta(r.t, avgMap, cntMap) || nowChip || stepChip) ? `<span style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">${_avgMeta(r.t, avgMap, cntMap)}${nowChip}${stepChip}</span>` : ''}</span>
+        ${(_avgMeta(r.t, avgMap, cntMap) || nowChip || stepChip || batchChip || actualChip) ? `<span style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">${batchChip}${_avgMeta(r.t, avgMap, cntMap)}${actualChip}${nowChip}${stepChip}</span>` : ''}</span>
       ${lap}${timeTxt}
       <span style="font-size:12px;color:var(--subtext);flex-shrink:0;">⠿</span></div>
       ${open ? `<div style="padding-top:6px;">${_rsStepsHtml(r, ctx, stepsMap)}</div>` : ''}</div>`;
