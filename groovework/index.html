@@ -2819,7 +2819,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.270';
+const APP_VERSION = '2026-06-21.271';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4229,8 +4229,102 @@ async function confirmRunEdit() {
 // Rename a recurring checklist item everywhere it appears (matches the app's
 // shared-item model) and carry across its sub-steps, guide, inbox-origin, flags
 // and the current session's ticked/expanded state so nothing is lost.
+// ── History follows the name ─────────────────────────────────────────────────
+// Renaming a task used to orphan everything keyed by its TEXT: past entries (so
+// the learned average and count vanished), rep counts, the repeat/once TYPE (so
+// the 🔁 chip disappeared), reminders, lap targets and pending planner blocks.
+// The name is the identity in this app, so a rename must carry the identity's
+// history with it. Refining a task's wording over time is normal use — it must
+// never cost the learning that makes the app worth using.
+function _migrateItemHistory(oldName, newName) {
+  const SEP = '\u0001';   // the job\u0001item and runOrder key separator (same byte as _RS_SEP / _taskTypeKey)
+  // 1) Historical entries — the source of every learned average. Rewrite the item
+  //    text in past checklists and step logs. The entries' notes TEXT keeps the old
+  //    wording (it's the historical record); only the analytics keys move.
+  let entCh = 0;
+  entries.forEach(e => {
+    (Array.isArray(e.checklist) ? e.checklist : []).forEach(d => { if (d && d.item === oldName) { d.item = newName; entCh++; } });
+    (Array.isArray(e.steps) ? e.steps : []).forEach(d => { if (d && d.item === oldName) { d.item = newName; entCh++; } });
+  });
+  if (entCh) {
+    saveEntries();
+    // The history caches key on entries.LENGTH, which a rewrite doesn't change —
+    // reset them by hand or the old averages would keep serving until the next
+    // clock-out.
+    _histAvgCache = { len: -1, map: null };
+    _histCountCache = { len: -1, map: null };
+    _stepHistCache = { len: -1, avg: null, cnt: null };
+  }
+  // 2) Rep counts on every run (they carry across sessions until Reset reps).
+  const runs = getJobRuns(); let runsCh = false;
+  Object.keys(runs).forEach(j => {
+    const r = runs[j];
+    if (r && r.reps && r.reps[oldName] != null) { r.reps[newName] = (r.reps[newName] || 0) + r.reps[oldName]; delete r.reps[oldName]; runsCh = true; }
+  });
+  if (runsCh) saveJobRuns(runs);
+  // 3) The repeat/once TYPE (keyed job␁item) — without this a 🔁 task silently
+  //    reverts to 'once' on rename, which is half of what "reps disappeared" was.
+  const types = getTaskTypes(); let typesCh = false;
+  Object.keys(types).forEach(k => {
+    const i = k.indexOf(SEP);
+    if (i > 0 && k.slice(i + 1) === oldName) {
+      const nk = k.slice(0, i + 1) + newName;
+      if (types[nk] == null) types[nk] = types[k];
+      delete types[k]; typesCh = true;
+    }
+  });
+  if (typesCh) saveTaskTypes(types);
+  // 4) Per-task reminders (same job␁item keying).
+  const trem = getTaskReminders(); let tremCh = false;
+  Object.keys(trem).forEach(k => {
+    const i = k.indexOf(SEP);
+    if (i > 0 && k.slice(i + 1) === oldName) {
+      const nk = k.slice(0, i + 1) + newName;
+      if (trem[nk] == null) trem[nk] = trem[k];
+      delete trem[k]; tremCh = true;
+    }
+  });
+  if (tremCh) saveTaskReminders(trem);
+  // 5) The live session's plan: lap targets, flags, order, run-sheet arrangement.
+  if (clockState) {
+    let ch = false;
+    if (clockState.lapTargets && clockState.lapTargets[oldName] != null) { clockState.lapTargets[newName] = clockState.lapTargets[oldName]; delete clockState.lapTargets[oldName]; ch = true; }
+    if (clockState.flagOverride && clockState.flagOverride[oldName] != null) { clockState.flagOverride[newName] = clockState.flagOverride[oldName]; delete clockState.flagOverride[oldName]; ch = true; }
+    if (Array.isArray(clockState.orderOverride)) clockState.orderOverride = clockState.orderOverride.map(s => { if (s === oldName) { ch = true; return newName; } return s; });
+    if (Array.isArray(clockState.runOrder)) clockState.runOrder = clockState.runOrder.map(k => { if (k.startsWith(oldName + SEP)) { ch = true; return newName + k.slice(oldName.length); } return k; });
+    if (ch) _storeSet('kr_clock', JSON.stringify(clockState));
+  }
+  // 6) Pending planner blocks that carry an arrangement for this item.
+  const pcm = getPlannerChecklist(); let pcmCh = false;
+  Object.keys(pcm).forEach(pid => {
+    const rec = pcm[pid]; if (!rec) return;
+    if (rec.flags && rec.flags[oldName] != null) { rec.flags[newName] = rec.flags[oldName]; delete rec.flags[oldName]; pcmCh = true; }
+    if (rec.laps && rec.laps[oldName] != null) { rec.laps[newName] = rec.laps[oldName]; delete rec.laps[oldName]; pcmCh = true; }
+    if (Array.isArray(rec.order)) rec.order = rec.order.map(s => { if (s === oldName) { pcmCh = true; return newName; } return s; });
+    if (Array.isArray(rec.runOrder)) rec.runOrder = rec.runOrder.map(k => { if (k.startsWith(oldName + SEP)) { pcmCh = true; return newName + k.slice(oldName.length); } return k; });
+  });
+  if (pcmCh) savePlannerChecklist(pcm);
+}
+// Renaming a STEP inside a task: its timed history and this session's tick follow.
+function _migrateStepHistory(item, oldStep, newStep) {
+  if (!newStep || newStep === oldStep) return;
+  let entCh = 0;
+  entries.forEach(e => {
+    (Array.isArray(e.steps) ? e.steps : []).forEach(d => { if (d && d.item === item && d.step === oldStep) { d.step = newStep; entCh++; } });
+  });
+  if (entCh) { saveEntries(); _stepHistCache = { len: -1, avg: null, cnt: null }; }
+  if (clockState) {
+    let ch = false;
+    if (clockState.stepChecks && clockState.stepChecks[item] && clockState.stepChecks[item][oldStep] != null) {
+      clockState.stepChecks[item][newStep] = clockState.stepChecks[item][oldStep]; delete clockState.stepChecks[item][oldStep]; ch = true;
+    }
+    if (Array.isArray(clockState.stepDone)) clockState.stepDone.forEach(d => { if (d && d.item === item && d.step === oldStep) { d.step = newStep; ch = true; } });
+    if (ch) _storeSet('kr_clock', JSON.stringify(clockState));
+  }
+}
 function _renameChecklistItem(task, oldName, newName) {
   if (!newName || newName === oldName) return;
+  _migrateItemHistory(oldName, newName);   // history follows the name — averages, reps, type, reminders, plans
   // Already on this job under a different case? Just drop the old one, no rename.
   Object.keys(SUBTASKS).forEach(t => {
     if (Array.isArray(SUBTASKS[t])) {
@@ -10893,6 +10987,7 @@ function _propagateNoteEdit(note, oldText, photos) {
         const steps = getSubtaskSteps();
         if (steps[oldText]) { steps[newText] = steps[oldText]; delete steps[oldText]; saveSubtaskSteps(steps); }
         _migrateBatchTaskName(oldText, newText);   // ▣ batch membership follows the task
+        _migrateItemHistory(oldText, newText);     // averages, reps, type, reminders, plans follow too
       }
     }
   }
@@ -12193,7 +12288,14 @@ function addStepItem() {
 function updateStepItem(i, val) {
   if (_spDragging) return;
   const v = (val || '').trim();
-  if (v) _stepsItems[i] = v;
+  const old = _stepsItems[i];
+  if (v) {
+    _stepsItems[i] = v;
+    // A row edited in place is a RENAME — its timed history and any tick in the
+    // running session follow the new wording (the editor knows old and new
+    // exactly, so no guessing).
+    if (old && v !== old && _stepsEditingItem != null) _migrateStepHistory(_stepsEditingItem, old, v);
+  }
   else _stepsItems.splice(i, 1);
   _stepsPersistNow();
   if (!v) renderStepsEditor();
