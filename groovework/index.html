@@ -2819,7 +2819,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.271';
+const APP_VERSION = '2026-06-21.272';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4626,14 +4626,25 @@ function updateRunRing(netElapsedSec) {
   }
   const baseEst = _runEstSec();                 // what the job was planned/expected to take
   const remaining = _runRemainingSec();         // live: work still to tick off (null = no per-task basis)
-  // 🎯 The target for an ad-hoc run: clock-in + the flagged work, so it and the 🏁
-  // forecast measure the same thing. It stays PROVISIONAL while nothing is ticked —
-  // flag another task and it moves with you — and locks on the first tick, which is
-  // the moment the plan stopped being a plan. A block-derived target is left alone.
+  // 🎯 The target for an ad-hoc run: the forecast as it stood before work began. It
+  // stays PROVISIONAL while nothing is ticked — flag another task and it moves with
+  // you — and locks on the first tick, the moment the plan stopped being a plan. A
+  // block-derived target is left alone.
+  //
+  // The target is a promise about WORK, not wall-clock: a break isn't slower work.
+  // So targetBreakMs0 records the break total at the moment the value was set, and
+  // _targetDisplayMs() slides the shown target by exactly the break time taken
+  // AFTER that — the 🏁 forecast already pushes out during a break (v254), so the
+  // two drift together and their gap keeps measuring pace alone. (Provisional now
+  // uses the real forecast, which also fixes a pre-first-tick break being ignored.)
   if (clockState && clockState.running && remaining != null && !clockState.targetFromPlan
       && !(clockState.checklistDone || []).length) {
-    const _t = clockState.startMs + remaining * 1000;
-    if (clockState.targetMs !== _t) { clockState.targetMs = _t; _storeSet('kr_clock', JSON.stringify(clockState)); }
+    const _t = _runForecastFinishMs();
+    const _b = _breakNowMs();
+    if (_t && (clockState.targetMs !== _t || clockState.targetBreakMs0 !== _b)) {
+      clockState.targetMs = _t; clockState.targetBreakMs0 = _b;
+      _storeSet('kr_clock', JSON.stringify(clockState));
+    }
   }
   const live = (remaining != null && elapsed != null);
   // Forecast total = work already banked by the last tick + work still to do.
@@ -6688,6 +6699,7 @@ function confirmTime(choice) {
       if (_tp && _tp.durationHours > 0) {
         clockState.targetMs = _rsPlanStartMs(_tp) + _tp.durationHours * 3600000;
         clockState.targetFromPlan = true;
+        clockState.targetBreakMs0 = 0;   // no breaks exist yet at clock-in — every future break slides the display
         _storeSet('kr_clock', JSON.stringify(clockState));
       }
       _plannerPlans = _plannerPlans.filter(p => p.id !== taskInfo._planId);
@@ -16264,6 +16276,25 @@ function _runForecastFinishMs() {
   return clockState.startMs + brk + est * 1000;
 }
 
+// Total break time this session so far, in ms — banked breaks plus the live one.
+function _breakNowMs() {
+  if (!clockState) return 0;
+  return (clockState.breakTotal || 0) + (clockState.onBreak && clockState.breakStartMs ? Math.max(0, Date.now() - clockState.breakStartMs) : 0);
+}
+// 🎯 The target as it should be READ: the locked value slid forward by exactly the
+// break time taken since it locked. A break pushes 🏁 and 🎯 out together, so their
+// gap keeps measuring work pace, not lunch. Sessions locked before this existed
+// have no targetBreakMs0 — self-heal by baselining at the CURRENT break total, so
+// only future breaks adjust (never a sudden jump from breaks already judged).
+function _targetDisplayMs() {
+  if (!clockState || !clockState.targetMs) return null;
+  if (clockState.targetBreakMs0 == null) {
+    clockState.targetBreakMs0 = _breakNowMs();
+    _storeSet('kr_clock', JSON.stringify(clockState));
+  }
+  return clockState.targetMs + Math.max(0, _breakNowMs() - clockState.targetBreakMs0);
+}
+
 // How long you've been on the current row: time since the last tick, minus any of it
 // spent on a break. With no ticks yet the anchor is clock-in, which is the right
 // answer for the first row too.
@@ -16337,7 +16368,7 @@ function _rsRender() {
   // 🎯 The target — what this job was reckoned to take before it started, fixed at
   // clock-in. A guide, not a verdict: shown plainly beside the live 🏁 forecast so
   // the drift is visible without anything shouting about it.
-  const tgt = (!planning && clockState && clockState.targetMs) ? clockState.targetMs : null;
+  const tgt = (!planning && clockState && clockState.targetMs) ? _targetDisplayMs() : null;   // slides by post-lock breaks
   const tgtBit = tgt ? ` · 🎯 ${_rsHM(tgt)}` : '';
   const summary = planning
     ? `🗓 ${rows.length} step${rows.length === 1 ? '' : 's'} from ${_rsHM(ctx.startMs)}${lastPending ? ' · 🏁 done by ~<b>' + _rsHM(lastPending.when) + '</b>' : ''}`
