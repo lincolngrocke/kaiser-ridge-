@@ -2819,7 +2819,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.274';
+const APP_VERSION = '2026-06-21.275';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3738,11 +3738,21 @@ function jobHasReps(job) { const r = getJobRuns()[job]; return !!(r && r.reps &&
 function resetRun(job) { const all = getJobRuns(); if (all[job]) { delete all[job]; saveJobRuns(all); } }
 function finishRunPrompt() {
   const job = clockState && clockState.task; if (!job) return;
-  if (!jobHasReps(job)) { showToast('No reps to reset'); return; }
-  if (!confirm('Reset the rep counts for “' + job + '”?\n\nThe timed reps already saved to your timesheet stay put — this just starts the counting fresh (e.g. a new batch).')) return;
+  // Laps live in TWO stores, and to anyone reading the button both of them are "reps":
+  //   • getJobRuns()[job].reps  — laps already DONE      (evidence)
+  //   • clockState.lapTargets   — laps still PLANNED     (intent)
+  // Clearing only the first left the 🏁 forecast permanently costing laps the reset had
+  // just said were gone, with no way back short of stepping every repeat task down by
+  // hand — and if you had planned laps but done none, it refused outright with
+  // "No reps to reset". Reset now means reset: both stores, one press.
+  const _planned = (clockState && clockState.lapTargets) ? Object.keys(clockState.lapTargets).length : 0;
+  if (!jobHasReps(job) && !_planned) { showToast('No reps to reset'); return; }
+  if (!confirm('Reset the reps for “' + job + '”?\n\nClears the laps counted so far AND any extra laps planned this session, so the finish time comes back to one lap each.\n\nThe timed reps already saved to your timesheet stay put.')) return;
   resetRun(job);
+  if (_planned) { delete clockState.lapTargets; _storeSet('kr_clock', JSON.stringify(clockState)); }
   renderRunChecklist();
-  showToast('↺ Reps reset');
+  updateRunRing();          // 🏁 finish and the ring re-cost immediately, not on the next tick
+  showToast('↺ Reps and planned laps reset');
 }
 // A 'once' task is "done" when ticked this session; a 'repeat' task is never removed
 // from the list (it stays so you can tick it again) — its state is its rep count.
@@ -4637,8 +4647,16 @@ function updateRunRing(netElapsedSec) {
   // AFTER that — the 🏁 forecast already pushes out during a break (v254), so the
   // two drift together and their gap keeps measuring pace alone. (Provisional now
   // uses the real forecast, which also fixes a pre-first-tick break being ignored.)
+  // ⭐ The lock must test work that belongs to THIS run's plan, not any tick at all.
+  // Raw checklistDone also holds ticks for tasks that aren't flagged, and laps that
+  // aren't on the sheet — so a run honestly showing "0 of 9 done" could sit frozen on
+  // a stale target forever, one task short of its own 🏁 forecast, with no way to
+  // unstick it. Lock on the first tick of FLAGGED work; until then the target keeps
+  // tracking the plan, which is the whole point of provisional.
+  const _flagsNow = (clockState && clockState.running && clockState.task) ? _sessionOrGlobalFlags(clockState.task) : null;
+  const _planStarted = !!(_flagsNow && (clockState.checklistDone || []).some(d => d && _flagsNow[d.item]));
   if (clockState && clockState.running && remaining != null && !clockState.targetFromPlan
-      && !(clockState.checklistDone || []).length) {
+      && !_planStarted) {
     const _t = _runForecastFinishMs();
     const _b = _breakNowMs();
     if (_t && (clockState.targetMs !== _t || clockState.targetBreakMs0 !== _b)) {
