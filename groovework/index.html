@@ -2819,7 +2819,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.275';
+const APP_VERSION = '2026-06-21.276';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3890,7 +3890,7 @@ function toggleChecklistStep(item, step) {
 }
 // ── Focus-ring clock: tab state + ring helpers ──
 let _runTab = 'tasks', _runTabUserSet = false, _runLastTask = null;
-let _runGroupBy = 'flag', _runGroupCollapsed = {};   // clock Tasks list: 'flag' order vs 'batch' sections (last-done recency lives INSIDE batches now)
+let _runGroupBy = 'flag', _runGroupCollapsed = {};   // clock Tasks list: 'flag' order vs 'batch' sections. Inside a batch (v276): flagged work keeps the arranged order at the top, the unflagged tail sorts by last completed — see _batchOrder
 let _expandedNotes = new Set();
 function _escHtml(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 // Escape a note for display, then turn any pasted URL into a tappable link — a
@@ -4919,11 +4919,23 @@ function renderRunChecklist() {
       if (loose.length) groups.push({ key: 'b:~loose', name: 'Other tasks', members: loose, loose: true });
       const _gHasFlag = g => g.members.some(s => clFlags[s] && !_isDoneRow(s));
       groups.sort((a, b) => _gHasFlag(b) - _gHasFlag(a));   // stable — flagged batches float, saved order otherwise
-      // A batch renders in the order you arranged it — flags floated, then your
-      // learned/manual order. The recency sub-headings (v212/213) were removed in
-      // v251: bucketing re-sorted the rows and fought the arranged order. Each row
-      // still carries its own "🗓 done …" age, so nothing informational is lost.
-      const _batchBody = (members) => members.map(buildTaskRow).join('');
+      // ⭐ A batch serves TWO activities, and conflating them is what went wrong before.
+      // Flagged work is the run you're about to do: it keeps the arranged/learned order,
+      // floated at the top, because that order IS the engine's output and must never be
+      // re-sorted for browsing convenience. Everything below it is the browse-to-flag
+      // pool, so it sorts by LAST COMPLETED, most recent first — the tasks you actually
+      // use keep surfacing, and never-done ones settle to the bottom.
+      //
+      // v212/213 bucketed the WHOLE list by recency with sub-headings, and v251 removed
+      // it because that fought the arranged order. This sorts only the unflagged tail and
+      // adds no headings, so the arranged order above is untouched.
+      const _batchOrder = (members) => {
+        const head = [], tail = [];
+        members.forEach(s => ((clFlags[s] && !_isDoneRow(s)) ? head : tail).push(s));
+        tail.sort((a, b) => (itemLastDone[b] || 0) - (itemLastDone[a] || 0));   // never-done → 0 → last
+        return head.concat(tail);
+      };
+      const _batchBody = (members) => _batchOrder(members).map(buildTaskRow).join('');
       rows += groups.map(g => {
         const doneN = g.members.filter(_isDoneRow).length;
         const est = g.members.reduce((t, s) => { const a = itemAvg[s.trim().replace(/\s+/g, ' ').toLowerCase()]; return t + (isFinite(a) && a > 0 ? a : 0); }, 0);
