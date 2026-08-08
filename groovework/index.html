@@ -1293,6 +1293,17 @@
   <div class="scroll-area">
     <div class="settings-section">
       <div class="settings-row" style="justify-content:space-between;align-items:center;">
+        <div style="min-width:0;">
+          <div class="settings-label" style="font-weight:600;">Account</div>
+          <div id="account-state" style="font-size:13px;color:var(--subtext);margin-top:2px;overflow:hidden;text-overflow:ellipsis;">Not signed in</div>
+        </div>
+        <button id="account-btn" onclick="accountAction()" style="flex-shrink:0;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 14px;cursor:pointer;color:var(--text);font-size:15px;font-weight:600;">Sign in</button>
+      </div>
+      <div class="settings-note" id="account-note" style="margin-top:8px">Your work is saved on this device. Signing in is what will let it reach your other devices and your team.</div>
+    </div>
+
+    <div class="settings-section" style="margin-top:16px;">
+      <div class="settings-row" style="justify-content:space-between;align-items:center;">
         <div class="settings-label">Dark Mode</div>
         <label style="position:relative;display:inline-block;width:51px;height:31px;flex-shrink:0;">
           <input type="checkbox" id="dark-mode-toggle" onchange="toggleDarkMode(this.checked)" style="opacity:0;width:0;height:0;">
@@ -1701,6 +1712,34 @@
     <button onclick="onboardPick('empty')" style="display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;cursor:pointer;color:var(--text);font-size:16px;font-weight:600;">✨ Start empty
       <div style="font-weight:400;font-size:13px;color:var(--subtext);margin-top:4px;">Build your own jobs from scratch.</div></button>
     <div style="font-size:12px;color:var(--subtext);text-align:center;margin-top:16px;">You can add, edit or delete anything later.</div>
+  </div>
+</div>
+
+<!-- ══════════════ SIGN IN (M1/S2) ══════════════ -->
+<!-- Optional in S2: only ever shown on a genuinely fresh install, and always
+     skippable. An install that already holds data is never gated. -->
+<div class="modal-backdrop" id="modal-signin" style="z-index:901;background:var(--bg);align-items:stretch;">
+  <div style="position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;padding:calc(env(safe-area-inset-top) + 44px) 24px calc(env(safe-area-inset-bottom) + 32px);">
+    <div style="text-align:center;font-size:44px;line-height:1;margin-bottom:10px;">🔑</div>
+    <div style="text-align:center;font-size:24px;font-weight:700;color:var(--text);">Sign in to Groovework</div>
+    <div style="text-align:center;font-size:15px;color:var(--subtext);line-height:1.6;margin:10px 0 26px;">Your work stays on this device either way. An account is what lets it reach your other devices — and your team.</div>
+
+    <button onclick="signInGoogle()" style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:18px;cursor:pointer;color:var(--text);font-size:16px;font-weight:600;">
+      <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#4285F4" d="M45.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h11.8c-.5 2.7-2 5-4.4 6.6v5.5h7.1c4.1-3.8 6.6-9.4 6.6-16.1z"/><path fill="#34A853" d="M24 46c5.9 0 10.9-2 14.5-5.4l-7.1-5.5c-2 1.3-4.5 2.1-7.4 2.1-5.7 0-10.5-3.8-12.2-9H4.5v5.7C8.1 41.1 15.5 46 24 46z"/><path fill="#FBBC05" d="M11.8 28.2c-.4-1.3-.7-2.7-.7-4.2s.2-2.9.7-4.2v-5.7H4.5A22 22 0 0 0 2 24c0 3.6.9 6.9 2.5 9.9l7.3-5.7z"/><path fill="#EA4335" d="M24 10.8c3.2 0 6.1 1.1 8.4 3.3l6.3-6.3C34.9 4.2 29.9 2 24 2 15.5 2 8.1 6.9 4.5 14.1l7.3 5.7c1.7-5.2 6.5-9 12.2-9z"/></svg>
+      Continue with Google
+    </button>
+
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;">
+      <div style="flex:1;height:1px;background:var(--border);"></div>
+      <div style="font-size:12px;color:var(--subtext);">or</div>
+      <div style="flex:1;height:1px;background:var(--border);"></div>
+    </div>
+
+    <input id="signin-email" type="email" placeholder="you@example.com" autocomplete="email" autocorrect="off" autocapitalize="none" spellcheck="false" style="width:100%;padding:14px;border:1px solid var(--border);border-radius:12px;background:var(--card);color:var(--text);font-size:16px;margin-bottom:10px;">
+    <button onclick="signInEmail()" style="display:block;width:100%;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:15px;cursor:pointer;color:var(--text);font-size:16px;font-weight:600;">Email me a sign-in link</button>
+
+    <button onclick="closeModal('modal-signin')" style="display:block;width:100%;background:none;border:none;padding:18px;margin-top:8px;cursor:pointer;color:var(--subtext);font-size:15px;">Not now</button>
+    <div style="font-size:12px;color:var(--subtext);text-align:center;margin-top:4px;">You can sign in any time from Settings.</div>
   </div>
 </div>
 
@@ -2819,7 +2858,197 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.281';
+const APP_VERSION = '2026-06-21.282';
+
+// ════════════════════════════════════════════════════════════════════════════
+//  M1 / S2 — ACCOUNTS: auth, orgs and roles
+//
+//  Deliberately hand-rolled against Supabase's REST endpoints rather than
+//  pulling in @supabase/supabase-js from a CDN. This app is an offline-first
+//  single-file PWA that has to launch in a vineyard; a CDN <script> is a
+//  boot-time network dependency. It also keeps the M1 rule intact — we never
+//  adopt a client library's cache as the source of truth. localStorage stays
+//  the truth; this file only ever adds an identity on top of it.
+//
+//  NOTHING HERE BLOCKS BOOT. A cold launch with no signal restores the cached
+//  session and cached org from localStorage and carries on; the network work
+//  is fire-and-forget. Sign-in is OPTIONAL in S2 — an install that already has
+//  data is never gated. No app data syncs until S3.
+//
+//  The anon key is public by design: it identifies the project and grants
+//  nothing. RLS + the GRANTs in supabase/003_lockdown.sql are the real gate.
+// ════════════════════════════════════════════════════════════════════════════
+const SB_URL  = 'https://fzkpdzczmcxbipmrftur.supabase.co';
+const SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ6a3BkemN6bWN4YmlwbXJmdHVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4Mjc2ODksImV4cCI6MjEwMTQwMzY4OX0.RTRi59P5Hzgar0dBFtmcl8ikj_LV62z0KNOY4vBPc84';
+
+let _auth = null;   // { access_token, refresh_token, expires_at, user:{id,email,name} }
+let _org  = null;   // { id, name, role }
+
+// UTF-8-safe base64url decode. Deliberately NOT atob(escape(...)): the 1 Aug
+// incident was a Latin-1 assumption in the photo path, and a name with an
+// accent in it would throw here and take the whole boot with it.
+function _b64urlToStr(s) {
+  s = String(s).replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4) s += '=';
+  const bin = atob(s);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder('utf-8').decode(bytes);
+}
+function _authDecodeUser(jwt) {
+  try {
+    const j = JSON.parse(_b64urlToStr(String(jwt).split('.')[1]));
+    const meta = j.user_metadata || {};
+    return { id: j.sub, email: j.email || '', name: meta.full_name || meta.name || '' };
+  } catch (e) { return null; }
+}
+
+function _authLoad() {
+  try { _auth = JSON.parse(localStorage.getItem('kr_auth') || 'null'); } catch (e) { _auth = null; }
+  try { _org  = JSON.parse(localStorage.getItem('kr_org')  || 'null'); } catch (e) { _org  = null; }
+}
+// kr_auth / kr_org are deliberately absent from KR_BACKUP_KEYS — credentials
+// have no business in a Drive backup, and they're short-lived anyway.
+function _authSave() {
+  if (_auth) _storeSet('kr_auth', JSON.stringify(_auth)); else _storeRemove('kr_auth');
+  if (_org)  _storeSet('kr_org',  JSON.stringify(_org));  else _storeRemove('kr_org');
+}
+function isSignedIn() { return !!(_auth && _auth.access_token); }
+function currentUser() { return (_auth && _auth.user) || null; }
+function currentOrg()  { return _org; }
+
+// Strip the token out of the address bar the moment we've banked it. Leaves
+// the URL clean for bookmarks/history and stops a refresh re-reading a stale
+// fragment. Runs before anything else on boot.
+function _authParseFragment() {
+  const h = location.hash || '';
+  if (h.indexOf('access_token=') === -1) return false;
+  const p = new URLSearchParams(h.charAt(0) === '#' ? h.slice(1) : h);
+  const at = p.get('access_token');
+  if (!at) return false;
+  _auth = {
+    access_token: at,
+    refresh_token: p.get('refresh_token') || '',
+    expires_at: Date.now() + (parseInt(p.get('expires_in') || '3600', 10) * 1000),
+    user: _authDecodeUser(at)
+  };
+  _authSave();
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+  return true;
+}
+
+async function _authRefresh() {
+  if (!_auth || !_auth.refresh_token) return false;
+  try {
+    const res = await fetch(SB_URL + '/auth/v1/token?grant_type=refresh_token', {
+      method: 'POST',
+      headers: { 'apikey': SB_ANON, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: _auth.refresh_token })
+    });
+    if (!res.ok) { if (res.status === 400 || res.status === 401) { _auth = null; _org = null; _authSave(); } return false; }
+    const j = await res.json();
+    if (!j.access_token) return false;
+    _auth = {
+      access_token: j.access_token,
+      refresh_token: j.refresh_token || _auth.refresh_token,
+      expires_at: Date.now() + ((j.expires_in || 3600) * 1000),
+      user: _authDecodeUser(j.access_token) || _auth.user
+    };
+    _authSave();
+    return true;
+  } catch (e) { return false; }   // offline — keep the cached session, try again later
+}
+
+// One retry on 401, after a refresh. Returns parsed JSON, or null on failure.
+async function _sb(path, opts = {}, _retried) {
+  if (!isSignedIn()) return null;
+  const headers = Object.assign({
+    'apikey': SB_ANON,
+    'Authorization': 'Bearer ' + _auth.access_token,
+    'Content-Type': 'application/json'
+  }, opts.headers || {});
+  let res;
+  try { res = await fetch(SB_URL + path, Object.assign({}, opts, { headers })); }
+  catch (e) { return null; }                       // offline
+  if (res.status === 401 && !_retried) {
+    if (await _authRefresh()) return _sb(path, opts, true);
+    return null;
+  }
+  if (!res.ok) { console.warn('[sb]', res.status, path, await res.text().catch(() => '')); return null; }
+  if (res.status === 204) return [];
+  try { return await res.json(); } catch (e) { return []; }
+}
+
+function signInGoogle() {
+  const back = location.origin + location.pathname;
+  location.href = SB_URL + '/auth/v1/authorize?provider=google&redirect_to=' + encodeURIComponent(back);
+}
+async function signInEmail() {
+  const el = document.getElementById('signin-email');
+  const email = ((el && el.value) || '').trim();
+  if (!email || email.indexOf('@') < 0) { showToast('Enter your email address'); return; }
+  const back = location.origin + location.pathname;
+  try {
+    const res = await fetch(SB_URL + '/auth/v1/otp', {
+      method: 'POST',
+      headers: { 'apikey': SB_ANON, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, create_user: true, options: { email_redirect_to: back } })
+    });
+    showToast(res.ok ? 'Check your email for the sign-in link 📧' : 'Could not send the link — try again');
+  } catch (e) { showToast('No connection — try again when you\'re online'); }
+}
+async function signOut() {
+  try { await _sb('/auth/v1/logout', { method: 'POST' }); } catch (e) {}
+  _auth = null; _org = null; _authSave();
+  applyRoleUI(); renderAccountUI();
+  showToast('Signed out — your data stays on this device');
+}
+
+// First sign-in creates your own org and makes you its manager. Matches the
+// RLS exactly: orgs_insert allows one you own, org_members_insert allows the
+// owner to add themselves as the first manager.
+async function _orgBootstrap() {
+  if (!isSignedIn()) return;
+  const u = currentUser();
+  if (!u || !u.id) return;
+
+  const mine = await _sb('/rest/v1/org_members?select=org_id,role&user_id=eq.' + encodeURIComponent(u.id) + '&limit=1');
+  if (mine && mine.length) {
+    const m = mine[0];
+    let name = (_org && _org.id === m.org_id) ? _org.name : '';
+    const o = await _sb('/rest/v1/orgs?select=name&id=eq.' + encodeURIComponent(m.org_id) + '&limit=1');
+    if (o && o.length) name = o[0].name;
+    _org = { id: m.org_id, name: name || '', role: m.role || 'manager' };
+    _authSave(); applyRoleUI(); renderAccountUI();
+    return;
+  }
+  if (mine === null) return;   // offline or blocked — don't create a duplicate org on a bad read
+
+  const orgName = (getUserName() || (u.email || '').split('@')[0] || 'My organisation');
+  const created = await _sb('/rest/v1/orgs', {
+    method: 'POST',
+    headers: { 'Prefer': 'return=representation' },
+    body: JSON.stringify({ name: orgName, owner_uid: u.id })
+  });
+  if (!created || !created.length) return;
+  const org = created[0];
+  const mem = await _sb('/rest/v1/org_members', {
+    method: 'POST',
+    headers: { 'Prefer': 'return=representation' },
+    body: JSON.stringify({ org_id: org.id, user_id: u.id, role: 'manager' })
+  });
+  if (!mem || !mem.length) return;
+  _org = { id: org.id, name: org.name, role: 'manager' };
+  _authSave(); applyRoleUI(); renderAccountUI();
+}
+
+// Fire-and-forget. Never awaited by boot.
+async function _authBoot() {
+  if (!isSignedIn()) return;
+  if (!_auth.expires_at || Date.now() > _auth.expires_at - 60000) await _authRefresh();
+  if (!isSignedIn()) { renderAccountUI(); return; }
+  await _orgBootstrap();
+}
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -3014,6 +3243,14 @@ function maybeShowOnboarding() {
 }
 
 window.addEventListener('load', () => {
+  // M1/S2 — identity first, and synchronously. Restore the cached session from
+  // localStorage, then let a fresh OAuth return overwrite it (that order, so a
+  // sign-in that just happened wins). Both are local reads; the network side is
+  // kicked off further down and is never awaited, so a cold launch with no
+  // signal is unaffected.
+  _authLoad();
+  _authParseFragment();
+
   // Load user name
   const name = localStorage.getItem('kr_user_name');
   if (name) document.getElementById('user-name').value = name;
@@ -3053,6 +3290,8 @@ window.addEventListener('load', () => {
   startTimerTick();
   initTeamUI();
   applyRoleUI();
+  renderAccountUI();
+  _authBoot().catch(() => {});   // refresh token + org bootstrap — fire-and-forget, never blocks boot
   initSearchClears();
   _syncChecklistOrderUI();
   _syncFlagNewPosUI();
@@ -13593,7 +13832,15 @@ function dirAddButtonClick() {
 // ── Device role (Manager / Worker) ──
 // Worker is a tidiness guardrail (not security): clock in/out, notes, project
 // tagging and read-only viewing only — no editing tasks/equipment/projects/planner.
-function getRole() { return localStorage.getItem('kr_role') || 'manager'; }
+// M1/S2: once you're signed in, the org's membership row is the authority —
+// role stops being a per-device setting and starts being a property of the
+// account. Signed out (or offline before the first bootstrap) it falls back to
+// kr_role exactly as before, so nothing changes for an existing install until
+// somebody actually signs in.
+function getRole() {
+  if (_org && _org.role) return _org.role;
+  return localStorage.getItem('kr_role') || 'manager';
+}
 function isWorker() { return getRole() === 'worker'; }
 // Team features (Manager/Worker role, worker's-day planner, pin-to-worker) are
 // OFF by default for fresh solo installs, and hidden until turned on. Existing
@@ -13614,7 +13861,34 @@ function setTeamEnabled(on) {
 function setRole(role) {
   _storeSet('kr_role', role);
   applyRoleUI();
+  // Once signed in the membership row wins (see getRole()). Say so, rather than
+  // leaving the toggle looking like it silently did nothing.
+  if (_org && _org.role) {
+    showToast('Your role comes from your account — ' + _org.role);
+    return;
+  }
   showToast(role === 'worker' ? 'Worker mode — editing locked' : 'Manager mode — full access');
+}
+
+// ── Account block in Settings (M1/S2) ──
+function accountAction() { if (isSignedIn()) signOut(); else openModal('modal-signin'); }
+function renderAccountUI() {
+  const st = document.getElementById('account-state');
+  const btn = document.getElementById('account-btn');
+  const note = document.getElementById('account-note');
+  if (!st || !btn) return;
+  if (isSignedIn()) {
+    const u = currentUser() || {};
+    st.textContent = u.email || u.name || 'Signed in';
+    btn.textContent = 'Sign out';
+    if (note) note.textContent = _org
+      ? ('Organisation: ' + (_org.name || '—') + ' — you are the ' + (_org.role || 'manager') + '. Your role now comes from the account, not this device. Nothing syncs yet.')
+      : 'Signed in. Setting up your organisation…';
+  } else {
+    st.textContent = 'Not signed in';
+    btn.textContent = 'Sign in';
+    if (note) note.textContent = 'Your work is saved on this device. Signing in is what will let it reach your other devices and your team.';
+  }
 }
 // One-time migration + sync the Team toggle UI. Existing team setups (a worker
 // device, or a manager who has planned a worker's day) flip ON automatically so
