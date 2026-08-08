@@ -2858,7 +2858,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.282';
+const APP_VERSION = '2026-06-21.283';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -3024,20 +3024,46 @@ async function _orgBootstrap() {
   }
   if (mine === null) return;   // offline or blocked — don't create a duplicate org on a bad read
 
-  const orgName = (getUserName() || (u.email || '').split('@')[0] || 'My organisation');
-  const created = await _sb('/rest/v1/orgs', {
-    method: 'POST',
-    headers: { 'Prefer': 'return=representation' },
-    body: JSON.stringify({ name: orgName, owner_uid: u.id })
-  });
-  if (!created || !created.length) return;
-  const org = created[0];
+  // ── Adopt before creating ────────────────────────────────────────────────
+  // An org you own but aren't yet a member of is a half-finished bootstrap:
+  // the org insert landed and the membership insert didn't. Finish it rather
+  // than making another one. Needs supabase/004_org_bootstrap.sql, which is
+  // what lets an owner see the org they own; before that fix this query
+  // returned nothing and every launch created a fresh orphan.
+  let org = null;
+  const owned = await _sb('/rest/v1/orgs?select=id,name&owner_uid=eq.' + encodeURIComponent(u.id) + '&order=created_at.asc&limit=1');
+  if (owned && owned.length) org = owned[0];
+
+  if (!org) {
+    // One creation attempt per app session. The 8 Aug bug left an orphan org on
+    // EVERY launch because a bootstrap that couldn't finish kept retrying from
+    // scratch. A bootstrap that fails should fail once and wait for a human,
+    // not accumulate rows.
+    if (sessionStorage.getItem('kr_org_create_tried') === '1') return;
+    sessionStorage.setItem('kr_org_create_tried', '1');
+    const orgName = (getUserName() || (u.email || '').split('@')[0] || 'My organisation');
+    const created = await _sb('/rest/v1/orgs', {
+      method: 'POST',
+      headers: { 'Prefer': 'return=representation' },
+      body: JSON.stringify({ name: orgName, owner_uid: u.id })
+    });
+    if (created && created.length) org = created[0];
+    else {
+      // The insert may well have committed even though we couldn't read it
+      // back. Re-read rather than assuming failure — assuming failure is what
+      // produced the orphans in the first place.
+      const again = await _sb('/rest/v1/orgs?select=id,name&owner_uid=eq.' + encodeURIComponent(u.id) + '&order=created_at.asc&limit=1');
+      if (again && again.length) org = again[0];
+    }
+  }
+  if (!org) return;
+
   const mem = await _sb('/rest/v1/org_members', {
     method: 'POST',
     headers: { 'Prefer': 'return=representation' },
     body: JSON.stringify({ org_id: org.id, user_id: u.id, role: 'manager' })
   });
-  if (!mem || !mem.length) return;
+  if (!mem || !mem.length) return;   // leave _org unset; next launch adopts this org rather than duplicating
   _org = { id: org.id, name: org.name, role: 'manager' };
   _authSave(); applyRoleUI(); renderAccountUI();
 }
