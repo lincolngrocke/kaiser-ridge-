@@ -2819,7 +2819,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.277';
+const APP_VERSION = '2026-06-21.278';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4653,10 +4653,20 @@ function updateRunRing(netElapsedSec) {
   // a stale target forever, one task short of its own 🏁 forecast, with no way to
   // unstick it. Lock on the first tick of FLAGGED work; until then the target keeps
   // tracking the plan, which is the whole point of provisional.
+  // ⭐ v278 — this rule is now UNIVERSAL, block-derived targets included. It used to skip
+  // any run started from a planner block (`targetFromPlan`), on the grounds that a block
+  // duration is "a real plan, so authoritative". Backwards: that duration is auto-derived
+  // from whatever was flagged ON THE BLOCK (v162), so at clock-in it is the number most
+  // likely to be stale. Clock in, swipe-right five tasks, and 🎯 stayed on the block's old
+  // window while 🏁 tracked the real work — 32 minutes apart at 0 of 5 done.
+  //
+  // The target is a promise about WORK (v272), so 🏁 and 🎯 must move together and the gap
+  // must measure PACE ALONE. Before the first tick there is no pace to measure, so the gap
+  // must be zero — any gap at that point is scope drift wearing a pace badge. Changing what
+  // you'll do before you start is still planning; it only becomes overrun once work begins.
   const _flagsNow = (clockState && clockState.running && clockState.task) ? _sessionOrGlobalFlags(clockState.task) : null;
   const _planStarted = !!(_flagsNow && (clockState.checklistDone || []).some(d => d && _flagsNow[d.item]));
-  if (clockState && clockState.running && remaining != null && !clockState.targetFromPlan
-      && !_planStarted) {
+  if (clockState && clockState.running && remaining != null && !_planStarted) {
     const _t = _runForecastFinishMs();
     const _b = _breakNowMs();
     if (_t && (clockState.targetMs !== _t || clockState.targetBreakMs0 !== _b)) {
@@ -6722,9 +6732,11 @@ function confirmTime(choice) {
         if (clockState.flagOverride || clockState.orderOverride || clockState.lapTargets || clockState.runOrder) { _storeSet('kr_clock', JSON.stringify(clockState)); renderRunChecklist(); }
         delete pcm[taskInfo._planId]; savePlannerChecklist(pcm);
       }
-      // 🎯 The TARGET — what the block said this job would take. This one is a real
-      // plan (and may have been hand-edited), so it's authoritative: targetFromPlan
-      // stops updateRunRing re-deriving it from the flagged tasks below.
+      // 🎯 The TARGET — what the block said this job would take, used as the STARTING
+      // value. As of v278 `targetFromPlan` records provenance only; it no longer freezes
+      // the target. Until the first tick of flagged work, updateRunRing keeps re-deriving
+      // it from what's actually flagged, so 🎯 and 🏁 agree before you start. Freezing it
+      // here was what left 🎯 on the block's stale window while 🏁 tracked the real run.
       const _tp = _plannerPlans.find(p => p.id === taskInfo._planId);
       if (_tp && _tp.durationHours > 0) {
         clockState.targetMs = _rsPlanStartMs(_tp) + _tp.durationHours * 3600000;
