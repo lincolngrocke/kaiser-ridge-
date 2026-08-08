@@ -2819,7 +2819,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.279';
+const APP_VERSION = '2026-06-21.280';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -4530,13 +4530,36 @@ function toggleAllPinsExpanded() {
 }
 // Same for the Tasks tab — expand/collapse every task's sub-steps at once (only
 // tasks that have steps and aren't ticked off). Tapping a task still toggles its own.
+// The ▸ batch section keys for a job, matching the keys the batch renderer uses.
+// "Expand all" has to know about these: expanding a task's sub-steps inside a batch
+// that is still shut does nothing you can see.
+function _clGroupKeys(job) {
+  const rec = _batchRec(job);
+  if (!rec || !rec.order || !rec.order.length) return [];
+  const subs = SUBTASKS[job] || [];
+  const keys = rec.order.filter(n => subs.some(s => rec.items[s] === n)).map(n => 'b:' + n);
+  if (subs.some(s => !(rec.items[s] && rec.order.includes(rec.items[s])))) keys.push('b:~loose');
+  return keys;
+}
+// Expand all = open EVERYTHING that's shut: every batch section AND every task's
+// sub-steps. It used to toggle sub-steps only, so on a job viewed by batches — all of
+// them collapsed by default — the button appeared to do nothing at all. It was working;
+// it was just opening things hidden inside closed sections.
 function toggleAllTasksExpanded() {
   if (!clockState || !clockState.task) return;
+  const job = clockState.task;
   const stepsMap = getSubtaskSteps();
   const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
-  const items = (SUBTASKS[clockState.task] || []).filter(s => !_isTaskDoneNow(clockState.task, s, done) && ((stepsMap[s] || []).length > 0 || s.length > 55));
-  const allExp = items.length > 0 && items.every(s => _expandedChecklistItems.has(s));
-  if (allExp) items.forEach(s => _expandedChecklistItems.delete(s));
+  const items = (SUBTASKS[job] || []).filter(s => !_isTaskDoneNow(job, s, done) && ((stepsMap[s] || []).length > 0 || s.length > 55));
+  const inBatchView = _runGroupBy === 'batch' && _jobHasBatches(job);
+  const keys = inBatchView ? _clGroupKeys(job) : [];
+  // "Everything is open" only counts a section as open once it's been explicitly
+  // opened — so the first tap always expands, whatever the per-batch defaults were.
+  const groupsOpen = keys.length > 0 && keys.every(k => _runGroupCollapsed[k] === false);
+  const stepsOpen = items.length > 0 && items.every(s => _expandedChecklistItems.has(s));
+  const allOpen = (keys.length ? groupsOpen : true) && (items.length ? stepsOpen : true);
+  keys.forEach(k => { _runGroupCollapsed[k] = allOpen; });
+  if (allOpen) items.forEach(s => _expandedChecklistItems.delete(s));
   else items.forEach(s => _expandedChecklistItems.add(s));
   renderRunChecklist();
 }
@@ -4802,8 +4825,13 @@ function renderRunChecklist() {
     // AND batch moves live now, so it shouldn't hide behind having flagged two first.
     if (items.length) organiseLink = `<span onclick="openChecklistOrganise(event)" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">⤢ Organise</span>`;
     const _expandableTasks = items.filter(s => !_isTaskDoneNow(clockState.task, s, done) && ((stepsMap[s] || []).length > 0 || s.length > 55));
-    if (_expandableTasks.length >= 1) {
-      const _allExp = _expandableTasks.every(s => _expandedChecklistItems.has(s));
+    // Batch sections count as expandable too — a job whose tasks have no sub-steps still
+    // has batches worth opening, and the link used to hide entirely in that case.
+    const _groupKeys = (_runGroupBy === 'batch' && _jobHasBatches(clockState.task)) ? _clGroupKeys(clockState.task) : [];
+    if (_expandableTasks.length >= 1 || _groupKeys.length >= 1) {
+      const _groupsOpen = _groupKeys.length > 0 && _groupKeys.every(k => _runGroupCollapsed[k] === false);
+      const _stepsOpen = _expandableTasks.length > 0 && _expandableTasks.every(s => _expandedChecklistItems.has(s));
+      const _allExp = (_groupKeys.length ? _groupsOpen : true) && (_expandableTasks.length ? _stepsOpen : true);
       expandLink = `<span onclick="toggleAllTasksExpanded()" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">${_allExp ? '⤡ Collapse all' : '⤢ Expand all'}</span>`;
     }
     // View toggle — Batches vs Flagged, only when the job has batches (last-done
