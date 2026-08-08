@@ -962,7 +962,7 @@
     <label style="font-size:13px;color:var(--subtext);display:block;margin-top:10px;">Time (optional)</label>
     <input id="reminder-time" type="time" style="width:100%;margin:5px 0 4px;padding:12px;border:1px solid var(--border);border-radius:10px;font-size:16px;background:var(--bg);color:var(--text);-webkit-appearance:none;">
     <div onclick="toggleReminderRepeat()" style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:10px;cursor:pointer;">
-      <span style="font-size:15px;color:var(--text);">🔁 Repeat daily</span>
+      <span style="font-size:15px;color:var(--text);">🔁 Repeat</span>
       <span id="reminder-repeat-state" style="font-size:15px;color:var(--subtext);font-weight:600;">Off</span>
     </div>
     <div style="font-size:12px;color:var(--subtext);margin-top:8px;line-height:1.45;">A banner nags you each time you open the app — from the date, and after the time if set. Daily reminders re-appear every day. (A true buzz-at-the-time phone alert comes with cloud sync later.)</div>
@@ -984,7 +984,7 @@
     <label style="font-size:13px;color:var(--subtext);">Time (optional)</label>
     <input id="task-remind-time" type="time" style="width:100%;margin:5px 0 10px;padding:12px;border:1px solid var(--border);border-radius:10px;font-size:16px;background:var(--bg);color:var(--text);-webkit-appearance:none;">
     <div onclick="toggleTaskRemRepeat()" style="display:flex;align-items:center;justify-content:space-between;padding:12px;border:1px solid var(--border);border-radius:10px;cursor:pointer;">
-      <span style="font-size:15px;color:var(--text);">🔁 Repeat daily</span>
+      <span style="font-size:15px;color:var(--text);">🔁 Repeat</span>
       <span id="task-remind-repeat-state" style="font-size:15px;color:var(--subtext);font-weight:600;">Off</span>
     </div>
     <div style="font-size:12px;color:var(--subtext);margin-top:8px;line-height:1.45;">Shows as a banner when you open the app — from the date, and after the time if set. Tapping it clocks you into the job. Only shows if you set it.</div>
@@ -2382,10 +2382,10 @@
         <label style="font-size:13px;color:var(--subtext);">Time (optional)</label>
         <input id="dir-remind-time" type="time" style="width:100%;margin:5px 0 10px;padding:11px;border:1px solid var(--border);border-radius:10px;font-size:16px;background:var(--bg);color:var(--text);-webkit-appearance:none;">
         <div onclick="event.stopPropagation();_dirToggleRepeat()" style="display:flex;align-items:center;justify-content:space-between;padding:11px 12px;border:1px solid var(--border);border-radius:10px;cursor:pointer;">
-          <span style="font-size:15px;color:var(--text);">🔁 Repeat daily</span>
+          <span style="font-size:15px;color:var(--text);">🔁 Repeat</span>
           <span id="dir-remind-repeat-state" style="font-size:15px;color:var(--subtext);font-weight:600;">Off</span>
         </div>
-        <div style="font-size:12px;color:var(--subtext);margin-top:8px;line-height:1.45;">A banner shows when you open the app — from the date, and after the time if set. Daily repeats every day. Only ever shows if you set it here.</div>
+        <div style="font-size:12px;color:var(--subtext);margin-top:8px;line-height:1.45;">A banner shows when you open the app — from the date, and after the time if set. Repeat cycles Off → Daily → Weekly → Fortnightly → Monthly; it re-arms that long after you tick it done. Only ever shows if you set it here.</div>
       </div>
 
       <div class="form-row" onclick="openGroupPicker()" style="cursor:pointer;">
@@ -2819,7 +2819,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.278';
+const APP_VERSION = '2026-06-21.279';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -9216,22 +9216,22 @@ function openDirAddTask() {
   requestAnimationFrame(_sizeDirSubtaskInputs);
 }
 
-let _dirRemindOn = false, _dirRemindRepeatDaily = false;
+let _dirRemindOn = false, _dirRemindRepeat = '';
 function _dirSetRemindUI() {
   const st = document.getElementById('dir-remind-state'); if (st) { st.textContent = _dirRemindOn ? 'On' : 'Off'; st.style.color = _dirRemindOn ? 'var(--blue)' : 'var(--subtext)'; }
   const det = document.getElementById('dir-remind-detail'); if (det) det.style.display = _dirRemindOn ? 'block' : 'none';
-  const rs = document.getElementById('dir-remind-repeat-state'); if (rs) { rs.textContent = _dirRemindRepeatDaily ? 'On' : 'Off'; rs.style.color = _dirRemindRepeatDaily ? 'var(--blue)' : 'var(--subtext)'; }
+  const rs = document.getElementById('dir-remind-repeat-state'); if (rs) { rs.textContent = _repeatWord(_dirRemindRepeat); rs.style.color = _dirRemindRepeat ? 'var(--blue)' : 'var(--subtext)'; }
 }
 function _dirToggleRemind() {
   _dirRemindOn = !_dirRemindOn;
   if (_dirRemindOn) { const d = document.getElementById('dir-remind-date'); if (d && !d.value) d.value = _ymd(new Date()); }
   _dirSetRemindUI();
 }
-function _dirToggleRepeat() { _dirRemindRepeatDaily = !_dirRemindRepeatDaily; _dirSetRemindUI(); }
+function _dirToggleRepeat() { _dirRemindRepeat = _nextRepeat(_dirRemindRepeat); _dirSetRemindUI(); }
 function _populateJobRemind(task) {
   const jr = (task ? getJobReminders()[task] : null) || {};
   _dirRemindOn = !!jr.remindOn;
-  _dirRemindRepeatDaily = (jr.remindRepeat === 'daily');
+  _dirRemindRepeat = jr.remindRepeat || '';
   const dd = document.getElementById('dir-remind-date'); if (dd) dd.value = jr.remindOn || _ymd(new Date());
   const dt = document.getElementById('dir-remind-time'); if (dt) dt.value = jr.remindTime || '';
   _dirSetRemindUI();
@@ -11519,7 +11519,32 @@ function _removePinsForInboxNote(note) {
 let _remindSessionDismissed = new Set();   // note ids hidden until next app open
 let _reminderNoteId = null;
 function _ymd(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
-let _reminderRepeatDaily = false;
+let _reminderRepeat = '';
+// ── Repeat intervals ─────────────────────────────────────────────────────────
+// remindRepeat was a boolean in disguise: 'daily' or absent. Bins go out weekly and
+// the green bin fortnightly, so a daily nag is the wrong instrument — you'd tick it
+// dead every day and stop reading it. Now it's an interval, and a repeat re-arms
+// `interval` after the day you SATISFIED it, not after the original date: tick the
+// bins off a day late and the next one lands a week from when you actually did it.
+// '' is Off. Old records holding 'daily' keep working untouched.
+const _REPEAT_LABEL = { daily: 'Daily', weekly: 'Weekly', fortnightly: 'Fortnightly', monthly: 'Monthly' };
+const _REPEAT_CYCLE = ['', 'daily', 'weekly', 'fortnightly', 'monthly'];
+const _REPEAT_DAYS = { daily: 1, weekly: 7, fortnightly: 14 };
+function _nextRepeat(cur) { const i = _REPEAT_CYCLE.indexOf(cur || ''); return _REPEAT_CYCLE[(i + 1) % _REPEAT_CYCLE.length]; }
+function _repeatWord(r) { return r ? (_REPEAT_LABEL[r] || 'Daily') : 'Off'; }
+// The date a satisfied repeat becomes due again. null = one-off, done for good.
+// Monthly steps a calendar month so "the 3rd" stays the 3rd rather than drifting.
+function _repeatDueAgainOn(rec) {
+  if (!rec || !rec.remindDoneOn || !rec.remindRepeat) return null;
+  const d = new Date(rec.remindDoneOn + 'T00:00:00');
+  if (rec.remindRepeat === 'monthly') d.setMonth(d.getMonth() + 1);
+  else { const n = _REPEAT_DAYS[rec.remindRepeat]; if (!n) return null; d.setDate(d.getDate() + n); }
+  return _ymd(d);
+}
+function _repeatBackWhen(r) {
+  return r === 'daily' ? 'back tomorrow' : r === 'weekly' ? 'back in a week'
+       : r === 'fortnightly' ? 'back in a fortnight' : r === 'monthly' ? 'back next month' : '';
+}
 // Is this reminder currently "due"? True from its start date (remindOn), and — if a
 // time is set — only once that time has passed. Daily reminders re-arm every day.
 // Completing the item marks it done: remindDoneOn clears a one-off for good, and a
@@ -11529,12 +11554,15 @@ function _isReminderDue(n) {
   if (n.enabled === false) return false;   // switched off in the Reminders panel (kept, not deleted)
   const now = new Date();
   const today = _ymd(now);
-  if (n.remindDoneOn && (n.remindRepeat === 'daily' ? n.remindDoneOn === today : true)) return false;
+  if (n.remindDoneOn) {
+    const again = _repeatDueAgainOn(n);   // null → a one-off that's been done: gone for good
+    if (!again || today < again) return false;
+  }
   if (n.remindOn > today) return false;
   if (n.remindTime) {
     const [h, m] = n.remindTime.split(':').map(Number);
     const remMin = h * 60 + m, curMin = now.getHours() * 60 + now.getMinutes();
-    if (n.remindRepeat === 'daily') { if (curMin < remMin) return false; }
+    if (n.remindRepeat) { if (curMin < remMin) return false; }
     else if (n.remindOn === today && curMin < remMin) return false;
   }
   return true;
@@ -11571,7 +11599,7 @@ function _satisfyJobReminder(job) {
 function _remindLabel(n) {
   if (!n.remindOn) return '';
   const t = n.remindTime ? formatTimeAmPm(n.remindTime) : '';
-  if (n.remindRepeat === 'daily') return '🔁 Daily' + (t ? ' · ' + t : '');
+  if (n.remindRepeat) return '🔁 ' + _repeatWord(n.remindRepeat) + (t ? ' · ' + t : '');
   const d = new Date(n.remindOn + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
   return '🔔 ' + d + (t ? ' · ' + t : '');
 }
@@ -11580,16 +11608,18 @@ function _activeReminders() {
 }
 function _setReminderRepeatUI() {
   const s = document.getElementById('reminder-repeat-state');
-  if (s) { s.textContent = _reminderRepeatDaily ? 'On' : 'Off'; s.style.color = _reminderRepeatDaily ? 'var(--blue)' : 'var(--subtext)'; }
+  if (s) { s.textContent = _repeatWord(_reminderRepeat); s.style.color = _reminderRepeat ? 'var(--blue)' : 'var(--subtext)'; }
 }
-function toggleReminderRepeat() { _reminderRepeatDaily = !_reminderRepeatDaily; _setReminderRepeatUI(); }
+// Tap cycles Off → Daily → Weekly → Fortnightly → Monthly → Off. A cycler rather than a
+// picker sheet: one row, no new surface, and the value is always readable at a glance.
+function toggleReminderRepeat() { _reminderRepeat = _nextRepeat(_reminderRepeat); _setReminderRepeatUI(); }
 function openReminderPicker(inboxId) {
   const n = inboxId ? getInbox().find(x => x.id === inboxId) : null;
   if (!n) { showToast('Set this reminder from the Inbox'); return; }
   _reminderNoteId = inboxId;
   document.getElementById('reminder-date').value = n.remindOn || _ymd(new Date());
   document.getElementById('reminder-time').value = n.remindTime || '';
-  _reminderRepeatDaily = (n.remindRepeat === 'daily');
+  _reminderRepeat = n.remindRepeat || '';
   _setReminderRepeatUI();
   document.getElementById('reminder-remove').style.display = n.remindOn ? 'block' : 'none';
   document.getElementById('reminder-note-text').textContent = n.text || '';
@@ -11606,7 +11636,7 @@ function saveReminder() {
   if (n) {
     n.remindOn = date;
     if (time) n.remindTime = time; else delete n.remindTime;
-    if (_reminderRepeatDaily) n.remindRepeat = 'daily'; else delete n.remindRepeat;
+    if (_reminderRepeat) n.remindRepeat = _reminderRepeat; else delete n.remindRepeat;
     delete n.enabled;          // setting a reminder switches it on
     delete n.remindDoneOn;     // and re-arms it
     saveInbox(arr); _remindSessionDismissed.delete(n.id);
@@ -11614,8 +11644,8 @@ function saveReminder() {
   closeModal('modal-reminder');
   if (document.getElementById('modal-inbox').classList.contains('open')) renderInbox();
   updateReminderBanners();
-  showToast(_reminderRepeatDaily
-    ? (time ? '🔁 Daily reminder set for ' + formatTimeAmPm(time) : '🔁 Daily reminder set — every app-open')
+  showToast(_reminderRepeat
+    ? ('🔁 ' + _repeatWord(_reminderRepeat) + ' reminder set' + (time ? ' for ' + formatTimeAmPm(time) : ''))
     : '🔔 Reminder set for ' + new Date(date + 'T00:00:00').toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) + (time ? ' · ' + formatTimeAmPm(time) : ''));
 }
 function clearReminder() {
@@ -11639,12 +11669,12 @@ function updateReminderBanners() {
     const t = _escHtml(n.text || '').replace(/\n/g, ' ');
     const lbl = _remindLabel(n);
     return `<div style="display:flex;align-items:center;gap:10px;background:#1c1c1e;border:1px solid rgba(255,214,10,0.55);border-radius:14px;margin:8px 10px 0;padding:12px 12px 12px 14px;box-shadow:0 5px 18px rgba(0,0,0,0.45);">
-      <span style="font-size:18px;flex-shrink:0;">${n.remindRepeat === 'daily' ? '🔁' : '🔔'}</span>
+      <span style="font-size:18px;flex-shrink:0;">${n.remindRepeat ? '🔁' : '🔔'}</span>
       <div onclick="openReminderNote('${n.id}')" style="flex:1;min-width:0;cursor:pointer;">
         <div style="color:#fff;font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${t}</div>
         ${lbl ? `<div style="color:var(--subtext);font-size:12px;margin-top:2px;">${lbl}</div>` : ''}
       </div>
-      <button onclick="doneNoteReminder('${n.id}')" aria-label="Done" title="Done${n.remindRepeat === 'daily' ? ' for today' : ''}" style="background:none;border:none;color:#30d158;font-size:20px;font-weight:700;cursor:pointer;padding:2px 6px;flex-shrink:0;">✓</button>
+      <button onclick="doneNoteReminder('${n.id}')" aria-label="Done" title="Done${n.remindRepeat ? ' — ' + _repeatBackWhen(n.remindRepeat) : ''}" style="background:none;border:none;color:#30d158;font-size:20px;font-weight:700;cursor:pointer;padding:2px 6px;flex-shrink:0;">✓</button>
       <button onclick="dismissReminder('${n.id}')" aria-label="Dismiss" style="background:none;border:none;color:var(--subtext);font-size:20px;cursor:pointer;padding:2px 6px;flex-shrink:0;">✕</button>
     </div>`;
   }).join('');
@@ -11652,12 +11682,12 @@ function updateReminderBanners() {
     const jn = _escHtml(j.job), jarg = j.job.replace(/'/g, "\\'");
     const lbl = _remindLabel(j.rec);
     return `<div style="display:flex;align-items:center;gap:10px;background:#1c1c1e;border:1px solid rgba(90,200,250,0.55);border-radius:14px;margin:8px 10px 0;padding:12px 12px 12px 14px;box-shadow:0 5px 18px rgba(0,0,0,0.45);">
-      <span style="font-size:18px;flex-shrink:0;">${j.rec.remindRepeat === 'daily' ? '🔁' : '🔔'}</span>
+      <span style="font-size:18px;flex-shrink:0;">${j.rec.remindRepeat ? '🔁' : '🔔'}</span>
       <div onclick="openJobReminder('${jarg}')" style="flex:1;min-width:0;cursor:pointer;">
         <div style="color:#fff;font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${jn}</div>
         ${lbl ? `<div style="color:var(--subtext);font-size:12px;margin-top:2px;">${lbl}</div>` : ''}
       </div>
-      <button onclick="doneJobReminder('${jarg}')" aria-label="Done" title="Done${j.rec.remindRepeat === 'daily' ? ' for today' : ''}" style="background:none;border:none;color:#30d158;font-size:20px;font-weight:700;cursor:pointer;padding:2px 6px;flex-shrink:0;">✓</button>
+      <button onclick="doneJobReminder('${jarg}')" aria-label="Done" title="Done${j.rec.remindRepeat ? ' — ' + _repeatBackWhen(j.rec.remindRepeat) : ''}" style="background:none;border:none;color:#30d158;font-size:20px;font-weight:700;cursor:pointer;padding:2px 6px;flex-shrink:0;">✓</button>
       <button onclick="dismissJobReminder('${jarg}')" aria-label="Dismiss" style="background:none;border:none;color:var(--subtext);font-size:20px;cursor:pointer;padding:2px 6px;flex-shrink:0;">✕</button>
     </div>`;
   }).join('');
@@ -11666,12 +11696,12 @@ function updateReminderBanners() {
     const jn = _escHtml(tr.rec.job || '');
     const lbl = _remindLabel(tr.rec);
     return `<div style="display:flex;align-items:center;gap:10px;background:#1c1c1e;border:1px solid rgba(191,90,242,0.55);border-radius:14px;margin:8px 10px 0;padding:12px 12px 12px 14px;box-shadow:0 5px 18px rgba(0,0,0,0.45);">
-      <span style="font-size:18px;flex-shrink:0;">${tr.rec.remindRepeat === 'daily' ? '🔁' : '🔔'}</span>
+      <span style="font-size:18px;flex-shrink:0;">${tr.rec.remindRepeat ? '🔁' : '🔔'}</span>
       <div onclick="openTaskReminder(${idx})" style="flex:1;min-width:0;cursor:pointer;">
         <div style="color:#fff;font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${tt}</div>
         <div style="color:var(--subtext);font-size:12px;margin-top:2px;">📂 ${jn}${lbl ? ' · ' + lbl : ''}</div>
       </div>
-      <button onclick="doneTaskReminder(${idx})" aria-label="Done" title="Done${tr.rec.remindRepeat === 'daily' ? ' for today' : ''}" style="background:none;border:none;color:#30d158;font-size:20px;font-weight:700;cursor:pointer;padding:2px 6px;flex-shrink:0;">✓</button>
+      <button onclick="doneTaskReminder(${idx})" aria-label="Done" title="Done${tr.rec.remindRepeat ? ' — ' + _repeatBackWhen(tr.rec.remindRepeat) : ''}" style="background:none;border:none;color:#30d158;font-size:20px;font-weight:700;cursor:pointer;padding:2px 6px;flex-shrink:0;">✓</button>
       <button onclick="dismissTaskReminder(${idx})" aria-label="Dismiss" style="background:none;border:none;color:var(--subtext);font-size:20px;cursor:pointer;padding:2px 6px;flex-shrink:0;">✕</button>
     </div>`;
   }).join('');
@@ -11682,7 +11712,7 @@ function openReminderNote(id) { _remindSessionDismissed.add(id); updateReminderB
 // ✓ mark a reminder DONE from its banner — for reminders that aren't tied to a
 // clock-out (e.g. a daily whole-job routine). Daily → gone today, back tomorrow;
 // one-off → gone for good. Uses the same remindDoneOn mechanism as completion.
-function _doneToast(rec) { showToast(rec && rec.remindRepeat === 'daily' ? '✓ Done — back tomorrow' : '✓ Done'); }
+function _doneToast(rec) { const r = rec && rec.remindRepeat; showToast(r ? '✓ Done — ' + _repeatBackWhen(r) : '✓ Done'); }
 function doneNoteReminder(id) {
   const n = getInbox().find(x => x.id === id);
   _setNoteReminderDone(id, true); _doneToast(n);
@@ -11719,12 +11749,12 @@ function openTaskReminder(idx) {
 }
 // The job whose Edit screen is open (Job→Task→Step: the directory "task" is the job).
 function _dirJobName() { return _dirEditingKey ? _dirEditingKey.split('||')[2] : ''; }
-let _taskRemIndex = -1, _taskRemRepeatDaily = false;
+let _taskRemIndex = -1, _taskRemRepeat = '';
 function _setTaskRemRepeatUI() {
   const s = document.getElementById('task-remind-repeat-state');
-  if (s) { s.textContent = _taskRemRepeatDaily ? 'On' : 'Off'; s.style.color = _taskRemRepeatDaily ? 'var(--blue)' : 'var(--subtext)'; }
+  if (s) { s.textContent = _repeatWord(_taskRemRepeat); s.style.color = _taskRemRepeat ? 'var(--blue)' : 'var(--subtext)'; }
 }
-function toggleTaskRemRepeat() { _taskRemRepeatDaily = !_taskRemRepeatDaily; _setTaskRemRepeatUI(); }
+function toggleTaskRemRepeat() { _taskRemRepeat = _nextRepeat(_taskRemRepeat); _setTaskRemRepeatUI(); }
 function openTaskRemindPicker(i) {
   const job = _dirJobName();
   if (!job) { showToast('Save the job first, then set task reminders'); return; }
@@ -11734,7 +11764,7 @@ function openTaskRemindPicker(i) {
   document.getElementById('task-remind-note').textContent = task || '';
   document.getElementById('task-remind-date').value = rec.remindOn || _ymd(new Date());
   document.getElementById('task-remind-time').value = rec.remindTime || '';
-  _taskRemRepeatDaily = (rec.remindRepeat === 'daily');
+  _taskRemRepeat = rec.remindRepeat || '';
   _setTaskRemRepeatUI();
   document.getElementById('task-remind-remove').style.display = rec.remindOn ? 'block' : 'none';
   openModal('modal-task-remind');
@@ -11747,15 +11777,15 @@ function saveTaskRemind() {
   const rem = getTaskReminders();
   const rec = { job, task, remindOn: date };
   if (time) rec.remindTime = time;
-  if (_taskRemRepeatDaily) rec.remindRepeat = 'daily';
+  if (_taskRemRepeat) rec.remindRepeat = _taskRemRepeat;
   rem[_taskRemKey(job, task)] = rec;
   saveTaskReminders(rem);
   _remindSessionDismissed.delete('task:' + _taskRemKey(job, task));
   closeModal('modal-task-remind');
   renderDirSubtaskList();
   updateReminderBanners();
-  showToast(_taskRemRepeatDaily
-    ? '🔁 Daily reminder set for ' + formatTimeAmPm(time)
+  showToast(_taskRemRepeat
+    ? '🔁 ' + _repeatWord(_taskRemRepeat) + ' reminder set' + (time ? ' for ' + formatTimeAmPm(time) : '')
     : '🔔 Reminder set' + (time ? ' · ' + formatTimeAmPm(time) : ''));
 }
 function clearTaskRemind() {
@@ -13000,7 +13030,7 @@ function saveDirTask() {
     const rec = { remindOn: document.getElementById('dir-remind-date').value || _ymd(new Date()) };
     const dt = document.getElementById('dir-remind-time').value;
     if (dt) rec.remindTime = dt;
-    if (_dirRemindRepeatDaily) rec.remindRepeat = 'daily';
+    if (_dirRemindRepeat) rec.remindRepeat = _dirRemindRepeat;
     jr[task] = rec;
   } else {
     delete jr[task];
