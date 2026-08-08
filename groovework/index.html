@@ -2819,7 +2819,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.280';
+const APP_VERSION = '2026-06-21.281';
 
 // ════════════════════════════════
 //  DIRECTORY
@@ -16419,6 +16419,11 @@ function _rsRows(ctx) {
   // should be on right now. Distinct from `tappable`, which is per-task (the next
   // owed lap of that task) and so lights up nearly every row early in a job.
   const nowIdx = ctx.kind === 'clock' ? rows.findIndex(r => !r.doneAt) : -1;
+  // The LAST completed lap of each task — the only one that can be brought back, because
+  // that is the one undoTaskRep removes. Offering ↺ on an earlier lap would appear to undo
+  // that row while actually undoing the most recent one.
+  const lastDoneN = {};
+  rows.forEach(r => { if (r.doneAt) lastDoneN[r.t] = r.n; });
   return rows.map((r, i) => {
     seen[r.t] = (seen[r.t] || 0) + 1;
     const a = avg[_normTaskKey(r.t)];
@@ -16429,7 +16434,8 @@ function _rsRows(ctx) {
     else if (mins > 0) { cursor += mins * 60000; when = Math.max(cursor, floor); }
     return { ...r, mins, when, startWhen, floor, isDone: !!r.doneAt, lapIdx: seen[r.t], lapTotal: perTask[r.t],
              isNow: i === nowIdx,
-             tappable: ctx.kind === 'clock' && !r.doneAt && nextUndone[r.t] === r.n };
+             tappable: ctx.kind === 'clock' && !r.doneAt && nextUndone[r.t] === r.n,
+             undoable: ctx.kind === 'clock' && !!r.doneAt && lastDoneN[r.t] === r.n };
   });
 }
 
@@ -16587,10 +16593,12 @@ function _rsRender() {
     const actualChip = (isFinite(_actual) && _actual > 0)
       ? `<span style="font-size:11px;font-weight:700;color:#30d158;flex-shrink:0;" title="actual time for this one">✓ ${fmtMin(_actual)}</span>` : '';
     const timeTxt = r.isDone
-      ? `<span style="font-size:13px;font-weight:700;color:#616a7e;white-space:nowrap;">✓ ${_rsHM(r.when)}</span>`
+      ? `<span style="font-size:13px;font-weight:700;color:#616a7e;white-space:nowrap;">${r.undoable ? '<span style="font-weight:400;opacity:0.75;">↺ </span>' : ''}✓ ${_rsHM(r.when)}</span>`
       : (r.when ? `<span style="font-size:13px;font-weight:700;color:${r.tappable ? '#30d158' : 'var(--subtext)'};white-space:nowrap;">~${_rsHM(r.when)}</span>`
                 : '<span style="font-size:13px;color:var(--subtext);white-space:nowrap;" title="no timed history yet">—</span>');
-    const tap = r.tappable ? ` onclick="_rsTick(decodeURIComponent('${encodeURIComponent(r.t).replace(/'/g, '%27')}'))"` : '';
+    const _enc = encodeURIComponent(r.t).replace(/'/g, '%27');
+    const tap = r.tappable ? ` onclick="_rsTick(decodeURIComponent('${_enc}'))"`
+              : (r.undoable ? ` onclick="_rsUntick(decodeURIComponent('${_enc}'))"` : '');
     // ▶ NOW — the one row you're on. Blue, so it can't be confused with the green
     // that means "timed/forecast" elsewhere on the sheet, and calm rather than
     // alarming: it says where you are, it doesn't chase you.
@@ -16607,7 +16615,7 @@ function _rsRender() {
     // lives on the header, not the wrapper, so tapping a step can't tick the task.
     return `<div class="rs-row" data-rs-key="${_attr(key)}" ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)"
       style="margin-bottom:8px;">
-      <div${tap} style="display:flex;align-items:center;gap:9px;padding:11px 10px;border-radius:8px;border:1px solid ${border};background:${bg};${r.tappable ? 'cursor:pointer;' : ''}">
+      <div${tap} style="display:flex;align-items:center;gap:9px;padding:11px 10px;border-radius:8px;border:1px solid ${border};background:${bg};${(r.tappable || r.undoable) ? 'cursor:pointer;' : ''}">
       <span style="font-size:15px;flex-shrink:0;opacity:${r.isDone ? '0.5' : '1'};">${r.isDone ? '✓' : '🚩'}</span>
       <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;">
         <span style="overflow-wrap:anywhere;font-size:15px;color:${r.isDone ? '#616a7e' : 'var(--text)'};">${_escHtml(r.t)}</span>
@@ -16673,6 +16681,19 @@ function _rsTick(task) {
   if (Date.now() < _clSwipeBlockClickUntil) return;   // a drag just happened — not a tap
   markChecklistItemDone(task);
   _rsRender();
+}
+// ↺ Tapping a ✓ row brings it back. Ticking the wrong row is easy here — the rows are
+// large and the sheet is built for fast tapping — and the only way back used to be to
+// leave the sheet, find the task on the clock list and untick it there. The logic already
+// existed on both sides (a 'once' task toggles, a repeat task drops its last lap); the
+// sheet simply never offered the tap.
+function _rsUntick(task) {
+  if (Date.now() < _clSwipeBlockClickUntil) return;   // a drag just happened — not a tap
+  if (!clockState || !clockState.running) return;
+  if (isRepeatTask(clockState.task, task)) undoTaskRep(task);
+  else markChecklistItemDone(task);                   // 'once' tasks toggle on the same call
+  _rsRender();
+  showToast('↺ Brought back');
 }
 
 // Minimal drag for a FLAT list — no batches, no flag groups, every row eligible.
