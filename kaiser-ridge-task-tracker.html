@@ -2882,7 +2882,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.284';
+const APP_VERSION = '2026-06-21.285';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -7897,7 +7897,7 @@ const KR_BACKUP_KEYS = [
   // migration + library-sync markers (so a restore doesn't re-run migrations or
   // show a false "new library" banner). Deliberately still excluded: kr_clock
   // (live clock), trash cans, kr_cal_dirty, backup timestamps, kr_lib_prepull_backup.
-  'kr_team_enabled', 'kr_role', 'kr_planner_ethan', 'kr_planner_ethan_sent', 'kr_planner_ethan_sent_arr',
+  'kr_team_enabled', 'kr_role', 'kr_planner_ethan', 'kr_planner_ethan_sent', 'kr_planner_ethan_sent_arr', 'kr_planner_ethan_sent_todos',
   'kr_lastdone', 'kr_flag_new_pos', 'kr_checklist_order', 'kr_pin_sort', 'kr_dir_sort',
   'kr_planner_task_sort', 'kr_create_task_sort', 'kr_assign_task_sort', 'kr_planner_mode', 'kr_planner_zoom',
   'kr_onboarded', 'kr_cal_used', 'kr_lib_applied_version', 'kr_lib_synced',
@@ -11624,7 +11624,7 @@ function _migrateInboxAssignedOnce() {
   const arr = getInbox();
   let changed = false;
   arr.forEach(n => {
-    if (n.done && /\(pinned/.test(n.movedTo || '') && !(n.completions && n.completions.length)) {
+    if (n.done && _notePinned(n) && !(n.completions && n.completions.length)) {
       n.done = false; delete n.doneTs; n.assigned = true;
       if (!n.assignedTs) n.assignedTs = n.ts || new Date().toISOString();
       changed = true;
@@ -11652,7 +11652,7 @@ function _backfillPinnedTasksOnce() {
     if (!tasks || !tasks.size) return;
     n.pinnedTasks = [...new Set([...(Array.isArray(n.pinnedTasks) ? n.pinnedTasks : []), ...tasks])];
     // Refresh the label only for still-pinned (pending) notes, and never clobber an Ethan pin.
-    if (n.assigned && !n.done && !/Ethan/.test(n.movedTo || '')) {
+    if (n.assigned && !n.done && !_noteAssignee(n)) {   // never clobber a label for a to-do that was actually sent
       n.movedTo = _pinnedTasksLabel(n.pinnedTasks) + ' (pinned)';
     }
     changed = true;
@@ -11825,7 +11825,7 @@ function _inboxNoteRow(n) {
   const isDone = st === 'done', isAssigned = st === 'assigned';
   const _hlq = (document.getElementById('inbox-search') || {}).value || '';
   const safe = _hlSearch(_linkifyText(n.text), _hlq);
-  const taskName = n.movedTo ? _hlSearch(esc(n.movedTo.replace(/\s*\(pinned · Ethan\)/, ' · Ethan').replace(/\s*\(pinned\)/, '')), _hlq) : '';
+  const taskName = n.movedTo ? _hlSearch(esc(_noteMovedLabel(n)), _hlq) : '';
   let meta = 'Caught ' + _inboxStamp(n.ts);
   if (n.editedTs) meta += '　•　✏️ Edited ' + _inboxStamp(n.editedTs);
   if (isDone && n.doneTs) meta += '　•　✓ Done ' + _inboxStamp(n.doneTs);
@@ -12675,6 +12675,32 @@ function _pinnedTasksLabel(arr) {
   if (arr.length <= 3) return arr.join(', ');
   return arr.slice(0, 2).join(', ') + ' +' + (arr.length - 2) + ' more';
 }
+
+// ── A note's state is a FIELD, not something re-read out of its own label ──
+// Until v285 the code did /Ethan/.test(n.movedTo) and string surgery on
+// "(pinned · Ethan)": a label written for a human was doubling as the record of
+// who the to-do went to. Rewording the label would have silently changed
+// behaviour, and it's the mechanism behind the known silent failures.
+//
+// Notes stamped before the field existed are read through ONE legacy parse
+// here, rather than migrated — rewriting a 5.3 MB inbox at boot to add a field
+// we can derive on read is a bad trade, and boot writes are how 7 Aug happened.
+function _notePinned(n) { return !!(n && Array.isArray(n.pinnedTasks) && n.pinnedTasks.length); }
+function _noteAssignee(n) {
+  if (!n) return '';
+  if (n.assignedTo != null) return n.assignedTo || '';          // the field, once it exists
+  const m = /\(pinned · ([^)]+)\)/.exec(n.movedTo || '');       // legacy notes only
+  return m ? m[1].trim() : '';
+}
+// The display label, derived — never parsed back to work out what happened.
+function _noteMovedLabel(n) {
+  if (!n) return '';
+  if (_notePinned(n)) {
+    const who = _noteAssignee(n);
+    return _pinnedTasksLabel(n.pinnedTasks) + (who ? ' · ' + who : '');
+  }
+  return n.movedTo || '';
+}
 // ── Shared "file an inbox note onto a job" logic (used by the Inbox assign flow
 // AND the clock-screen add). Mutates the passed-in stores; caller persists. ──
 // mode: 'permanent' → a recurring Task in SUBTASKS; 'pinned' → a one-off To-do.
@@ -12696,6 +12722,7 @@ function _stampNoteFiled(note, tasks, mode) {
   if (mode === 'pinned') {
     note.assigned = true; note.assignedTs = new Date().toISOString();
     note.pinnedTasks = [...new Set([...(Array.isArray(note.pinnedTasks) ? note.pinnedTasks : []), ...tasks])];
+    note.assignedTo = note.assignedTo || null;   // local pin — but never wipe an existing send record
     note.movedTo = _pinnedTasksLabel(note.pinnedTasks) + ' (pinned)';
   } else {
     note.done = true; note.doneTs = new Date().toISOString();
@@ -12724,7 +12751,8 @@ async function assignInboxToTask(mode) {
     notes.forEach(note => {
       note.assigned = true; note.assignedTs = new Date().toISOString();
       note.pinnedTasks = [...new Set([...(Array.isArray(note.pinnedTasks) ? note.pinnedTasks : []), ...tasks])];
-      note.movedTo = _pinnedTasksLabel(note.pinnedTasks) + ' (pinned · Ethan)';
+      note.assignedTo = 'Ethan';   // the record of who it went to — a field, not the label
+      note.movedTo = _pinnedTasksLabel(note.pinnedTasks) + ' (pinned · Ethan)';   // label kept for search + older builds
     });
     saveInbox(arr);
     closeModal('modal-inbox-assign');
@@ -14686,8 +14714,19 @@ function _ethanArrangements(plans) {
   });
   return out;
 }
+// The to-dos sitting on the jobs in a planned day, by id. Planner blocks and
+// to-dos travel on two unrelated channels, so "the day is sent" has never meant
+// "the to-dos are sent" — see _sendDayTodos below.
+function _dayTodoIds(plans) {
+  const jobs = [...new Set((plans || []).map(p => p.task).filter(Boolean))];
+  const tn = getTaskNotes();
+  const ids = [];
+  jobs.forEach(job => (tn[job] || []).forEach(t => { if (t && t.id) ids.push(t.id); }));
+  return ids.sort();
+}
 // True if Ethan's Day differs from what was last sent (so the manager can be
-// nudged to re-send after editing) — plans OR their flag arrangements.
+// nudged to re-send after editing) — plans, their flag arrangements, OR the
+// to-dos on those jobs.
 function ethanDayHasUnsentChanges() {
   const cur = localStorage.getItem('kr_planner_ethan') || '[]';
   const sent = localStorage.getItem('kr_planner_ethan_sent');
@@ -14695,7 +14734,15 @@ function ethanDayHasUnsentChanges() {
   if (cur !== sent) return true;
   const curArr = JSON.stringify(_ethanArrangements(JSON.parse(cur)));
   const sentArr = localStorage.getItem('kr_planner_ethan_sent_arr') || '{}';
-  return curArr !== sentArr;
+  if (curArr !== sentArr) return true;
+  // A to-do added since the last send hasn't reached him, even though the blocks
+  // have. Before v285 that state was invisible: the block sheet renders to-dos
+  // from THIS phone, so an undelivered one looked identical to a delivered one,
+  // sitting directly under "✓ Ethan's Day sent — up to date".
+  const curTodos = JSON.stringify(_dayTodoIds(JSON.parse(cur)));
+  const sentTodos = localStorage.getItem('kr_planner_ethan_sent_todos');
+  if (sentTodos == null) return JSON.parse(curTodos).length > 0;   // sent before this existed → they never went
+  return curTodos !== sentTodos;
 }
 
 // Manager: push the worker's planned day to the backend so their app pulls it.
@@ -14722,10 +14769,47 @@ async function sendPlannerToEthan() {
     if (json && json.success) {
       _storeSet('kr_planner_ethan_sent', localStorage.getItem('kr_planner_ethan') || '[]');
       _storeSet('kr_planner_ethan_sent_arr', JSON.stringify(arrMap));
+      // The blocks are through. Now send the to-dos sitting on those jobs, which
+      // until v285 simply never travelled — the gap that put Ethan on a job
+      // without the note telling him what to do there.
+      const sentIds = await _sendDayTodos(url, plans, 'Ethan');
+      if (sentIds) _storeSet('kr_planner_ethan_sent_todos', JSON.stringify(sentIds));
       if (_plannerView === 'ethan') renderPlannerScreen();
-      showToast('Sent ' + json.count + ' task' + (json.count === 1 ? '' : 's') + ' to Ethan ✓');
+      const nTd = sentIds ? sentIds.length : 0;
+      showToast('Sent ' + json.count + ' task' + (json.count === 1 ? '' : 's')
+        + (nTd ? ' + ' + nTd + ' to-do' + (nTd === 1 ? '' : 's') : '') + ' to Ethan ✓');
+      if (sentIds === null) showToast('Tasks sent — but the to-dos did not go. Try again.');
     } else showToast('Send failed' + (json && json.error ? ': ' + json.error : ''));
   } catch (e) { showToast('Send failed — check connection'); }
+}
+
+// Push the to-dos attached to the jobs in a planned day, on the pinNote channel
+// the worker already pulls. Diagnosed 2026-07-30 from a real field failure
+// (Ethan saw the job, not the to-do); deferred then, fixed now.
+//
+// ⭐ Reuses each to-do's EXISTING id. The worker dedups on kr_pins_applied, so
+// re-sending a day can neither duplicate a to-do nor resurrect one he has
+// already ticked off. Generating fresh ids here would do both.
+//
+// Returns the ids sent, [] if there were none, or null if the send was attempted
+// and failed — the caller must not record a failed send as delivered.
+async function _sendDayTodos(url, plans, assignee) {
+  const jobs = [...new Set((plans || []).map(p => p.task).filter(Boolean))];
+  const tn = getTaskNotes();
+  const pins = [];
+  jobs.forEach(job => (tn[job] || []).forEach(t => {
+    if (t && t.id && t.text) pins.push({ id: t.id, task: job, text: t.text, ts: t.ts || new Date().toISOString(), caught: t.caught || '' });
+  }));
+  if (!pins.length) return [];
+  try {
+    const res = await fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'pinNote', assignee, pins })
+    });
+    const json = await res.json();
+    if (!json || !json.success) return null;
+  } catch (e) { return null; }
+  return pins.map(p => p.id).sort();
 }
 
 // Worker: pull the day the manager planned for me; replace my planner, flag new.
