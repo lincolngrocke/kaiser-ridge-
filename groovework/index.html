@@ -1302,6 +1302,32 @@
       <div class="settings-note" id="account-note" style="margin-top:8px">Your work is saved on this device. Signing in is what will let it reach your other devices and your team.</div>
     </div>
 
+    <!-- ══════ TEAM (M1/S2b) — real members, not one hardcoded name ══════ -->
+    <div class="settings-section" id="team-section" style="margin-top:16px;display:none;">
+      <div class="settings-row" style="justify-content:space-between;align-items:center;">
+        <div class="settings-label" style="font-weight:600;">Team</div>
+        <span onclick="renameOrg()" style="color:#5ac8fa;font-size:14px;cursor:pointer;">Rename org</span>
+      </div>
+      <div id="team-members" style="padding:2px 0 6px;"></div>
+
+      <div id="team-invite-wrap" style="display:none;">
+        <div class="settings-row" style="gap:8px;align-items:center;">
+          <input class="settings-input" id="invite-name" type="text" placeholder="Their name, e.g. Ethan" autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false" style="flex:1;" />
+          <button onclick="createInvite()" style="flex-shrink:0;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 14px;cursor:pointer;color:var(--text);font-size:15px;font-weight:600;">Invite</button>
+        </div>
+        <div id="team-invites" style="padding:0 0 4px;"></div>
+      </div>
+
+      <div id="team-join-wrap">
+        <div class="settings-row" style="gap:8px;align-items:center;">
+          <input class="settings-input" id="join-code" type="text" placeholder="Invite code" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" style="flex:1;font-family:ui-monospace,Menlo,monospace;letter-spacing:1px;" />
+          <button onclick="claimInvite()" style="flex-shrink:0;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 14px;cursor:pointer;color:var(--text);font-size:15px;font-weight:600;">Join</button>
+        </div>
+      </div>
+
+      <div class="settings-note" id="team-note" style="margin-top:8px"></div>
+    </div>
+
     <div class="settings-section" style="margin-top:16px;">
       <div class="settings-row" style="justify-content:space-between;align-items:center;">
         <div class="settings-label">Dark Mode</div>
@@ -2882,7 +2908,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.285';
+const APP_VERSION = '2026-06-21.286';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -3036,7 +3062,7 @@ async function _orgBootstrap() {
   const u = currentUser();
   if (!u || !u.id) return;
 
-  const mine = await _sb('/rest/v1/org_members?select=org_id,role&user_id=eq.' + encodeURIComponent(u.id) + '&limit=1');
+  const mine = await _sb('/rest/v1/org_members?select=org_id,role,display_name&user_id=eq.' + encodeURIComponent(u.id) + '&limit=1');
   if (mine && mine.length) {
     const m = mine[0];
     let name = (_org && _org.id === m.org_id) ? _org.name : '';
@@ -3044,6 +3070,13 @@ async function _orgBootstrap() {
     if (o && o.length) name = o[0].name;
     _org = { id: m.org_id, name: name || '', role: m.role || 'manager' };
     _authSave(); applyRoleUI(); renderAccountUI();
+    // Backfill a name for members who joined before display_name existed —
+    // otherwise the Team list can only show a UUID.
+    if (!m.display_name) {
+      const mine = getUserName() || (u.email || '').split('@')[0];
+      if (mine) await _sb('/rest/v1/org_members?org_id=eq.' + encodeURIComponent(m.org_id) + '&user_id=eq.' + encodeURIComponent(u.id),
+        { method: 'PATCH', body: JSON.stringify({ display_name: mine }) });
+    }
     return;
   }
   if (mine === null) return;   // offline or blocked — don't create a duplicate org on a bad read
@@ -3085,7 +3118,7 @@ async function _orgBootstrap() {
   const mem = await _sb('/rest/v1/org_members', {
     method: 'POST',
     headers: { 'Prefer': 'return=representation' },
-    body: JSON.stringify({ org_id: org.id, user_id: u.id, role: 'manager' })
+    body: JSON.stringify({ org_id: org.id, user_id: u.id, role: 'manager', display_name: getUserName() || (u.email || '').split('@')[0] || 'Manager' })
   });
   if (!mem || !mem.length) return;   // leave _org unset; next launch adopts this org rather than duplicating
   _org = { id: org.id, name: org.name, role: 'manager' };
@@ -3098,6 +3131,100 @@ async function _authBoot() {
   if (!_auth.expires_at || Date.now() > _auth.expires_at - 60000) await _authRefresh();
   if (!isSignedIn()) { renderAccountUI(); return; }
   await _orgBootstrap();
+  await refreshTeam();
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  M1 / S2b — REAL MEMBERS
+//
+//  Until now the app did not have workers, it had ONE worker named Ethan,
+//  spelled as a string literal. A second person could not be added at all, and
+//  a misspelt name failed silently on both devices.
+//
+//  This half introduces actual membership: who is in the org, and a way for
+//  someone to join. It deliberately does NOT touch the planner or the send
+//  path — those still use 'Ethan' exactly as they do today, so the live
+//  manager→worker channel is unchanged while this lands.
+//
+//  Cached locally because the Team list must render offline, like everything
+//  else here. The cloud is transport, never the source of truth.
+// ════════════════════════════════════════════════════════════════════════════
+function getOrgMembers() {
+  try { return JSON.parse(localStorage.getItem('kr_org_members') || '[]') || []; }
+  catch (e) { return []; }
+}
+function saveOrgMembers(list) { _storeSet('kr_org_members', JSON.stringify(list || [])); }
+function getOrgInvites() {
+  try { return JSON.parse(localStorage.getItem('kr_org_invites') || '[]') || []; }
+  catch (e) { return []; }
+}
+function saveOrgInvites(list) { _storeSet('kr_org_invites', JSON.stringify(list || [])); }
+
+// A stable key for a person, whether or not they've signed in yet. Once they
+// join it's their user_id; before that it's their name, which is what today's
+// Apps Script channel already keys on. That's what lets the planner move over
+// later without a flag day.
+function memberKey(m) { return (m && (m.userId || (m.name ? 'name:' + m.name : ''))) || ''; }
+function isMe(m) { const u = currentUser(); return !!(u && m && m.userId === u.id); }
+
+async function refreshTeam() {
+  if (!isSignedIn() || !_org || !_org.id) return;
+  const rows = await _sb('/rest/v1/org_members?select=user_id,role,display_name&org_id=eq.' + encodeURIComponent(_org.id));
+  if (rows) saveOrgMembers(rows.map(r => ({ userId: r.user_id, role: r.role || 'worker', name: r.display_name || '' })));
+  // Invites are manager-only by policy; a worker just gets nothing back.
+  const inv = await _sb('/rest/v1/org_invites?select=code,role,display_name,claimed_at,expires_at&org_id=eq.' + encodeURIComponent(_org.id) + '&order=created_at.desc');
+  if (inv) saveOrgInvites(inv.map(i => ({ code: i.code, role: i.role, name: i.display_name || '', claimed: !!i.claimed_at, expires: i.expires_at })));
+  renderTeamUI();
+}
+
+// The manager names the person up front, so their day can be planned before
+// they've ever opened the app — otherwise there's a dead window where a member
+// exists in intent but not anywhere the planner can address.
+async function createInvite() {
+  const nameEl = document.getElementById('invite-name');
+  const name = ((nameEl && nameEl.value) || '').trim();
+  if (!name) { showToast('Give them a name first'); return; }
+  if (!isSignedIn() || !_org) { showToast('Sign in first'); return; }
+  const u = currentUser();
+  const made = await _sb('/rest/v1/org_invites', {
+    method: 'POST',
+    headers: { 'Prefer': 'return=representation' },
+    body: JSON.stringify({ org_id: _org.id, role: 'worker', display_name: name, created_by: u.id })
+  });
+  if (!made || !made.length) { showToast('Could not create the invite'); return; }
+  if (nameEl) nameEl.value = '';
+  await refreshTeam();
+  showToast('Invite created for ' + name + ' ✓');
+}
+async function revokeInvite(code) {
+  if (!confirm('Revoke this invite code? Anyone holding it will no longer be able to join.')) return;
+  const done = await _sb('/rest/v1/org_invites?code=eq.' + encodeURIComponent(code), { method: 'DELETE' });
+  if (done === null) { showToast('Could not revoke — try again'); return; }
+  await refreshTeam();
+  showToast('Invite revoked');
+}
+// The joining side. claim_invite() is SECURITY DEFINER because a person joining
+// is not yet a member, so the ordinary insert policy would refuse them.
+async function claimInvite() {
+  const el = document.getElementById('join-code');
+  const code = ((el && el.value) || '').trim();
+  if (!code) { showToast('Enter the code you were given'); return; }
+  if (!isSignedIn()) { showToast('Sign in first, then join'); return; }
+  const res = await _sb('/rest/v1/rpc/claim_invite', { method: 'POST', body: JSON.stringify({ _code: code }) });
+  if (res === null) { showToast('That code did not work — check it and try again'); return; }
+  // ⭐ Use the org the invite names, not whatever _orgBootstrap would pick.
+  // First sign-in auto-creates you an org of one, so a joiner ends up in TWO —
+  // theirs (empty) and the one they were invited to. Re-running bootstrap here
+  // could latch onto the empty one and silently strand them.
+  const orgId = typeof res === 'string' ? res : (res && res.org_id) || null;
+  if (!orgId) { showToast('Joined, but could not read the organisation — reopen the app'); return; }
+  if (el) el.value = '';
+  const o = await _sb('/rest/v1/orgs?select=name&id=eq.' + encodeURIComponent(orgId) + '&limit=1');
+  const me = await _sb('/rest/v1/org_members?select=role&org_id=eq.' + encodeURIComponent(orgId) + '&user_id=eq.' + encodeURIComponent((currentUser() || {}).id || '') + '&limit=1');
+  _org = { id: orgId, name: (o && o.length ? o[0].name : '') || '', role: (me && me.length ? me[0].role : 'worker') };
+  _authSave(); applyRoleUI(); renderAccountUI();
+  await refreshTeam();
+  showToast('Joined ' + (_org.name || 'the organisation') + ' ✓');
 }
 
 // ════════════════════════════════
@@ -7897,7 +8024,7 @@ const KR_BACKUP_KEYS = [
   // migration + library-sync markers (so a restore doesn't re-run migrations or
   // show a false "new library" banner). Deliberately still excluded: kr_clock
   // (live clock), trash cans, kr_cal_dirty, backup timestamps, kr_lib_prepull_backup.
-  'kr_team_enabled', 'kr_role', 'kr_planner_ethan', 'kr_planner_ethan_sent', 'kr_planner_ethan_sent_arr', 'kr_planner_ethan_sent_todos',
+  'kr_team_enabled', 'kr_role', 'kr_org_members', 'kr_planner_ethan', 'kr_planner_ethan_sent', 'kr_planner_ethan_sent_arr', 'kr_planner_ethan_sent_todos',
   'kr_lastdone', 'kr_flag_new_pos', 'kr_checklist_order', 'kr_pin_sort', 'kr_dir_sort',
   'kr_planner_task_sort', 'kr_create_task_sort', 'kr_assign_task_sort', 'kr_planner_mode', 'kr_planner_zoom',
   'kr_onboarded', 'kr_cal_used', 'kr_lib_applied_version', 'kr_lib_synced',
@@ -14160,6 +14287,75 @@ function renderAccountUI() {
     btn.textContent = 'Sign in';
     if (note) note.textContent = 'Your work is saved on this device. Signing in is what will let it reach your other devices and your team.';
   }
+  renderTeamUI();
+}
+
+// The org takes its name from "Your Name" at first sign-in, so it starts as
+// whatever you're called. Renaming needs manager rights — orgs_update is
+// gated on is_org_manager.
+async function renameOrg() {
+  if (!isSignedIn() || !_org) return;
+  if (_org.role !== 'manager') { showToast('Only a manager can rename the organisation'); return; }
+  const n = prompt('Organisation name', _org.name || '');
+  if (n == null) return;
+  const name = n.trim();
+  if (!name || name === _org.name) return;
+  const done = await _sb('/rest/v1/orgs?id=eq.' + encodeURIComponent(_org.id), { method: 'PATCH', body: JSON.stringify({ name }) });
+  if (done === null) { showToast('Could not rename — try again'); return; }
+  _org.name = name; _authSave(); renderAccountUI();
+  showToast('Renamed to ' + name);
+}
+
+// ── Team section (M1/S2b) ──
+function renderTeamUI() {
+  const wrap = document.getElementById('team-section');
+  // S2 polish: once you're signed in the ORG decides your role, so the
+  // Manager/Worker toggle below is inert — it writes kr_role, which getRole()
+  // no longer consults. Leaving a control on screen that silently does nothing
+  // reads as broken, so it goes away.
+  const rs = document.getElementById('settings-role-section');
+  if (rs) rs.style.display = (isSignedIn() && _org) ? 'none' : (teamEnabled() ? '' : 'none');
+  if (!wrap) return;
+  if (!isSignedIn() || !_org) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+  const iAmManager = _org.role === 'manager';
+  const members = getOrgMembers();
+  const pending = getOrgInvites().filter(i => !i.claimed);
+
+  const list = document.getElementById('team-members');
+  if (list) {
+    list.innerHTML = (members.length ? members : [{ name: getUserName(), role: _org.role, userId: (currentUser() || {}).id }])
+      .map(m => `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:15px;color:var(--text);">
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;">${_escHtml(m.name || 'Unnamed')}${isMe(m) ? ' <span style="color:var(--subtext);">(you)</span>' : ''}</span>
+          <span style="font-size:12px;color:var(--subtext);flex-shrink:0;">${m.role === 'manager' ? 'Manager' : 'Worker'}</span>
+        </div>`).join('');
+  }
+
+  // Inviting is a manager's job; a worker never sees it (and the policy would
+  // refuse them anyway).
+  const invWrap = document.getElementById('team-invite-wrap');
+  if (invWrap) invWrap.style.display = iAmManager ? '' : 'none';
+  const invList = document.getElementById('team-invites');
+  if (invList) {
+    invList.innerHTML = pending.map(i => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border);">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:14px;color:var(--text);">${_escHtml(i.name || 'Invite')}</div>
+          <div style="font-family:ui-monospace,Menlo,monospace;font-size:16px;letter-spacing:1px;color:#5ac8fa;">${_escHtml(i.code)}</div>
+        </div>
+        <span onclick="revokeInvite('${_escHtml(i.code)}')" style="color:var(--red);font-size:13px;cursor:pointer;flex-shrink:0;">Revoke</span>
+      </div>`).join('');
+  }
+
+  // Joining is for someone who was sent a code. Hidden once you're a manager of
+  // an org with people in it — joining a second org is not a thing the app
+  // supports yet, and offering it would strand you.
+  const joinWrap = document.getElementById('team-join-wrap');
+  if (joinWrap) joinWrap.style.display = (iAmManager && members.length > 1) ? 'none' : '';
+
+  const note = document.getElementById('team-note');
+  if (note) note.textContent = iAmManager
+    ? 'Give someone a name to create an invite code, then read the code to them. They sign in on their own phone and enter it under Team.'
+    : 'You are a worker in ' + (_org.name || 'this organisation') + '. Your manager plans your day.';
 }
 // One-time migration + sync the Team toggle UI. Existing team setups (a worker
 // device, or a manager who has planned a worker's day) flip ON automatically so
