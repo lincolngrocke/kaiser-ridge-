@@ -1626,6 +1626,29 @@
 </div>
 
 <!-- ══════════════ CHECKLIST ITEM STEPS ══════════════ -->
+<!-- ══════════════ STEPS SCOPE — shared or just this job ══════════════ -->
+<!-- Steps are keyed by task text, so two jobs with an identically-named task
+     share one record. This makes that visible BEFORE anything is edited, and
+     names the jobs — the whole problem was not knowing they were linked. -->
+<div class="modal-backdrop" id="modal-steps-scope" style="z-index:640;">
+  <div class="modal-sheet" style="padding:16px 0 24px;">
+    <div class="modal-handle"></div>
+    <div style="padding:0 20px 6px;font-size:17px;font-weight:600;color:var(--text);">🔗 These steps are shared</div>
+    <div style="padding:0 20px 14px;font-size:14px;color:var(--subtext);line-height:1.55;">
+      <b style="color:var(--text);" id="steps-scope-task"></b> is used by <b style="color:var(--text);"><span id="steps-scope-count"></span> jobs</b>. Editing here — including <b style="color:var(--text);">deleting a step</b> — changes it in all of them.
+    </div>
+    <div style="padding:0 20px 16px;">
+      <div style="font-size:12px;font-weight:600;color:var(--subtext);margin-bottom:2px;">ALSO USED BY</div>
+      <div id="steps-scope-list"></div>
+    </div>
+    <div style="padding:0 20px;">
+      <button onclick="stepsScopeAll()" style="width:100%;height:50px;border-radius:12px;border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:600;cursor:pointer;margin-bottom:10px;">Edit for all jobs</button>
+      <button onclick="stepsScopeOnly()" id="steps-scope-onlybtn" style="width:100%;height:50px;border-radius:12px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:16px;font-weight:600;cursor:pointer;">Only this job</button>
+      <div style="font-size:12px;color:var(--subtext);text-align:center;margin-top:10px;">"Only this job" gives it its own copy. The others keep what they have.</div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="modal-subtask-steps" style="z-index:600;">
   <div class="modal-sheet" style="padding:16px 0 24px;display:flex;flex-direction:column;max-height:85vh;">
     <div class="modal-handle"></div>
@@ -1634,6 +1657,7 @@
       <span onclick="saveSubtaskStepsEditor()" style="color:var(--blue);font-size:16px;font-weight:700;cursor:pointer;">Done</span>
     </div>
     <div style="padding:6px 20px 10px;font-size:13px;color:var(--subtext);">Hold ≡ and drag to set the order steps are done in — <b>saved as you go.</b> They show under the item on the running clock; each step is timed from your previous tick, so the step times add up within the task's time.</div>
+    <div id="subtask-steps-scope" style="display:none;align-items:center;gap:8px;margin:0 20px 10px;padding:9px 12px;background:var(--card);border:1px solid var(--border);border-radius:10px;font-size:13px;"></div>
     <div id="subtask-steps-list" style="flex:1;overflow-y:auto;padding:0 20px;"></div>
     <div style="display:flex;gap:8px;padding:10px 20px 6px;">
       <input id="subtask-steps-add" type="text" placeholder="New step (e.g. Drain the hot tub)"
@@ -2858,7 +2882,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.283';
+const APP_VERSION = '2026-06-21.284';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -3671,7 +3695,7 @@ function clockOut(overrideTime) {
         const t = new Date(d.at).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true });
         // If the task has steps, record how many were done this time + which ones,
         // so the sheet keeps "4 of 8 steps" and exactly which four were ticked.
-        const totalSteps = (getSubtaskSteps()[d.item] || []).length;
+        const totalSteps = stepsFor(clockState.task, d.item).length;
         let stepStr = '';
         if (totalSteps) {
           const doneSteps = (clockState.stepDone || []).filter(x => x.item === d.item);
@@ -4301,7 +4325,7 @@ function openRunEdit(kind, ref) {
     _capturePhotos = (getSubtaskPhotos()[ref] || []).map(ph => Object.assign({}, ph));   // preload the task's reference photos
     renderCapturePreview();
     if (stb) {   // steps live on the task globally — editing here saves to the jobs page too
-      const _nSt = (getSubtaskSteps()[ref] || []).length;
+      const _nSt = stepsFor((clockState && clockState.task) || null, ref).length;
       stb.textContent = _nSt ? ('≣ Steps (' + _nSt + ')') : '≣ Add steps';
       stb.style.display = 'inline-flex';
     }
@@ -4332,7 +4356,7 @@ function openRunTaskSteps() {
   if (!ref || ref.kind !== 'tasks') return;
   closeModal('modal-run-add');
   _runAddMode = 'add'; _runEditRef = null;
-  openSubtaskStepsEditor(ref.oldText);
+  openSubtaskStepsEditor(ref.oldText, (clockState && clockState.task) || null);
 }
 // 💬 Attach a timestamped comment to the task/to-do being edited (Lincoln's
 // "called Jack Miles, the update belongs on that to-do" flow). Re-skins the
@@ -4611,6 +4635,7 @@ function _renameChecklistItem(task, oldName, newName) {
   _storeSet('kr_subtasks', JSON.stringify(SUBTASKS));
   const steps = getSubtaskSteps();
   if (steps[oldName]) { if (!steps[newName]) steps[newName] = steps[oldName]; delete steps[oldName]; saveSubtaskSteps(steps); }
+  _migrateJobStepsTaskRename(oldName, newName);   // per-job overrides follow the rename too
   const guides = getSubtaskGuides();
   if (guides[oldName]) { if (!guides[newName]) guides[newName] = guides[oldName]; delete guides[oldName]; saveSubtaskGuides(guides); }
   _migrateBatchTaskName(oldName, newName);   // ▣ batch membership follows the task
@@ -4712,7 +4737,7 @@ function renderRunDone() {
     let stepInfo = '';
     if (r.kind === 'task') {
       const _ri = r.item || r.text;   // raw item — the display text may carry a "Lap N · " prefix
-      const total = (getSubtaskSteps()[_ri] || []).length;
+      const total = stepsFor(clockState.task, _ri).length;
       if (total) { const dn = (clockState.stepDone || []).filter(x => x.item === _ri).length; stepInfo = `<div style="font-size:12px;color:#30d158;margin-top:3px;">✓ ${dn}/${total} steps done</div>`; }
     }
     const tick = `<span onclick="reviveDoneItem(${i})" title="Tap to un-tick" style="width:24px;height:24px;border-radius:${r.kind === 'task' ? '50%' : '7px'};background:#30d158;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#05070c;font-size:14px;cursor:pointer;margin-top:1px;">✓</span>`;
@@ -4813,9 +4838,9 @@ function _clGroupKeys(job) {
 function toggleAllTasksExpanded() {
   if (!clockState || !clockState.task) return;
   const job = clockState.task;
-  const stepsMap = getSubtaskSteps();
+  const stepsOf = stepsResolver(job);
   const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
-  const items = (SUBTASKS[job] || []).filter(s => !_isTaskDoneNow(job, s, done) && ((stepsMap[s] || []).length > 0 || s.length > 55));
+  const items = (SUBTASKS[job] || []).filter(s => !_isTaskDoneNow(job, s, done) && (stepsOf(s).length > 0 || s.length > 55));
   const inBatchView = _runGroupBy === 'batch' && _jobHasBatches(job);
   const keys = inBatchView ? _clGroupKeys(job) : [];
   // "Everything is open" only counts a section as open once it's been explicitly
@@ -5077,7 +5102,7 @@ function renderRunChecklist() {
   let rows = '', organiseLink = '', expandLink = '';
 
   if (tab === 'tasks') {
-    const stepsMap = getSubtaskSteps();
+    const stepsOf = stepsResolver(clockState && clockState.task);
     const subPhotos = getSubtaskPhotos();
     const itemLastDone = _checklistItemLastDone(clockState && clockState.task);
     const itemAvg = {}, itemCount = {};   // normalised item text → average minutes / times done (from history)
@@ -5089,7 +5114,7 @@ function renderRunChecklist() {
     // Always available while there are tasks — Organise is where ordering, flags
     // AND batch moves live now, so it shouldn't hide behind having flagged two first.
     if (items.length) organiseLink = `<span onclick="openChecklistOrganise(event)" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">⤢ Organise</span>`;
-    const _expandableTasks = items.filter(s => !_isTaskDoneNow(clockState.task, s, done) && ((stepsMap[s] || []).length > 0 || s.length > 55));
+    const _expandableTasks = items.filter(s => !_isTaskDoneNow(clockState.task, s, done) && (stepsOf(s).length > 0 || s.length > 55));
     // Batch sections count as expandable too — a job whose tasks have no sub-steps still
     // has batches worth opening, and the link used to hide entirely in that case.
     const _groupKeys = (_runGroupBy === 'batch' && _jobHasBatches(clockState.task)) ? _clGroupKeys(clockState.task) : [];
@@ -5133,7 +5158,7 @@ function renderRunChecklist() {
           <span style="flex:1;font-size:16px;color:#8b93a7;text-decoration:line-through;">${_escHtml(s)}</span>
           <span style="font-size:12px;color:#616a7e;white-space:nowrap;">${_cLabel}</span></div>`;
       }
-      const steps = stepsMap[s] || [];
+      const steps = stepsOf(s);
       const expanded = _expandedChecklistItems.has(s);
       const checkedCount = steps.filter(st => stepChecks[s] && stepChecks[s][st]).length;
       const flagged = !!clFlags[s];
@@ -5205,7 +5230,7 @@ function renderRunChecklist() {
             <span style="flex:1;font-size:15px;${checked ? 'color:#616a7e;text-decoration:line-through;' : 'color:#c7ccd8;'}">${_escHtml(st)}</span>${_stime}</div>`;
         }).join('');
         // Steps are editable mid-run — saved globally, so the jobs page gets them too.
-        html += `<div onclick="event.stopPropagation();openSubtaskStepsEditor('${enc}')" style="padding:9px 0 9px 36px;color:#5ac8fa;font-size:13px;font-weight:600;cursor:pointer;">＋ Add step</div>`;
+        html += `<div onclick="event.stopPropagation();openSubtaskStepsEditor('${enc}', (clockState&&clockState.task)||null)" style="padding:9px 0 9px 36px;color:#5ac8fa;font-size:13px;font-weight:600;cursor:pointer;">＋ Add step</div>`;
       }
       return html;
     };
@@ -7857,7 +7882,7 @@ function saveEntries() {
 // (see autoBackup calls), and can be exported/shared as a file at any time
 // from Settings so a reinstall or device change never wipes your data again.
 const KR_BACKUP_KEYS = [
-  'kr_directory', 'kr_subtasks', 'kr_subtask_steps', 'kr_subtask_guides', 'kr_equipment_guides',
+  'kr_directory', 'kr_subtasks', 'kr_subtask_steps', 'kr_subtask_steps_by_job', 'kr_subtask_guides', 'kr_equipment_guides',
   'kr_equipment_notes', 'kr_equipment_links',
   'kr_equipment_master', 'kr_extra_frequencies', 'kr_extra_locations', 'kr_extra_clients',
   'kr_task_order', 'kr_entries', 'kr_user_name', 'kr_weekly_target',
@@ -8196,7 +8221,7 @@ async function restoreFromDriveBackup() {
 // The shared task DEFINITIONS only — never timesheets, projects, clock, or
 // device settings. Lets one person maintain the list and push it to others.
 const KR_LIBRARY_KEYS = [
-  'kr_directory', 'kr_subtasks', 'kr_subtask_steps', 'kr_subtask_guides', 'kr_equipment_guides',
+  'kr_directory', 'kr_subtasks', 'kr_subtask_steps', 'kr_subtask_steps_by_job', 'kr_subtask_guides', 'kr_equipment_guides',
   'kr_equipment_notes', 'kr_equipment_links',
   'kr_equipment_master', 'kr_extra_frequencies', 'kr_extra_locations', 'kr_extra_clients',
   'kr_task_order', 'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
@@ -9006,11 +9031,16 @@ function renderDirectory() {
   const jobFlags = getJobFlags();
   const _dirCounts = _taskUsageMaps().counts;   // times each job was clocked — the ⭐ Most used sort + row line
   const _dirStepsMap = getSubtaskSteps();
+  const _dirOwnSteps = getJobSteps();   // per-job overrides — hoisted, this loop runs over every job × every task
   // One row renderer, shared by the 🚩 Flagged section and the normal freq/area groups.
   const rowHtml = (freq, grp, task) => {
             const equip = grouped[freq][grp][task];
             const subtaskList = (SUBTASKS[task] || []);
-            const _nWithSteps = subtaskList.filter(s => (_dirStepsMap[s] || []).length > 0).length;
+            const _own = _dirOwnSteps[task];
+            const _nWithSteps = subtaskList.filter(s => {
+              const arr = (_own && Object.prototype.hasOwnProperty.call(_own, s)) ? _own[s] : _dirStepsMap[s];
+              return (arr || []).length > 0;
+            }).length;
             const _stepsTag = _nWithSteps ? ` · <span style="color:var(--blue);">≣ ${_nWithSteps} with steps</span>` : '';
             const matchingSubs = searchTerm ? subtaskList.filter(s => s.toLowerCase().includes(searchTerm)) : [];
             const checklistHtml = matchingSubs.length
@@ -10354,11 +10384,17 @@ let _subtaskItems = [];
 function renderDirSubtaskList(items) {
   _subtaskItems = items ? [...items] : _subtaskItems;
   const guides = getSubtaskGuides();
-  const stepsMap = getSubtaskSteps();
+  const stepsOf = stepsResolver(_dirJobName());
   const origins = getSubtaskOrigin();
   const taskRem = getTaskReminders();
   const types = getTaskTypes();
   const _jn = _dirJobName();
+  // How many jobs hold a task of each name — one pass, so the 🔗 marker below
+  // costs nothing per row. This is the signal that was missing: you couldn't
+  // tell a task's steps were shared until you'd already changed them.
+  const _taskJobCount = {};
+  Object.keys(SUBTASKS || {}).forEach(j => (SUBTASKS[j] || []).forEach(t => { _taskJobCount[t] = (_taskJobCount[t] || 0) + 1; }));
+  const _ownSteps = (_jn && getJobSteps()[_jn]) || null;
   const _TYMETA = {
     once:   { label: '1×', color: 'var(--subtext)', title: 'Once — tap to make it repeatable' },
     repeat: { label: '↻',  color: '#30d158',        title: 'Repeatable — tick it as many times as you do it' },
@@ -10374,12 +10410,15 @@ function renderDirSubtaskList(items) {
     // — they live in a labelled action sheet now, so the task text gets the width.
     // A tiny passive meta line keeps the at-a-glance signals (steps/guide/repeat/🔔).
     const hasGuide = guides[s] && (_guideInstructionsToSteps(guides[s].instructions).length > 0 || guides[s].url);
-    const nSteps = (stepsMap[s] || []).length;
+    const nSteps = stepsOf(s).length;
     const _remOn = !!(_jn && taskRem[_taskRemKey(_jn, s)]);
     const _flagged = !!_clFlags[s];
     const _isRep = _jn && taskTypeOf(_jn, s) === 'repeat';
     const metaBits = [];
-    if (nSteps) metaBits.push('≣ ' + nSteps);
+    // 🔗 these steps are shared with other jobs · 📍 this job keeps its own copy
+    const _ownHere = !!(_ownSteps && Object.prototype.hasOwnProperty.call(_ownSteps, s));
+    const _sharedWith = (_taskJobCount[s] || 0) - 1;
+    if (nSteps) metaBits.push('≣ ' + nSteps + (_ownHere ? ' 📍' : (_sharedWith > 0 ? ' 🔗' : '')));
     if (hasGuide) metaBits.push('📋');
     if (_isRep) metaBits.push('<span style="color:#30d158;font-weight:700;">↻</span>');
     if (_remOn) metaBits.push('🔔');
@@ -10641,6 +10680,97 @@ function getSubtaskSteps() {
 }
 function saveSubtaskSteps(steps) {
   _storeSet('kr_subtask_steps', JSON.stringify(steps));
+}
+
+// ── Per-job step overrides (2026-08-09) ────────────────────────────────────
+// kr_subtask_steps above is GLOBAL, keyed by task text — two jobs holding a
+// task of the same name share ONE record. That's deliberate and usually right:
+// describe how to strip a bed once and every job that strips beds gets it.
+//
+// It breaks for near-identical jobs whose tasks share names but differ in
+// detail — the three tiny-house changeovers. Deleting a step from Heritage
+// silently removed it from Kaiser and Serene, because there was only ever one
+// copy. Lincoln found this on 2026-08-09.
+//
+// The fix is not to break the sharing, it's to make it optional. A job may
+// keep its OWN version of a task's steps. Shared remains the default; a job
+// diverges only when you explicitly choose to.
+//
+//   kr_subtask_steps_by_job = { [job]: { [task]: [step, …] } }
+//
+// PURELY ADDITIVE. kr_subtask_steps keeps its exact shape and contents, so
+// deleting this one key returns the app to its previous behaviour exactly.
+function getJobSteps() {
+  try { return JSON.parse(localStorage.getItem('kr_subtask_steps_by_job') || '{}') || {}; }
+  catch (e) { return {}; }
+}
+function saveJobSteps(map) {
+  _storeSet('kr_subtask_steps_by_job', JSON.stringify(map));
+}
+// Does THIS job hold its own version? An empty array is a real answer — "this
+// job deliberately has no steps here" — so test for presence of the key, never
+// for truthiness of the value.
+function jobHasOwnSteps(job, task) {
+  if (!job || !task) return false;
+  const m = getJobSteps();
+  return !!(m[job] && Object.prototype.hasOwnProperty.call(m[job], task));
+}
+// THE resolver. Every read of a task's steps goes through here. A job with no
+// override falls through to the shared record, so anything not deliberately
+// forked behaves exactly as it did before this existed.
+function stepsFor(job, task) {
+  if (!task) return [];
+  if (job) {
+    const m = getJobSteps();
+    if (m[job] && Object.prototype.hasOwnProperty.call(m[job], task)) return m[job][task] || [];
+  }
+  return getSubtaskSteps()[task] || [];
+}
+// Renames must carry per-job overrides with them. Miss this and a job's own
+// version is orphaned under the old key, and the job silently falls back to the
+// shared steps — the exact surprise this whole feature exists to remove.
+function _migrateJobStepsTaskRename(oldTask, newTask) {
+  if (!oldTask || !newTask || oldTask === newTask) return;
+  const m = getJobSteps(); let touched = false;
+  Object.keys(m).forEach(job => {
+    const own = m[job];
+    if (own && Object.prototype.hasOwnProperty.call(own, oldTask)) {
+      if (!Object.prototype.hasOwnProperty.call(own, newTask)) own[newTask] = own[oldTask];
+      delete own[oldTask];
+      touched = true;
+    }
+  });
+  if (touched) saveJobSteps(m);
+}
+function _migrateJobStepsJobRename(oldJob, newJob) {
+  if (!oldJob || !newJob || oldJob === newJob) return;
+  const m = getJobSteps();
+  if (!Object.prototype.hasOwnProperty.call(m, oldJob)) return;
+  m[newJob] = Object.assign({}, m[newJob] || {}, m[oldJob]);
+  delete m[oldJob];
+  saveJobSteps(m);
+}
+// Render-loop version of stepsFor. stepsFor() parses both stores on every call,
+// which is fine for a one-off lookup and wasteful across 26 tasks. This parses
+// once and hands back a lookup closure, so a list render costs exactly what it
+// did before per-job steps existed.
+//   const stepsOf = stepsResolver(job);  →  stepsOf(task)
+function stepsResolver(job) {
+  const own = (job && getJobSteps()[job]) || null;
+  const shared = getSubtaskSteps();
+  return function (task) {
+    if (own && Object.prototype.hasOwnProperty.call(own, task)) return own[task] || [];
+    return shared[task] || [];
+  };
+}
+// Which jobs hold a task of this exact name. Exact match on purpose — that is
+// what the sharing itself keys on, so "Strip beds" and "Strip Beds" are, and
+// should be reported as, separate records.
+function jobsUsingTask(task) {
+  if (!task) return [];
+  return Object.keys(SUBTASKS || {})
+    .filter(j => Array.isArray(SUBTASKS[j]) && SUBTASKS[j].indexOf(task) !== -1)
+    .sort();
 }
 
 // ══════════════════════════════════════════════
@@ -11007,7 +11137,7 @@ function renderTaskActionsSheet() {
   const s = (i != null) ? _subtaskItems[i] : null;
   if (s == null) return false;
   const jn = _dirJobName();
-  const nSteps = (getSubtaskSteps()[s] || []).length;
+  const nSteps = stepsFor(jn, s).length;
   const g = getSubtaskGuides()[s];
   const hasGuide = g && (_guideInstructionsToSteps(g.instructions).length > 0 || g.url);
   const hasOrigin = !!getSubtaskOrigin()[s];
@@ -11039,7 +11169,7 @@ function taskActionGo(act) {
   if (act === 'type') { cycleTaskType(i); renderTaskActionsSheet(); return; }
   if (act === 'flag') { toggleEditorTaskFlag(i); renderTaskActionsSheet(); return; }
   closeModal('modal-task-actions');
-  if (act === 'steps') openSubtaskStepsEditor(s);
+  if (act === 'steps') openSubtaskStepsEditor(s, _dirJobName() || null);
   else if (act === 'guide') openSubtaskGuide(s);
   else if (act === 'origin') openItemOrigin(s);
   else if (act === 'remind') openTaskRemindPicker(i);
@@ -11407,6 +11537,7 @@ function _propagateNoteEdit(note, oldText, photos) {
         // Carry any sub-steps across to the new item name.
         const steps = getSubtaskSteps();
         if (steps[oldText]) { steps[newText] = steps[oldText]; delete steps[oldText]; saveSubtaskSteps(steps); }
+        _migrateJobStepsTaskRename(oldText, newText);   // per-job overrides follow the rename too
         _migrateBatchTaskName(oldText, newText);   // ▣ batch membership follows the task
         _migrateItemHistory(oldText, newText);     // averages, reps, type, reminders, plans follow too
       }
@@ -12693,13 +12824,85 @@ function finalizeDonePins() {
 // never depend on the Done tap.
 let _stepsEditingItem = null;
 let _stepsItems = [];
-function openSubtaskStepsEditor(name) {
+let _stepsJob = null;        // job the editor was opened from; null when unknown
+let _stepsScope = 'shared';  // 'shared' → kr_subtask_steps · 'job' → this job's own copy
+// `job` is which job the editor was opened from. It matters: without it we
+// cannot know whether an edit is meant for one job or all of them, and the
+// write path refuses to guess.
+function openSubtaskStepsEditor(name, job) {
   _stepsEditingItem = name;
-  _stepsItems = (getSubtaskSteps()[name] || []).slice();
+  _stepsJob = job || null;
+  // Already diverged? Then this job owns its steps and there is nothing to ask.
+  _stepsScope = jobHasOwnSteps(_stepsJob, name) ? 'job' : 'shared';
+  _stepsItems = stepsFor(_stepsJob, name).slice();
   document.getElementById('subtask-steps-title').textContent = name.length > 24 ? name.slice(0, 24) + '…' : name;
   const ai = document.getElementById('subtask-steps-add'); if (ai) ai.value = '';
   renderStepsEditor();
+  renderStepsScopeBar();
   openModal('modal-subtask-steps');
+  // Shared, and genuinely shared with someone — say so BEFORE anything is
+  // touched. Deleting a step is instant and there is no undo.
+  if (_stepsScope === 'shared' && _stepsJob && jobsUsingTask(name).length > 1) openStepsScopePrompt();
+}
+
+// The scope line inside the editor — visible the whole time you're editing, so
+// the choice isn't a thing you saw once in a dialog and then forgot.
+function renderStepsScopeBar() {
+  const bar = document.getElementById('subtask-steps-scope');
+  if (!bar) return;
+  const others = jobsUsingTask(_stepsEditingItem).filter(j => j !== _stepsJob);
+  if (_stepsScope === 'job') {
+    bar.innerHTML = `<span style="color:var(--text);">📍 Only in ${_escHtml(_stepsJob || 'this job')}</span>`
+      + `<span onclick="stepsUseShared()" style="color:#5ac8fa;cursor:pointer;margin-left:auto;">Use shared instead</span>`;
+    bar.style.display = 'flex';
+  } else if (others.length) {
+    bar.innerHTML = `<span style="color:var(--text);">🔗 Shared with ${others.length} other job${others.length === 1 ? '' : 's'}</span>`
+      + (_stepsJob ? `<span onclick="openStepsScopePrompt()" style="color:#5ac8fa;cursor:pointer;margin-left:auto;">Change</span>` : '');
+    bar.style.display = 'flex';
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+// ── The prompt ──
+function openStepsScopePrompt() {
+  const task = _stepsEditingItem, job = _stepsJob;
+  if (!task || !job) return;
+  const all = jobsUsingTask(task);
+  const others = all.filter(j => j !== job);
+  document.getElementById('steps-scope-task').textContent = task;
+  document.getElementById('steps-scope-list').innerHTML = others
+    .map(j => `<div style="padding:5px 0;color:var(--text);font-size:15px;">• ${_escHtml(j)}</div>`).join('');
+  document.getElementById('steps-scope-count').textContent = all.length;
+  document.getElementById('steps-scope-onlybtn').textContent = 'Only ' + (job.length > 22 ? job.slice(0, 22) + '…' : job);
+  openModal('modal-steps-scope');
+}
+function stepsScopeAll() {
+  _stepsScope = 'shared';
+  closeModal('modal-steps-scope');
+  renderStepsScopeBar();
+}
+// Fork: copy what's on screen into this job's own record. Non-destructive —
+// the shared version is left exactly as it was for everyone else.
+function stepsScopeOnly() {
+  if (!_stepsJob) return;
+  _stepsScope = 'job';
+  _stepsPersistNow();
+  closeModal('modal-steps-scope');
+  renderStepsScopeBar();
+  showToast('These steps are now only in ' + _stepsJob);
+}
+// Un-fork, so a mistaken choice isn't permanent. Drops this job's own copy and
+// goes back to following the shared one.
+function stepsUseShared() {
+  if (!_stepsJob || !_stepsEditingItem) return;
+  const m = getJobSteps();
+  if (m[_stepsJob]) { delete m[_stepsJob][_stepsEditingItem]; if (!Object.keys(m[_stepsJob]).length) delete m[_stepsJob]; saveJobSteps(m); }
+  _stepsScope = 'shared';
+  _stepsItems = (getSubtaskSteps()[_stepsEditingItem] || []).slice();
+  renderStepsEditor();
+  renderStepsScopeBar();
+  showToast('Back to the shared steps');
 }
 function renderStepsEditor() {
   const list = document.getElementById('subtask-steps-list');
@@ -12718,9 +12921,22 @@ function renderStepsEditor() {
     </div>`).join('') || '<div style="padding:16px 0;color:var(--subtext);font-size:14px;">No steps yet — add the first one below.</div>';
   requestAnimationFrame(() => list.querySelectorAll('.sp-step-input').forEach(t => { t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }));
 }
+// Writes on every keystroke — there is no Save button. So the target must be
+// unambiguous: this is the one function that could overwrite three jobs' steps
+// with one job's edit, and it must never guess.
 function _stepsPersistNow() {
   if (_stepsEditingItem == null) return 0;
   const clean = _stepsItems.map(s => s.trim()).filter(Boolean);
+  if (_stepsScope === 'job') {
+    // No job, no write. Silently falling back to the shared record here is
+    // exactly the bug this whole change exists to fix.
+    if (!_stepsJob) { console.warn('[steps] job scope with no job — refusing to write'); return clean.length; }
+    const m = getJobSteps();
+    if (!m[_stepsJob]) m[_stepsJob] = {};
+    m[_stepsJob][_stepsEditingItem] = clean;   // [] is meaningful: "no steps for this job"
+    saveJobSteps(m);
+    return clean.length;
+  }
   const all = getSubtaskSteps();
   if (clean.length) all[_stepsEditingItem] = clean;
   else delete all[_stepsEditingItem];
@@ -13272,6 +13488,7 @@ function saveDirTask() {
       if (ordCh) _storeSet('kr_task_order', JSON.stringify(ord));
       if (migrated) showToast(migrated + ' past entr' + (migrated === 1 ? 'y' : 'ies') + ' kept with the renamed task');
     }
+    _migrateJobStepsJobRename(oldTask, task);   // this job's own step versions follow the job's new name
     if (SUBTASKS[oldTask] && oldTask !== task) delete SUBTASKS[oldTask];
   }
 
@@ -16868,10 +17085,10 @@ function _rsRender() {
   // that matters ("~9m avg · 9× · ✓ 12m") needs no arithmetic from you.
   const _bRec = _batchRec(ctx.job);
   const _durs = ctx.kind === 'clock' ? _checklistDurations() : {};
-  const stepsMap = getSubtaskSteps();   // step AVERAGES aren't read here — the sheet shows no per-step times
+  const stepsOf = stepsResolver(ctx.job);   // step AVERAGES aren't read here — the sheet shows no per-step times
   const rowsHtml = rows.map(r => {
     const key = _rsKey(r.t, r.n);
-    const nSteps = (stepsMap[r.t] || []).length;
+    const nSteps = stepsOf(r.t).length;
     const open = nSteps ? _rsIsOpen(r, key) : false;
     // B — the count alone tells you a row has depth, without spending a row on it.
     const stepChip = nSteps
@@ -16957,7 +17174,7 @@ function _rsIsOpen(r, key) {
 // blue means "you are here" everywhere else on this sheet; a row you opened yourself
 // gets a neutral box so it can't be mistaken for the one you're on.
 function _rsStepsHtml(r, ctx, stepsMap) {
-  const steps = stepsMap[r.t] || [];
+  const steps = stepsOf(r.t);
   if (!steps.length) return '';
   const live = ctx.kind === 'clock';
   const checks = (live && clockState.stepChecks && clockState.stepChecks[r.t]) || {};
