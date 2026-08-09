@@ -1652,6 +1652,32 @@
 </div>
 
 <!-- ══════════════ CHECKLIST ITEM STEPS ══════════════ -->
+<!-- ══════════════ TO-DO ON SEVERAL JOBS ══════════════ -->
+<!-- One Inbox note filed against several jobs becomes a SEPARATE to-do in each,
+     linked by inboxId. Ticking it here has only ever cleared this job's copy.
+     Ask, because the app cannot know which is meant: "check the smoke alarms"
+     on three cabins is three jobs of work; "order more firewood" filed against
+     three is one. Default is this job only — the untouched ones stay visible
+     and nag naturally, whereas over-completing hides work silently. -->
+<div class="modal-backdrop" id="modal-todo-spread" style="z-index:660;">
+  <div class="modal-sheet" style="padding:16px 0 24px;">
+    <div class="modal-handle"></div>
+    <div style="padding:0 20px 6px;font-size:17px;font-weight:600;color:var(--text);">📌 This to-do is on other jobs</div>
+    <div style="padding:0 20px 14px;font-size:14px;color:var(--subtext);line-height:1.55;">
+      <b style="color:var(--text);" id="todo-spread-text"></b> is also on <b style="color:var(--text);"><span id="todo-spread-count"></span> other job<span id="todo-spread-plural"></span></b>. Ticking it here only completes it on this one.
+    </div>
+    <div style="padding:0 20px 16px;">
+      <div style="font-size:12px;font-weight:600;color:var(--subtext);margin-bottom:2px;">ALSO ON</div>
+      <div id="todo-spread-list"></div>
+    </div>
+    <div style="padding:0 20px;">
+      <button onclick="todoSpreadOne()" style="width:100%;height:50px;border-radius:12px;border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:600;cursor:pointer;margin-bottom:10px;">Just this job</button>
+      <button onclick="todoSpreadAll()" id="todo-spread-allbtn" style="width:100%;height:50px;border-radius:12px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:16px;font-weight:600;cursor:pointer;">Also complete in the others</button>
+      <div style="font-size:12px;color:var(--subtext);text-align:center;margin-top:10px;">Applied at clock-out, so unticking still takes it back.</div>
+    </div>
+  </div>
+</div>
+
 <!-- ══════════════ STEPS SCOPE — shared or just this job ══════════════ -->
 <!-- Steps are keyed by task text, so two jobs with an identically-named task
      share one record. This makes that visible BEFORE anything is edited, and
@@ -2908,7 +2934,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.286';
+const APP_VERSION = '2026-06-21.287';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -12929,9 +12955,64 @@ function togglePinnedNote(id) {
   const _p = (getTaskNotes()[clockState.task] || []).find(x => x.id === id);
   if (_p && _p.inboxId) _setNoteReminderDone(_p.inboxId, !!clockState.pinDone[id]);
   const nowDone = !!clockState.pinDone[id];
+  // Unticking must also withdraw any "do it everywhere" decision, or the other
+  // jobs stay condemned by a tick that no longer exists.
+  if (!nowDone && clockState.pinAlsoDone) { delete clockState.pinAlsoDone[id]; _storeSet('kr_clock', JSON.stringify(clockState)); }
   if (nowDone) _chipHold++;                  // hold the counter number until the bubble lands
   renderRunChecklist();
   if (nowDone) flyDoneBubble(() => togglePinnedNote(id), _checklistDurations()['pin:' + id]);   // Done bubble floats to the counter + Undo, w/ the time it took
+  // Filing one Inbox note against several jobs creates a SEPARATE to-do in each
+  // — same inboxId, different id. Ticking it here has only ever cleared this
+  // job's copy, silently leaving the others. Ask, because the app genuinely
+  // cannot know which is meant: "check the smoke alarms" on three cabins is
+  // three jobs of work, "order more firewood" filed against three is one.
+  if (nowDone && _p && _p.inboxId) {
+    const sibs = _todoSiblings(_p.inboxId, clockState.task);
+    if (sibs.length) setTimeout(() => openTodoSpreadPrompt(id, _p.text, sibs), 620);   // after the bubble lands
+  }
+}
+
+// Other jobs holding a to-do that came from the same Inbox note. Direct to-dos
+// (created on a job, never filed from the Inbox) have no inboxId and so have no
+// siblings — correct, and they never prompt.
+function _todoSiblings(inboxId, exceptJob) {
+  if (!inboxId) return [];
+  const tn = getTaskNotes();
+  const out = [];
+  Object.keys(tn).forEach(job => {
+    if (job === exceptJob) return;
+    (tn[job] || []).forEach(p => { if (p && p.inboxId === inboxId) out.push({ job, pinId: p.id }); });
+  });
+  return out.sort((a, b) => a.job.localeCompare(b.job));
+}
+let _spreadPinId = null, _spreadSibs = [];
+function openTodoSpreadPrompt(pinId, text, sibs) {
+  if (!clockState || !clockState.pinDone || !clockState.pinDone[pinId]) return;   // unticked while the bubble flew
+  _spreadPinId = pinId; _spreadSibs = sibs;
+  document.getElementById('todo-spread-text').textContent = text || 'This to-do';
+  document.getElementById('todo-spread-count').textContent = sibs.length;
+  document.getElementById('todo-spread-plural').textContent = sibs.length === 1 ? '' : 's';
+  document.getElementById('todo-spread-list').innerHTML = sibs
+    .map(s => `<div style="padding:5px 0;color:var(--text);font-size:15px;">• ${_escHtml(s.job)}</div>`).join('');
+  document.getElementById('todo-spread-allbtn').textContent = 'Also complete in ' + sibs.length + ' other job' + (sibs.length === 1 ? '' : 's');
+  openModal('modal-todo-spread');
+}
+// Records INTENT, not the deletion. Nothing about a clocked run is permanent
+// until clock-out, and untick has to be able to take it back — so the other
+// jobs are cleared in finalizeDonePins(), alongside this one.
+function todoSpreadAll() {
+  if (!_spreadPinId) return;
+  if (!clockState.pinAlsoDone) clockState.pinAlsoDone = {};
+  clockState.pinAlsoDone[_spreadPinId] = _spreadSibs.map(s => s.job);
+  _storeSet('kr_clock', JSON.stringify(clockState));
+  closeModal('modal-todo-spread');
+  showToast('Will complete in ' + _spreadSibs.length + ' other job' + (_spreadSibs.length === 1 ? '' : 's') + ' at clock-out');
+  _spreadPinId = null; _spreadSibs = [];
+}
+function todoSpreadOne() {
+  if (clockState && clockState.pinAlsoDone && _spreadPinId) { delete clockState.pinAlsoDone[_spreadPinId]; _storeSet('kr_clock', JSON.stringify(clockState)); }
+  closeModal('modal-todo-spread');
+  _spreadPinId = null; _spreadSibs = [];
 }
 // At clock-out: for each pinned note ticked done this session, fold it into the
 // entry notes (with its journey), stamp/clear the inbox, and remove the pin.
@@ -12957,6 +13038,24 @@ function finalizeDonePins() {
   // Remove the done pins from the task
   tn[task] = list.filter(p => !clockState.pinDone[p.id]);
   if (!tn[task].length) delete tn[task];
+  // ⭐ And from any other job the user chose to complete it in. Recorded as
+  // INTENT during the run (clockState.pinAlsoDone) so an untick could withdraw
+  // it; applied here, where everything else about the run becomes permanent.
+  const alsoDone = clockState.pinAlsoDone || {};
+  const spreadStamps = [];
+  doneIds.forEach(id => {
+    const jobs = alsoDone[id];
+    if (!Array.isArray(jobs) || !jobs.length) return;
+    const src = list.find(p => p.id === id);
+    if (!src || !src.inboxId) return;
+    jobs.forEach(job => {
+      if (job === task || !Array.isArray(tn[job])) return;
+      const before = tn[job].length;
+      tn[job] = tn[job].filter(p => p.inboxId !== src.inboxId);
+      if (tn[job].length !== before) spreadStamps.push({ inboxId: src.inboxId, job, ts: clockState.pinDone[id] || new Date().toISOString() });
+      if (!tn[job].length) delete tn[job];
+    });
+  });
   saveTaskNotes(tn);
   // Inbox journey: keep the note as a done record and stamp the completion
   // (task + time) instead of deleting it — it stays in the Inbox, struck off.
@@ -12972,6 +13071,22 @@ function finalizeDonePins() {
     if (!i2.doneTs) i2.doneTs = new Date().toISOString();
     saveInbox(arr);
   });
+  // Each other job gets its own line in the Inbox journey, so the capture ledger
+  // says where it was actually completed rather than implying a single job.
+  if (spreadStamps.length) {
+    const arr2 = getInbox();
+    let changed = false;
+    spreadStamps.forEach(s => {
+      const n = arr2.find(x => x.id === s.inboxId);
+      if (!n) return;
+      if (!Array.isArray(n.completions)) n.completions = [];
+      n.completions.push({ task: s.job, ts: s.ts });
+      n.done = true; delete n.assigned;
+      if (!n.doneTs) n.doneTs = new Date().toISOString();
+      changed = true;
+    });
+    if (changed) saveInbox(arr2);
+  }
 }
 
 // ── Steps editor — drag-row list, the same ≡ system as tasks and batches ──
