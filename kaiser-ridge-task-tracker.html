@@ -2871,10 +2871,16 @@
       </div>
       <div style="font-size:13px;font-weight:600;color:var(--subtext);margin:20px 0 8px;">VIDEO / LINK</div>
       <input id="guide-url" type="url" placeholder="https://youtube.com/…"
-        autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
+        autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"
         style="width:100%;padding:14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;">
+      <!-- Name the link. A bare YouTube URL is a string of characters; on a phone,
+           mid-job, you want to know WHICH video you're about to open. Appears only
+           once there's a URL to name. -->
+      <input id="guide-url-title" type="text" placeholder="Name it, e.g. Strip the beds — walkthrough"
+        autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
+        style="width:100%;padding:14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;margin-top:8px;display:none;">
       <div id="guide-url-preview" style="margin-top:12px;display:none;">
-        <a id="guide-url-link" href="#" target="_blank"
+        <a id="guide-url-link" href="#" target="_blank" rel="noopener noreferrer"
           style="display:flex;align-items:center;gap:8px;padding:12px 16px;background:var(--bg);border-radius:12px;color:var(--blue);font-size:15px;text-decoration:none;">
           <span style="font-size:20px;">▶️</span>
           <span id="guide-url-label">Open video / link</span>
@@ -2955,7 +2961,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.289';
+const APP_VERSION = '2026-06-21.290';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -13483,8 +13489,10 @@ function openSubtaskGuide(name) {
   renderGuideStepList();
   document.getElementById('guide-step-input').value = '';
   document.getElementById('guide-url').value = guide.url || '';
-  updateGuideUrlPreview(guide.url || '');
+  document.getElementById('guide-url-title').value = guide.urlTitle || '';
+  updateGuideUrlPreview(guide.url || '', guide.urlTitle || '');
   document.getElementById('guide-url').oninput = () => updateGuideUrlPreview(document.getElementById('guide-url').value);
+  document.getElementById('guide-url-title').oninput = () => updateGuideUrlPreview(document.getElementById('guide-url').value);
   document.getElementById('guide-rename-section').style.display = 'block';
   document.getElementById('guide-step-add-wrap').style.display = 'flex';
   openModal('modal-subtask-guide');
@@ -13617,20 +13625,23 @@ function gsTouchEnd(event) {
   renderGuideStepList();
 }
 
-function updateGuideUrlPreview(url) {
+function updateGuideUrlPreview(url, title) {
   const preview = document.getElementById('guide-url-preview');
   const link = document.getElementById('guide-url-link');
   const label = document.getElementById('guide-url-label');
-  if (url && url.startsWith('http')) {
-    preview.style.display = 'block';
-    link.href = url;
-    try {
-      const host = new URL(url).hostname.replace('www.','');
-      label.textContent = 'Open ' + host;
-    } catch(e) { label.textContent = 'Open link'; }
-  } else {
-    preview.style.display = 'none';
-  }
+  const titleIn = document.getElementById('guide-url-title');
+  const has = !!(url && url.startsWith('http'));
+  // The name field only appears once there's something to name.
+  if (titleIn) titleIn.style.display = has ? '' : 'none';
+  if (!has) { preview.style.display = 'none'; return; }
+  preview.style.display = 'block';
+  link.href = url;
+  const t = (title != null ? title : (titleIn ? titleIn.value : '')).trim();
+  if (t) { label.textContent = t; return; }
+  // No name given — fall back to the host, exactly as before, so existing
+  // guides look unchanged until someone names them.
+  try { label.textContent = 'Open ' + new URL(url).hostname.replace('www.', ''); }
+  catch (e) { label.textContent = 'Open link'; }
 }
 
 function saveSubtaskGuide() {
@@ -13641,6 +13652,7 @@ function saveSubtaskGuide() {
   if (pendingStep) { _guideSteps.push(pendingStep); document.getElementById('guide-step-input').value = ''; }
   const instructions = [..._guideSteps];
   const url = document.getElementById('guide-url').value.trim();
+  const urlTitle = document.getElementById('guide-url-title').value.trim();
   // Handle rename first
   if (newName && newName !== oldName) {
     renameSubtaskGlobally(oldName, newName);
@@ -13648,7 +13660,9 @@ function saveSubtaskGuide() {
   const finalName = (newName && newName !== oldName) ? newName : oldName;
   const guides = getSubtaskGuides();
   if (instructions.length > 0 || url) {
-    guides[finalName] = { instructions, url };
+    // urlTitle only means anything with a url — don't leave an orphan name behind
+    // if the link is cleared.
+    guides[finalName] = url ? { instructions, url, urlTitle } : { instructions, url };
   } else {
     delete guides[finalName];
   }
