@@ -1652,6 +1652,24 @@
 </div>
 
 <!-- ══════════════ CHECKLIST ITEM STEPS ══════════════ -->
+<!-- ══════════════ RESUME AN INTERRUPTED RUN ══════════════ -->
+<!-- Offered, never automatic: applying it silently would reinstate the flag
+     creep that the per-run rule exists to prevent. -->
+<div class="modal-backdrop" id="modal-resume-run" style="z-index:670;">
+  <div class="modal-sheet" style="padding:16px 0 24px;">
+    <div class="modal-handle"></div>
+    <div style="padding:0 20px 6px;font-size:17px;font-weight:600;color:var(--text);">📋 Pick up where you left off?</div>
+    <div style="padding:0 20px 16px;font-size:14px;color:var(--subtext);line-height:1.55;">
+      You clocked out of this job <b style="color:var(--text);" id="resume-run-when"></b> with <b style="color:var(--text);"><span id="resume-run-left"></span> task<span id="resume-run-lefts"></span></b> still to do. Your run sheet order and flags are still here, and the <b style="color:var(--text);"><span id="resume-run-done"></span> task<span id="resume-run-dones"></span></b> you already ticked will show as done.
+    </div>
+    <div style="padding:0 20px;">
+      <button onclick="resumeRunYes()" style="width:100%;height:50px;border-radius:12px;border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:600;cursor:pointer;margin-bottom:10px;">Pick up where I left off</button>
+      <button onclick="resumeRunNo()" style="width:100%;height:50px;border-radius:12px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:16px;font-weight:600;cursor:pointer;">Start this job fresh</button>
+      <div style="font-size:12px;color:var(--subtext);text-align:center;margin-top:10px;">Kept for 24 hours after you clock out.</div>
+    </div>
+  </div>
+</div>
+
 <!-- ══════════════ TO-DO ON SEVERAL JOBS ══════════════ -->
 <!-- One Inbox note filed against several jobs becomes a SEPARATE to-do in each,
      linked by inboxId. Ticking it here has only ever cleared this job's copy.
@@ -2934,7 +2952,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.287';
+const APP_VERSION = '2026-06-21.288';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -3831,7 +3849,10 @@ function clockOut(overrideTime) {
     durationHours: parseFloat(durationHours.toFixed(2)),
     break: parseFloat(breakHours.toFixed(2)),
     pin: clockState.pin || null,
-    checklist: (clockState.checklistDone || []),
+    // ⚠️ Carried ticks are display-only — they were already written into the
+    // previous run's entry. Letting them through here would put the same tick in
+    // the learned averages twice.
+    checklist: (clockState.checklistDone || []).filter(d => !d.carried),
     steps: (clockState.stepDone || []),          // timed sub-steps: [{item, step, at}]
     breaks: (clockState.breaks || []),
     commentPhotos: (clockState.commentPhotos || []),
@@ -3875,6 +3896,7 @@ function clockOut(overrideTime) {
   saveEntries();
   _undo.entryId = entry.id;
   _storeSet('kr_clockout_undo', JSON.stringify(_undo));   // arms the "↩ Undo clock-out" banner
+  _saveRunResume();      // half-finished run? keep the arrangement for 24h — MUST run before the teardown
   clockState = null;
   _storeRemove('kr_clock');
   renderClockState();
@@ -4203,6 +4225,113 @@ function _isTaskDoneNow(job, item, done) {
   return done.some(d => d.item === item && !d.rep && !d.lap);
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+//  RESUME AN INTERRUPTED RUN (2026-08-09)
+//
+//  Flags stay per-run and never persistent — that rule is deliberate and holds.
+//  But clocking out of a HALF-FINISHED job threw the whole arrangement away
+//  with it: flag twenty tasks, order them on the run sheet, do eight, clock out
+//  to deal with something else, come back — and there's nothing there. Lincoln
+//  hit this on the straw carting job.
+//
+//  So an unfinished run's arrangement is kept for 24 hours and OFFERED BACK on
+//  the next clock-in to the same job. Offered, never applied automatically —
+//  automatic would quietly reinstate exactly the flag creep the per-run rule
+//  exists to prevent.
+//
+//  Already-ticked tasks come back marked done (Lincoln's call). The run sheet
+//  already greys ticked rows while keeping their real time, so a resumed run
+//  reads as a continuation of the same run rather than a new, smaller one —
+//  you can still see the whole shape of the job and where you are in it.
+//
+//  ⚠️ Carried ticks are DISPLAY ONLY. Their durations are already in the first
+//  clock-out's entry. They carry `carried:true` and are stripped from both the
+//  new entry's checklist and _checklistDurations — otherwise the same tick
+//  lands in the learned averages twice, which is precisely the contamination
+//  the seed rule exists to prevent.
+// ════════════════════════════════════════════════════════════════════════════
+const RUN_RESUME_MS = 24 * 60 * 60 * 1000;
+
+function getRunResume() {
+  try { return JSON.parse(localStorage.getItem('kr_run_resume') || 'null'); } catch (e) { return null; }
+}
+function clearRunResume() { _storeRemove('kr_run_resume'); }
+
+// How much flagged work is still outstanding. Lap tasks are never "done" in the
+// once-off sense, so they're counted against their planned target instead —
+// straw carting with eight loads planned and four ticked has four left, not none.
+function _runOutstanding(job, flags, done, lapTargets) {
+  const lt = lapTargets || {};
+  let left = 0;
+  Object.keys(flags || {}).forEach(item => {
+    if (isRepeatTask(job, item)) {
+      const target = lt[item] || 0;
+      const ticks = (done || []).filter(d => d.item === item).length;
+      if (!target || ticks < target) left++;
+    } else if (!_isTaskDoneNow(job, item, done || [])) left++;
+  });
+  return left;
+}
+
+// Called from clockOut BEFORE the teardown, while clockState still exists.
+function _saveRunResume() {
+  if (!clockState || !clockState.task) return;
+  const flags = clockState.flagOverride || {};
+  if (!Object.keys(flags).length) { clearRunResume(); return; }   // nothing was arranged
+  const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
+  if (!_runOutstanding(clockState.task, flags, done, clockState.lapTargets)) { clearRunResume(); return; }   // finished — nothing to resume
+  _storeSet('kr_run_resume', JSON.stringify({
+    job: clockState.task,
+    at: new Date().toISOString(),
+    flags,
+    order:      Array.isArray(clockState.orderOverride) ? clockState.orderOverride : null,
+    runOrder:   Array.isArray(clockState.runOrder)      ? clockState.runOrder      : null,
+    lapTargets: clockState.lapTargets || null,
+    done: done.map(d => Object.assign({}, d, { carried: true }))
+  }));
+}
+
+let _resumeRec = null;
+function _resumeWhenLabel(at) {
+  const mins = Math.max(1, Math.round((Date.now() - new Date(at).getTime()) / 60000));
+  if (mins < 60) return mins + ' minute' + (mins === 1 ? '' : 's') + ' ago';
+  const hrs = Math.round(mins / 60);
+  return hrs + ' hour' + (hrs === 1 ? '' : 's') + ' ago';
+}
+// Offered on clock-in. Silent when there's nothing to offer, or it's gone stale.
+function _maybeOfferResume(job) {
+  const rec = getRunResume();
+  if (!rec || rec.job !== job) return;
+  if (Date.now() - new Date(rec.at).getTime() > RUN_RESUME_MS) { clearRunResume(); return; }
+  _resumeRec = rec;
+  const left  = _runOutstanding(job, rec.flags, rec.done || [], rec.lapTargets);
+  const doneN = (rec.done || []).length;
+  document.getElementById('resume-run-when').textContent = _resumeWhenLabel(rec.at);
+  document.getElementById('resume-run-left').textContent = left;
+  document.getElementById('resume-run-lefts').textContent = left === 1 ? '' : 's';
+  document.getElementById('resume-run-done').textContent = doneN;
+  document.getElementById('resume-run-dones').textContent = doneN === 1 ? '' : 's';
+  openModal('modal-resume-run');
+}
+function resumeRunYes() {
+  const rec = _resumeRec;
+  if (!rec || !clockState) { closeModal('modal-resume-run'); return; }
+  clockState.flagOverride = Object.assign({}, rec.flags);
+  if (rec.order)      clockState.orderOverride = rec.order.slice();
+  if (rec.runOrder)   clockState.runOrder      = rec.runOrder.slice();
+  if (rec.lapTargets) clockState.lapTargets    = Object.assign({}, rec.lapTargets);
+  clockState.checklistDone = (rec.done || []).slice();   // carried:true — display only
+  _storeSet('kr_clock', JSON.stringify(clockState));
+  clearRunResume(); _resumeRec = null;
+  closeModal('modal-resume-run');
+  renderClockState();
+  showToast('Picked up where you left off');
+}
+function resumeRunNo() {
+  clearRunResume(); _resumeRec = null;
+  closeModal('modal-resume-run');
+}
+
 function _checklistItemLastDone(job) {
   const map = {};
   if (!job) return map;
@@ -4228,7 +4357,9 @@ function _checklistItemLastDone(job) {
 }
 function _checklistDurations() {
   if (!clockState) return {};
-  const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
+  // Carried ticks belong to the run before this one — their time is already in
+  // that entry. Timing them again from THIS clock-in would invent a duration.
+  const done = (Array.isArray(clockState.checklistDone) ? clockState.checklistDone : []).filter(d => !d.carried);
   const pinDone = clockState.pinDone || {};
   const breaks = Array.isArray(clockState.breaks) ? clockState.breaks.slice() : [];
   if (clockState.onBreak && clockState.breakStartMs) breaks.push({ start: clockState.breakStartMs, end: Date.now() });
@@ -7203,6 +7334,10 @@ function confirmTime(choice) {
         if (clockState.flagOverride || clockState.orderOverride || clockState.lapTargets || clockState.runOrder) { _storeSet('kr_clock', JSON.stringify(clockState)); renderRunChecklist(); }
         delete pcm[taskInfo._planId]; savePlannerChecklist(pcm);
       }
+      // Nothing arranged by a block? Then a half-finished run of this job may be
+      // worth picking up. A block's own arrangement always wins — it's the more
+      // deliberate intent, and offering both would be a choice between two plans.
+      if (!clockState.flagOverride || !Object.keys(clockState.flagOverride).length) _maybeOfferResume(clockState.task);
       // 🎯 The TARGET — what the block said this job would take, used as the STARTING
       // value. As of v278 `targetFromPlan` records provenance only; it no longer freezes
       // the target. Until the first tick of flagged work, updateRunRing keeps re-deriving
