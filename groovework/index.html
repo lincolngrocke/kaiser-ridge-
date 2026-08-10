@@ -1311,6 +1311,7 @@
       <div id="team-members" style="padding:2px 0 6px;"></div>
 
       <div id="team-invite-wrap" style="display:none;">
+        <div style="font-size:12px;font-weight:600;color:var(--subtext);margin:12px 0 4px;">ADD SOMEONE TO YOUR TEAM</div>
         <div class="settings-row" style="gap:8px;align-items:center;">
           <input class="settings-input" id="invite-name" type="text" placeholder="Their name, e.g. Ethan" autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false" style="flex:1;" />
           <button onclick="createInvite()" style="flex-shrink:0;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 14px;cursor:pointer;color:var(--text);font-size:15px;font-weight:600;">Invite</button>
@@ -1319,10 +1320,12 @@
       </div>
 
       <div id="team-join-wrap">
+        <div style="font-size:12px;font-weight:600;color:var(--subtext);margin:12px 0 4px;">JOINING SOMEONE ELSE'S TEAM?</div>
         <div class="settings-row" style="gap:8px;align-items:center;">
           <input class="settings-input" id="join-code" type="text" placeholder="Invite code" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" style="flex:1;font-family:ui-monospace,Menlo,monospace;letter-spacing:1px;" />
           <button onclick="claimInvite()" style="flex-shrink:0;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 14px;cursor:pointer;color:var(--text);font-size:15px;font-weight:600;">Join</button>
         </div>
+        <div style="font-size:12px;color:var(--subtext);margin-top:6px;">Enter the code your manager gave you.</div>
       </div>
 
       <div class="settings-note" id="team-note" style="margin-top:8px"></div>
@@ -2952,7 +2955,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.288';
+const APP_VERSION = '2026-06-21.289';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -14587,20 +14590,33 @@ function renderTeamUI() {
   if (invWrap) invWrap.style.display = iAmManager ? '' : 'none';
   const invList = document.getElementById('team-invites');
   if (invList) {
-    invList.innerHTML = pending.map(i => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border);">
+    // Labelled and set apart, because an unclaimed invite is NOT a member and
+    // shouldn't read as one sitting in the same list.
+    invList.innerHTML = pending.length
+      ? '<div style="font-size:12px;font-weight:600;color:var(--subtext);margin:10px 0 2px;">WAITING TO JOIN</div>'
+        + pending.map(i => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border);">
         <div style="flex:1;min-width:0;">
-          <div style="font-size:14px;color:var(--text);">${_escHtml(i.name || 'Invite')}</div>
+          <div style="font-size:14px;color:var(--text);">${_escHtml(i.name || 'Invite')} <span style="color:var(--subtext);">— hasn't joined yet</span></div>
           <div style="font-family:ui-monospace,Menlo,monospace;font-size:16px;letter-spacing:1px;color:#5ac8fa;">${_escHtml(i.code)}</div>
+          <div style="font-size:12px;color:var(--subtext);margin-top:2px;">Read this code to them — they enter it on their own phone.</div>
         </div>
         <span onclick="revokeInvite('${_escHtml(i.code)}')" style="color:var(--red);font-size:13px;cursor:pointer;flex-shrink:0;">Revoke</span>
-      </div>`).join('');
+      </div>`).join('')
+      : '';
   }
 
-  // Joining is for someone who was sent a code. Hidden once you're a manager of
-  // an org with people in it — joining a second org is not a thing the app
-  // supports yet, and offering it would strand you.
+  // ⚠️ Who sees "Join" is NOT a manager/worker question — that was my first
+  // instinct and it is wrong. Everyone is a manager of the org first sign-in
+  // creates for them, so hiding Join from managers would lock out the very
+  // person who needs it (caught on Ethan's phone before shipping).
+  //
+  // The real question is whether you are already RUNNING a team. You are, if
+  // your org has other members or you have an invite outstanding — and in that
+  // case a Join field just reads as "type the code you issued in here", which
+  // is what confused Lincoln.
+  const runningATeam = members.length > 1 || pending.length > 0;
   const joinWrap = document.getElementById('team-join-wrap');
-  if (joinWrap) joinWrap.style.display = (iAmManager && members.length > 1) ? 'none' : '';
+  if (joinWrap) joinWrap.style.display = runningATeam ? 'none' : '';
 
   const note = document.getElementById('team-note');
   if (note) note.textContent = iAmManager
