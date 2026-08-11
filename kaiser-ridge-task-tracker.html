@@ -2853,8 +2853,11 @@
     <div style="display:flex;align-items:center;padding:calc(env(safe-area-inset-top) + 16px) 20px 10px;border-bottom:1px solid var(--border);">
       <button onclick="closeModal('modal-subtask-guide')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:6px 10px 6px 0;margin-right:8px;">‹ Back</button>
       <span id="guide-modal-title" style="font-size:17px;font-weight:600;flex:1;text-align:center;">Guide</span>
-      <button onclick="saveSubtaskGuide()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;padding:0;width:60px;text-align:right;">Save</button>
+      <button id="guide-save-btn" onclick="saveSubtaskGuide()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;padding:0;width:60px;text-align:right;">Save</button>
     </div>
+    <!-- Scope line — stays visible the whole time you're editing, so "this video
+         is only on Heritage" isn't a thing you saw once in a dialog and forgot. -->
+    <div id="subtask-guide-scope" style="display:none;align-items:center;gap:8px;margin:10px 20px 0;padding:9px 12px;background:var(--bg);border:1px solid var(--border);border-radius:10px;font-size:13px;"></div>
     <div style="flex:1;overflow-y:auto;padding:20px;">
       <input type="hidden" id="guide-subtask-name">
       <div id="guide-rename-section">
@@ -2870,7 +2873,7 @@
           onkeydown="if(event.key==='Enter'){event.preventDefault();addGuideStep();}">
         <button onclick="addGuideStep()" style="background:var(--blue);border:none;border-radius:12px;color:#fff;font-size:15px;font-weight:600;padding:0 18px;cursor:pointer;">Add</button>
       </div>
-      <div style="font-size:13px;font-weight:600;color:var(--subtext);margin:20px 0 8px;">VIDEO / LINK</div>
+      <div id="guide-url-label-hd" style="font-size:13px;font-weight:600;color:var(--subtext);margin:20px 0 8px;">VIDEO / LINK</div>
       <input id="guide-url" type="url" placeholder="https://youtube.com/…"
         autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"
         style="width:100%;padding:14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;">
@@ -2887,6 +2890,29 @@
           <span id="guide-url-label">Open video / link</span>
         </a>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ GUIDE SCOPE — shared or just this job ══════════════ -->
+<!-- Guides are keyed by task text, so two jobs with an identically-named task
+     share one record — including its video link. This makes that visible BEFORE
+     anything is filmed or edited, and names the jobs. Mirrors the steps prompt. -->
+<div class="modal-backdrop" id="modal-guide-scope" style="z-index:540;">
+  <div class="modal-sheet" style="padding:16px 0 24px;">
+    <div class="modal-handle"></div>
+    <div style="padding:0 20px 6px;font-size:17px;font-weight:600;color:var(--text);">🔗 This guide is shared</div>
+    <div style="padding:0 20px 14px;font-size:14px;color:var(--subtext);line-height:1.55;">
+      <b style="color:var(--text);" id="guide-scope-task"></b> is used by <b style="color:var(--text);"><span id="guide-scope-count"></span> jobs</b>. Editing here — including the <b style="color:var(--text);">video link</b> and <b style="color:var(--text);">deleting a step</b> — changes it in all of them.
+    </div>
+    <div style="padding:0 20px 16px;">
+      <div style="font-size:12px;font-weight:600;color:var(--subtext);margin-bottom:2px;">ALSO USED BY</div>
+      <div id="guide-scope-list"></div>
+    </div>
+    <div style="padding:0 20px;">
+      <button onclick="guideScopeAll()" style="width:100%;height:50px;border-radius:12px;border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:600;cursor:pointer;margin-bottom:10px;">Edit for all jobs</button>
+      <button onclick="guideScopeOnly()" id="guide-scope-onlybtn" style="width:100%;height:50px;border-radius:12px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:16px;font-weight:600;cursor:pointer;">Only this job</button>
+      <div style="font-size:12px;color:var(--subtext);text-align:center;margin-top:10px;">"Only this job" gives it its own copy. The others keep what they have.</div>
     </div>
   </div>
 </div>
@@ -2962,7 +2988,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.292';
+const APP_VERSION = '2026-06-21.293';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4975,6 +5001,7 @@ function _renameChecklistItem(task, oldName, newName) {
   _migrateJobStepsTaskRename(oldName, newName);   // per-job overrides follow the rename too
   const guides = getSubtaskGuides();
   if (guides[oldName]) { if (!guides[newName]) guides[newName] = guides[oldName]; delete guides[oldName]; saveSubtaskGuides(guides); }
+  _migrateJobGuidesTaskRename(oldName, newName);  // per-job guide overrides follow the rename too
   _migrateBatchTaskName(oldName, newName);   // ▣ batch membership follows the task
   const orig = getSubtaskOrigin();
   if (orig[oldName]) { orig[newName] = Object.assign({}, orig[newName] || {}, orig[oldName], { edited: new Date().toISOString() }); delete orig[oldName]; saveSubtaskOrigin(orig); }
@@ -5440,6 +5467,12 @@ function renderRunChecklist() {
 
   if (tab === 'tasks') {
     const stepsOf = stepsResolver(clockState && clockState.task);
+    const guideOf = guidesResolver(clockState && clockState.task);
+    // Hoisted out of the per-task loop — one parse and one pass over SUBTASKS,
+    // not one per row (same reason guidesResolver exists).
+    const _ownGuidesRun = ((clockState && clockState.task) && getJobGuides()[clockState.task]) || null;
+    const _taskJobCountRun = {};
+    Object.keys(SUBTASKS || {}).forEach(j => (SUBTASKS[j] || []).forEach(t => { _taskJobCountRun[t] = (_taskJobCountRun[t] || 0) + 1; }));
     const subPhotos = getSubtaskPhotos();
     const itemLastDone = _checklistItemLastDone(clockState && clockState.task);
     const itemAvg = {}, itemCount = {};   // normalised item text → average minutes / times done (from history)
@@ -5549,6 +5582,23 @@ function renderRunChecklist() {
           _chipTitle = `${_reps} done — tap to undo last`;
         }
         _metaBits.push(`<span onclick="event.stopPropagation();undoTaskRep('${enc}')" title="${_chipTitle}" style="display:inline-flex;align-items:center;padding:1px 8px;border-radius:9px;font-weight:700;cursor:pointer;background:${_chipOn ? 'rgba(48,209,88,0.22)' : 'transparent'};border:1px solid ${_chipOn ? 'rgba(48,209,88,0.6)' : 'rgba(255,255,255,0.22)'};color:${_chipOn ? '#30d158' : '#8b93a7'};">${_chipTxt}</span>`);
+      }
+      // 📋 The guide — the one thing on this line you tap to be TOLD something
+      // rather than to record something. Until now a guide (and the video on it)
+      // could only be opened from the job editor, which is not where you are when
+      // you're standing in the room doing the work.
+      const _g = guideOf(s);
+      if (_guideHasContent(_g)) {
+        const _vt = (_g.urlTitle || '').trim();
+        const _label = _g.url
+          ? '▶️ ' + (_vt ? (_vt.length > 26 ? _vt.slice(0, 26) + '…' : _vt) : 'Watch')
+          : '📋 Guide';
+        // 🔗 warns that this is the SHARED guide and other jobs use this task too
+        // — i.e. the video was not filmed in this house. Nothing when this job
+        // holds its own, and nothing when nobody else shares the task.
+        const _ownHere = !!(_ownGuidesRun && Object.prototype.hasOwnProperty.call(_ownGuidesRun, s));
+        const _sharedVid = !_ownHere && (_taskJobCountRun[s] || 0) > 1;
+        _metaBits.push(`<span onclick="event.stopPropagation();viewSubtaskGuide('${enc}', (clockState&&clockState.task)||null)" style="color:#5ac8fa;cursor:pointer;font-weight:600;">${_escHtml(_label)}${_sharedVid ? ' 🔗' : ''}</span>`);
       }
       if (_metaBits.length) html += `<div style="font-size:11px;color:#616a7e;padding:1px 0 7px 36px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${_metaBits.join('<span style="opacity:0.6;">·</span>')}</div>`;
       // 💬 Session comments attached to this task (fold into the entry at clock-out)
@@ -8223,7 +8273,7 @@ function saveEntries() {
 // (see autoBackup calls), and can be exported/shared as a file at any time
 // from Settings so a reinstall or device change never wipes your data again.
 const KR_BACKUP_KEYS = [
-  'kr_directory', 'kr_subtasks', 'kr_subtask_steps', 'kr_subtask_steps_by_job', 'kr_subtask_guides', 'kr_equipment_guides',
+  'kr_directory', 'kr_subtasks', 'kr_subtask_steps', 'kr_subtask_steps_by_job', 'kr_subtask_guides', 'kr_subtask_guides_by_job', 'kr_equipment_guides',
   'kr_equipment_notes', 'kr_equipment_links',
   'kr_equipment_master', 'kr_extra_frequencies', 'kr_extra_locations', 'kr_extra_clients',
   'kr_task_order', 'kr_entries', 'kr_user_name', 'kr_weekly_target',
@@ -8568,7 +8618,7 @@ async function restoreFromDriveBackup() {
 // The shared task DEFINITIONS only — never timesheets, projects, clock, or
 // device settings. Lets one person maintain the list and push it to others.
 const KR_LIBRARY_KEYS = [
-  'kr_directory', 'kr_subtasks', 'kr_subtask_steps', 'kr_subtask_steps_by_job', 'kr_subtask_guides', 'kr_equipment_guides',
+  'kr_directory', 'kr_subtasks', 'kr_subtask_steps', 'kr_subtask_steps_by_job', 'kr_subtask_guides', 'kr_subtask_guides_by_job', 'kr_equipment_guides',
   'kr_equipment_notes', 'kr_equipment_links',
   'kr_equipment_master', 'kr_extra_frequencies', 'kr_extra_locations', 'kr_extra_clients',
   'kr_task_order', 'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
@@ -10730,8 +10780,8 @@ let _subtaskItems = [];
 
 function renderDirSubtaskList(items) {
   _subtaskItems = items ? [...items] : _subtaskItems;
-  const guides = getSubtaskGuides();
   const stepsOf = stepsResolver(_dirJobName());
+  const guideOf = guidesResolver(_dirJobName());
   const origins = getSubtaskOrigin();
   const taskRem = getTaskReminders();
   const types = getTaskTypes();
@@ -10742,6 +10792,7 @@ function renderDirSubtaskList(items) {
   const _taskJobCount = {};
   Object.keys(SUBTASKS || {}).forEach(j => (SUBTASKS[j] || []).forEach(t => { _taskJobCount[t] = (_taskJobCount[t] || 0) + 1; }));
   const _ownSteps = (_jn && getJobSteps()[_jn]) || null;
+  const _ownGuides = (_jn && getJobGuides()[_jn]) || null;
   const _TYMETA = {
     once:   { label: '1×', color: 'var(--subtext)', title: 'Once — tap to make it repeatable' },
     repeat: { label: '↻',  color: '#30d158',        title: 'Repeatable — tick it as many times as you do it' },
@@ -10756,7 +10807,7 @@ function renderDirSubtaskList(items) {
     // One ⋯ replaces the old six-button strip (steps/guide/history/type/reminder/✕)
     // — they live in a labelled action sheet now, so the task text gets the width.
     // A tiny passive meta line keeps the at-a-glance signals (steps/guide/repeat/🔔).
-    const hasGuide = guides[s] && (_guideInstructionsToSteps(guides[s].instructions).length > 0 || guides[s].url);
+    const hasGuide = _guideHasContent(guideOf(s));
     const nSteps = stepsOf(s).length;
     const _remOn = !!(_jn && taskRem[_taskRemKey(_jn, s)]);
     const _flagged = !!_clFlags[s];
@@ -10766,7 +10817,10 @@ function renderDirSubtaskList(items) {
     const _ownHere = !!(_ownSteps && Object.prototype.hasOwnProperty.call(_ownSteps, s));
     const _sharedWith = (_taskJobCount[s] || 0) - 1;
     if (nSteps) metaBits.push('≣ ' + nSteps + (_ownHere ? ' 📍' : (_sharedWith > 0 ? ' 🔗' : '')));
-    if (hasGuide) metaBits.push('📋');
+    // Same 🔗/📍 treatment for the guide — it carries the video link, so "which
+    // jobs does this play on" is the thing you most need to see at a glance.
+    const _ownGuideHere = !!(_ownGuides && Object.prototype.hasOwnProperty.call(_ownGuides, s));
+    if (hasGuide) metaBits.push('📋' + (_ownGuideHere ? ' 📍' : (_sharedWith > 0 ? ' 🔗' : '')));
     if (_isRep) metaBits.push('<span style="color:#30d158;font-weight:700;">↻</span>');
     if (_remOn) metaBits.push('🔔');
     const metaLine = metaBits.length ? `<div style="font-size:11px;color:var(--subtext);padding:0 0 3px 2px;">${metaBits.join(' · ')}</div>` : '';
@@ -10979,18 +11033,19 @@ function renderSubtaskPickerList() {
         <span style="font-size:20px;color:var(--blue);">＋</span>
         <span style="font-size:16px;color:var(--blue);">Add "${query}"</span>
       </div>` : '';
-  const guides = getSubtaskGuides();
+  const _pkJob = _dirJobName() || '';
+  const guideOf = guidesResolver(_pkJob);
   list.innerHTML = addRow + (filtered.map(s => {
     const isSelected = _subtaskItems.includes(s);
     const enc = s.replace(/'/g,"\\'");
-    const hasGuide = guides[s] && (_guideInstructionsToSteps(guides[s].instructions).length > 0 || guides[s].url);
+    const hasGuide = _guideHasContent(guideOf(s));
     return `<div style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">
       <div onclick="selectSubtask('${enc}',false)" style="flex:1;display:flex;align-items:center;gap:8px;cursor:pointer;">
         <span style="font-size:16px;color:var(--text);">${s}</span>
         ${hasGuide ? '<span style="font-size:13px;color:var(--blue);background:#e8f0fe;padding:2px 6px;border-radius:6px;">Guide</span>' : ''}
         ${isSelected ? '<span style="color:var(--blue);font-size:18px;margin-left:auto;">✓</span>' : '<span style="margin-left:auto;"></span>'}
       </div>
-      <button onclick="openSubtaskGuide('${enc}')" style="background:none;border:none;color:var(--subtext);font-size:18px;cursor:pointer;padding:4px 6px;flex-shrink:0;">✎</button>
+      <button onclick="openSubtaskGuide('${enc}', _dirJobName() || null)" style="background:none;border:none;color:var(--subtext);font-size:18px;cursor:pointer;padding:4px 6px;flex-shrink:0;">✎</button>
     </div>`;
   }).join('') || (!addRow ? '<div style="padding:24px;text-align:center;color:var(--subtext);">No tasks for this job yet — type above to add one</div>' : ''));
 }
@@ -11018,6 +11073,87 @@ function getSubtaskGuides() {
 }
 function saveSubtaskGuides(guides) {
   _storeSet('kr_subtask_guides', JSON.stringify(guides));
+}
+// Does this guide record actually say anything? An instructions array that came
+// out empty and no url is an EMPTY guide — it exists as a record but shows no
+// 📋 badge. Used everywhere the answer is "is there a guide here", so per-job
+// overrides and shared records are judged by the same test.
+function _guideHasContent(g) {
+  return !!(g && (_guideInstructionsToSteps(g.instructions).length > 0 || g.url));
+}
+
+// ── Per-job guide overrides (2026-08-12) ───────────────────────────────────
+// Same shape, same reasoning, same store layout as kr_subtask_steps_by_job —
+// see the long note above getJobSteps(). kr_subtask_guides is GLOBAL, keyed by
+// task text, so a guide written for "Strip the beds" appears on Heritage,
+// Kaiser AND Serene. That is right for "how to strip a bed" and wrong for a
+// walkthrough filmed in one particular tiny house: the three have different
+// layouts, so a Heritage video would play on the other two as if it were theirs.
+//
+//   kr_subtask_guides_by_job = { [job]: { [task]: {instructions, url, urlTitle} } }
+//
+// PURELY ADDITIVE. kr_subtask_guides keeps its exact shape and contents, so
+// deleting this one key returns the app to its previous behaviour exactly.
+function getJobGuides() {
+  try { return JSON.parse(localStorage.getItem('kr_subtask_guides_by_job') || '{}') || {}; }
+  catch (e) { return {}; }
+}
+function saveJobGuides(map) {
+  _storeSet('kr_subtask_guides_by_job', JSON.stringify(map));
+}
+// Does THIS job hold its own version? An empty guide is a real answer — "this
+// job deliberately has no guide here, don't fall through to the shared one" —
+// so test for presence of the key, never for truthiness of the value.
+function jobHasOwnGuide(job, task) {
+  if (!job || !task) return false;
+  const m = getJobGuides();
+  return !!(m[job] && Object.prototype.hasOwnProperty.call(m[job], task));
+}
+// THE resolver. Every read of a task's guide goes through here. A job with no
+// override falls through to the shared record, so anything not deliberately
+// forked behaves exactly as it did before this existed.
+function guideFor(job, task) {
+  if (!task) return null;
+  if (job) {
+    const m = getJobGuides();
+    if (m[job] && Object.prototype.hasOwnProperty.call(m[job], task)) return m[job][task] || null;
+  }
+  return getSubtaskGuides()[task] || null;
+}
+// Render-loop version of guideFor — parses both stores once and hands back a
+// lookup closure, so a list render costs what it did before overrides existed.
+//   const guideOf = guidesResolver(job);  →  guideOf(task)
+function guidesResolver(job) {
+  const own = (job && getJobGuides()[job]) || null;
+  const shared = getSubtaskGuides();
+  return function (task) {
+    if (own && Object.prototype.hasOwnProperty.call(own, task)) return own[task] || null;
+    return shared[task] || null;
+  };
+}
+// Renames must carry per-job overrides with them. Miss this and a job's own
+// guide is orphaned under the old key and the job silently falls back to the
+// shared one — the exact surprise this whole feature exists to remove.
+function _migrateJobGuidesTaskRename(oldTask, newTask) {
+  if (!oldTask || !newTask || oldTask === newTask) return;
+  const m = getJobGuides(); let touched = false;
+  Object.keys(m).forEach(job => {
+    const own = m[job];
+    if (own && Object.prototype.hasOwnProperty.call(own, oldTask)) {
+      if (!Object.prototype.hasOwnProperty.call(own, newTask)) own[newTask] = own[oldTask];
+      delete own[oldTask];
+      touched = true;
+    }
+  });
+  if (touched) saveJobGuides(m);
+}
+function _migrateJobGuidesJobRename(oldJob, newJob) {
+  if (!oldJob || !newJob || oldJob === newJob) return;
+  const m = getJobGuides();
+  if (!Object.prototype.hasOwnProperty.call(m, oldJob)) return;
+  m[newJob] = Object.assign({}, m[newJob] || {}, m[oldJob]);
+  delete m[oldJob];
+  saveJobGuides(m);
 }
 
 // Sub-steps for a checklist item — a separate, ordered list keyed by item text.
@@ -11485,8 +11621,7 @@ function renderTaskActionsSheet() {
   if (s == null) return false;
   const jn = _dirJobName();
   const nSteps = stepsFor(jn, s).length;
-  const g = getSubtaskGuides()[s];
-  const hasGuide = g && (_guideInstructionsToSteps(g.instructions).length > 0 || g.url);
+  const hasGuide = _guideHasContent(guideFor(jn, s));
   const hasOrigin = !!getSubtaskOrigin()[s];
   const isRep = jn && taskTypeOf(jn, s) === 'repeat';
   const remOn = !!(jn && getTaskReminders()[_taskRemKey(jn, s)]);
@@ -11517,7 +11652,7 @@ function taskActionGo(act) {
   if (act === 'flag') { toggleEditorTaskFlag(i); renderTaskActionsSheet(); return; }
   closeModal('modal-task-actions');
   if (act === 'steps') openSubtaskStepsEditor(s, _dirJobName() || null);
-  else if (act === 'guide') openSubtaskGuide(s);
+  else if (act === 'guide') openSubtaskGuide(s, _dirJobName() || null);
   else if (act === 'origin') openItemOrigin(s);
   else if (act === 'remind') openTaskRemindPicker(i);
   else if (act === 'delete') removeSubtaskItem(i);
@@ -13535,24 +13670,118 @@ function _guideInstructionsToSteps(instructions) {
 }
 
 let _guideSteps = [];
+let _guideJob = null;        // job the editor was opened from; null when unknown
+let _guideScope = 'shared';  // 'shared' → kr_subtask_guides · 'job' → this job's own copy
+let _guideReadOnly = false;  // opened from the running clock to read, not to edit
 
-function openSubtaskGuide(name) {
-  const guides = getSubtaskGuides();
-  const guide = guides[name] || { instructions: [], url: '' };
+// `job` is which job the editor was opened from. It matters: without it we
+// cannot know whether an edit is meant for one job or all of them, and the
+// write path refuses to guess.
+// `readOnly` is the running clock opening it to be TOLD something. It suppresses
+// the fork prompt (you're not editing, so there is nothing to decide) and Save,
+// but keeps the scope marker — mid-job, "this is the shared video, not this
+// house's" is exactly the thing worth knowing.
+function openSubtaskGuide(name, job, readOnly) {
+  _guideReadOnly = !!readOnly;
+  _guideJob = job || null;
+  // Already diverged? Then this job owns its guide and there is nothing to ask.
+  _guideScope = jobHasOwnGuide(_guideJob, name) ? 'job' : 'shared';
+  const guide = guideFor(_guideJob, name) || { instructions: [], url: '' };
   document.getElementById('guide-subtask-name').value = name;
   document.getElementById('guide-modal-title').textContent = name.length > 28 ? name.slice(0,28)+'…' : name;
   document.getElementById('guide-rename').value = name;
   _guideSteps = _guideInstructionsToSteps(guide.instructions);
-  renderGuideStepList();
+  renderGuideStepList(_guideReadOnly);
   document.getElementById('guide-step-input').value = '';
   document.getElementById('guide-url').value = guide.url || '';
   document.getElementById('guide-url-title').value = guide.urlTitle || '';
   updateGuideUrlPreview(guide.url || '', guide.urlTitle || '');
   document.getElementById('guide-url').oninput = () => updateGuideUrlPreview(document.getElementById('guide-url').value);
   document.getElementById('guide-url-title').oninput = () => updateGuideUrlPreview(document.getElementById('guide-url').value);
-  document.getElementById('guide-rename-section').style.display = 'block';
-  document.getElementById('guide-step-add-wrap').style.display = 'flex';
+  document.getElementById('guide-rename-section').style.display = _guideReadOnly ? 'none' : 'block';
+  document.getElementById('guide-step-add-wrap').style.display = _guideReadOnly ? 'none' : 'flex';
+  document.getElementById('guide-save-btn').style.display = _guideReadOnly ? 'none' : '';
+  // Reading, not editing: no URL boxes you can type into and never save — just
+  // the ▶️ link itself, which is the whole point of opening this mid-job.
+  ['guide-url-label-hd', 'guide-url', 'guide-url-title'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (_guideReadOnly) el.style.display = 'none';
+    else if (id !== 'guide-url-title') el.style.display = '';   // -title is owned by updateGuideUrlPreview
+  });
+  renderGuideScopeBar();
   openModal('modal-subtask-guide');
+  // Shared, and genuinely shared with someone — say so BEFORE a day's filming
+  // is attached to the wrong three jobs. Never while merely reading.
+  if (!_guideReadOnly && _guideScope === 'shared' && _guideJob && jobsUsingTask(name).length > 1) openGuideScopePrompt();
+}
+
+// The scope line inside the editor — visible the whole time you're editing, so
+// the choice isn't a thing you saw once in a dialog and then forgot.
+function renderGuideScopeBar() {
+  const bar = document.getElementById('subtask-guide-scope');
+  if (!bar) return;
+  const task = document.getElementById('guide-subtask-name').value;
+  const others = jobsUsingTask(task).filter(j => j !== _guideJob);
+  if (_guideScope === 'job') {
+    bar.innerHTML = `<span style="color:var(--text);">📍 Only in ${_escHtml(_guideJob || 'this job')}</span>`
+      + (_guideReadOnly ? '' : `<span onclick="guideUseShared()" style="color:#5ac8fa;cursor:pointer;margin-left:auto;">Use shared instead</span>`);
+    bar.style.display = 'flex';
+  } else if (others.length) {
+    bar.innerHTML = `<span style="color:var(--text);">🔗 Shared with ${others.length} other job${others.length === 1 ? '' : 's'}</span>`
+      + ((_guideJob && !_guideReadOnly) ? `<span onclick="openGuideScopePrompt()" style="color:#5ac8fa;cursor:pointer;margin-left:auto;">Change</span>` : '');
+    bar.style.display = 'flex';
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+// ── The prompt ──
+function openGuideScopePrompt() {
+  const task = document.getElementById('guide-subtask-name').value, job = _guideJob;
+  if (!task || !job) return;
+  const all = jobsUsingTask(task);
+  const others = all.filter(j => j !== job);
+  document.getElementById('guide-scope-task').textContent = task;
+  document.getElementById('guide-scope-list').innerHTML = others
+    .map(j => `<div style="padding:5px 0;color:var(--text);font-size:15px;">• ${_escHtml(j)}</div>`).join('');
+  document.getElementById('guide-scope-count').textContent = all.length;
+  document.getElementById('guide-scope-onlybtn').textContent = 'Only ' + (job.length > 22 ? job.slice(0, 22) + '…' : job);
+  openModal('modal-guide-scope');
+}
+function guideScopeAll() {
+  _guideScope = 'shared';
+  closeModal('modal-guide-scope');
+  renderGuideScopeBar();
+}
+// Fork. Unlike steps — which persist on every keystroke — the guide editor has
+// a Save button, so nothing is written here. Choosing "only this job" sets the
+// TARGET; Save puts what's on screen into this job's own record and leaves the
+// shared version exactly as it was for everyone else.
+function guideScopeOnly() {
+  if (!_guideJob) return;
+  _guideScope = 'job';
+  closeModal('modal-guide-scope');
+  renderGuideScopeBar();
+  showToast('Saving will keep this guide only in ' + _guideJob);
+}
+// Un-fork, so a mistaken choice isn't permanent. Drops this job's own copy and
+// goes back to following the shared one — immediately, because there is a real
+// record to delete and leaving it until Save would be a lie on the scope line.
+function guideUseShared() {
+  const task = document.getElementById('guide-subtask-name').value;
+  if (!_guideJob || !task) return;
+  const m = getJobGuides();
+  if (m[_guideJob]) { delete m[_guideJob][task]; if (!Object.keys(m[_guideJob]).length) delete m[_guideJob]; saveJobGuides(m); }
+  _guideScope = 'shared';
+  const shared = getSubtaskGuides()[task] || { instructions: [], url: '' };
+  _guideSteps = _guideInstructionsToSteps(shared.instructions);
+  renderGuideStepList();
+  document.getElementById('guide-url').value = shared.url || '';
+  document.getElementById('guide-url-title').value = shared.urlTitle || '';
+  updateGuideUrlPreview(shared.url || '');
+  renderGuideScopeBar();
+  showToast('Back to the shared guide');
 }
 
 function renderGuideStepList(readOnly) {
@@ -13715,15 +13944,30 @@ function saveSubtaskGuide() {
     renameSubtaskGlobally(oldName, newName);
   }
   const finalName = (newName && newName !== oldName) ? newName : oldName;
-  const guides = getSubtaskGuides();
-  if (instructions.length > 0 || url) {
-    // urlTitle only means anything with a url — don't leave an orphan name behind
-    // if the link is cleared.
-    guides[finalName] = url ? { instructions, url, urlTitle } : { instructions, url };
+  // urlTitle only means anything with a url — don't leave an orphan name behind
+  // if the link is cleared.
+  const rec = url ? { instructions, url, urlTitle } : { instructions, url };
+  if (_guideScope === 'job') {
+    // No job, no write. Silently falling back to the shared record here is
+    // exactly the bug this whole change exists to fix — and unlike steps, this
+    // path only runs on an explicit Save, so say so rather than swallowing it.
+    if (!_guideJob) {
+      console.warn('[guide] job scope with no job — refusing to write');
+      showToast("Couldn't tell which job this belongs to — nothing saved");
+      return;
+    }
+    const m = getJobGuides();
+    if (!m[_guideJob]) m[_guideJob] = {};
+    // An empty record is meaningful: "this job deliberately has no guide."
+    // Deleting the key instead would silently re-inherit the shared one.
+    m[_guideJob][finalName] = rec;
+    saveJobGuides(m);
   } else {
-    delete guides[finalName];
+    const guides = getSubtaskGuides();
+    if (instructions.length > 0 || url) guides[finalName] = rec;
+    else delete guides[finalName];
+    saveSubtaskGuides(guides);
   }
-  saveSubtaskGuides(guides);
   autoBackup();
   showToast('Guide saved');
   closeModal('modal-subtask-guide');
@@ -13738,11 +13982,8 @@ function saveSubtaskGuide() {
   renderSubtaskPickerList();
 }
 
-function viewSubtaskGuide(name) {
-  openSubtaskGuide(name);
-  document.getElementById('guide-rename-section').style.display = 'none';
-  document.getElementById('guide-step-add-wrap').style.display = 'none';
-  renderGuideStepList(true);
+function viewSubtaskGuide(name, job) {
+  openSubtaskGuide(name, job, true);
 }
 
 // ── Equipment Guides ──
@@ -13809,6 +14050,14 @@ function renameSubtaskGlobally(oldName, newName) {
   // Rename guide key if exists
   const guides = getSubtaskGuides();
   if (guides[oldName]) { guides[newName] = guides[oldName]; delete guides[oldName]; saveSubtaskGuides(guides); }
+  _migrateJobGuidesTaskRename(oldName, newName);   // per-job guide overrides follow the rename
+  // Steps were NOT being carried here — renaming a task from inside the Guide
+  // modal orphaned both the shared steps and any per-job override, and the task
+  // silently came back with no steps. Same two lines the job editor's rename
+  // path has always had (_renameChecklistItem).
+  const _rsSteps = getSubtaskSteps();
+  if (_rsSteps[oldName]) { if (!_rsSteps[newName]) _rsSteps[newName] = _rsSteps[oldName]; delete _rsSteps[oldName]; saveSubtaskSteps(_rsSteps); }
+  _migrateJobStepsTaskRename(oldName, newName);
   _migrateBatchTaskName(oldName, newName);   // ▣ batch membership follows the task
   // Update picker list
   const idx = _subtaskItems.indexOf(oldName);
@@ -13968,6 +14217,7 @@ function saveDirTask() {
       if (migrated) showToast(migrated + ' past entr' + (migrated === 1 ? 'y' : 'ies') + ' kept with the renamed task');
     }
     _migrateJobStepsJobRename(oldTask, task);   // this job's own step versions follow the job's new name
+    _migrateJobGuidesJobRename(oldTask, task);  // …and its own guide versions
     if (SUBTASKS[oldTask] && oldTask !== task) delete SUBTASKS[oldTask];
   }
 
