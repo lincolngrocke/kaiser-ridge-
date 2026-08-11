@@ -1233,11 +1233,12 @@
   </div>
   <!-- Manager only: switch between own day and the worker's planned day -->
   <div id="planner-view-switch" style="display:none;padding:0 16px 8px;gap:8px;">
-    <button id="pv-me" onclick="switchPlannerView('me')" style="flex:1;border-radius:10px;padding:8px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid var(--blue);background:var(--blue);color:#fff;">My Day</button>
-    <button id="pv-ethan" onclick="switchPlannerView('ethan')" style="flex:1;border-radius:10px;padding:8px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--text);">Ethan's Day</button>
+    <!-- Rendered from the org's members — one chip per person, not two hardcoded
+         buttons. See renderPlannerViewSwitch(). -->
+    <div id="pv-chips" style="display:flex;gap:6px;flex:1;overflow-x:auto;-webkit-overflow-scrolling:touch;"></div>
   </div>
   <div id="planner-send-row" style="display:none;padding:0 16px 8px;">
-    <button id="planner-send-btn" onclick="sendPlannerToEthan()" style="width:100%;background:var(--green);color:#fff;border:none;border-radius:12px;padding:11px;font-size:15px;font-weight:700;cursor:pointer;">📤 Send Ethan's Day to his app</button>
+    <button id="planner-send-btn" onclick="sendPlannerToMember()" style="width:100%;background:var(--green);color:#fff;border:none;border-radius:12px;padding:11px;font-size:15px;font-weight:700;cursor:pointer;">📤 Send this day</button>
   </div>
   <!-- Worker only: banner when the manager has planned tasks for today -->
   <div class="update-banner" id="assign-banner" onclick="ackAssignmentBanner()" style="display:none;background:var(--green);margin:0 16px 8px;"></div>
@@ -1306,7 +1307,7 @@
     <div class="settings-section" id="team-section" style="margin-top:16px;display:none;">
       <div class="settings-row" style="justify-content:space-between;align-items:center;">
         <div class="settings-label" style="font-weight:600;">Team</div>
-        <span onclick="renameOrg()" style="color:#5ac8fa;font-size:14px;cursor:pointer;">Rename org</span>
+        <span id="team-rename-org" onclick="renameOrg()" style="color:#5ac8fa;font-size:14px;cursor:pointer;display:none;">Rename org</span>
       </div>
       <div id="team-members" style="padding:2px 0 6px;"></div>
 
@@ -2961,7 +2962,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.291';
+const APP_VERSION = '2026-06-21.292';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -3248,6 +3249,7 @@ async function refreshTeam() {
   // Invites are manager-only by policy; a worker just gets nothing back.
   const inv = await _sb('/rest/v1/org_invites?select=code,role,display_name,claimed_at,expires_at&org_id=eq.' + encodeURIComponent(_org.id) + '&order=created_at.desc');
   if (inv) saveOrgInvites(inv.map(i => ({ code: i.code, role: i.role, name: i.display_name || '', claimed: !!i.claimed_at, expires: i.expires_at })));
+  _migrateLegacyEthanPlanner();   // needs the member list to know whose plan kr_planner_ethan is
   renderTeamUI();
 }
 
@@ -8236,7 +8238,7 @@ const KR_BACKUP_KEYS = [
   // migration + library-sync markers (so a restore doesn't re-run migrations or
   // show a false "new library" banner). Deliberately still excluded: kr_clock
   // (live clock), trash cans, kr_cal_dirty, backup timestamps, kr_lib_prepull_backup.
-  'kr_team_enabled', 'kr_role', 'kr_org_members', 'kr_planner_ethan', 'kr_planner_ethan_sent', 'kr_planner_ethan_sent_arr', 'kr_planner_ethan_sent_todos',
+  'kr_team_enabled', 'kr_role', 'kr_org_members', 'kr_planner_legacy_migrated', 'kr_planner_ethan', 'kr_planner_ethan_sent', 'kr_planner_ethan_sent_arr', 'kr_planner_ethan_sent_todos',
   'kr_lastdone', 'kr_flag_new_pos', 'kr_checklist_order', 'kr_pin_sort', 'kr_dir_sort',
   'kr_planner_task_sort', 'kr_create_task_sort', 'kr_assign_task_sort', 'kr_planner_mode', 'kr_planner_zoom',
   'kr_onboarded', 'kr_cal_used', 'kr_lib_applied_version', 'kr_lib_synced',
@@ -8245,7 +8247,13 @@ const KR_BACKUP_KEYS = [
 
 function buildBackupSnapshot() {
   const data = {};
-  KR_BACKUP_KEYS.forEach(key => {
+  // ⭐ Per-member planner stores (kr_planner_m_<id> and their _sent* shadows) have
+  // DYNAMIC key names — one per person — so a static list can never name them.
+  // Enumerate them, or a restore silently comes back with every worker's planned
+  // day missing. That is precisely the shape of the 7 Aug loss: data that looked
+  // saved because nothing said otherwise.
+  const dynamic = Object.keys(localStorage).filter(k => k.indexOf('kr_planner_m_') === 0);
+  KR_BACKUP_KEYS.concat(dynamic).forEach(key => {
     const raw = _storeGet(key);   // big keys live in IndexedDB, rest in localStorage
     if (raw !== null) data[key] = raw;
   });
@@ -10101,7 +10109,7 @@ function mergeTasks(primary, secondary) {
     saveChecklistFlags(flags);
   }
   // Planner blocks — re-point to primary (day-scoped/ephemeral; not restored on un-merge)
-  ['kr_planner', 'kr_planner_ethan'].forEach(k => {
+  _allPlannerKeys().forEach(k => {
     const arr = JSON.parse(localStorage.getItem(k) || '[]'); let ch = false;
     arr.forEach(b => { if (b.task === secondary) { b.task = primary; ch = true; } });
     if (ch) _storeSet(k, JSON.stringify(arr));
@@ -12999,7 +13007,7 @@ function chooseInboxAssignType() {
       <div style="font-size:13px;color:var(--subtext);margin-top:3px;">Shows at the top of the job on <b>this</b> phone until you tick it off — then it's gone.</div>
     </button>
     ${(isWorker() || !teamEnabled()) ? '' : `<button onclick="assignInboxToTask('pinned-ethan')" style="display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;cursor:pointer;color:var(--text);">
-      <div style="font-size:15px;font-weight:600;">📌 To-do for Ethan</div>
+      <div style="font-size:15px;font-weight:600;">📌 To-do for ${_escHtml((_soleWorker() && _soleWorker().name) || 'your worker')}</div>
       <div style="font-size:13px;color:var(--subtext);margin-top:3px;">Sends it to Ethan’s phone — shows at the top of the job there until he ticks it off.</div>
     </button>`}
     <div onclick="backToInboxAssignList()" style="margin-top:16px;color:var(--blue);font-size:15px;cursor:pointer;">‹ Back to tasks</div>`;
@@ -13078,20 +13086,27 @@ async function assignInboxToTask(mode) {
   if (mode === 'pinned-ethan') {
     const url = localStorage.getItem('kr_sheet_url');
     if (!url) { showToast('Add your Apps Script URL in Settings first'); return; }
+    // Resolve the worker from the org rather than a string literal. With exactly
+    // one worker this is unambiguous; with several it needs a picker in this
+    // modal, which isn't built — so say so rather than silently choosing.
+    const w = _soleWorker();
+    if (!w) { showToast(_workerCount() > 1 ? 'More than one worker — send this from their day instead' : 'No worker in your team yet'); return; }
+    const whoName = w.name || 'them';
+    const assignee = w.userId || w.name;
     const pins = [];
     let pid = Date.now();
     notes.forEach(note => { tasks.forEach(task => { pins.push({ id: 'tn' + (pid++) + Math.random().toString(36).slice(2, 5), task, text: note.text.trim(), ts: new Date().toISOString(), caught: note.ts || '' }); }); });
-    showToast('Sending to Ethan…');
+    showToast('Sending to ' + whoName + '…');
     try {
-      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'pinNote', assignee: 'Ethan', pins }) });
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'pinNote', assignee, pins }) });
       const json = await res.json();
       if (!json || !json.success) { showToast('Send failed' + (json && json.error ? ': ' + json.error : '')); return; }
     } catch (e) { showToast('Send failed — check connection'); return; }
     notes.forEach(note => {
       note.assigned = true; note.assignedTs = new Date().toISOString();
       note.pinnedTasks = [...new Set([...(Array.isArray(note.pinnedTasks) ? note.pinnedTasks : []), ...tasks])];
-      note.assignedTo = 'Ethan';   // the record of who it went to — a field, not the label
-      note.movedTo = _pinnedTasksLabel(note.pinnedTasks) + ' (pinned · Ethan)';   // label kept for search + older builds
+      note.assignedTo = whoName;   // the record of who it went to — a field, not the label
+      note.movedTo = _pinnedTasksLabel(note.pinnedTasks) + ' (pinned · ' + whoName + ')';   // label kept for search + older builds
     });
     saveInbox(arr);
     closeModal('modal-inbox-assign');
@@ -13938,7 +13953,7 @@ function saveDirTask() {
       });
       if (_mgCh) saveTaskMerges(_mg);
       // Planner blocks (my day + Ethan's day)
-      ['kr_planner', 'kr_planner_ethan'].forEach(k => {
+      _allPlannerKeys().forEach(k => {
         const arr = JSON.parse(localStorage.getItem(k) || '[]');
         let ch = false;
         arr.forEach(p => { if (p.task === oldTask) { p.task = task; ch = true; } });
@@ -14644,6 +14659,11 @@ function renderTeamUI() {
   // refuse them anyway).
   const invWrap = document.getElementById('team-invite-wrap');
   if (invWrap) invWrap.style.display = iAmManager ? '' : 'none';
+  // Renaming needs manager rights (orgs_update is gated on is_org_manager), so
+  // don't show a worker a control that can only refuse — same fault as the
+  // Device Role toggle, spotted on Ethan's phone.
+  const renameEl = document.getElementById('team-rename-org');
+  if (renameEl) renameEl.style.display = iAmManager ? '' : 'none';
   const invList = document.getElementById('team-invites');
   if (invList) {
     // Labelled and set apart, because an unclaimed invite is NOT a member and
@@ -15172,8 +15192,104 @@ function _dtCleanup() {
 // date format: DD/MM/YYYY, startTime: 'HH:MM'
 
 let _plannerDate = new Date(); // current day being viewed
-let _plannerView = 'me'; // 'me' = own planner | 'ethan' = the day the manager is planning for the worker
-function plannerStoreKey() { return _plannerView === 'ethan' ? 'kr_planner_ethan' : 'kr_planner'; }
+// ════════════════════════════════════════════════════════════════════════════
+//  M1 / S2b slice B — the planner stops knowing a person called Ethan
+//
+//  _plannerView was 'me' | 'ethan', and the store was one of two literal keys.
+//  It is now 'me' | a MEMBER KEY (their user_id once they've joined, else
+//  'name:<their name>' while they're still an unclaimed invite — which is what
+//  lets a manager plan someone's day before they've ever opened the app).
+// ════════════════════════════════════════════════════════════════════════════
+let _plannerView = 'me';
+function _plannerKeyFor(view) {
+  if (!view || view === 'me') return 'kr_planner';
+  return 'kr_planner_m_' + String(view).replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+function plannerStoreKey() { return _plannerKeyFor(_plannerView); }
+// plans + the three sent-tracking keys that shadow them
+function _plannerKeys(view) {
+  const b = _plannerKeyFor(view);
+  return { plans: b, sent: b + '_sent', arr: b + '_sent_arr', todos: b + '_sent_todos' };
+}
+
+// ── Carrying Ethan's existing planned day across ────────────────────────────
+// kr_planner_ethan holds a real, in-use plan. Switching store keys without
+// moving it would look exactly like data loss. So: copy it to his member store
+// once we know his user_id, and NEVER delete the original — if anything here is
+// wrong, the data is still sitting where it always was.
+const _LEGACY_ETHAN_KEYS = {
+  plans: 'kr_planner_ethan', sent: 'kr_planner_ethan_sent',
+  arr: 'kr_planner_ethan_sent_arr', todos: 'kr_planner_ethan_sent_todos'
+};
+function _migrateLegacyEthanPlanner() {
+  if (localStorage.getItem('kr_planner_legacy_migrated') === '1') return;
+  const legacy = localStorage.getItem(_LEGACY_ETHAN_KEYS.plans);
+  if (legacy == null) { _storeSet('kr_planner_legacy_migrated', '1'); return; }   // nothing to carry
+  const m = getOrgMembers().find(x => (x.name || '').trim().toLowerCase() === 'ethan');
+  if (!m) return;   // don't know who he is yet — retry after the next team refresh
+  const k = _plannerKeys(memberKey(m));
+  if (localStorage.getItem(k.plans) == null) {
+    _storeSet(k.plans, legacy);
+    ['sent', 'arr', 'todos'].forEach(f => {
+      const v = localStorage.getItem(_LEGACY_ETHAN_KEYS[f]);
+      if (v != null) _storeSet(k[f], v);
+    });
+  }
+  _storeSet('kr_planner_legacy_migrated', '1');
+}
+// Read-time safety net: if a member's store is empty but the legacy one isn't,
+// and this is Ethan, read the legacy plan. Covers the window before the
+// migration has had a chance to run (offline, or team not yet fetched).
+function _plansFor(view) {
+  const k = _plannerKeys(view);
+  const own = localStorage.getItem(k.plans);
+  if (own != null) { try { return JSON.parse(own) || []; } catch (e) { return []; } }
+  if (view !== 'me') {
+    const m = getOrgMembers().find(x => memberKey(x) === view);
+    if (m && (m.name || '').trim().toLowerCase() === 'ethan') {
+      try { return JSON.parse(localStorage.getItem(_LEGACY_ETHAN_KEYS.plans) || '[]') || []; } catch (e) { return []; }
+    }
+  }
+  return [];
+}
+
+// Everyone a manager can plan for: joined members other than themselves, plus
+// people invited who haven't joined yet — so a day can be built before they
+// first open the app.
+function plannerMembers() {
+  const me = currentUser();
+  const joined = getOrgMembers().filter(m => !(me && m.userId === me.id));
+  const invited = getOrgInvites().filter(i => !i.claimed && i.name)
+    .filter(i => !joined.some(m => (m.name || '').trim().toLowerCase() === i.name.trim().toLowerCase()))
+    .map(i => ({ userId: null, name: i.name, role: i.role || 'worker', pending: true }));
+  return joined.concat(invited);
+}
+function plannerMemberFor(view) { return plannerMembers().find(m => memberKey(m) === view) || null; }
+// The identities THIS device answers to when pulling work. user_id once joined,
+// and the typed name always — a manager on an older build still addresses by name.
+function _myAssignKeys() {
+  const out = [];
+  const u = currentUser();
+  if (u && u.id) out.push(u.id);
+  const n = (getUserName() || '').trim();
+  if (n && out.indexOf(n) === -1) out.push(n);
+  return out;
+}
+function plannerMemberName(view) { const m = plannerMemberFor(view); return (m && m.name) || 'them'; }
+// Every planner store actually present on this device: mine, one per member,
+// plus the legacy key so a task rename still reaches Ethan's old plan. Replaces
+// three hardcoded ['kr_planner','kr_planner_ethan'] loops.
+// Workers in the org (joined or invited), and the single one if there's exactly
+// one. Used where the UI has no picker yet — better to resolve from the org and
+// refuse when ambiguous than to keep a name hardcoded.
+function _workers() { return plannerMembers().filter(m => (m.role || 'worker') === 'worker'); }
+function _workerCount() { return _workers().length; }
+function _soleWorker() { const w = _workers(); return w.length === 1 ? w[0] : null; }
+function _allPlannerKeys() {
+  const keys = ['kr_planner', _LEGACY_ETHAN_KEYS.plans];
+  plannerMembers().forEach(m => keys.push(_plannerKeyFor(memberKey(m))));
+  return keys.filter((k, i, a) => a.indexOf(k) === i && localStorage.getItem(k) != null);
+}
 let _plannerPlans = JSON.parse(localStorage.getItem('kr_planner') || '[]');
 let _plannerAddTask = null; // task object selected in add modal
 let _plannerDetailId = null; // plan id in detail modal
@@ -15212,9 +15328,29 @@ function savePlanner() {
 }
 
 // Switch the planner between the manager's own day and the worker's planned day.
+// One chip per person the manager can plan for, built from the org's members.
+// A member who hasn't joined yet still appears (from their unclaimed invite), so
+// a day can be planned before they've ever opened the app.
+function renderPlannerViewSwitch() {
+  const wrap = document.getElementById('pv-chips');
+  if (!wrap) return;
+  const chip = (key, label, sub) => {
+    const on = _plannerView === key;
+    return `<button onclick="switchPlannerView('${String(key).replace(/'/g, "\\'")}')"
+      style="flex:0 0 auto;border-radius:10px;padding:8px 12px;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;
+             border:1px solid ${on ? 'var(--blue)' : 'var(--border)'};background:${on ? 'var(--blue)' : 'var(--card)'};color:${on ? '#fff' : 'var(--text)'};">
+      ${_escHtml(label)}${sub ? `<span style="opacity:.7;font-weight:400;"> ${_escHtml(sub)}</span>` : ''}</button>`;
+  };
+  const parts = [chip('me', 'My Day', '')];
+  plannerMembers().forEach(m => parts.push(chip(memberKey(m), m.name || 'Unnamed', m.pending ? '· not joined' : '')));
+  wrap.innerHTML = parts.join('');
+  // The person we were planning for has gone (removed, or invite revoked).
+  if (_plannerView !== 'me' && !plannerMemberFor(_plannerView)) switchPlannerView('me');
+}
+
 function switchPlannerView(view) {
   _plannerView = view;
-  _plannerPlans = JSON.parse(localStorage.getItem(plannerStoreKey()) || '[]');
+  _plannerPlans = _plansFor(view);   // reads the member store, with the legacy safety net
   renderPlannerScreen();
 }
 
@@ -15245,20 +15381,23 @@ function _dayTodoIds(plans) {
 // True if Ethan's Day differs from what was last sent (so the manager can be
 // nudged to re-send after editing) — plans, their flag arrangements, OR the
 // to-dos on those jobs.
-function ethanDayHasUnsentChanges() {
-  const cur = localStorage.getItem('kr_planner_ethan') || '[]';
-  const sent = localStorage.getItem('kr_planner_ethan_sent');
+function ethanDayHasUnsentChanges(view) {
+  const v = view || _plannerView;
+  if (!v || v === 'me') return false;
+  const k = _plannerKeys(v);
+  const cur = JSON.stringify(_plansFor(v));
+  const sent = localStorage.getItem(k.sent);
   if (sent == null) return JSON.parse(cur).length > 0; // never sent
   if (cur !== sent) return true;
   const curArr = JSON.stringify(_ethanArrangements(JSON.parse(cur)));
-  const sentArr = localStorage.getItem('kr_planner_ethan_sent_arr') || '{}';
+  const sentArr = localStorage.getItem(k.arr) || '{}';
   if (curArr !== sentArr) return true;
   // A to-do added since the last send hasn't reached him, even though the blocks
   // have. Before v285 that state was invisible: the block sheet renders to-dos
   // from THIS phone, so an undelivered one looked identical to a delivered one,
   // sitting directly under "✓ Ethan's Day sent — up to date".
   const curTodos = JSON.stringify(_dayTodoIds(JSON.parse(cur)));
-  const sentTodos = localStorage.getItem('kr_planner_ethan_sent_todos');
+  const sentTodos = localStorage.getItem(k.todos);
   if (sentTodos == null) return JSON.parse(curTodos).length > 0;   // sent before this existed → they never went
   return curTodos !== sentTodos;
 }
@@ -15268,34 +15407,48 @@ function ethanDayHasUnsentChanges() {
 // backend stores plans verbatim, so this needs no Apps Script change. The
 // worker's pull unpacks _arr into their own kr_planner_checklist, making their
 // planned day IDENTICAL to the one arranged here — flags, order, estimate.
-async function sendPlannerToEthan() {
+// ⭐ The transport key is the member's user_id once they've joined, else their
+// name. The worker pulls on BOTH, so there is no flag day and no version skew
+// that can break a live channel: today it still resolves to "Ethan" for anyone
+// who hasn't joined, exactly as before.
+function _assigneeKeyFor(view) {
+  const m = plannerMemberFor(view);
+  if (!m) return null;
+  return m.userId || m.name || null;
+}
+async function sendPlannerToMember(view) {
+  const v = view || _plannerView;
+  const who = plannerMemberName(v);
+  const assignee = _assigneeKeyFor(v);
+  if (!assignee) { showToast('Pick who this day is for first'); return; }
   const url = localStorage.getItem('kr_sheet_url');
   if (!url) { showToast('Add your Apps Script URL in Settings first'); return; }
-  const plans = JSON.parse(localStorage.getItem('kr_planner_ethan') || '[]');
-  // Sending an empty day is how you CLEAR his planner after deleting tasks.
-  if (!plans.length && !confirm('Ethan’s Day has no tasks. Send anyway to clear his planned tasks?')) return;
+  const k = _plannerKeys(v);
+  const plans = _plansFor(v);
+  // Sending an empty day is how you CLEAR their planner after deleting tasks.
+  if (!plans.length && !confirm(who + '’s Day has no tasks. Send anyway to clear their planned tasks?')) return;
   const version = Date.now().toString();
   const arrMap = _ethanArrangements(plans);
   const plansOut = plans.map(p => arrMap[p.id] ? Object.assign({}, p, { _arr: arrMap[p.id] }) : p);
-  showToast('Sending to Ethan…');
+  showToast('Sending to ' + who + '…');
   try {
     const res = await fetch(url, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'assignPlanner', assignee: 'Ethan', version, plans: plansOut }),
+      body: JSON.stringify({ action: 'assignPlanner', assignee, version, plans: plansOut }),
     });
     const json = await res.json();
     if (json && json.success) {
-      _storeSet('kr_planner_ethan_sent', localStorage.getItem('kr_planner_ethan') || '[]');
-      _storeSet('kr_planner_ethan_sent_arr', JSON.stringify(arrMap));
+      _storeSet(k.sent, JSON.stringify(plans));
+      _storeSet(k.arr, JSON.stringify(arrMap));
       // The blocks are through. Now send the to-dos sitting on those jobs, which
       // until v285 simply never travelled — the gap that put Ethan on a job
       // without the note telling him what to do there.
-      const sentIds = await _sendDayTodos(url, plans, 'Ethan');
-      if (sentIds) _storeSet('kr_planner_ethan_sent_todos', JSON.stringify(sentIds));
-      if (_plannerView === 'ethan') renderPlannerScreen();
+      const sentIds = await _sendDayTodos(url, plans, assignee);
+      if (sentIds) _storeSet(k.todos, JSON.stringify(sentIds));
+      if (_plannerView === v) renderPlannerScreen();
       const nTd = sentIds ? sentIds.length : 0;
       showToast('Sent ' + json.count + ' task' + (json.count === 1 ? '' : 's')
-        + (nTd ? ' + ' + nTd + ' to-do' + (nTd === 1 ? '' : 's') : '') + ' to Ethan ✓');
+        + (nTd ? ' + ' + nTd + ' to-do' + (nTd === 1 ? '' : 's') : '') + ' to ' + who + ' ✓');
       if (sentIds === null) showToast('Tasks sent — but the to-dos did not go. Try again.');
     } else showToast('Send failed' + (json && json.error ? ': ' + json.error : ''));
   } catch (e) { showToast('Send failed — check connection'); }
@@ -15337,10 +15490,16 @@ async function pullPins() {
   await _kvReady;   // never write pinned notes against half-loaded data
   const url = localStorage.getItem('kr_sheet_url');
   if (!url) return;
-  const who = getUserName().trim();
   try {
-    const res = await fetch(url + (url.includes('?') ? '&' : '?') + 'pins=1&who=' + encodeURIComponent(who), { cache: 'no-store' });
-    const json = await res.json();
+    // Same two-identity pull as assignments — to-dos must not go missing
+    // because the manager addressed them by user_id and this device asked by name.
+    let json = null;
+    for (const key of _myAssignKeys()) {
+      const r = await fetch(url + (url.includes('?') ? '&' : '?') + 'pins=1&who=' + encodeURIComponent(key), { cache: 'no-store' });
+      const j = await r.json();
+      if (j && j.success && Array.isArray(j.pins) && j.pins.length) { json = j; break; }
+      if (j && j.success && !json) json = j;   // remember a valid-but-empty reply as the fallback
+    }
     if (!json || !json.success || !Array.isArray(json.pins)) return;
     const applied = new Set(JSON.parse(localStorage.getItem('kr_pins_applied') || '[]'));
     const tn = getTaskNotes();
@@ -15388,11 +15547,18 @@ async function pullAssignments() {
   if (!isWorker()) return;
   const url = localStorage.getItem('kr_sheet_url');
   if (!url) return;
-  const who = getUserName().trim();
   try {
-    const res = await fetch(url + (url.includes('?') ? '&' : '?') + 'assignments=1&who=' + encodeURIComponent(who), { cache: 'no-store' });
-    const json = await res.json();
-    if (!json || !json.success || !json.assignment) return;
+    // ⭐ Try user_id first, then the typed name. A manager on a newer build
+    // addresses by user_id; an older one addresses by name. Pulling on BOTH is
+    // what removes the "kr_user_name must be exactly Ethan" failure without
+    // needing every device updated on the same day.
+    let json = null;
+    for (const key of _myAssignKeys()) {
+      const r = await fetch(url + (url.includes('?') ? '&' : '?') + 'assignments=1&who=' + encodeURIComponent(key), { cache: 'no-store' });
+      const j = await r.json();
+      if (j && j.success && j.assignment) { json = j; break; }
+    }
+    if (!json) return;
     const remoteV = json.assignment.version || '';
     const appliedV = localStorage.getItem('kr_assign_applied_v') || '';
     if (!remoteV || remoteV === appliedV) { updateAssignmentBanner(); return; }
@@ -15477,7 +15643,7 @@ function rolloverParkedTasks() {
   const targetStr = plannerDateStr(target);
   const targetNum = _plannerDateNumFromStr(targetStr);
   let changed = 0;
-  ['kr_planner', 'kr_planner_ethan'].forEach(key => {
+  _allPlannerKeys().forEach(key => {
     let arr;
     try { arr = JSON.parse(localStorage.getItem(key) || '[]'); } catch (e) { return; }
     let dirty = false;
@@ -16022,28 +16188,23 @@ function renderPlannerScreen() {
   const switchEl = document.getElementById('planner-view-switch');
   const sendRow = document.getElementById('planner-send-row');
   if (switchEl) switchEl.style.display = manager ? 'flex' : 'none';
-  const showSend = manager && _plannerView === 'ethan';
+  const showSend = manager && _plannerView !== 'me';
   if (sendRow) sendRow.style.display = showSend ? 'block' : 'none';
   if (showSend) {
     const btn = document.getElementById('planner-send-btn');
+    const who = plannerMemberName(_plannerView);
     if (btn) {
-      if (ethanDayHasUnsentChanges()) {
-        btn.textContent = '📤 Send Ethan’s Day — unsent changes';
+      if (ethanDayHasUnsentChanges(_plannerView)) {
+        btn.textContent = '📤 Send ' + who + '’s Day — unsent changes';
         btn.style.background = 'var(--green)'; btn.style.opacity = '1';
       } else {
-        btn.textContent = '✓ Ethan’s Day sent — up to date';
+        btn.textContent = '✓ ' + who + '’s Day sent — up to date';
         btn.style.background = 'var(--subtext)'; btn.style.opacity = '0.8';
       }
     }
   }
-  if (manager) {
-    const meBtn = document.getElementById('pv-me'), ethBtn = document.getElementById('pv-ethan');
-    const on = b => { b.style.background = 'var(--blue)'; b.style.color = '#fff'; b.style.borderColor = 'var(--blue)'; };
-    const off = b => { b.style.background = 'var(--card)'; b.style.color = 'var(--text)'; b.style.borderColor = 'var(--border)'; };
-    if (meBtn && ethBtn) { (_plannerView === 'me' ? on : off)(meBtn); (_plannerView === 'ethan' ? on : off)(ethBtn); }
-  } else {
-    updateAssignmentBanner();
-  }
+  if (manager) renderPlannerViewSwitch();
+  else updateAssignmentBanner();
 
   // ── Day vs Week mode ── toggle the containers and the action buttons that
   // only make sense for a single day, then hand off to the week renderer.
