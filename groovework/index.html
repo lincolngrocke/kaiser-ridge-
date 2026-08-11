@@ -2961,7 +2961,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.290';
+const APP_VERSION = '2026-06-21.291';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -3115,24 +3115,33 @@ async function _orgBootstrap() {
   const u = currentUser();
   if (!u || !u.id) return;
 
-  const mine = await _sb('/rest/v1/org_members?select=org_id,role,display_name&user_id=eq.' + encodeURIComponent(u.id) + '&limit=1');
-  if (mine && mine.length) {
-    const m = mine[0];
-    let name = (_org && _org.id === m.org_id) ? _org.name : '';
-    const o = await _sb('/rest/v1/orgs?select=name&id=eq.' + encodeURIComponent(m.org_id) + '&limit=1');
-    if (o && o.length) name = o[0].name;
-    _org = { id: m.org_id, name: name || '', role: m.role || 'manager' };
+  // ⭐ Fetch ALL memberships, not `limit=1`. Everyone is in at least two orgs the
+  // moment they join one: the org of one their first sign-in auto-created, and
+  // the org they were invited to. With limit=1 and no ordering, Postgres returns
+  // whichever it likes — which is how Ethan ended up looking at his own empty org
+  // for a day while his real membership sat there unread (2026-08-11).
+  //
+  // The org you did NOT create is the one you actually joined; the auto-created
+  // one is an artifact of signing in. So prefer that, and order by added_at so
+  // the choice is deterministic rather than whatever the planner returns.
+  const mineAll = await _sb('/rest/v1/org_members?select=org_id,role,display_name,added_at,orgs(name,owner_uid)&user_id=eq.'
+    + encodeURIComponent(u.id) + '&order=added_at.asc');
+  if (mineAll && mineAll.length) {
+    const notMine = mineAll.filter(r => r.orgs && r.orgs.owner_uid && r.orgs.owner_uid !== u.id);
+    const m = (notMine.length ? notMine[notMine.length - 1] : mineAll[0]);   // most recently joined
+    const name = (m.orgs && m.orgs.name) || ((_org && _org.id === m.org_id) ? _org.name : '') || '';
+    _org = { id: m.org_id, name, role: m.role || 'manager' };
     _authSave(); applyRoleUI(); renderAccountUI();
     // Backfill a name for members who joined before display_name existed —
     // otherwise the Team list can only show a UUID.
     if (!m.display_name) {
-      const mine = getUserName() || (u.email || '').split('@')[0];
-      if (mine) await _sb('/rest/v1/org_members?org_id=eq.' + encodeURIComponent(m.org_id) + '&user_id=eq.' + encodeURIComponent(u.id),
-        { method: 'PATCH', body: JSON.stringify({ display_name: mine }) });
+      const myName = getUserName() || (u.email || '').split('@')[0];
+      if (myName) await _sb('/rest/v1/org_members?org_id=eq.' + encodeURIComponent(m.org_id) + '&user_id=eq.' + encodeURIComponent(u.id),
+        { method: 'PATCH', body: JSON.stringify({ display_name: myName }) });
     }
     return;
   }
-  if (mine === null) return;   // offline or blocked — don't create a duplicate org on a bad read
+  if (mineAll === null) return;   // offline or blocked — don't create a duplicate org on a bad read
 
   // ── Adopt before creating ────────────────────────────────────────────────
   // An org you own but aren't yet a member of is a half-finished bootstrap:
@@ -3218,6 +3227,18 @@ function saveOrgInvites(list) { _storeSet('kr_org_invites', JSON.stringify(list 
 // Apps Script channel already keys on. That's what lets the planner move over
 // later without a flag day.
 function memberKey(m) { return (m && (m.userId || (m.name ? 'name:' + m.name : ''))) || ''; }
+
+// PostgREST returns a scalar-returning function's result as a bare value, but
+// depending on version and Accept header it can arrive wrapped in an array, or
+// as an object keyed by the function name. Unwrap all three rather than assume
+// one — guessing wrong here fails silently, which is exactly what it did.
+function _rpcScalar(v) {
+  if (v == null) return null;
+  if (typeof v === 'string') return v;
+  if (Array.isArray(v)) return v.length ? _rpcScalar(v[0]) : null;
+  if (typeof v === 'object') { const k = Object.keys(v); return k.length ? _rpcScalar(v[k[0]]) : null; }
+  return null;
+}
 function isMe(m) { const u = currentUser(); return !!(u && m && m.userId === u.id); }
 
 async function refreshTeam() {
@@ -3263,13 +3284,34 @@ async function claimInvite() {
   const code = ((el && el.value) || '').trim();
   if (!code) { showToast('Enter the code you were given'); return; }
   if (!isSignedIn()) { showToast('Sign in first, then join'); return; }
-  const res = await _sb('/rest/v1/rpc/claim_invite', { method: 'POST', body: JSON.stringify({ _code: code }) });
-  if (res === null) { showToast('That code did not work — check it and try again'); return; }
+  // Direct fetch rather than _sb, because _sb throws the response body away —
+  // and the server's message ("invite already used", "invite expired") is the
+  // entire point here. Reporting a flat "that code did not work" for an invite
+  // that had ALREADY been claimed sent us hunting a broken function for half an
+  // hour on 2026-08-11, when the join had in fact succeeded the day before.
+  let res, body;
+  try {
+    res = await fetch(SB_URL + '/rest/v1/rpc/claim_invite', {
+      method: 'POST',
+      headers: { 'apikey': SB_ANON, 'Authorization': 'Bearer ' + _auth.access_token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ _code: code })
+    });
+    body = await res.json().catch(() => null);
+  } catch (e) { showToast('No connection — try again when you\'re online'); return; }
+
+  if (!res.ok) {
+    const msg = String((body && (body.message || body.error || body.hint)) || '').replace(/^ERROR:\s*/i, '');
+    showToast(msg ? 'Could not join — ' + msg : 'Could not join — check the code');
+    // "Already used" usually means it worked and this device never caught up.
+    // Re-read rather than leaving them staring at an error for a join that
+    // already happened.
+    if (/already used/i.test(msg)) { await _orgBootstrap(); await refreshTeam(); }
+    return;
+  }
   // ⭐ Use the org the invite names, not whatever _orgBootstrap would pick.
   // First sign-in auto-creates you an org of one, so a joiner ends up in TWO —
-  // theirs (empty) and the one they were invited to. Re-running bootstrap here
-  // could latch onto the empty one and silently strand them.
-  const orgId = typeof res === 'string' ? res : (res && res.org_id) || null;
+  // theirs (empty) and the one they were invited to.
+  const orgId = _rpcScalar(body);
   if (!orgId) { showToast('Joined, but could not read the organisation — reopen the app'); return; }
   if (el) el.value = '';
   const o = await _sb('/rest/v1/orgs?select=name&id=eq.' + encodeURIComponent(orgId) + '&limit=1');
