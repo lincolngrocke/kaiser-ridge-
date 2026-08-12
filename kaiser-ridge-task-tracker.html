@@ -1469,6 +1469,14 @@
     <button class="btn-sync" style="background:var(--green); margin-top:8px;" onclick="restoreFromDriveBackup()">☁️ Restore from Drive Backup</button>
     <button class="btn-sync" style="background:var(--subtext); margin-top:8px;" onclick="triggerRestoreBackup()">⟲ Restore from Backup File</button>
     <input type="file" id="restore-file-input" accept="application/json,.json" style="display:none;" onchange="restoreBackupFromFile(event)">
+    <!-- 🩺 One tap captures the app's whole state for a bug report. Born 12 Aug 2026:
+         a field bug (Serene title over Heritage rows) took an hour of dead-end
+         deduction that a state snapshot would have answered in minutes. -->
+    <button class="btn-sync" style="background:none; border:1px solid var(--border); color:var(--text); margin-top:8px;" onclick="exportDebugState()">🩺 Export App State — for bug reports</button>
+    <div style="font-size:12px; color:var(--subtext); line-height:1.5; margin-top:4px;">
+      Snapshot of everything the app knows right now — including the live clock — so a bug can be
+      rebuilt exactly. Sign-in tokens and keys are stripped out. Send it with what went wrong.
+    </div>
 
     <div class="settings-section" style="margin-top:16px">
       <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
@@ -2988,7 +2996,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.294';
+const APP_VERSION = '2026-06-21.295';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -8573,6 +8581,75 @@ function exportBackup() {
   updateBackupReminder();
   updateBackupBanner();
   showToast('Backup ready — save it somewhere safe (Drive, Files, email)');
+}
+
+// ── 🩺 Debug state export (Settings → Export App State) ──────────────────────
+// A bug report's missing half. The backup exists to RESTORE a device; this
+// exists to REBUILD a moment — so it includes what the backup deliberately
+// leaves out (the live clock, the resume record, undo snapshots) and strips
+// what must never leave the phone (auth tokens, the Apps Script URL, API keys).
+//
+// Values are kept as PARSED JSON so the file is readable; a value that fails
+// to parse is kept raw and flagged — corruption is exactly what this tool
+// exists to surface. The two backup-copy keys are stubbed to their size:
+// exporting a backup of the backup would double the file for nothing.
+const _DEBUG_REDACT = ['kr_auth', 'kr_sheet_url', 'kr_gmaps_key'];
+const _DEBUG_STUB   = ['kr_last_backup', 'kr_lib_prepull_backup'];
+function _debugSnapshotStore(readKey, keys, meta) {
+  const out = {};
+  keys.forEach(k => {
+    const raw = readKey(k);
+    if (raw == null) return;
+    if (_DEBUG_REDACT.includes(k)) { out[k] = '<redacted · ' + raw.length + ' chars>'; meta.redacted.push(k); return; }
+    if (_DEBUG_STUB.includes(k))   { out[k] = '<omitted · ' + _fmtKB(raw.length * 2) + ' — duplicate backup copy>'; meta.stubbed.push(k); return; }
+    try { out[k] = JSON.parse(raw); }
+    catch (e) {
+      out[k] = raw;
+      // Several settings keys store bare strings ('Lincoln', 'manual') — that's
+      // normal, not corruption. Flag only values that LOOK like broken JSON.
+      if (/^[\[{"]/.test(raw.trim())) meta.unparseable.push(k);
+    }
+  });
+  return out;
+}
+function exportDebugState() {
+  const meta = {
+    version: APP_VERSION,
+    exportedAt: new Date().toISOString(),
+    tz: (Intl.DateTimeFormat().resolvedOptions().timeZone || '') + ' (UTC' + (-new Date().getTimezoneOffset() / 60) + ')',
+    ua: navigator.userAgent,
+    viewport: window.innerWidth + 'x' + window.innerHeight,
+    signedIn: isSignedIn(),
+    email: (_auth && _auth.user && _auth.user.email) || null,   // who, never how — tokens are redacted
+    redacted: [], stubbed: [], unparseable: []
+  };
+  const lsKeys = [];
+  for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('kr_')) lsKeys.push(k); }
+  const snapshot = {
+    meta,
+    local: _debugSnapshotStore(k => localStorage.getItem(k), lsKeys.sort(), meta),
+    // The big store's in-memory mirror — notes and timesheets live here, and a
+    // state bug can sit on either side of the split.
+    big: (_idbOk && _kv) ? _debugSnapshotStore(k => _kv[k], Object.keys(_kv).sort(), meta) : null
+  };
+  // A key stubbed/redacted in BOTH stores would list twice — once is the fact.
+  meta.redacted = [...new Set(meta.redacted)]; meta.stubbed = [...new Set(meta.stubbed)]; meta.unparseable = [...new Set(meta.unparseable)];
+  const json = JSON.stringify(snapshot, null, 2);
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+  const filename = 'groovework-state-v' + APP_VERSION.split('.').pop() + '-' + stamp + '.json';
+  const file = new File([json], filename, { type: 'application/json' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    navigator.share({ files: [file], title: 'Groovework App State', text: 'Groovework state snapshot — ' + stamp })
+      .catch(err => { if (err.name !== 'AbortError') showToast('Could not share — try again and pick Save to Files'); });
+  } else {
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+  showToast('State snapshot ready — send it with the bug report');
 }
 
 // ── Automatic backup to Google Drive (runs after every clock-out) ──
