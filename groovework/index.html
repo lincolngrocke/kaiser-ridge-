@@ -2988,7 +2988,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.293';
+const APP_VERSION = '2026-06-21.294';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -18044,7 +18044,15 @@ function _rsRender() {
     return;
   }
   const planning = ctx.kind === 'plan';
-  if (titleEl) titleEl.textContent = ctx.job;
+  // ⚠️ The title is NOT set here. It is set beside each body.innerHTML below, so
+  // the two can only ever change together. v284→v293 bug: the title updated
+  // first, the row-build threw (stepsMap ReferenceError), and the sheet showed
+  // the NEW job's title over the PREVIOUS job's rows — which read as the app
+  // copying Heritage's completed tasks onto Serene. A render must repaint every
+  // surface of the sheet or none of them.
+  // Expanded-steps state is keyed by task TEXT, which the changeover jobs share —
+  // it must not travel from one job's sheet to another's.
+  if (_rsLastJob !== ctx.job) { _rsExpanded.clear(); _rsCollapsedNow = null; _rsLastJob = ctx.job; }
   const rows = _rsRows(ctx);
   // A flagged REPEAT task whose planned laps were all banked in an earlier session of
   // the same run has nothing owing, so it isn't on the sheet — but it still looks
@@ -18063,6 +18071,7 @@ function _rsRender() {
     ? `<div style="font-size:11px;color:var(--subtext);margin-top:4px;">🔁 ${banked} flagged task${banked === 1 ? '' : 's'} already done this run — <b>↺ Reset reps</b> on the clock to bring ${banked === 1 ? 'it' : 'them'} back.</div>`
     : '';
   if (!rows.length) {
+    if (titleEl) titleEl.textContent = ctx.job;
     body.innerHTML = banked
       ? `<div style="padding:34px 6px;text-align:center;color:var(--subtext);font-size:15px;line-height:1.55;">Every flagged task is already done this run.<br>
          <span style="font-size:13px;">🔁 ${banked} task${banked === 1 ? '' : 's'} banked ${banked === 1 ? 'its' : 'their'} planned laps in an earlier session. Tap <b>↺ Reset reps</b> on the clock to run ${banked === 1 ? 'it' : 'them'} again, or flag something else.</span></div>`
@@ -18152,8 +18161,10 @@ function _rsRender() {
         ${(_avgMeta(r.t, avgMap, cntMap) || nowChip || stepChip || batchChip || actualChip) ? `<span style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">${batchChip}${_avgMeta(r.t, avgMap, cntMap)}${actualChip}${nowChip}${stepChip}</span>` : ''}</span>
       ${lap}${timeTxt}
       <span style="font-size:12px;color:var(--subtext);flex-shrink:0;">⠿</span></div>
-      ${open ? `<div style="padding-top:6px;">${_rsStepsHtml(r, ctx, stepsMap)}</div>` : ''}</div>`;
+      ${open ? `<div style="padding-top:6px;">${_rsStepsHtml(r, ctx, stepsOf)}</div>` : ''}</div>`;
   }).join('');
+  // Title and body land in the same breath — nothing above this line touches the DOM.
+  if (titleEl) titleEl.textContent = ctx.job;
   body.innerHTML = head + rowsHtml;
 }
 
@@ -18163,7 +18174,7 @@ function _rsRender() {
 // opens on a tap of its chevron. Nothing else grows a row it didn't need.
 // _rsCollapsedNow lets you shut the NOW row despite the auto-open, so the choice
 // stays yours; it resets whenever NOW moves on.
-let _rsExpanded = new Set(), _rsCollapsedNow = null;
+let _rsExpanded = new Set(), _rsCollapsedNow = null, _rsLastJob = null;
 function _rsToggleSteps(key) {
   if (Date.now() < _clSwipeBlockClickUntil) return;   // a drag just finished — not a tap
   const rows = _rsRows();
@@ -18186,7 +18197,7 @@ function _rsIsOpen(r, key) {
 // steps read as belonging to their task. Blue only when it's the ▶ NOW task, since
 // blue means "you are here" everywhere else on this sheet; a row you opened yourself
 // gets a neutral box so it can't be mistaken for the one you're on.
-function _rsStepsHtml(r, ctx, stepsMap) {
+function _rsStepsHtml(r, ctx, stepsOf) {
   const steps = stepsOf(r.t);
   if (!steps.length) return '';
   const live = ctx.kind === 'clock';
