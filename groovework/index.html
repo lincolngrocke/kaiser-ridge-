@@ -1742,7 +1742,7 @@
     <div id="subtask-steps-scope" style="display:none;align-items:center;gap:8px;margin:0 20px 10px;padding:9px 12px;background:var(--card);border:1px solid var(--border);border-radius:10px;font-size:13px;"></div>
     <div id="subtask-steps-list" style="flex:1;overflow-y:auto;padding:0 20px;"></div>
     <div style="display:flex;gap:8px;padding:10px 20px 6px;">
-      <input id="subtask-steps-add" type="text" placeholder="New step (e.g. Drain the hot tub)"
+      <input id="subtask-steps-add" type="text" placeholder="New step (e.g. Drain the hot tub)" onpaste="_stepsAddPaste(event)"
         autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
         style="flex:1;padding:12px 14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;"
         onkeydown="if(event.key==='Enter'){event.preventDefault();addStepItem();}">
@@ -2882,7 +2882,7 @@
       <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">INSTRUCTIONS</div>
       <div id="guide-step-list"></div>
       <div id="guide-step-add-wrap" style="display:flex;gap:8px;margin-top:8px;">
-        <input id="guide-step-input" type="text" placeholder="Add a step…" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
+        <input id="guide-step-input" type="text" placeholder="Add a step…" onpaste="_guideStepPaste(event)" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
           style="flex:1;padding:12px 14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;"
           onkeydown="if(event.key==='Enter'){event.preventDefault();addGuideStep();}">
         <button onclick="addGuideStep()" style="background:var(--blue);border:none;border-radius:12px;color:#fff;font-size:15px;font-weight:600;padding:0 18px;cursor:pointer;">Add</button>
@@ -3008,7 +3008,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.297';
+const APP_VERSION = '2026-06-21.298';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -13653,6 +13653,46 @@ function addStepItem() {
   inp.value = '';
   _stepsPersistNow();
   renderStepsEditor();
+}
+// ── Paste a whole list, get whole steps (v298) ───────────────────────────────
+// A step input is one line, so iOS flattens a multi-line paste into a single
+// run-on step — Lincoln pasted a 12-step process and got 1 step (16 Aug).
+// The clipboard still holds the real newlines at paste time, so intercept:
+// offer one-step-per-line, stripping list bullets/numbering ("1. ", "- ", "• ")
+// since pasted checklists almost always carry their old numbering with them.
+// Declining keeps the old flatten-to-one-step behaviour on purpose.
+function _splitPastedSteps(txt) {
+  return txt.split('\n')
+    .map(s => s.replace(/^\s*(?:\d+[.)]\s*|[-•*]\s+)?/, '').trim())
+    .filter(Boolean);
+}
+function _handleStepPaste(e, commitLines) {
+  const txt = (e.clipboardData || window.clipboardData).getData('text/plain') || '';
+  if (txt.indexOf('\n') === -1) return;          // one line → normal paste
+  const lines = _splitPastedSteps(txt);
+  if (lines.length < 2) return;
+  e.preventDefault();                             // we own this paste now
+  if (confirm('That paste has ' + lines.length + ' lines.\n\nAdd each line as its own step?')) {
+    commitLines(lines);
+    e.target.value = '';
+  } else {
+    e.target.value = txt.replace(/\s*\n\s*/g, ' ').trim();
+  }
+}
+function _stepsAddPaste(e) {
+  _handleStepPaste(e, lines => {
+    lines.forEach(s => _stepsItems.push(s));
+    _stepsPersistNow();
+    renderStepsEditor();
+    showToast(lines.length + ' steps added');
+  });
+}
+function _guideStepPaste(e) {
+  _handleStepPaste(e, lines => {
+    lines.forEach(s => _guideSteps.push(s));
+    renderGuideStepList();
+    showToast(lines.length + ' steps added — Save when you’re done');
+  });
 }
 function updateStepItem(i, val) {
   if (_spDragging) return;
