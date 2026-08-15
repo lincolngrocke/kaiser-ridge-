@@ -2918,8 +2918,14 @@
       <div id="guide-scope-list"></div>
     </div>
     <div style="padding:0 20px;">
-      <button onclick="guideScopeAll()" style="width:100%;height:50px;border-radius:12px;border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:600;cursor:pointer;margin-bottom:10px;">Edit for all jobs</button>
+      <button onclick="guideScopeAll()" id="guide-scope-allbtn" style="width:100%;height:50px;border-radius:12px;border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:600;cursor:pointer;margin-bottom:10px;">Edit for all jobs</button>
       <button onclick="guideScopeOnly()" id="guide-scope-onlybtn" style="width:100%;height:50px;border-radius:12px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:16px;font-weight:600;cursor:pointer;">Only this job</button>
+      <!-- The quiet third way (v296, Lincoln 15 Aug: Heritage+Serene share materials,
+           Kaiser differs — "if I had the choice to choose Serene I would have").
+           Expands the ALSO USED BY list into tick-boxes. No new storage: ticked jobs
+           read the SHARED record; unticked jobs get a deliberately EMPTY fork. -->
+      <div id="guide-scope-pick-link" onclick="guideScopePickMode()" style="text-align:center;color:#5ac8fa;font-size:14px;font-weight:600;padding:12px 0 2px;cursor:pointer;">Pick which jobs…</div>
+      <button onclick="guideScopeSubset()" id="guide-scope-subsetbtn" style="display:none;width:100%;height:50px;border-radius:12px;border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:600;cursor:pointer;margin-top:10px;">Use for ticked jobs</button>
       <div style="font-size:12px;color:var(--subtext);text-align:center;margin-top:10px;">"Only this job" gives it its own copy. The others keep what they have.</div>
     </div>
   </div>
@@ -2996,7 +3002,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.295';
+const APP_VERSION = '2026-06-21.296';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -13748,7 +13754,9 @@ function _guideInstructionsToSteps(instructions) {
 
 let _guideSteps = [];
 let _guideJob = null;        // job the editor was opened from; null when unknown
-let _guideScope = 'shared';  // 'shared' → kr_subtask_guides · 'job' → this job's own copy
+let _guideScope = 'shared';  // 'shared' → kr_subtask_guides · 'job' → this job's own copy · 'subset' → shared + empty forks for the left-out jobs
+let _guideSubset = null;     // Set of INCLUDED job names when scope is 'subset' (always contains _guideJob)
+let _guidePickJobs = [];     // rows for the picker: [{job, on, locked, reason}]
 let _guideReadOnly = false;  // opened from the running clock to read, not to edit
 
 // `job` is which job the editor was opened from. It matters: without it we
@@ -13761,6 +13769,7 @@ let _guideReadOnly = false;  // opened from the running clock to read, not to ed
 function openSubtaskGuide(name, job, readOnly) {
   _guideReadOnly = !!readOnly;
   _guideJob = job || null;
+  _guideSubset = null;   // a subset choice never outlives the editor session that made it
   // Already diverged? Then this job owns its guide and there is nothing to ask.
   _guideScope = jobHasOwnGuide(_guideJob, name) ? 'job' : 'shared';
   const guide = guideFor(_guideJob, name) || { instructions: [], url: '' };
@@ -13800,12 +13809,24 @@ function renderGuideScopeBar() {
   if (!bar) return;
   const task = document.getElementById('guide-subtask-name').value;
   const others = jobsUsingTask(task).filter(j => j !== _guideJob);
-  if (_guideScope === 'job') {
+  if (_guideScope === 'subset' && _guideSubset) {
+    const total = jobsUsingTask(task).length;
+    const out = total - _guideSubset.size;
+    bar.innerHTML = `<span style="color:var(--text);">🔗 ${_guideSubset.size} of ${total} jobs · ${out} left out</span>`
+      + (_guideReadOnly ? '' : `<span onclick="openGuideScopePrompt()" style="color:#5ac8fa;cursor:pointer;margin-left:auto;">Change</span>`);
+    bar.style.display = 'flex';
+  } else if (_guideScope === 'job') {
     bar.innerHTML = `<span style="color:var(--text);">📍 Only in ${_escHtml(_guideJob || 'this job')}</span>`
       + (_guideReadOnly ? '' : `<span onclick="guideUseShared()" style="color:#5ac8fa;cursor:pointer;margin-left:auto;">Use shared instead</span>`);
     bar.style.display = 'flex';
   } else if (others.length) {
-    bar.innerHTML = `<span style="color:var(--text);">🔗 Shared with ${others.length} other job${others.length === 1 ? '' : 's'}</span>`
+    // Count only jobs that actually INHERIT this record. A job holding its own
+    // fork — full or deliberately empty — isn't "shared with", and saying it is
+    // was how a left-out job could hide. (v296)
+    const forks = getJobGuides();
+    const blocked = others.filter(j => forks[j] && Object.prototype.hasOwnProperty.call(forks[j], task)).length;
+    const inh = others.length - blocked;
+    bar.innerHTML = `<span style="color:var(--text);">🔗 Shared with ${inh} other job${inh === 1 ? '' : 's'}${blocked ? ` · ${blocked} left out` : ''}</span>`
       + ((_guideJob && !_guideReadOnly) ? `<span onclick="openGuideScopePrompt()" style="color:#5ac8fa;cursor:pointer;margin-left:auto;">Change</span>` : '');
     bar.style.display = 'flex';
   } else {
@@ -13824,10 +13845,74 @@ function openGuideScopePrompt() {
     .map(j => `<div style="padding:5px 0;color:var(--text);font-size:15px;">• ${_escHtml(j)}</div>`).join('');
   document.getElementById('guide-scope-count').textContent = all.length;
   document.getElementById('guide-scope-onlybtn').textContent = 'Only ' + (job.length > 22 ? job.slice(0, 22) + '…' : job);
+  // Always reopen in plain two-button mode; the picker is one tap away.
+  document.getElementById('guide-scope-allbtn').style.display = '';
+  document.getElementById('guide-scope-onlybtn').style.display = '';
+  document.getElementById('guide-scope-subsetbtn').style.display = 'none';
+  document.getElementById('guide-scope-pick-link').style.display = others.length ? '' : 'none';
   openModal('modal-guide-scope');
+}
+// ── "Pick which jobs…" (v296) ────────────────────────────────────────────────
+// Turns the ALSO USED BY list into tick-boxes. The current job is locked in —
+// you're editing from it. A job holding its OWN guide is shown 📍 and locked
+// out: the picker must never silently clobber a job's private version.
+// Defaults tell the truth: a pre-save subset choice re-opens as chosen; else
+// ticked = inherits today, unticked = holds a deliberately EMPTY fork today.
+function guideScopePickMode() {
+  const task = document.getElementById('guide-subtask-name').value;
+  const others = jobsUsingTask(task).filter(j => j !== _guideJob);
+  const forks = getJobGuides();
+  _guidePickJobs = others.map(j => {
+    const own = forks[j] && Object.prototype.hasOwnProperty.call(forks[j], task);
+    const ownFull = own && _guideHasContent(forks[j][task]);
+    return ownFull
+      ? { job: j, on: false, locked: true }
+      : { job: j, on: _guideSubset ? _guideSubset.has(j) : !own, locked: false };
+  });
+  _renderGuidePickList();
+  // The ticks replace the two big buttons — three stacked choices is a quiz,
+  // not a prompt. Reopening the prompt brings them back.
+  document.getElementById('guide-scope-allbtn').style.display = 'none';
+  document.getElementById('guide-scope-onlybtn').style.display = 'none';
+  document.getElementById('guide-scope-pick-link').style.display = 'none';
+  document.getElementById('guide-scope-subsetbtn').style.display = '';
+}
+function _renderGuidePickList() {
+  const rows = [`<div style="display:flex;align-items:center;gap:9px;padding:6px 0;color:var(--text);font-size:15px;">
+      <span style="font-size:17px;">☑</span><span style="flex:1;">${_escHtml(_guideJob)}</span>
+      <span style="font-size:12px;color:var(--subtext);">this job</span></div>`];
+  _guidePickJobs.forEach((r, i) => {
+    rows.push(r.locked
+      ? `<div style="display:flex;align-items:center;gap:9px;padding:6px 0;color:var(--subtext);font-size:15px;">
+          <span style="font-size:17px;">📍</span><span style="flex:1;">${_escHtml(r.job)}</span>
+          <span style="font-size:12px;">has its own</span></div>`
+      : `<div onclick="guideScopeToggleJob(${i})" style="display:flex;align-items:center;gap:9px;padding:6px 0;color:var(--text);font-size:15px;cursor:pointer;">
+          <span style="font-size:17px;color:${r.on ? 'var(--blue)' : 'var(--subtext)'};">${r.on ? '☑' : '☐'}</span>
+          <span style="flex:1;">${_escHtml(r.job)}</span></div>`);
+  });
+  document.getElementById('guide-scope-list').innerHTML = rows.join('');
+}
+function guideScopeToggleJob(i) {
+  if (!_guidePickJobs[i] || _guidePickJobs[i].locked) return;
+  _guidePickJobs[i].on = !_guidePickJobs[i].on;
+  _renderGuidePickList();
+}
+function guideScopeSubset() {
+  // Always saves as a subset — even "everyone ticked". Ticking is a MEMBERSHIP
+  // decision, so it dissolves stale empty forks and re-admits those jobs. The
+  // big "Edit for all jobs" button stays a plain edit of the shared record that
+  // RESPECTS standing exclusions; the two gestures mean different things.
+  const chosen = new Set([_guideJob].concat(_guidePickJobs.filter(r => r.on).map(r => r.job)));
+  _guideScope = 'subset';
+  _guideSubset = chosen;
+  closeModal('modal-guide-scope');
+  renderGuideScopeBar();
+  const allOn = _guidePickJobs.filter(r => !r.locked).every(r => r.on);
+  showToast(allOn ? 'Saving will share this with every job' : 'Saving will share this with the ticked jobs only');
 }
 function guideScopeAll() {
   _guideScope = 'shared';
+  _guideSubset = null;
   closeModal('modal-guide-scope');
   renderGuideScopeBar();
 }
@@ -13838,6 +13923,7 @@ function guideScopeAll() {
 function guideScopeOnly() {
   if (!_guideJob) return;
   _guideScope = 'job';
+  _guideSubset = null;
   closeModal('modal-guide-scope');
   renderGuideScopeBar();
   showToast('Saving will keep this guide only in ' + _guideJob);
@@ -14039,6 +14125,31 @@ function saveSubtaskGuide() {
     // Deleting the key instead would silently re-inherit the shared one.
     m[_guideJob][finalName] = rec;
     saveJobGuides(m);
+  } else if (_guideScope === 'subset' && _guideSubset) {
+    // Chosen jobs (v296). No third storage location exists and none is needed:
+    // the content goes to the SHARED record, and every job left out gets a
+    // deliberately EMPTY fork — the v293 "this job has no guide" semantics,
+    // automated. Ticked jobs that carried an empty fork from an earlier
+    // exclusion have it dissolved so they inherit again. A job with its OWN
+    // guide is never touched — the picker showed it locked.
+    const guides = getSubtaskGuides();
+    if (instructions.length > 0 || url) guides[finalName] = rec;
+    else delete guides[finalName];
+    saveSubtaskGuides(guides);
+    const m = getJobGuides();
+    let touched = false;
+    jobsUsingTask(finalName).forEach(j => {
+      const own = m[j] && Object.prototype.hasOwnProperty.call(m[j], finalName);
+      const ownFull = own && _guideHasContent(m[j][finalName]);
+      if (_guideSubset.has(j)) {
+        if (own && !ownFull) { delete m[j][finalName]; if (!Object.keys(m[j]).length) delete m[j]; touched = true; }
+      } else if (!own) {
+        if (!m[j]) m[j] = {};
+        m[j][finalName] = { instructions: [], url: '' };
+        touched = true;
+      }
+    });
+    if (touched) saveJobGuides(m);
   } else {
     const guides = getSubtaskGuides();
     if (instructions.length > 0 || url) guides[finalName] = rec;
