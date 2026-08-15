@@ -2860,7 +2860,7 @@
   <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:85vh;display:flex;flex-direction:column;">
     <div style="display:flex;align-items:center;padding:calc(env(safe-area-inset-top) + 16px) 20px 10px;border-bottom:1px solid var(--border);">
       <button onclick="closeModal('modal-subtask-guide')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:6px 10px 6px 0;margin-right:8px;">‹ Back</button>
-      <span id="guide-modal-title" style="font-size:17px;font-weight:600;flex:1;text-align:center;">Guide</span>
+      <span id="guide-modal-title" style="font-size:16px;font-weight:600;flex:1;text-align:center;line-height:1.3;overflow-wrap:anywhere;">Guide</span>
       <button id="guide-save-btn" onclick="saveSubtaskGuide()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;padding:0;width:60px;text-align:right;">Save</button>
     </div>
     <!-- Scope line — stays visible the whole time you're editing, so "this video
@@ -2870,8 +2870,14 @@
       <input type="hidden" id="guide-subtask-name">
       <div id="guide-rename-section">
         <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">RENAME</div>
-        <input id="guide-rename" type="text" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
-          style="width:100%;padding:14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;margin-bottom:20px;">
+        <!-- A textarea, not an input: Lincoln's task names are sentences, and a
+             one-line box hid everything past "…needed for c". Auto-grows; Enter
+             is swallowed (a task name has no newlines). .value semantics match
+             the old input, so saveSubtaskGuide is none the wiser. -->
+        <textarea id="guide-rename" rows="1" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
+          oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px';"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
+          style="width:100%;box-sizing:border-box;padding:14px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;margin-bottom:20px;resize:none;overflow:hidden;line-height:1.4;font-family:inherit;"></textarea>
       </div>
       <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">INSTRUCTIONS</div>
       <div id="guide-step-list"></div>
@@ -3002,7 +3008,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.296';
+const APP_VERSION = '2026-06-21.297';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -10890,7 +10896,12 @@ function renderDirSubtaskList(items) {
     // One ⋯ replaces the old six-button strip (steps/guide/history/type/reminder/✕)
     // — they live in a labelled action sheet now, so the task text gets the width.
     // A tiny passive meta line keeps the at-a-glance signals (steps/guide/repeat/🔔).
-    const hasGuide = _guideHasContent(guideOf(s));
+    const _g = guideOf(s);
+    const hasGuide = _guideHasContent(_g);
+    // ▶️ when the guide carries a video, 📋 when it's written steps only —
+    // same glyph convention the running clock uses (v296, Lincoln 15 Aug:
+    // "there needs to be an icon to display there is a video attached").
+    const _guideGlyph = (_g && _g.url) ? '▶️' : '📋';
     const nSteps = stepsOf(s).length;
     const _remOn = !!(_jn && taskRem[_taskRemKey(_jn, s)]);
     const _flagged = !!_clFlags[s];
@@ -10903,7 +10914,7 @@ function renderDirSubtaskList(items) {
     // Same 🔗/📍 treatment for the guide — it carries the video link, so "which
     // jobs does this play on" is the thing you most need to see at a glance.
     const _ownGuideHere = !!(_ownGuides && Object.prototype.hasOwnProperty.call(_ownGuides, s));
-    if (hasGuide) metaBits.push('📋' + (_ownGuideHere ? ' 📍' : (_sharedWith > 0 ? ' 🔗' : '')));
+    if (hasGuide) metaBits.push(_guideGlyph + (_ownGuideHere ? ' 📍' : (_sharedWith > 0 ? ' 🔗' : '')));
     if (_isRep) metaBits.push('<span style="color:#30d158;font-weight:700;">↻</span>');
     if (_remOn) metaBits.push('🔔');
     const metaLine = metaBits.length ? `<div style="font-size:11px;color:var(--subtext);padding:0 0 3px 2px;">${metaBits.join(' · ')}</div>` : '';
@@ -11121,11 +11132,12 @@ function renderSubtaskPickerList() {
   list.innerHTML = addRow + (filtered.map(s => {
     const isSelected = _subtaskItems.includes(s);
     const enc = s.replace(/'/g,"\\'");
-    const hasGuide = _guideHasContent(guideOf(s));
+    const _pg = guideOf(s);
+    const hasGuide = _guideHasContent(_pg);
     return `<div style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">
       <div onclick="selectSubtask('${enc}',false)" style="flex:1;display:flex;align-items:center;gap:8px;cursor:pointer;">
         <span style="font-size:16px;color:var(--text);">${s}</span>
-        ${hasGuide ? '<span style="font-size:13px;color:var(--blue);background:#e8f0fe;padding:2px 6px;border-radius:6px;">Guide</span>' : ''}
+        ${hasGuide ? `<span style="font-size:13px;color:var(--blue);background:#e8f0fe;padding:2px 6px;border-radius:6px;">${_pg.url ? '▶️ Video' : 'Guide'}</span>` : ''}
         ${isSelected ? '<span style="color:var(--blue);font-size:18px;margin-left:auto;">✓</span>' : '<span style="margin-left:auto;"></span>'}
       </div>
       <button onclick="openSubtaskGuide('${enc}', _dirJobName() || null)" style="background:none;border:none;color:var(--subtext);font-size:18px;cursor:pointer;padding:4px 6px;flex-shrink:0;">✎</button>
@@ -11704,7 +11716,8 @@ function renderTaskActionsSheet() {
   if (s == null) return false;
   const jn = _dirJobName();
   const nSteps = stepsFor(jn, s).length;
-  const hasGuide = _guideHasContent(guideFor(jn, s));
+  const _ag = guideFor(jn, s);
+  const hasGuide = _guideHasContent(_ag);
   const hasOrigin = !!getSubtaskOrigin()[s];
   const isRep = jn && taskTypeOf(jn, s) === 'repeat';
   const remOn = !!(jn && getTaskReminders()[_taskRemKey(jn, s)]);
@@ -11718,7 +11731,7 @@ function renderTaskActionsSheet() {
     </div>`;
   document.getElementById('task-actions-list').innerHTML =
     row('steps', '≣', nSteps ? 'Steps' : 'Add steps', nSteps ? String(nSteps) : '') +
-    row('guide', '📋', hasGuide ? 'Guide' : 'Add guide', hasGuide ? '✓' : '') +
+    row('guide', (_ag && _ag.url) ? '▶️' : '📋', hasGuide ? 'Guide' : 'Add guide', hasGuide ? ((_ag && _ag.url) ? 'Video ✓' : '✓') : '') +
     (hasOrigin ? row('origin', 'ℹ️', 'History (from Inbox)', '') : '') +
     row('type', isRep ? '↻' : '1×', 'Type', isRep ? 'Repeatable — tap to make once-per-run' : 'Once per run — tap to make repeatable') +
     row('remind', '🔔', 'Reminder', remOn ? 'On' : 'Off') +
@@ -13774,8 +13787,13 @@ function openSubtaskGuide(name, job, readOnly) {
   _guideScope = jobHasOwnGuide(_guideJob, name) ? 'job' : 'shared';
   const guide = guideFor(_guideJob, name) || { instructions: [], url: '' };
   document.getElementById('guide-subtask-name').value = name;
-  document.getElementById('guide-modal-title').textContent = name.length > 28 ? name.slice(0,28)+'…' : name;
-  document.getElementById('guide-rename').value = name;
+  // Full name, wrapped — a truncated title made two near-identical tasks
+  // indistinguishable on this screen (v296, Lincoln 15 Aug: "sentences need
+  // to wrap"). The header grows to fit; Back and Save keep their corners.
+  document.getElementById('guide-modal-title').textContent = name;
+  const _rn = document.getElementById('guide-rename');
+  _rn.value = name;
+  requestAnimationFrame(() => { _rn.style.height = 'auto'; _rn.style.height = _rn.scrollHeight + 'px'; });
   _guideSteps = _guideInstructionsToSteps(guide.instructions);
   renderGuideStepList(_guideReadOnly);
   document.getElementById('guide-step-input').value = '';
@@ -14095,7 +14113,9 @@ function updateGuideUrlPreview(url, title) {
 
 function saveSubtaskGuide() {
   const oldName = document.getElementById('guide-subtask-name').value;
-  const newName = document.getElementById('guide-rename').value.trim();
+  // The rename box is a textarea now — flatten any pasted newline before it
+  // can become part of a task's identity.
+  const newName = document.getElementById('guide-rename').value.replace(/\s*\n\s*/g, ' ').trim();
   // Catch a step left typed in the input box but not yet tapped "Add"
   const pendingStep = document.getElementById('guide-step-input').value.trim();
   if (pendingStep) { _guideSteps.push(pendingStep); document.getElementById('guide-step-input').value = ''; }
