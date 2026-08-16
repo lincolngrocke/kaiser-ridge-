@@ -3008,7 +3008,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.298';
+const APP_VERSION = '2026-06-21.299';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4507,6 +4507,12 @@ function markChecklistItemDone(item) {
     const rep = _bumpTaskRep(job, item, +1);
     doneOcc = { item, at: new Date().toISOString(), rep };
     clockState.checklistDone.push(doneOcc);
+    // A banked lap resets the step boxes (v299, Lincoln 17 Aug): a repeat task's
+    // checklist is per-LAP — upload three videos, work the list fresh three
+    // times. Only the CHECK state clears; stepDone keeps every timed event, so
+    // the entry and the learned step times lose nothing. (Undoing the lap does
+    // not restore the ticks — the boxes stay empty and honest.)
+    if (clockState.stepChecks && clockState.stepChecks[item]) delete clockState.stepChecks[item];
     _setTaskReminderDone(job, item, true);
     didComplete = true; undoFn = () => undoTaskRep(item);
   } else {
@@ -5628,11 +5634,17 @@ function renderRunChecklist() {
       if (refPhotos.length) html += `<div style="padding:0 0 10px 36px;" onclick="event.stopPropagation();">${_photosHtml({ photos: refPhotos }, 64)}</div>`;   // reference photo
       if (expanded && steps.length && !isDone) {
         html += steps.map(st => {
-          const encStep = st.replace(/'/g, "\\'");
+          // URI-encoded, not quote-escaped (v299): a step containing a double
+          // quote — Lincoln's own 'Edit into a Short' step, 17 Aug — terminated
+          // the onclick attribute mid-string and the tick went dead. Same
+          // armour the run sheet has always worn. (v183's lesson, finally
+          // applied to steps.)
+          const _uStep = encodeURIComponent(st).replace(/'/g, '%27');
+          const _uItem = encodeURIComponent(s).replace(/'/g, '%27');
           const checked = !!(stepChecks[s] && stepChecks[s][st]);
           const _sdur = checked ? stepDur[s + '~|~' + st] : null;
           const _stime = _sdur ? `<span style="font-size:12px;color:#30d158;font-weight:600;white-space:nowrap;flex-shrink:0;">${fmtMin(_sdur)}</span>` : '';
-          return `<div onclick="toggleChecklistStep('${enc}','${encStep}')" style="display:flex;align-items:center;gap:12px;padding:10px 0 10px 36px;cursor:pointer;">
+          return `<div onclick="toggleChecklistStep(decodeURIComponent('${_uItem}'),decodeURIComponent('${_uStep}'))" style="display:flex;align-items:center;gap:12px;padding:10px 0 10px 36px;cursor:pointer;">
             <span style="font-size:20px;flex-shrink:0;color:${checked ? '#30d158' : '#616a7e'};">${checked ? '☑' : '☐'}</span>
             <span style="flex:1;font-size:15px;${checked ? 'color:#616a7e;text-decoration:line-through;' : 'color:#c7ccd8;'}">${_escHtml(st)}</span>${_stime}</div>`;
         }).join('');
