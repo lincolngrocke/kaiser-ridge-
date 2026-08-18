@@ -1303,6 +1303,22 @@
       <div class="settings-note" id="account-note" style="margin-top:8px">Your work is saved on this device. Signing in is what will let it reach your other devices and your team.</div>
     </div>
 
+    <!-- ══════ SYNC (M1/S3) — kv mirror, outbox, delta pull ══════ -->
+    <div class="settings-section" id="sync-section" style="margin-top:16px;display:none;">
+      <div class="settings-row" style="justify-content:space-between;align-items:center;">
+        <div style="min-width:0;">
+          <div class="settings-label" style="font-weight:600;">Sync</div>
+          <div id="sync-state" style="font-size:13px;color:var(--subtext);margin-top:2px;overflow:hidden;text-overflow:ellipsis;">—</div>
+        </div>
+        <button onclick="syncNow(false)" style="flex-shrink:0;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 14px;cursor:pointer;color:var(--text);font-size:15px;font-weight:600;">Sync now</button>
+      </div>
+      <div class="settings-row" style="justify-content:space-between;align-items:center;margin-top:6px;">
+        <div class="settings-label" style="font-size:14px;">Apply changes from other devices</div>
+        <span id="sync-hydrate-toggle" onclick="toggleSyncHydrate()" style="color:#5ac8fa;font-size:14px;cursor:pointer;">Off</span>
+      </div>
+      <div class="settings-note" id="sync-note" style="margin-top:8px"></div>
+    </div>
+
     <!-- ══════ TEAM (M1/S2b) — real members, not one hardcoded name ══════ -->
     <div class="settings-section" id="team-section" style="margin-top:16px;display:none;">
       <div class="settings-row" style="justify-content:space-between;align-items:center;">
@@ -3008,7 +3024,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.299';
+const APP_VERSION = '2026-06-21.300';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -3389,7 +3405,18 @@ function sanitizeDirectory() {
     r && String(r.frequency || '').trim() && String(r.group || '').trim()
   );
   if (DIRECTORY.length !== before) {
-    _storeSet('kr_directory', JSON.stringify(DIRECTORY));
+    // ⚠️ This function is called at TOP LEVEL, ~4,700 lines before the storage
+    // layer's `let`s initialise. Calling _storeSet from here throws a TDZ
+    // ReferenceError on `_idbOk` — and because it is top-level, that error takes
+    // the ENTIRE BOOT with it: nothing below this line ever gets defined and the
+    // app is a blank screen. It only fires when a row actually needs cleaning,
+    // which is why it has sat here unnoticed. (Found 2026-08-18 during S3; it
+    // ships in v299 and is not an S3 regression.)
+    // The in-memory filter above is what stops a phantom row rendering. The write
+    // can wait for storage to be up, which is all this defers.
+    setTimeout(() => {
+      _kvReady.then(() => _storeSet('kr_directory', JSON.stringify(DIRECTORY))).catch(() => {});
+    }, 0);
   }
 }
 sanitizeDirectory();
@@ -3612,6 +3639,7 @@ window.addEventListener('load', () => {
   applyRoleUI();
   renderAccountUI();
   _authBoot().catch(() => {});   // refresh token + org bootstrap — fire-and-forget, never blocks boot
+  _syncBoot();                   // M1/S3 — arms the outbox drain; also never blocks boot
   initSearchClears();
   _syncChecklistOrderUI();
   _syncFlagNewPosUI();
@@ -8223,6 +8251,329 @@ function updateStorageAlarm() {
     + '<span style="font-weight:400;">Do not close the app until you have.</span>';
 }
 function _idbDel(key) { if (_idbOk) { try { _idb.transaction('kv', 'readwrite').objectStore('kv').delete(key); } catch (e) {} } }
+
+// ════════════════════════════════
+//  M1 / S3 — CLOUD SYNC: kv MIRROR · OUTBOX · DELTA PULL
+// ════════════════════════════════
+// The first stage where data actually leaves this phone. Everything below obeys
+// one rule, decided 2026-08-18 and written up in `groovework-timing-invariants.md`:
+//
+//   ⭐ A TIMED SESSION IS AN ATOMIC, DEVICE-OWNED DOCUMENT. One device measures
+//      it, it leaves that device ONCE at clock-out as a complete immutable entry,
+//      and nothing inside a live session ever merges across devices.
+//
+// So the live clock and everything feeding it stay local, permanently. What syncs
+// here is the org's shared state — job library, org config, each member's planned
+// day. The four big per-record stores (timesheets, inbox, to-dos, photos) are NOT
+// blobs in kv; they get real rows in S4, where two phones adding work merge
+// instead of clobber.
+//
+// Three things worth keeping in mind before changing any of this:
+//   • Local storage stays the source of truth; the cloud is transport. A pull is
+//     only APPLIED when the hydrate flag is on, and it is OFF by default.
+//   • The mirror stores each key's RAW LOCAL STRING, unparsed, as a jsonb string.
+//     Never parse-and-re-serialise on the way through: a field silently dropped
+//     in transit is exactly how `carried:true` comes back as a real tick and
+//     double-counts in the learned averages.
+//   • Writes queue in an outbox, so an edit made in a vineyard with no signal
+//     lands when the signal does. The queue is keyed BY KEY, so ten edits to the
+//     job list collapse into one upload of the latest value.
+
+// ── What syncs, and what must never ───────────────────────────────────────────
+// Two lists, deliberately. KR_SYNC_KEYS is EXPLICIT rather than derived, because
+// for sync the dangerous direction is a key joining by accident — a device-local
+// or personal key silently uploading itself. But an explicit list can also go
+// stale, which is the v292 dynamic-key lesson, so _syncAuditKeys() below warns at
+// boot about any backup key that is in neither list. Nothing joins silently;
+// nothing is forgotten silently.
+
+// Never leaves the device. Each exclusion has a reason; keep them written down.
+const KR_SYNC_NEVER = [
+  // The live session. Invariant #5 — and the codebase already drew this line:
+  // KR_BACKUP_KEYS excludes kr_clock by name.
+  'kr_clock', 'kr_clock_trash', 'kr_clockout_undo', 'kr_run_resume',
+  // A per-RUN arrangement, cleared at clock-out. Ethan's flags landing on
+  // Lincoln's phone would rearrange his list under him mid-job.
+  'kr_checklist_flags',
+  // ⚠️ Rep counters. A scalar count under last-write-wins silently LOSES laps
+  // (invariant #6): two people carting straw both tick "Load truck" and one
+  // upload overwrites the other. Needs a real increment model — deferred to S4
+  // ON PURPOSE, not overlooked.
+  'kr_job_runs',
+  // Identity, role and personal targets. Syncing a name would rename the person
+  // holding the other phone; the account governs role once signed in.
+  'kr_user_name', 'kr_role', 'kr_team_enabled', 'kr_weekly_target',
+  // ⚠️ One-time migration and backfill markers. Syncing "this already ran" to a
+  // device that has NOT run it skips that migration there, permanently.
+  'kr_planner_legacy_migrated', 'kr_inbox_assigned_migrated',
+  'kr_inbox_pinnedtasks_backfilled', 'kr_lib_applied_version', 'kr_lib_synced',
+  'kr_onboarded', 'kr_cal_used',
+  // View preferences. A phone and a desktop should not fight over sort order.
+  'kr_dark_mode', 'kr_checklist_order', 'kr_flag_new_pos', 'kr_pin_sort',
+  'kr_dir_sort', 'kr_planner_task_sort', 'kr_create_task_sort',
+  'kr_assign_task_sort', 'kr_planner_mode', 'kr_planner_zoom',
+  // Server-derived cache. org_members is fetched from the DB and is the server's
+  // to own — mirroring a stale copy of it back through kv could only ever fight
+  // with the real table.
+  'kr_org_members',
+  // Class B — real per-record tables in S4, never blobs in kv.
+  'kr_entries', 'kr_inbox', 'kr_task_notes', 'kr_subtask_photos',
+];
+
+// The org's shared state. Everything here is safe to overwrite wholesale from
+// another device because it describes the BUSINESS, not this handset.
+const KR_SYNC_KEYS = [
+  // Job library + how it's arranged
+  'kr_directory', 'kr_subtasks', 'kr_subtask_steps', 'kr_subtask_steps_by_job',
+  'kr_subtask_guides', 'kr_subtask_guides_by_job', 'kr_equipment_guides',
+  'kr_equipment_notes', 'kr_equipment_links', 'kr_equipment_master',
+  'kr_extra_frequencies', 'kr_extra_locations', 'kr_extra_clients',
+  'kr_task_order', 'kr_frequency_order', 'kr_group_order', 'kr_location_order',
+  'kr_equipment_order', 'kr_task_types', 'kr_task_merges', 'kr_task_moves',
+  'kr_subtask_origin', 'kr_job_flags', 'kr_job_horizon', 'kr_job_links',
+  'kr_task_batches', 'kr_task_videos', 'kr_projects',
+  // Planning + assignment (per-member keys are added dynamically below)
+  'kr_planner', 'kr_planner_checklist', 'kr_pin_order', 'kr_pins_applied',
+  // Reminders the user set themselves
+  'kr_job_reminders', 'kr_task_reminders',
+  // Org config + robots
+  'kr_sheet_url', 'kr_gmaps_key', 'kr_agents', 'kr_agent_runs',
+  // Shared "when was this last done" map. Last-write-wins can lose a newer mark
+  // here; the harm is a stale age on a meta line, and the running clock recomputes
+  // its own from entries anyway (_checklistItemLastDone).
+  'kr_lastdone',
+];
+
+// ⭐ Per-member planner stores have DYNAMIC key names (kr_planner_m_<user_id> and
+// their _sent shadows), so a static list can never name them — the same trap that
+// nearly lost every worker's planned day from the backup in v292. Enumerate.
+function _syncDynamicKeys() {
+  const out = [];
+  try {
+    Object.keys(localStorage).forEach(k => { if (k.indexOf('kr_planner_m_') === 0) out.push(k); });
+    Object.keys(_kv).forEach(k => { if (k.indexOf('kr_planner_m_') === 0 && out.indexOf(k) < 0) out.push(k); });
+    // The pre-S2b store still exists on installs that haven't migrated.
+    ['kr_planner_ethan', 'kr_planner_ethan_sent', 'kr_planner_ethan_sent_arr', 'kr_planner_ethan_sent_todos']
+      .forEach(k => { if (_storeGet(k) !== null) out.push(k); });
+  } catch (e) {}
+  return out;
+}
+function _syncEligible(key) {
+  if (!key || key.indexOf('kr_sync') === 0) return false;   // our own bookkeeping
+  if (KR_SYNC_NEVER.indexOf(key) >= 0) return false;
+  if (KR_SYNC_KEYS.indexOf(key) >= 0) return true;
+  return key.indexOf('kr_planner_m_') === 0 || key.indexOf('kr_planner_ethan') === 0;
+}
+// Boot-time conscience check: every backup key must be consciously classified.
+function _syncAuditKeys() {
+  const miss = KR_BACKUP_KEYS.filter(k => !_syncEligible(k) && KR_SYNC_NEVER.indexOf(k) < 0);
+  if (miss.length) console.warn('[sync] unclassified keys — add to KR_SYNC_KEYS or KR_SYNC_NEVER:', miss);
+  return miss;
+}
+
+// ── Local bookkeeping (never synced) ─────────────────────────────────────────
+const KR_SYNC_OUTBOX = 'kr_sync_outbox';   // { key: {op:'set'|'del', at:ms} }
+const KR_SYNC_MARK   = 'kr_sync_kv_mark';  // delta-pull watermark (server timestamp)
+const KR_SYNC_STATE  = 'kr_sync_state';    // { lastPush, lastPull, lastError, waiting }
+const KR_SYNC_HYDRATE = 'kr_sync_hydrate'; // '1' = apply what we pull
+const _SYNC_TOMBSTONE = { __deleted: true };  // deletes are tombstones, never row removal
+const _SYNC_PAGE = 500;                    // pagination is mandatory — no unbounded select
+const _SYNC_BATCH = 25;                    // keys per upsert request
+
+let _syncApplying = false;   // true while a PULLED value is being written locally
+let _syncBusy = false;
+let _syncTimer = null;
+
+function _syncRead(k, dflt) { try { return JSON.parse(localStorage.getItem(k) || dflt); } catch (e) { return JSON.parse(dflt); } }
+// Raw writes on purpose: routing these through _storeSet would re-enter the
+// enqueue hook below. Same deliberate exception as the recursion guards above.
+function _syncWrite(k, v) { try { _safeSetItem(k, JSON.stringify(v)); } catch (e) {} }
+function _syncOutbox() { return _syncRead(KR_SYNC_OUTBOX, '{}') || {}; }
+function _syncState()  { return _syncRead(KR_SYNC_STATE, '{}') || {}; }
+function _syncSetState(patch) { const s = Object.assign(_syncState(), patch); _syncWrite(KR_SYNC_STATE, s); try { renderSyncUI(); } catch (e) {} return s; }
+function syncHydrateOn() { return localStorage.getItem(KR_SYNC_HYDRATE) === '1'; }
+function syncPending() { return Object.keys(_syncOutbox()).length; }
+
+// ── The write hook ───────────────────────────────────────────────────────────
+// Called from _storeSet / _storeRemove — the one seam S1 built for exactly this.
+// Synchronous, tiny, and it must NEVER throw: the app's data safety sits on the
+// other side of this call.
+function _syncEnqueue(key, op) {
+  try {
+    if (_syncApplying) return;          // a pulled value is not a local edit — no echo
+    if (!_syncEligible(key)) return;
+    const q = _syncOutbox();
+    q[key] = { op, at: Date.now() };
+    _syncWrite(KR_SYNC_OUTBOX, q);
+    _syncSchedule();
+  } catch (e) {}
+}
+function _syncSchedule(ms) {
+  if (_syncTimer) clearTimeout(_syncTimer);
+  _syncTimer = setTimeout(() => { _syncTimer = null; syncNow(true).catch(() => {}); }, ms == null ? 2500 : ms);
+}
+
+// ── Push: drain the outbox ───────────────────────────────────────────────────
+async function _syncPush() {
+  const org = currentOrg();
+  if (!org || !org.id) return 0;
+  const q = _syncOutbox();
+  const keys = Object.keys(q);
+  if (!keys.length) return 0;
+  const uid = (currentUser() || {}).id || null;
+  let pushed = 0;
+
+  for (let i = 0; i < keys.length; i += _SYNC_BATCH) {
+    const slice = keys.slice(i, i + _SYNC_BATCH);
+    const rows = slice.map(k => ({
+      org_id: org.id,
+      key: k,
+      // A delete is a tombstone row, not a missing row: a row that vanishes can
+      // never be seen by a delta pull, so the delete would never propagate.
+      value: q[k].op === 'del' ? _SYNC_TOMBSTONE : (_storeGet(k) === null ? _SYNC_TOMBSTONE : _storeGet(k)),
+      updated_by: uid,
+    }));
+    const res = await _sb('/rest/v1/kv', {
+      method: 'POST',
+      headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(rows),
+    });
+    if (res === null) { _syncSetState({ lastError: 'Could not reach the server' }); return pushed; }  // offline — keep the queue
+    // Clear only what we actually sent, and only if it hasn't been written again
+    // while the request was in flight. Otherwise that edit is lost silently.
+    const now = _syncOutbox();
+    slice.forEach(k => { if (now[k] && q[k] && now[k].at === q[k].at) delete now[k]; });
+    _syncWrite(KR_SYNC_OUTBOX, now);
+    pushed += slice.length;
+  }
+  _syncSetState({ lastPush: new Date().toISOString(), lastError: null });
+  return pushed;
+}
+
+// ── Pull: watermark delta ────────────────────────────────────────────────────
+// ⚠️ The watermark uses `gte`, not `gt`, and re-applies the boundary rows. A
+// batch upsert writes every row in it inside ONE transaction, and now() is the
+// transaction clock — so a whole batch shares an identical updated_at, and `gt`
+// would skip the tail of any batch that straddled a page boundary. Re-applying a
+// kv row is idempotent (it carries the whole value), so overlap is free and
+// skipping is not. The key set is ~50, far inside one page, so the overlap can
+// never grow into a loop.
+async function _syncPull() {
+  const org = currentOrg();
+  if (!org || !org.id) return { seen: 0, applied: 0 };
+  const mark = localStorage.getItem(KR_SYNC_MARK) || '1970-01-01T00:00:00Z';
+  const hydrate = syncHydrateOn();
+  let offset = 0, seen = 0, applied = 0, maxMark = mark, failed = false;
+
+  for (;;) {
+    const path = '/rest/v1/kv?select=key,value,updated_at'
+      + '&org_id=eq.' + encodeURIComponent(org.id)
+      + '&updated_at=gte.' + encodeURIComponent(mark)
+      + '&order=updated_at.asc,key.asc'
+      + '&limit=' + _SYNC_PAGE + '&offset=' + offset;
+    const rows = await _sb(path);
+    if (rows === null) { _syncSetState({ lastError: 'Could not reach the server' }); return { seen, applied, offline: true }; }
+    if (!rows.length) break;
+    rows.forEach(r => {
+      seen++;
+      if (r.updated_at > maxMark) maxMark = r.updated_at;
+      if (!hydrate) return;
+      if (!_syncEligible(r.key)) return;      // server holding a key we no longer accept
+      _syncApplying = true;
+      try {
+        const tomb = r.value && typeof r.value === 'object' && r.value.__deleted;
+        if (tomb) { if (_storeGet(r.key) !== null) { _storeRemove(r.key); applied++; } }
+        else if (typeof r.value === 'string' && _storeGet(r.key) !== r.value) { _storeSet(r.key, r.value); applied++; }
+      } catch (e) { failed = true; } finally { _syncApplying = false; }
+    });
+    if (rows.length < _SYNC_PAGE) break;
+    offset += _SYNC_PAGE;
+  }
+  // ⭐ The watermark only advances when we ACTUALLY APPLIED what we saw. With
+  // hydrate off the pull is an observation, not a sync — advancing here would
+  // silently skip every one of those changes the day the flag is turned on.
+  // And if any row threw on the way in, the whole pull holds its position rather
+  // than stepping over the one that failed: re-applying is idempotent, so the
+  // cost of repeating a page is nothing, and the cost of skipping a row is a
+  // change that never arrives and never says so.
+  if (hydrate && !failed && maxMark !== mark) { try { _safeSetItem(KR_SYNC_MARK, maxMark); } catch (e) {} }
+  _syncSetState({ lastPull: new Date().toISOString(), lastError: null, waiting: hydrate ? 0 : seen });
+  return { seen, applied };
+}
+
+// ── The one entry point ──────────────────────────────────────────────────────
+// Push first, then pull: our own edits should be on the server before we ask what
+// changed, or we'd pull a stale value over a fresh local one.
+async function syncNow(quiet) {
+  if (_syncBusy) return null;
+  if (!isSignedIn() || !currentOrg()) { if (!quiet) showToast('Sign in first — Settings → Account'); return null; }
+  _syncBusy = true;
+  try {
+    let pushed = 0, pulled = null;
+    // Sync is a background convenience. It is not allowed to take the app down,
+    // so nothing from in here escapes — _sb returns null rather than throwing
+    // today, but that is its promise to keep, not ours to depend on.
+    try {
+      pushed = await _syncPush();
+      pulled = await _syncPull();
+    } catch (err) {
+      console.warn('[sync]', err);
+      _syncSetState({ lastError: 'Sync hit a problem — your work is safe on this device' });
+      if (!quiet) showToast('Could not sync just now — nothing was lost');
+      return null;
+    }
+    if (!quiet) {
+      const bits = [];
+      if (pushed) bits.push(pushed + ' sent');
+      if (pulled && pulled.applied) bits.push(pulled.applied + ' applied');
+      else if (pulled && pulled.seen && !syncHydrateOn()) bits.push(pulled.seen + ' waiting');
+      showToast(bits.length ? 'Synced — ' + bits.join(' · ') : 'Synced — nothing to send');
+    }
+    // Applying pulled values changes the job library under the running app, and
+    // the globals (DIRECTORY, SUBTASKS, …) were read at load. Reload to re-read
+    // them — the same thing a backup restore does, and the live clock survives it
+    // because kr_clock is local and re-read at boot.
+    if (pulled && pulled.applied) { showToast('Updated from your other device — reloading…'); setTimeout(() => location.reload(), 900); }
+    return { pushed, pulled };
+  } finally { _syncBusy = false; }
+}
+
+function _syncBoot() {
+  try {
+    _syncAuditKeys();
+    window.addEventListener('online', () => _syncSchedule(500));
+    if (isSignedIn()) _syncSchedule(4000);   // after auth/org bootstrap has had a moment
+  } catch (e) {}
+}
+
+// ── Settings UI ──────────────────────────────────────────────────────────────
+function renderSyncUI() {
+  const wrap = document.getElementById('sync-section');
+  if (!wrap) return;
+  if (!isSignedIn() || !currentOrg()) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+  const s = _syncState();
+  const pend = syncPending();
+  const when = t => { if (!t) return 'never'; const m = Math.round((Date.now() - new Date(t).getTime()) / 60000); return m < 1 ? 'just now' : m < 60 ? m + 'm ago' : Math.round(m / 60) + 'h ago'; };
+  const st = document.getElementById('sync-state');
+  if (st) st.textContent = s.lastError ? s.lastError
+    : (pend ? pend + ' change' + (pend === 1 ? '' : 's') + ' waiting to send'
+            : 'Up to date · sent ' + when(s.lastPush));
+  const note = document.getElementById('sync-note');
+  if (note) note.textContent = syncHydrateOn()
+    ? 'Your job library, plans and settings sync with your other devices. Timesheets, notes and to-dos still stay on this phone until the next stage.'
+    : 'Sending only. This device uploads its changes, and does not yet apply changes from elsewhere' + (s.waiting ? ' — ' + s.waiting + ' waiting' : '') + '.';
+  const tg = document.getElementById('sync-hydrate-toggle');
+  if (tg) tg.textContent = syncHydrateOn() ? 'On' : 'Off';
+}
+function toggleSyncHydrate() {
+  const on = !syncHydrateOn();
+  if (on && !confirm('Apply changes from your other devices to this one?\n\nYour job library, plans and settings will be replaced by whatever is newest across your devices. Timesheets and notes are not affected.')) return;
+  try { _safeSetItem(KR_SYNC_HYDRATE, on ? '1' : '0'); } catch (e) {}
+  renderSyncUI();
+  if (on) syncNow(false).catch(() => {});
+}
+
 // ── THE WRITE SEAM ───────────────────────────────────────────────────────────
 // Synchronous read/write facade — RAM cache first, localStorage for the rest.
 //
@@ -8244,10 +8595,11 @@ function _idbDel(key) { if (_idbOk) { try { _idb.transaction('kv', 'readwrite').
 // _storeGet in _krdbBoot once IndexedDB is up).
 function _storeGet(key) { return (key in _kv) ? _kv[key] : localStorage.getItem(key); }
 function _storeSet(key, val) {
+  _syncEnqueue(key, 'set');   // M1/S3 — queue for the cloud mirror. Never throws, never blocks.
   if (_idbOk && KR_IDB_KEYS.includes(key)) { _kv[key] = val; _idbSet(key, val); return true; }
   return _safeSetItem(key, val);
 }
-function _storeRemove(key) { delete _kv[key]; _idbDel(key); localStorage.removeItem(key); }
+function _storeRemove(key) { _syncEnqueue(key, 'del'); delete _kv[key]; _idbDel(key); localStorage.removeItem(key); }
 async function _krdbBoot() {
   try { _idb = await _idbOpen(); _idbOk = true; } catch (e) { _kvReadyResolve(); return; } // no IndexedDB → localStorage as before
   // Ask the OS to protect this app's storage from cleanup eviction.
@@ -8280,6 +8632,7 @@ async function _krdbBoot() {
   }
   // Re-read the globals now the real data is in the cache, and repaint.
   entries = JSON.parse(_storeGet('kr_entries') || '[]');
+  bumpEntriesRev();
   _kvReadyResolve();
   renderClockState();
   updateInboxCount();
@@ -8291,8 +8644,15 @@ async function _krdbBoot() {
 }
 _krdbBoot(); // async — completes after the script finishes loading
 
+// ⚠️ Every path that changes `entries` must bump this. The learned-average caches
+// key on it, and they USED to key on entries.length — which is only sound while
+// history is pure-append. S4's delta pull can deliver an entry and a tombstone in
+// one round, leaving the length identical and the averages stale but confident.
+let _entriesRev = 0;
+function bumpEntriesRev() { _entriesRev++; }
 function saveEntries() {
   _storeSet('kr_entries', JSON.stringify(entries));
+  bumpEntriesRev();
   updateSummary();
 }
 
@@ -8921,6 +9281,7 @@ function restoreBackupFromFile(event) {
 function confirmClear() {
   if (!confirm('Clear all local data? This cannot be undone.')) return;
   entries = [];
+  bumpEntriesRev();
   clockState = null;
   _storeRemove('kr_entries');
   _storeRemove('kr_clock');
@@ -15114,7 +15475,7 @@ function renderAccountUI() {
     st.textContent = u.email || u.name || 'Signed in';
     btn.textContent = 'Sign out';
     if (note) note.textContent = _org
-      ? ('Organisation: ' + (_org.name || '—') + ' — you are the ' + (_org.role || 'manager') + '. Your role now comes from the account, not this device. Nothing syncs yet.')
+      ? ('Organisation: ' + (_org.name || '—') + ' — you are the ' + (_org.role || 'manager') + '. Your role now comes from the account, not this device.')
       : 'Signed in. Setting up your organisation…';
   } else {
     st.textContent = 'Not signed in';
@@ -15122,6 +15483,7 @@ function renderAccountUI() {
     if (note) note.textContent = 'Your work is saved on this device. Signing in is what will let it reach your other devices and your team.';
   }
   renderTeamUI();
+  renderSyncUI();
 }
 
 // The org takes its name from "Your Name" at first sign-in, so it starts as
@@ -16494,22 +16856,22 @@ function getTaskAvgDuration(taskName) {
 function _normTaskKey(s) { return String(s).trim().replace(/\s+/g, ' ').toLowerCase(); }
 // Cached on entries.length (entries only append) — the live ring reads this every
 // tick, and rebuilding it walks the whole timesheet history.
-let _histAvgCache = { len: -1, map: null };
+let _histAvgCache = { rev: -1, map: null };
 function _taskHistAvgMap() {
-  if (_histAvgCache.len === entries.length && _histAvgCache.map) return _histAvgCache.map;
+  if (_histAvgCache.rev === _entriesRev && _histAvgCache.map) return _histAvgCache.map;
   const map = {};
   _aggregateChecklistTimes().forEach(a => { map[_normTaskKey(a.item)] = a.avg; });
-  _histAvgCache = { len: entries.length, map };
+  _histAvgCache = { rev: _entriesRev, map };
   return map;
 }
 // Times each item has been completed — same pooling and same cache strategy as the
 // average above (both come out of one _aggregateChecklistTimes pass).
-let _histCountCache = { len: -1, map: null };
+let _histCountCache = { rev: -1, map: null };
 function _taskHistCountMap() {
-  if (_histCountCache.len === entries.length && _histCountCache.map) return _histCountCache.map;
+  if (_histCountCache.rev === _entriesRev && _histCountCache.map) return _histCountCache.map;
   const map = {};
   _aggregateChecklistTimes().forEach(a => { map[_normTaskKey(a.item)] = a.count; });
-  _histCountCache = { len: entries.length, map };
+  _histCountCache = { rev: _entriesRev, map };
   return map;
 }
 // "~12m avg · 9×" — the learned time for a task and how much evidence it rests on.
