@@ -3026,7 +3026,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.301';
+const APP_VERSION = '2026-06-21.302';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -16692,7 +16692,7 @@ function renderAllDayStrip() {
     const range = multi ? `${s.getDate()} ${s.toLocaleString('en-AU', { month: 'short' })} – ${e.getDate()} ${e.toLocaleString('en-AU', { month: 'short' })}` : '';
     return `<div onclick="openAllDayModal('${p.id}')" style="background:${plannerColorFor(p.task)};color:#fff;border-radius:8px;padding:7px 10px;margin-bottom:4px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:8px;">
       <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_escHtml(p.task)}</span>
-      ${range ? `<span style="font-size:11px;opacity:0.9;flex-shrink:0;">${range}</span>` : ''}</div>`;
+      ${(range || p.bookingId) ? `<span style="font-size:11px;opacity:0.9;flex-shrink:0;">${p.bookingId ? '\u{1F6CE}\uFE0F ' : ''}${range}</span>` : ''}</div>`;
   }).join('');
   const addPill = canAdd ? `<div style="text-align:right;"><span onclick="openAllDayModal()" style="display:inline-block;color:var(--blue);font-size:12px;font-weight:600;cursor:pointer;padding:3px 2px;">＋ All-day / booking</span></div>` : '';
   el.innerHTML = bars + addPill;
@@ -19777,6 +19777,7 @@ async function syncCalendarForDate(dateStr, opts) {
 // second one is exactly what made every guest appear twice on the week view.
 const BOOKING_SYNC_EVERY_MS = 3 * 3600000;   // quiet refresh, on opening the planner
 const BOOKING_AHEAD_DAYS = 365;              // far enough for any real forward booking
+const BOOKING_RETRY_MS = 5 * 60000;          // after a FAILED attempt, not the full gap
 
 // A booking bar deleted by hand has to stay deleted — without this the next
 // import would put it straight back, which is the one thing that would make the
@@ -19837,7 +19838,7 @@ async function importBookings(opts) {
   let plans = live ? _plannerPlans : JSON.parse(localStorage.getItem('kr_planner') || '[]');
 
   const dismissed = _bookingDismissed();
-  let added = 0, linked = 0, changed = 0, removed = 0, skipped = 0, held = 0;
+  let added = 0, linked = 0, changed = 0, removed = 0, skipped = 0, held = 0, merged = 0;
   const seen = {};
 
   list.forEach(b => {
@@ -19888,11 +19889,14 @@ async function importBookings(opts) {
     }
 
     // Adopt the bar already typed in for this same stay instead of creating a
-    // second one. Matched on the unit and the exact dates, so a misspelt guest
-    // name still matches — and is corrected to the sheet's spelling.
+    // second one. Keyed on the unit and the ARRIVAL date only: two stays in one
+    // unit cannot start on the same day, so that pair identifies a stay on its
+    // own, while the guest name may be misspelt and the departure date typed a
+    // day out. Both are then corrected from the sheet. Demanding the exact range
+    // is what let 'Kim Hemsley 22–23' sit beside the sheet's '22–24'.
     const hand = plans.find(x => x.allDay && !x.bookingId
       && _bookingUnitOf(x.task) === _bookingUnitOf(title)
-      && x.date === from && (x.endDate || x.date) === until);
+      && x.date === from);
 
     // A booking deleted here stays deleted — but only as far as CREATING a bar.
     // Typing the stay back in by hand is plainly asking for it back, so that
@@ -19910,6 +19914,7 @@ async function importBookings(opts) {
       hand.calEventId = '';
       hand.bookingId = id;
       hand.task = title;
+      hand.endDate = until;   // the sheet is right about the departure day
       linked++;
       return;
     }
@@ -19922,7 +19927,21 @@ async function importBookings(opts) {
     added++;
   });
 
-  const touched = added + linked + changed + removed;
+  // Sweep up bars left behind by an earlier import that could not recognise
+  // them. A hand-made bar on the same unit and the same arrival day as an
+  // imported one is the same stay typed twice; the imported bar is the one that
+  // answers to the sheet, so the leftover goes and takes its calendar event with
+  // it — that event being the duplicate on the week view.
+  const claimed = {};
+  plans.forEach(x => { if (x.allDay && x.bookingId) claimed[_bookingUnitOf(x.task) + '|' + x.date] = true; });
+  const leftovers = plans.filter(x => x.allDay && !x.bookingId && claimed[_bookingUnitOf(x.task) + '|' + x.date]);
+  if (leftovers.length) {
+    leftovers.forEach(x => { if (x.calEventId) deletePlannerCalendarEvent(x); });
+    plans = plans.filter(x => leftovers.indexOf(x) < 0);
+    merged = leftovers.length;
+  }
+
+  const touched = added + linked + changed + removed + merged;
   if (touched) {
     // ⭐ A write is not saved until the write says it is — memory stays behind
     // storage until the store confirms, so a failed write can't look imported.
@@ -19941,13 +19960,14 @@ async function importBookings(opts) {
     if (linked) bits.push(linked + ' linked');
     if (changed) bits.push(changed + ' updated');
     if (removed) bits.push(removed + ' cancelled');
+    if (merged) bits.push(merged + ' duplicate' + (merged === 1 ? '' : 's') + ' merged');
     if (skipped) bits.push(skipped + " couldn't be read");
     // Held-back bookings are reported, so one that never appears is never a mystery.
     if (held) bits.push(held + ' left out (deleted here)');
     showToast(bits.length ? 'Bookings: ' + bits.join(', ') : 'Bookings already up to date');
   }
   if (touched && document.getElementById('screen-planner').classList.contains('active')) renderPlannerScreen();
-  return { added, linked, changed, removed, skipped, held };
+  return { added, linked, changed, removed, skipped, held, merged };
 }
 
 // Opening the planner quietly brings bookings up to date, at most every few
@@ -19957,7 +19977,12 @@ function maybeImportBookings() {
   if (isWorker() || !localStorage.getItem('kr_sheet_url')) return;
   const last = parseInt(localStorage.getItem('kr_bookings_synced') || '0', 10) || 0;
   if (Date.now() - last < BOOKING_SYNC_EVERY_MS) return;
-  _storeSet('kr_bookings_synced', String(Date.now()));
+  // Claim only a SHORT window up front. The slot still can't be stacked up by a
+  // slow reply, but a failure now retries in minutes instead of holding the full
+  // gap — which is what left a freshly redeployed script looking dead until the
+  // button was pressed. A success re-stamps the marker on its way out, and that
+  // is what opens the full three hours.
+  _storeSet('kr_bookings_synced', String(Date.now() - BOOKING_SYNC_EVERY_MS + BOOKING_RETRY_MS));
   importBookings({ silent: true });
 }
 
