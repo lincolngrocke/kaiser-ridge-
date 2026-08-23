@@ -3026,7 +3026,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.303';
+const APP_VERSION = '2026-06-21.304';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4260,6 +4260,36 @@ function _orderedChecklistItems(task, items, flagsArg, orderArg) {
     if (fa && flagTop) return flags[b] - flags[a];   // both flagged, 'top' → newer flag on top
     return pos[a] - pos[b];                          // else keep the learned list order (flags float as a group)
   });
+}
+// ── The Organise sheet's VISIBLE sequence — ONE source of truth ─────────────
+// The sheet you flag on is grouped by ▣ batch; the run sheet is a flat list. They
+// used to derive their order independently — the run sheet sorted flagged tasks by
+// the FLAT learned order (SUBTASKS / a dragged override) and never looked at the
+// batches at all. So the two disagreed whenever the batch layout ran against the
+// learned order, which on a lapped job like straw carting reads as the run sheet
+// coming out backwards. Both now flatten the SAME sections, so they cannot drift.
+// Returns [{ name, loose, items }] in the order the eye reads them.
+function _orgSections(task, ordered) {
+  const rec = _batchRec(task);
+  if (!rec || !rec.order.length) return [{ name: null, loose: false, items: ordered }];
+  const out = [], used = new Set();
+  rec.order.forEach(bn => {
+    const members = ordered.filter(s => rec.items[s] === bn);
+    if (!members.length) return;                 // an empty batch renders no heading
+    members.forEach(s => used.add(s));
+    out.push({ name: bn, loose: false, items: members });
+  });
+  const loose = ordered.filter(s => !used.has(s));
+  if (loose.length) out.push({ name: 'Unbatched', loose: true, items: loose });
+  return out;
+}
+// The same sequence, flattened — batch by batch, flags floated to the top of their
+// own batch. This is what the run sheet orders by.
+function _orgVisibleOrder(task, flags, orderArg) {
+  const ordered = _orderedChecklistItems(task, SUBTASKS[task] || [], flags, orderArg);
+  const out = [];
+  _orgSections(task, ordered).forEach(sec => sec.items.forEach(s => out.push(s)));
+  return out;
 }
 // Per-task checklist-item flags — { task: { itemText: flaggedAtMs } }. Device-local
 // (like pinned-note flags), never written to SUBTASKS or synced.
@@ -16235,9 +16265,21 @@ function _ethanArrangements(plans) {
   const out = {};
   plans.forEach(p => {
     const a = m[p.id];
-    if (a && ((a.flags && Object.keys(a.flags).length) || (Array.isArray(a.order) && a.order.length) || (a.laps && Object.keys(a.laps).length))) {
+    if (a && ((a.flags && Object.keys(a.flags).length) || (Array.isArray(a.order) && a.order.length) || (a.laps && Object.keys(a.laps).length) || (Array.isArray(a.runOrder) && a.runOrder.length))) {
       out[p.id] = { flags: a.flags || {}, order: Array.isArray(a.order) ? a.order : [] };
       if (a.laps && Object.keys(a.laps).length) out[p.id].laps = a.laps;   // 🔁 planned laps ride along
+      // ⭐ The RUN SHEET travels too, so the order the manager laid out is the order
+      // he works to — same reason it carries across a copy/paste. Sent as [task, lap]
+      // PAIRS, never the joined instance key: those are joined with U+0001, and a raw
+      // control character would have to survive four hops (POST → Apps Script parse →
+      // Script Property → pull) on transport nothing has ever tested it against. Pairs
+      // are plain text, and _rsKey rebuilds the real key on the far side.
+      if (Array.isArray(a.runOrder) && a.runOrder.length) {
+        out[p.id].runOrder = a.runOrder.map(k => {
+          const i = String(k).lastIndexOf(_RS_SEP);
+          return i < 0 ? [String(k), 0] : [String(k).slice(0, i), Number(String(k).slice(i + 1)) || 0];
+        });
+      }
     }
   });
   return out;
@@ -16448,6 +16490,12 @@ async function pullAssignments() {
         arrM[p.id] = { flags: p._arr.flags || {} };
         if (Array.isArray(p._arr.order) && p._arr.order.length) arrM[p.id].order = p._arr.order;
         if (p._arr.laps && Object.keys(p._arr.laps).length) arrM[p.id].laps = p._arr.laps;   // 🔁 planned laps arrive too
+        // Run sheet arrives as [task, lap] pairs — rebuild the U+0001 instance keys
+        // here. A string element is tolerated so a payload from an older/newer send
+        // still lands rather than throwing the whole day away.
+        if (Array.isArray(p._arr.runOrder) && p._arr.runOrder.length) {
+          arrM[p.id].runOrder = p._arr.runOrder.map(v => Array.isArray(v) ? _rsKey(String(v[0]), Number(v[1]) || 0) : String(v));
+        }
         delete p._arr;
         arrCh = true;
       } else if (arrM[p.id]) {
@@ -17408,6 +17456,7 @@ function openPlannerDoneDetail(entry) {
   const startStr = formatTimeAmPm(entry.clockIn);
   const endStr   = formatTimeAmPm(entry.clockOut);
   _plannerDetailCopySource = { task: entry.task, group: entry.group, frequency: entry.frequency, location: entry.location, tool: entry.tool, durationHours: entry.durationHours, startTime: entry.clockIn };
+  _plannerDetailArrId = null;   // a finished entry carries no block arrangement
 
   // Parse ticked checklist items from notes — lines matching [time] pattern
   const tickedItems = [];
@@ -18448,7 +18497,7 @@ function _rsCtx() {
       // Base order falls back to SUBTASKS — which IS the learned order, rewritten on
       // clock-out from the sequence tasks were actually ticked in. That's the chain:
       // do the work → the app learns the order → the plan opens in that order.
-      baseOrder: (Array.isArray(rec.order) && rec.order.length) ? rec.order : (SUBTASKS[plan.task] || []),
+      baseOrder: _orgVisibleOrder(plan.task, rec.flags || {}, (Array.isArray(rec.order) && rec.order.length) ? rec.order : null),
       saveOrder: keys => { const m = getPlannerChecklist(); (m[_rsPlanId] || (m[_rsPlanId] = { flags: {} })).runOrder = keys; savePlannerChecklist(m); },
       startMs: _rsPlanStartMs(plan)
     };
@@ -18466,7 +18515,7 @@ function _rsCtx() {
       return hit ? hit.at : null;
     },
     order: Array.isArray(clockState.runOrder) ? clockState.runOrder : null,
-    baseOrder: _sessionOrGlobalOrder(job) || SUBTASKS[job] || [],
+    baseOrder: _orgVisibleOrder(job, _sessionOrGlobalFlags(job), _sessionOrGlobalOrder(job)),
     saveOrder: keys => { clockState.runOrder = keys; _storeSet('kr_clock', JSON.stringify(clockState)); },
     startMs: null                   // live → anchored to the last tick, see _rsRows
   };
@@ -19107,17 +19156,13 @@ function _renderClOrganiseBody() {
     // already sorts flagged-first, so filtering by batch keeps flags at the top of
     // each one. Rows keep the drag machinery: dropping under a different ▣ heading
     // re-homes the task (applied in _endClDrag).
-    const used = new Set();
+    // Sections come from _orgSections so the run sheet flattens EXACTLY what is
+    // drawn here — see _orgVisibleOrder. Don't re-group inline again.
     let blocks = '';
-    _bRec.order.forEach(bn => {
-      const members = ordered.filter(s => _bRec.items[s] === bn);
-      if (!members.length) return;
-      members.forEach(s => used.add(s));
-      const col = !!_clOrgCollapsed[bn];
-      blocks += secHd(bn, false, members.length, col) + (col ? '' : members.map(rowHtml).join(''));
+    _orgSections(task, ordered).forEach(sec => {
+      const col = !!_clOrgCollapsed[sec.name];
+      blocks += secHd(sec.name, sec.loose, sec.items.length, col) + (col ? '' : sec.items.map(rowHtml).join(''));
     });
-    const loose = ordered.filter(s => !used.has(s));
-    if (loose.length) { const col = !!_clOrgCollapsed['Unbatched']; blocks += secHd('Unbatched', true, loose.length, col) + (col ? '' : loose.map(rowHtml).join('')); }
     bodyHtml = blocks || `<div style="padding:18px 0;color:var(--subtext);text-align:center;font-size:14px;">No tasks on this job yet.</div>`;
   } else {
     // No batches: flagged float into a top "done first" section, then the rest.
@@ -19151,6 +19196,7 @@ function openPlannerDetail(planId) {
   if (!plan) return;
   _plannerDetailId = planId;
   _plannerDetailCopySource = { task: plan.task, group: plan.group, frequency: plan.frequency, location: plan.location, tool: plan.tool, durationHours: plan.durationHours, startTime: plan.startTime };
+  _plannerDetailArrId = plan.id;   // the block's 🚩 arrangement lives in kr_planner_checklist under this id — Copy takes it too
   // Restore buttons (may have been hidden by done-detail)
   const clockInBtn = document.querySelector('#modal-planner-detail button[onclick="plannerClockIn()"]');
   const deleteBtn  = document.querySelector('#modal-planner-detail button[onclick="deletePlannerBlock()"]');
@@ -19245,13 +19291,23 @@ function deletePlannerBlock() {
 }
 
 // Copy a planned block OR a completed task, then Paste into any day.
-let _plannerClipboard = null, _plannerDetailCopySource = null;
+// ⭐ A block's 🚩 arrangement (flags, batch/task order, run-sheet order, planned
+// laps) does NOT live on the plan object — it lives in kr_planner_checklist keyed
+// by the block's id, and Paste mints a NEW id. So the arrangement has to be carried
+// across by hand or the pasted block lands bare. Carrying it is what makes a copied
+// block a TEMPLATE for another day, which is the whole point of copying one.
+// Snapshot at COPY time, not paste: the source block can be deleted or re-arranged
+// between the two, and one copy should paste the same thing every time.
+let _plannerClipboard = null, _plannerDetailCopySource = null, _plannerDetailArrId = null, _plannerClipboardArr = null;
 function copyPlannerBlock() {
   if (!_plannerDetailCopySource) { showToast('Nothing to copy'); return; }
   _plannerClipboard = JSON.parse(JSON.stringify(_plannerDetailCopySource));
+  const src = _plannerDetailArrId ? getPlannerChecklist()[_plannerDetailArrId] : null;
+  _plannerClipboardArr = src ? JSON.parse(JSON.stringify(src)) : null;
+  const nFlags = _plannerClipboardArr && _plannerClipboardArr.flags ? Object.keys(_plannerClipboardArr.flags).length : 0;
   closeModal('modal-planner-detail');
   renderPlannerScreen();                          // reveals the 📋 Paste button
-  showToast('Copied — open a day and tap 📋 Paste');
+  showToast('Copied' + (nFlags ? ' with ' + nFlags + ' 🚩 flagged task' + (nFlags === 1 ? '' : 's') : '') + ' — open a day and tap 📋 Paste');
 }
 function pastePlannerBlock() {
   if (!_plannerClipboard) { showToast('Nothing copied yet'); return; }
@@ -19261,9 +19317,18 @@ function pastePlannerBlock() {
   });
   _plannerPlans.push(block);
   savePlanner();
+  // Re-home the arrangement onto the new block. A fresh clone per paste, so pasting
+  // the same copy into five days gives five independent days, not five aliases.
+  let nFlags = 0;
+  if (_plannerClipboardArr) {
+    const m = getPlannerChecklist();
+    m[block.id] = JSON.parse(JSON.stringify(_plannerClipboardArr));
+    savePlannerChecklist(m);
+    nFlags = m[block.id].flags ? Object.keys(m[block.id].flags).length : 0;
+  }
   scheduleCalendarAutoPush(block.date);
   renderPlannerScreen();
-  showToast('Pasted into ' + _plannerDate.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }));
+  showToast('Pasted into ' + _plannerDate.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) + (nFlags ? ' · ' + nFlags + ' 🚩 carried' : ''));
 }
 
 // ── Move a planned task to another day (lands parked in that day's holding) ──
