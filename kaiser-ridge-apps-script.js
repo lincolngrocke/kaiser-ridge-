@@ -21,6 +21,15 @@ const SHEET_NAME      = 'KR Task Tracker';
 const DIRECTORY_NAME  = 'App Directory';
 const SUBTASKS_NAME   = 'Subtasks';
 
+// ── Guest bookings ──
+// The booking sheet is a SEPARATE spreadsheet, but it lives in the same Google
+// account as this script, so it is read straight off by ID. That is why there is
+// no webhook, no API key and no second copy of the bookings to keep in step —
+// the booking sheet stays the one source of truth and this just reads it.
+// Set BOOKING_SHEET_ID to '' to turn the feature off.
+const BOOKING_SHEET_ID = '1aqYRm_A2gFv-wGGp-yOxYLUxBb2pih7jXs_knqsc8P4';
+const BOOKING_TAB_NAME = 'Booking ID';
+
 // ── Serve directory/subtasks, OR the shared task-library blob/version ──
 function doGet(e) {
   try {
@@ -106,6 +115,52 @@ function doGet(e) {
         });
       }
       return jsonResponse({ success: true, rows: rows });
+    }
+
+    // Upcoming guest bookings, for the planner's all-day bars. Only the stays
+    // that touch the window are returned — the sheet holds ~650 rows of history
+    // and none of it belongs in a planner.
+    if (p.bookings === '1') {
+      if (!BOOKING_SHEET_ID) return jsonResponse({ success: true, bookings: [] });
+      const bkSs = SpreadsheetApp.openById(BOOKING_SHEET_ID);
+      const bkSheet = bkSs.getSheetByName(BOOKING_TAB_NAME);
+      if (!bkSheet) return jsonResponse({ success: false, error: 'Tab "' + BOOKING_TAB_NAME + '" not found' });
+      const bkTz = bkSs.getSpreadsheetTimeZone();
+      // Raw values, not displayed text — a real Date is then formatted to
+      // DD/MM/YYYY in the sheet's own timezone (Adelaide), which is what the app
+      // parses. Anything already typed as text is passed through untouched.
+      const bkDate = v => (v instanceof Date && !isNaN(v.getTime()))
+        ? Utilities.formatDate(v, bkTz, 'dd/MM/yyyy')
+        : String(v || '').trim();
+
+      const bkAhead = parseInt(p.days || '120', 10) || 120;
+      const bkFrom = new Date(); bkFrom.setHours(0, 0, 0, 0); bkFrom.setDate(bkFrom.getDate() - 1);
+      const bkTo   = new Date(); bkTo.setHours(0, 0, 0, 0);   bkTo.setDate(bkTo.getDate() + bkAhead);
+
+      const bkLr = bkSheet.getLastRow();
+      const bookings = [];
+      if (bkLr >= 2) {
+        // Columns: A id, B guest, C room, D arrival, E departure … K status.
+        bkSheet.getRange(2, 1, bkLr - 1, 11).getValues().forEach(r => {
+          const id = String(r[0]).trim();
+          if (!id) return;
+          // Window test on the real dates. A row whose dates aren't Dates can't
+          // be judged, so it's let through and the app decides what to do.
+          const arr = r[3], dep = r[4] || r[3];
+          if (arr instanceof Date && dep instanceof Date) {
+            if (dep < bkFrom || arr > bkTo) return;
+          }
+          bookings.push({
+            id:        id,
+            guest:     String(r[1]).trim(),
+            room:      String(r[2]).trim(),
+            arrival:   bkDate(r[3]),
+            departure: bkDate(r[4]),
+            status:    String(r[10]).trim(),
+          });
+        });
+      }
+      return jsonResponse({ success: true, bookings: bookings });
     }
 
     // Planner assignments — a worker pulls the blocks the manager planned for them.

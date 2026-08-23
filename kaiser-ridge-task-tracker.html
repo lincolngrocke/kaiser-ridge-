@@ -1462,6 +1462,8 @@
     <div class="settings-note" style="margin-top:6px;">Finds any entries that never made it into the sheet and pushes just those — won't duplicate rows that are already there.</div>
     <button class="btn-sync" style="background:#5856D6; margin-top:8px;" onclick="importFromSheet()">⬇ Import from Sheet</button>
     <div class="settings-note" style="margin-top:6px;">Pulls down any of <b>your own</b> timesheets that are in the sheet but missing on this phone (e.g. lost entries or a new device). Only adds your missing ones — never duplicates, never imports other people's, and never changes the sheet.</div>
+    <button class="btn-sync" style="background:#00A3A3; margin-top:8px;" onclick="importBookings()">🛎️ Import Bookings</button>
+    <div class="settings-note" style="margin-top:6px;">Reads upcoming guest bookings from the booking sheet and puts them on the planner as all-day bars, so a stay is never typed in twice. Happens on its own when you open the planner. Imported bookings are kept off your Google Calendar on purpose — the booking sheet already puts them there. <span id="bookings-status" style="opacity:.75;"></span></div>
     <button class="btn-sync" style="background:#FF3B30; margin-top:8px;" onclick="removeOthersEntries()">🧹 Remove Others' Entries</button>
     <div class="settings-note" style="margin-top:6px;">Cleanup: removes any timesheets on this phone that belong to someone else (wrong name). Keeps all of your own. Doesn't touch the sheet.</div>
     <button class="btn-sync" style="background:#34C759; margin-top:8px;" onclick="forceAppUpdate()">⟳ Force Update App</button>
@@ -3024,7 +3026,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.300';
+const APP_VERSION = '2026-06-21.301';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -3727,8 +3729,8 @@ function showScreen(id, tab) {
   document.getElementById('screen-' + id).classList.add('active');
   if (tab) tab.classList.add('active');
   if (id === 'timesheets') renderTimesheets();
-  if (id === 'settings') { updateStats(); updateLastBackupLabel(); updateBackupReminder(); updateStorageUsage(); }
-  if (id === 'planner') { _plannerDate = new Date(); renderPlannerScreen(); _calRearmDirty(true); }
+  if (id === 'settings') { updateStats(); updateLastBackupLabel(); updateBackupReminder(); updateStorageUsage(); updateBookingsLabel(); }
+  if (id === 'planner') { _plannerDate = new Date(); renderPlannerScreen(); _calRearmDirty(true); maybeImportBookings(); }
   else document.body.classList.remove('kr-wide');
   if (id === 'clock') updateBackupBanner();
   if (id === 'robots') { renderRobotsScreen(); startRobotTick(); } else { stopRobotTick(); }
@@ -16664,6 +16666,9 @@ function deleteAllDay() {
   const p = _allDayEditId ? _plannerPlans.find(x => x.id === _allDayEditId) : null;
   if (!p) { closeModal('modal-allday'); return; }
   if (!confirm('Delete "' + p.task + '"?')) return;
+  // An imported booking is remembered as dismissed, or the next import would
+  // quietly put it straight back.
+  if (p.bookingId) _bookingDismiss(p.bookingId);
   if (p.calEventId) deletePlannerCalendarEvent(p);
   _plannerPlans = _plannerPlans.filter(x => x.id !== p.id);
   savePlanner();
@@ -19699,7 +19704,12 @@ async function syncCalendarForDate(dateStr, opts) {
   // they become true all-day calendar events. Must include mid-span days, or the
   // script's per-day reconciliation would delete the event when those days sync.
   // A pre-v220 Apps Script simply ignores this field until it's redeployed.
-  const adItems = _allDayEventsFor(dateStr).map(p => ({
+  // A booking imported from the booking sheet is skipped on purpose: that sheet
+  // has ALREADY put the stay on the Guest Bookings calendar, so pushing a second
+  // event here is what made every guest show up twice on the week view. Anything
+  // added by hand still mirrors as before. The script's per-day reconciliation
+  // then deletes the event the app used to push, so the duplicate clears itself.
+  const adItems = _allDayEventsFor(dateStr).filter(p => !p.bookingId).map(p => ({
     id: 'plan:' + p.id, task: p.task, startDate: p.date, endDate: p.endDate || p.date,
   }));
 
@@ -19756,6 +19766,199 @@ async function syncCalendarForDate(dateStr, opts) {
     if (!opts.silent) showToast('Calendar sync failed — check connection & URL');
     return false;
   }
+}
+
+// ── Guest bookings → the planner's all-day bars ──
+// A booking is entered once, in the booking sheet, and that sheet already puts
+// its own event on the Guest Bookings calendar. This reads the same bookings
+// straight into the planner, so a stay never has to be typed in twice.
+// ⭐ RULE: an imported bar is deliberately kept OUT of the calendar push (see
+// syncCalendarForDate). The booking already has a calendar event; pushing a
+// second one is exactly what made every guest appear twice on the week view.
+const BOOKING_SYNC_EVERY_MS = 3 * 3600000;   // quiet refresh, on opening the planner
+const BOOKING_AHEAD_DAYS = 365;              // far enough for any real forward booking
+
+// A booking bar deleted by hand has to stay deleted — without this the next
+// import would put it straight back, which is the one thing that would make the
+// feature untrustworthy.
+function _bookingDismissed() { try { return JSON.parse(localStorage.getItem('kr_booking_dismissed') || '[]') || []; } catch (e) { return []; } }
+function _bookingDismiss(id) {
+  const d = _bookingDismissed();
+  if (id && d.indexOf(id) < 0) { d.push(id); _storeSet('kr_booking_dismissed', JSON.stringify(d)); }
+}
+function _bookingUndismiss(id) {
+  const d = _bookingDismissed();
+  if (id && d.indexOf(id) >= 0) _storeSet('kr_booking_dismissed', JSON.stringify(d.filter(x => x !== id)));
+}
+
+// 'Andrew Cooper - Kaiser' → 'kaiser'. The unit is the dependable half of the
+// title; the guest name was typed by hand and may well be misspelt.
+function _bookingUnitOf(title) {
+  const t = String(title || '');
+  const i = t.lastIndexOf(' - ');
+  return (i >= 0 ? t.slice(i + 3) : t).trim().toLowerCase();
+}
+
+function updateBookingsLabel() {
+  const el = document.getElementById('bookings-status');
+  if (!el) return;
+  const t = parseInt(localStorage.getItem('kr_bookings_synced') || '0', 10) || 0;
+  el.textContent = t
+    ? 'Last checked ' + new Date(t).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) + '.'
+    : 'Not checked yet.';
+}
+
+async function importBookings(opts) {
+  opts = opts || {};
+  if (isWorker()) return null;
+  const url = localStorage.getItem('kr_sheet_url');
+  if (!url) { if (!opts.silent) showToast('Add your Apps Script URL in Settings first'); return null; }
+
+  let list;
+  try {
+    const res = await fetch(url + (url.indexOf('?') >= 0 ? '&' : '?') + 'bookings=1');
+    const json = await res.json();
+    // An Apps Script deployed before this feature doesn't know the action and
+    // answers with the directory payload instead. Say so, rather than look broken.
+    if (!json || !json.success || !Array.isArray(json.bookings)) {
+      if (!opts.silent) showToast('Redeploy the Apps Script to import bookings');
+      return null;
+    }
+    list = json.bookings;
+  } catch (err) {
+    if (!opts.silent) showToast('Could not reach the sheet — check connection & URL');
+    return null;
+  }
+
+  // Bookings always belong to the manager's own day, even when the planner is
+  // showing someone else's — so kr_planner is read and written directly, and the
+  // live array is only touched when that IS the store on screen.
+  const live = (_plannerView === 'me');
+  let plans = live ? _plannerPlans : JSON.parse(localStorage.getItem('kr_planner') || '[]');
+
+  const dismissed = _bookingDismissed();
+  let added = 0, linked = 0, changed = 0, removed = 0, skipped = 0, held = 0;
+  const seen = {};
+
+  list.forEach(b => {
+    const id = String(b.id || '').trim();
+    if (!id || seen[id]) return;   // '#123' is the key; a repeated row is ignored
+    seen[id] = true;
+
+    const from = String(b.arrival || '').trim();
+    const until = String(b.departure || '').trim() || from;
+    const title = [String(b.guest || '').trim(), String(b.room || '').trim()].filter(Boolean).join(' - ');
+    const cancelled = /cancel/i.test(String(b.status || ''));
+
+    let p = plans.find(x => x.allDay && x.bookingId === id);
+
+    // Cancelled → the bar goes, and so does any calendar event the app pushed
+    // for it back when bookings were still being typed in by hand.
+    if (cancelled) {
+      if (p) {
+        if (p.calEventId) deletePlannerCalendarEvent(p);
+        plans = plans.filter(x => x !== p);
+        removed++;
+      }
+      return;
+    }
+
+    // A date the app can't read would put the bar on no day at all, so the row
+    // is counted and reported rather than dropped in silence.
+    if (!title || !isFinite(_dmyToDate(from).getTime()) || !isFinite(_dmyToDate(until).getTime())) { skipped++; return; }
+
+    // Second guard on the window. The script already filters by date, but it can
+    // only do that for cells that really are dates — a stay typed in as TEXT
+    // slips through, and the sheet holds years of them. Anything already over or
+    // absurdly far off is left alone here, existing bars included.
+    const startMs = _dmyToDate(from).getTime(), endMs = _dmyToDate(until).getTime();
+    const todayMs = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime();
+    if (endMs < todayMs - 86400000) return;
+    if (startMs > todayMs + BOOKING_AHEAD_DAYS * 86400000) return;
+
+    // Already imported → keep it in step with the sheet.
+    if (p) {
+      if (p.task !== title || p.date !== from || (p.endDate || p.date) !== until) {
+        // Moved dates would strand the old calendar event on the old days.
+        if (p.calEventId && (p.date !== from || (p.endDate || p.date) !== until)) { deletePlannerCalendarEvent(p); p.calEventId = ''; }
+        p.task = title; p.date = from; p.endDate = until;
+        changed++;
+      }
+      return;
+    }
+
+    // Adopt the bar already typed in for this same stay instead of creating a
+    // second one. Matched on the unit and the exact dates, so a misspelt guest
+    // name still matches — and is corrected to the sheet's spelling.
+    const hand = plans.find(x => x.allDay && !x.bookingId
+      && _bookingUnitOf(x.task) === _bookingUnitOf(title)
+      && x.date === from && (x.endDate || x.date) === until);
+
+    // A booking deleted here stays deleted — but only as far as CREATING a bar.
+    // Typing the stay back in by hand is plainly asking for it back, so that
+    // adopts and clears the tombstone. Without this the hand-made bar would push
+    // to the calendar and the duplicate would be straight back.
+    if (dismissed.indexOf(id) >= 0) {
+      if (!hand) { held++; return; }
+      _bookingUndismiss(id);
+    }
+
+    if (hand) {
+      // It answers to the booking calendar from here on, so the event the app
+      // pushed is the duplicate sitting on the week view. Drop it.
+      if (hand.calEventId) deletePlannerCalendarEvent(hand);
+      hand.calEventId = '';
+      hand.bookingId = id;
+      hand.task = title;
+      linked++;
+      return;
+    }
+
+    plans.push({
+      id: 'ad' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+      allDay: true, bookingId: id, task: title, date: from, endDate: until,
+      startTime: '', durationHours: 0, parked: false,
+    });
+    added++;
+  });
+
+  const touched = added + linked + changed + removed;
+  if (touched) {
+    // ⭐ A write is not saved until the write says it is — memory stays behind
+    // storage until the store confirms, so a failed write can't look imported.
+    if (!_storeSet('kr_planner', JSON.stringify(plans))) {
+      if (!opts.silent) showToast('Could not save — bookings not imported');
+      return null;
+    }
+    if (live) _plannerPlans = plans;
+  }
+  _storeSet('kr_bookings_synced', String(Date.now()));
+  updateBookingsLabel();
+
+  if (!opts.silent) {
+    const bits = [];
+    if (added) bits.push(added + ' added');
+    if (linked) bits.push(linked + ' linked');
+    if (changed) bits.push(changed + ' updated');
+    if (removed) bits.push(removed + ' cancelled');
+    if (skipped) bits.push(skipped + " couldn't be read");
+    // Held-back bookings are reported, so one that never appears is never a mystery.
+    if (held) bits.push(held + ' left out (deleted here)');
+    showToast(bits.length ? 'Bookings: ' + bits.join(', ') : 'Bookings already up to date');
+  }
+  if (touched && document.getElementById('screen-planner').classList.contains('active')) renderPlannerScreen();
+  return { added, linked, changed, removed, skipped, held };
+}
+
+// Opening the planner quietly brings bookings up to date, at most every few
+// hours. The slot is claimed BEFORE the fetch, so a slow or failed reply can't
+// stack up another call on every visit.
+function maybeImportBookings() {
+  if (isWorker() || !localStorage.getItem('kr_sheet_url')) return;
+  const last = parseInt(localStorage.getItem('kr_bookings_synced') || '0', 10) || 0;
+  if (Date.now() - last < BOOKING_SYNC_EVERY_MS) return;
+  _storeSet('kr_bookings_synced', String(Date.now()));
+  importBookings({ silent: true });
 }
 
 // ── Auto-push planner changes to Google Calendar (replaces the manual 📆) ──
