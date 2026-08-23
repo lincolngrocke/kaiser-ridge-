@@ -3026,7 +3026,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.302';
+const APP_VERSION = '2026-06-21.303';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -19952,6 +19952,7 @@ async function importBookings(opts) {
     if (live) _plannerPlans = plans;
   }
   _storeSet('kr_bookings_synced', String(Date.now()));
+  _storeSet('kr_bookings_ver', APP_VERSION);   // this version has now had its run
   updateBookingsLabel();
 
   if (!opts.silent) {
@@ -19976,7 +19977,11 @@ async function importBookings(opts) {
 function maybeImportBookings() {
   if (isWorker() || !localStorage.getItem('kr_sheet_url')) return;
   const last = parseInt(localStorage.getItem('kr_bookings_synced') || '0', 10) || 0;
-  if (Date.now() - last < BOOKING_SYNC_EVERY_MS) return;
+  // ⭐ A new app version ignores the cooldown. New import logic has to get a run
+  // to do its work, and v302's duplicate sweep sat idle behind a v301 timestamp
+  // for three hours — the update looked like it had changed nothing at all.
+  const fresh = localStorage.getItem('kr_bookings_ver') !== APP_VERSION;
+  if (!fresh && Date.now() - last < BOOKING_SYNC_EVERY_MS) return;
   // Claim only a SHORT window up front. The slot still can't be stacked up by a
   // slow reply, but a failure now retries in minutes instead of holding the full
   // gap — which is what left a freshly redeployed script looking dead until the
