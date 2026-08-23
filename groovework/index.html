@@ -3026,7 +3026,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.305';
+const APP_VERSION = '2026-06-21.306';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -18555,10 +18555,21 @@ function _rsInstances(ctx) {
   return out;
 }
 
-// Default order is CYCLE-MAJOR: one pass through every flagged task, then the next
-// pass, tasks dropping out as their laps run out. In this app a "lap" IS a pass
-// through the task set (the enduro model), so stacking all of one task's laps
-// together would fight the model — and you'd re-drag it every time.
+// ⭐ A LAP IS A COMPLETE CIRCUIT OF THE JOB, and lap 2 walks the same tasks in the
+// same sequence as lap 1. The CIRCUIT is the stretch of the planning sheet from the
+// first multi-lap task to the last one. What sits before it is done once at the
+// start, what sits after it is done once at the end, and the circuit itself runs as
+// many times as the laps call for.
+//
+// This replaced a plain cycle-major pass (v258–v305), which ran one pass through
+// EVERY flagged task before repeating the lapped ones. That put the once-off tail
+// inside the first lap: on straw carting the sheet had you turning off the UHF radio
+// and stowing the truck keys, then going back to load another 40 bales.
+//
+// A flagged once-off inside the circuit appears in lap 1 only. Flagged means planned;
+// the genuinely unpredictable work (waiting on someone to unload you) stays UNFLAGGED
+// and gets picked up on the clock, which is what the unflagged tail of the task list
+// is for. Lincoln, 2026-08-23.
 function _rsDefaultOrder(insts, ctx) {
   const base = ctx.baseOrder || [];
   const byTask = new Map();
@@ -18568,33 +18579,73 @@ function _rsDefaultOrder(insts, ctx) {
     const ia = base.indexOf(a), ib = base.indexOf(b);
     return (ia < 0 ? 1e9 : ia) - (ib < 0 ? 1e9 : ib);
   });
-  const deepest = tasks.reduce((m, t) => Math.max(m, byTask.get(t).length), 0);
   const out = [];
-  for (let c = 0; c < deepest; c++) tasks.forEach(t => { const a = byTask.get(t); if (a[c]) out.push(a[c]); });
+  const pushAll = t => byTask.get(t).forEach(x => out.push(x));
+  // Circuit bounds: first and last task carrying more than one lap.
+  let first = -1, last = -1;
+  tasks.forEach((t, i) => { if (byTask.get(t).length > 1) { if (first < 0) first = i; last = i; } });
+  if (first < 0) { tasks.forEach(pushAll); return out; }   // nothing laps → one straight pass
+  tasks.slice(0, first).forEach(pushAll);                  // once, at the start
+  const circuit = tasks.slice(first, last + 1);
+  const deepest = circuit.reduce((m, t) => Math.max(m, byTask.get(t).length), 0);
+  for (let c = 0; c < deepest; c++) circuit.forEach(t => { const a = byTask.get(t); if (a[c]) out.push(a[c]); });
+  tasks.slice(last + 1).forEach(pushAll);                  // once, at the end
   return out;
 }
 
+// Where a NEWLY appeared instance joins a sheet that has already been arranged by
+// hand. The old rule dropped anything new directly beneath that task's last instance.
+// For a second lap that meant it landed in the middle of lap 1 and had to be dragged
+// all the way down past the rest of the circuit, every single time — and it only bit
+// once the sheet had been dragged at all, which is why it felt random. A lap belongs
+// with its own pass, in the sequence lap 1 runs.
+function _rsPlaceFresh(out, x, multi) {
+  if (x.n >= 2) {
+    // Rank tasks by where they sit in the pass below this one, so lap 2 mirrors lap 1.
+    const rank = t => {
+      let i = out.findIndex(r => r.t === t && r.n === x.n - 1);
+      if (i < 0) i = out.findIndex(r => r.t === t);
+      return i;
+    };
+    const mine = rank(x.t);
+    const samePass = [];
+    out.forEach((r, i) => { if (r.n === x.n) samePass.push(i); });
+    if (samePass.length) {
+      for (const i of samePass) if (rank(out[i].t) > mine) { out.splice(i, 0, x); return; }
+      out.splice(samePass[samePass.length - 1] + 1, 0, x);
+      return;
+    }
+    // No pass at this depth yet — open one at the END of the circuit, which is the
+    // last row belonging to a multi-lap task. The once-off tail stays below it.
+    let end = -1;
+    out.forEach((r, i) => { if (multi.has(r.t)) end = i; });
+    out.splice(end + 1, 0, x);
+    return;
+  }
+  // A task just flagged (lap 1, or a once-off) keeps the old behaviour: beside its
+  // own kind if it has one, else the end.
+  let at = -1;
+  for (let i = out.length - 1; i >= 0; i--) if (out[i].t === x.t) { at = i; break; }
+  if (at >= 0) out.splice(at + 1, 0, x); else out.push(x);
+}
+
 // Merge the arranged order with what's actually on the sheet now. Survivors keep
-// their position; anything new (a lap added with the 🔁 stepper, a task just
-// flagged) slots in after that task's last instance, else at the end. This is the
-// part that has to hold up when the plan changes mid-job.
+// their hand-arranged position untouched; anything new is placed by _rsPlaceFresh.
+// This is the part that has to hold up when the plan changes mid-job.
 function _rsOrdered(ctx) {
   const insts = _rsInstances(ctx);
   if (!insts.length) return [];
   const pool = new Map(insts.map(x => [_rsKey(x.t, x.n), x]));
+  const count = {};
+  insts.forEach(x => { count[x.t] = (count[x.t] || 0) + 1; });
+  const multi = new Set(Object.keys(count).filter(t => count[t] > 1));
   const out = [];
   if (ctx.order) ctx.order.forEach(k => { if (pool.has(k)) { out.push(pool.get(k)); pool.delete(k); } });
   if (!pool.size) return out;
   const fresh = _rsDefaultOrder([...pool.values()], ctx);
-  // Nothing arranged yet → the cycle-major default IS the order. (Applying the
-  // slot-in rule below to a fresh sheet would re-group every task's laps together,
-  // which is the one thing this default exists to avoid.)
+  // Nothing arranged yet → the circuit default IS the order.
   if (!out.length) return fresh;
-  fresh.forEach(x => {
-    let at = -1;
-    for (let i = out.length - 1; i >= 0; i--) if (out[i].t === x.t) { at = i; break; }
-    if (at >= 0) out.splice(at + 1, 0, x); else out.push(x);
-  });
+  fresh.forEach(x => _rsPlaceFresh(out, x, multi));
   return out;
 }
 
