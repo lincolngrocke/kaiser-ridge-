@@ -3026,7 +3026,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.304';
+const APP_VERSION = '2026-06-21.305';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -18520,11 +18520,17 @@ function _rsCtx() {
     startMs: null                   // live → anchored to the last tick, see _rsRows
   };
 }
+// ⭐ Planner dates are DD/MM/YYYY (see plannerDateStr) — parse them with _dmyToDate,
+// the same helper the rest of the planner uses. This split on '-' instead, so `y` came
+// back NaN on EVERY real block and the sheet silently fell through to Date.now(): a job
+// dragged onto tomorrow at 10am forecast from whatever time it happened to be opened.
+// Live since v260 and invisible, because "now" always looks like a plausible time.
 function _rsPlanStartMs(p) {
-  const [y, m, d] = String(p.date || '').split('-').map(Number);
+  const base = _dmyToDate(p && p.date);
+  if (!p || !p.date || isNaN(base.getTime())) return Date.now();
   const mins = _planStartMins(p);
-  if (!y) return Date.now();
-  return new Date(y, (m || 1) - 1, d || 1, Math.floor(mins / 60), mins % 60, 0, 0).getTime();
+  base.setHours(Math.floor(mins / 60), mins % 60, 0, 0);
+  return base.getTime();
 }
 
 // Which lap-instances belong on the sheet: for each flagged task, the laps owing —
