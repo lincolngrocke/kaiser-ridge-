@@ -3026,7 +3026,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.312';
+const APP_VERSION = '2026-06-21.313';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -9609,7 +9609,9 @@ function applyBreakEnd(timeStr) {
   // break can never be counted twice against the finish.
   if (clockState.brkActiveId) {
     const _bd = clockState.brkDone || (clockState.brkDone = {});
-    _bd[clockState.brkActiveId] = { at: new Date(ms).toISOString(), mins: Math.round((ms - start) / 60000) };
+    // start/end kept so deleting this break can find its REAL record and give the
+    // minutes back — see _rsBrkRemove.
+    _bd[clockState.brkActiveId] = { at: new Date(ms).toISOString(), mins: Math.round((ms - start) / 60000), start: start, end: ms };
     clockState.brkActiveId = null;
   }
   _storeSet('kr_clock', JSON.stringify(clockState));
@@ -19321,16 +19323,45 @@ function _rsBrkAdj(id, delta) {
   _rsAfterBrkChange(_rsCtx());
   showToast('☕ ' + fmtMin(mins) + ' break');
 }
+// ⭐ DELETING A BREAK GIVES THE TIME BACK. Removing the row used to leave the REAL
+// break sitting in clockState.breaks, so those minutes carried on being subtracted as
+// idle — the ▶ NOW pill on the next task then read ~0m, because now − anchor − idle
+// cancelled out. Deleting a break means "that wasn't a break", so the span comes out
+// of clockState.breaks and breakTotal and the time flows to the task you were on.
+// ⚠️ That also returns the minutes to the day's worked hours and to the task's learned
+// time, which is the point: the work was done, it just wasn't a break.
 function _rsBrkRemove(id) {
   const ctx = _rsCtx(); if (!ctx || !ctx.saveBreaks) return;
-  // Deleting the break you are currently on would strand brkActiveId, and ending the
-  // break would then tick off a row that no longer exists.
-  if (clockState && clockState.brkActiveId === id) { clockState.brkActiveId = null; _storeSet('kr_clock', JSON.stringify(clockState)); }
+  if (clockState) {
+    // On it right now → end it WITHOUT banking anything.
+    if (clockState.onBreak && clockState.brkActiveId === id) {
+      clockState.onBreak = false; clockState.breakStartMs = null; clockState.breakStartTime = null;
+      if (typeof _breakBtnUI === 'function') _breakBtnUI();
+    }
+    if (clockState.brkActiveId === id) clockState.brkActiveId = null;
+    // Already taken → unpick the banked span. Records written before start/end were
+    // stored fall back to matching the end time off `at`.
+    const d = clockState.brkDone && clockState.brkDone[id];
+    if (d) {
+      const end = isFinite(d.end) ? d.end : new Date(d.at).getTime();
+      const start = isFinite(d.start) ? d.start : null;
+      const before = (clockState.breaks || []).length;
+      clockState.breaks = (clockState.breaks || []).filter(b =>
+        !(b.end === end && (start === null || b.start === start)));
+      if ((clockState.breaks || []).length < before) {
+        const span = start !== null ? (end - start) : (d.mins || 0) * 60000;
+        clockState.breakTotal = Math.max(0, (clockState.breakTotal || 0) - span);
+      }
+      delete clockState.brkDone[id];
+    }
+    _storeSet('kr_clock', JSON.stringify(clockState));
+  }
   ctx.saveBreaks((ctx.breaks || []).filter(b => b.id !== id));
   const c2 = _rsCtx();
   if (c2.order) c2.saveOrder(c2.order.filter(k => k !== _rsBrkKey(id)));
   _rsAfterBrkChange(_rsCtx());
-  showToast('Break removed');
+  if (typeof _rsTickNowElapsed === 'function') _rsTickNowElapsed();
+  showToast('Break removed — the time goes back to the job');
 }
 // Tapping the row starts the real break NOW and remembers which planned one it was,
 // so ☕ End Break ticks this row off and the forecast swaps planned for actual.
