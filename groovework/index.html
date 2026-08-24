@@ -3026,7 +3026,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.311';
+const APP_VERSION = '2026-06-21.312';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -18870,7 +18870,12 @@ function _rsRows(ctx) {
   // "You are here" — the first unticked row in the ARRANGED order, i.e. the one you
   // should be on right now. Distinct from `tappable`, which is per-task (the next
   // owed lap of that task) and so lights up nearly every row early in a job.
-  const nowIdx = ctx.kind === 'clock' ? rows.findIndex(r => !r.brk && !r.doneAt) : -1;
+  let nowIdx = -1;
+  if (ctx.kind === 'clock') {
+    const bi = (clockState.onBreak && clockState.brkActiveId)
+      ? rows.findIndex(r => r.brk && r.id === clockState.brkActiveId) : -1;
+    nowIdx = bi >= 0 ? bi : rows.findIndex(r => !r.brk && !r.doneAt);
+  }
   // The LAST completed lap of each task — the only one that can be brought back, because
   // that is the one undoTaskRep removes. Offering ↺ on an earlier lap would appear to undo
   // that row while actually undoing the most recent one.
@@ -18887,7 +18892,7 @@ function _rsRows(ctx) {
       if (r.doneAt) when = new Date(r.doneAt).getTime();
       else { cursor += bm * 60000; when = Math.max(cursor, floor); }
       return { ...r, mins: bm, when, startWhen, floor, isDone: !!r.doneAt, lapIdx: 1, lapTotal: 1,
-               isNow: false, tappable: false, undoable: false };
+               isNow: i === nowIdx, tappable: false, undoable: false };
     }
     seen[r.t] = (seen[r.t] || 0) + 1;
     const a = avg[_normTaskKey(r.t)];
@@ -18946,6 +18951,8 @@ function _targetDisplayMs() {
 // answer for the first row too.
 function _rsNowElapsedMin() {
   if (!clockState || !clockState.running) return 0;
+  // On a break, "how long have I been at this" means how long the BREAK has run.
+  if (clockState.onBreak && clockState.breakStartMs) return Math.max(0, (Date.now() - clockState.breakStartMs) / 60000);
   const a = _runAnchorMs(), now = Date.now();
   let idle = _breakOverlapMs(clockState.breaks, a, now);
   if (clockState.onBreak && clockState.breakStartMs) idle += Math.max(0, now - Math.max(clockState.breakStartMs, a));
@@ -19065,6 +19072,12 @@ function _rsRender() {
          <span onclick="event.stopPropagation();_rsBrkAdj('${r.id}', 5)" style="font-size:16px;font-weight:700;color:#8b93a7;cursor:pointer;padding:0 6px;line-height:1;">+</span>`;
       const actual = r.isDone && isFinite(r.actualMins) ? `<span style="font-size:11px;font-weight:700;color:#30d158;">✓ ${fmtMin(r.actualMins)}</span>` : '';
       const label = r.isDone ? 'Break taken' : (onBreakNow ? 'On break now' : 'Break');
+      // The same NOW pill the active task carries, so "where am I" reads the same way
+      // whether you're working or having a cuppa. Amber rather than blue: it is the
+      // break's own colour, and blue everywhere else means a task is running.
+      const nowB = r.isNow
+        ? `<span style="display:inline-flex;align-items:center;flex-shrink:0;font-size:11px;font-weight:700;color:#ff9f0a;background:rgba(255,159,10,0.18);border:1px solid rgba(255,159,10,0.55);border-radius:9px;padding:0 7px;gap:4px;"><span>&#9654; NOW &#183;</span><span id="rs-now-elapsed">${fmtMin(_rsNowElapsedMin())}</span></span>`
+        : '';
       const tapB = planning || r.isDone ? ''
         : (onBreakNow ? ` onclick="_rsBrkEnd()"`
           : (!clockState.onBreak ? ` onclick="_rsBrkStart('${r.id}')"` : ''));
@@ -19080,7 +19093,7 @@ function _rsRender() {
         <span style="font-size:15px;flex-shrink:0;opacity:${r.isDone ? '0.5' : '1'};">☕</span>
         <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;">
           <span style="font-size:15px;color:${r.isDone ? '#616a7e' : 'var(--text)'};">${label}</span>
-          <span style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">${stepper}${actual}${hintB}</span></span>
+          <span style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">${stepper}${nowB}${actual}${hintB}</span></span>
         ${bTime}
         <span onclick="event.stopPropagation();_rsBrkRemove('${r.id}')" title="remove this break" style="font-size:14px;color:#8b93a7;cursor:pointer;padding:0 4px;flex-shrink:0;">✕</span>
         <span style="font-size:12px;color:var(--subtext);flex-shrink:0;">⠿</span></div></div>`;
