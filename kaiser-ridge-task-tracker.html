@@ -3026,7 +3026,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.308';
+const APP_VERSION = '2026-06-21.309';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5382,6 +5382,12 @@ function _runRemainingSec() {
     }
     sum += a * left;
   });
+  // ☕ A planned break still to come is real time between here and the finish, so the
+  // ring, the 🏁 and the run sheet's last row all have to be costing the same thing.
+  // The break in progress is EXCLUDED: its time is already accruing as real idle.
+  const _pb = Array.isArray(clockState.plannedBreaks) ? clockState.plannedBreaks : [];
+  const _bd = clockState.brkDone || {};
+  _pb.forEach(b => { if (!_bd[b.id] && b.id !== clockState.brkActiveId) sum += (b.mins || 0); });
   return any ? sum * 60 : null;
 }
 // When the forecast was last re-anchored: the most recent completion this
@@ -9501,8 +9507,19 @@ function applyBreakEnd(timeStr) {
   clockState.onBreak = false;
   clockState.breakStartMs = null;
   clockState.breakStartTime = null;
+  // ☕ If this break was a PLANNED one started from the run sheet, tick that row off
+  // with the time it really took. It then stops costing its planned minutes, so the
+  // break can never be counted twice against the finish.
+  if (clockState.brkActiveId) {
+    const _bd = clockState.brkDone || (clockState.brkDone = {});
+    _bd[clockState.brkActiveId] = { at: new Date(ms).toISOString(), mins: Math.round((ms - start) / 60000) };
+    clockState.brkActiveId = null;
+  }
   _storeSet('kr_clock', JSON.stringify(clockState));
   _breakBtnUI();
+  const _rsOpen = document.getElementById('modal-run-sheet');
+  if (_rsOpen && _rsOpen.classList.contains('open')) _rsRender();
+  updateRunRing();
   showToast('Break ended — ' + Math.round((ms - start) / 60000) + ' min deducted');
 }
 
@@ -16301,7 +16318,7 @@ function _ethanArrangements(plans) {
   const out = {};
   plans.forEach(p => {
     const a = m[p.id];
-    if (a && ((a.flags && Object.keys(a.flags).length) || (Array.isArray(a.order) && a.order.length) || (a.laps && Object.keys(a.laps).length) || (Array.isArray(a.runOrder) && a.runOrder.length))) {
+    if (a && ((a.flags && Object.keys(a.flags).length) || (Array.isArray(a.order) && a.order.length) || (a.laps && Object.keys(a.laps).length) || (Array.isArray(a.runOrder) && a.runOrder.length) || (Array.isArray(a.breaks) && a.breaks.length))) {
       out[p.id] = { flags: a.flags || {}, order: Array.isArray(a.order) ? a.order : [] };
       if (a.laps && Object.keys(a.laps).length) out[p.id].laps = a.laps;   // 🔁 planned laps ride along
       // ⭐ The RUN SHEET travels too, so the order the manager laid out is the order
@@ -16310,10 +16327,16 @@ function _ethanArrangements(plans) {
       // control character would have to survive four hops (POST → Apps Script parse →
       // Script Property → pull) on transport nothing has ever tested it against. Pairs
       // are plain text, and _rsKey rebuilds the real key on the far side.
+      if (Array.isArray(a.breaks) && a.breaks.length) out[p.id].breaks = a.breaks;   // ☕ planned breaks ride along
       if (Array.isArray(a.runOrder) && a.runOrder.length) {
         out[p.id].runOrder = a.runOrder.map(k => {
-          const i = String(k).lastIndexOf(_RS_SEP);
-          return i < 0 ? [String(k), 0] : [String(k).slice(0, i), Number(String(k).slice(i + 1)) || 0];
+          const str = String(k);
+          // A break key is _RS_BRK + SEP + id. Splitting it as a [task, lap] pair
+          // would put a control char on the wire AND drop the id, so the break landed
+          // on Ethan's sheet as an orphan key and vanished. It travels as {b:id}.
+          if (str.indexOf(_RS_BRK + _RS_SEP) === 0) return { b: str.slice((_RS_BRK + _RS_SEP).length) };
+          const i = str.lastIndexOf(_RS_SEP);
+          return i < 0 ? [str, 0] : [str.slice(0, i), Number(str.slice(i + 1)) || 0];
         });
       }
     }
@@ -16529,8 +16552,13 @@ async function pullAssignments() {
         // Run sheet arrives as [task, lap] pairs — rebuild the U+0001 instance keys
         // here. A string element is tolerated so a payload from an older/newer send
         // still lands rather than throwing the whole day away.
+        if (Array.isArray(p._arr.breaks) && p._arr.breaks.length) arrM[p.id].breaks = p._arr.breaks;
         if (Array.isArray(p._arr.runOrder) && p._arr.runOrder.length) {
-          arrM[p.id].runOrder = p._arr.runOrder.map(v => Array.isArray(v) ? _rsKey(String(v[0]), Number(v[1]) || 0) : String(v));
+          arrM[p.id].runOrder = p._arr.runOrder.map(v => {
+            if (Array.isArray(v)) return _rsKey(String(v[0]), Number(v[1]) || 0);
+            if (v && typeof v === 'object' && v.b) return _rsBrkKey(String(v.b));   // a planned break
+            return String(v);
+          });
         }
         delete p._arr;
         arrCh = true;
@@ -17079,6 +17107,9 @@ function _estimateBlockMins(plan) {
   if (!plan) return null;
   const rec = getPlannerChecklist()[plan.id];
   const flagged = rec && rec.flags ? Object.keys(rec.flags) : [];
+  // ☕ Planned breaks lengthen the block. A 30 minute lunch inside the job pushes the
+  // block's end out on the timeline, so whatever is planned after it sits right.
+  const _brk = (rec && Array.isArray(rec.breaks)) ? rec.breaks.reduce((t, b) => t + (b.mins || 0), 0) : 0;
   if (flagged.length) {
     const map = _taskHistAvgMap();
     const reps = _taskRepsPerRunMap();
@@ -17091,10 +17122,10 @@ function _estimateBlockMins(plan) {
         if (laps > 1) lapped = true;
       }
     });
-    if (sum > 0) return { mins: sum, basis: 'flagged', n, lapped };
+    if (sum > 0) return { mins: sum + _brk, basis: 'flagged', n, lapped, brkMins: _brk };
   }
   const jobAvgH = getTaskAvgDuration(plan.task);   // hours
-  if (jobAvgH && jobAvgH > 0) return { mins: jobAvgH * 60, basis: 'job', n: 0 };
+  if (jobAvgH && jobAvgH > 0) return { mins: jobAvgH * 60 + _brk, basis: 'job', n: 0, brkMins: _brk };
   return null;
 }
 // Auto-fill a block's durationHours from the estimate (kept fully editable).
@@ -18507,6 +18538,12 @@ function _clSessionLapAdj(item, delta) {
 // same task appearing three times.
 const _RS_SEP = '\u0001';   // a control char can't occur in a task name, so "Travel"+12 never collides with "Travel1"+2
 function _rsKey(t, n) { return t + _RS_SEP + n; }
+// ☕ A PLANNED BREAK is a row on the sheet that is not a task. It carries its own
+// key space so it can sit anywhere in the order and be dragged like anything else.
+// A task name can never contain U+0001, so this can't collide with one.
+const _RS_BRK = '\u0001brk';
+function _rsBrkKey(id) { return _RS_BRK + _RS_SEP + id; }
+function _rsInstKey(x) { return (x && x.brk) ? _rsBrkKey(x.id) : _rsKey(x.t, x.n); }
 
 // The sheet runs in two scopes and the maths is identical in both — only where the
 // flags, laps, order and start time come from differs. _rsCtx() is that difference:
@@ -18536,6 +18573,9 @@ function _rsCtx() {
       // do the work → the app learns the order → the plan opens in that order.
       baseOrder: _orgVisibleOrder(plan.task, rec.flags || {}, (Array.isArray(rec.order) && rec.order.length) ? rec.order : null),
       saveOrder: keys => { const m = getPlannerChecklist(); (m[_rsPlanId] || (m[_rsPlanId] = { flags: {} })).runOrder = keys; savePlannerChecklist(m); },
+      breaks: Array.isArray(rec.breaks) ? rec.breaks : [],
+      brkDone: {},                    // nothing has been taken yet — a block is all forecast
+      saveBreaks: arr => { const m = getPlannerChecklist(); (m[_rsPlanId] || (m[_rsPlanId] = { flags: {} })).breaks = arr; savePlannerChecklist(m); },
       startMs: _rsPlanStartMs(plan)
     };
   }
@@ -18554,6 +18594,9 @@ function _rsCtx() {
     order: Array.isArray(clockState.runOrder) ? clockState.runOrder : null,
     baseOrder: _orgVisibleOrder(job, _sessionOrGlobalFlags(job), _sessionOrGlobalOrder(job)),
     saveOrder: keys => { clockState.runOrder = keys; _storeSet('kr_clock', JSON.stringify(clockState)); },
+    breaks: Array.isArray(clockState.plannedBreaks) ? clockState.plannedBreaks : [],
+    brkDone: clockState.brkDone || {},
+    saveBreaks: arr => { clockState.plannedBreaks = arr; _storeSet('kr_clock', JSON.stringify(clockState)); },
     startMs: null                   // live → anchored to the last tick, see _rsRows
   };
 }
@@ -18589,6 +18632,13 @@ function _rsInstances(ctx) {
     const last = Math.max(ctx.lapsFor(item), before + doneNow.length);
     for (let n = before + 1; n <= last; n++) out.push({ t: item, n, doneAt: ctx.doneAt(item, n) });
   });
+  // ☕ Planned breaks ride alongside. A taken break keeps the time it ACTUALLY took,
+  // exactly like a ticked task, so the sheet stays a record as well as a forecast.
+  (ctx.breaks || []).forEach(b => {
+    const d = (ctx.brkDone || {})[b.id];
+    out.push({ t: _RS_BRK, n: 0, brk: true, id: b.id, mins: b.mins,
+               doneAt: d ? d.at : null, actualMins: d ? d.mins : null });
+  });
   return out;
 }
 
@@ -18609,6 +18659,10 @@ function _rsInstances(ctx) {
 // is for. Lincoln, 2026-08-23.
 function _rsDefaultOrder(insts, ctx) {
   const base = ctx.baseOrder || [];
+  // ☕ Breaks are placed by hand, never by the circuit rules. They are appended here
+  // only as a fallback; the normal path writes them straight into the saved order.
+  const brks = insts.filter(x => x.brk);
+  insts = insts.filter(x => !x.brk);
   const byTask = new Map();
   insts.forEach(x => { if (!byTask.has(x.t)) byTask.set(x.t, []); byTask.get(x.t).push(x); });
   byTask.forEach(a => a.sort((p, q) => p.n - q.n));
@@ -18621,12 +18675,13 @@ function _rsDefaultOrder(insts, ctx) {
   // Circuit bounds: first and last task carrying more than one lap.
   let first = -1, last = -1;
   tasks.forEach((t, i) => { if (byTask.get(t).length > 1) { if (first < 0) first = i; last = i; } });
-  if (first < 0) { tasks.forEach(pushAll); return out; }   // nothing laps → one straight pass
+  if (first < 0) { tasks.forEach(pushAll); brks.forEach(b => out.push(b)); return out; }   // nothing laps → one straight pass
   tasks.slice(0, first).forEach(pushAll);                  // once, at the start
   const circuit = tasks.slice(first, last + 1);
   const deepest = circuit.reduce((m, t) => Math.max(m, byTask.get(t).length), 0);
   for (let c = 0; c < deepest; c++) circuit.forEach(t => { const a = byTask.get(t); if (a[c]) out.push(a[c]); });
   tasks.slice(last + 1).forEach(pushAll);                  // once, at the end
+  brks.forEach(b => out.push(b));
   return out;
 }
 
@@ -18672,9 +18727,9 @@ function _rsPlaceFresh(out, x, multi) {
 function _rsOrdered(ctx) {
   const insts = _rsInstances(ctx);
   if (!insts.length) return [];
-  const pool = new Map(insts.map(x => [_rsKey(x.t, x.n), x]));
+  const pool = new Map(insts.map(x => [_rsInstKey(x), x]));
   const count = {};
-  insts.forEach(x => { count[x.t] = (count[x.t] || 0) + 1; });
+  insts.forEach(x => { if (!x.brk) count[x.t] = (count[x.t] || 0) + 1; });
   const multi = new Set(Object.keys(count).filter(t => count[t] > 1));
   const out = [];
   if (ctx.order) ctx.order.forEach(k => { if (pool.has(k)) { out.push(pool.get(k)); pool.delete(k); } });
@@ -18711,20 +18766,32 @@ function _rsRows(ctx) {
     cursor = anchor + idle; floor = now;
   }
   const perTask = {};
-  rows.forEach(r => { perTask[r.t] = (perTask[r.t] || 0) + 1; });
+  rows.forEach(r => { if (!r.brk) perTask[r.t] = (perTask[r.t] || 0) + 1; });
   const seen = {};
   const nextUndone = {};
-  rows.forEach(r => { if (!r.doneAt && nextUndone[r.t] === undefined) nextUndone[r.t] = r.n; });
+  rows.forEach(r => { if (!r.brk && !r.doneAt && nextUndone[r.t] === undefined) nextUndone[r.t] = r.n; });
   // "You are here" — the first unticked row in the ARRANGED order, i.e. the one you
   // should be on right now. Distinct from `tappable`, which is per-task (the next
   // owed lap of that task) and so lights up nearly every row early in a job.
-  const nowIdx = ctx.kind === 'clock' ? rows.findIndex(r => !r.doneAt) : -1;
+  const nowIdx = ctx.kind === 'clock' ? rows.findIndex(r => !r.brk && !r.doneAt) : -1;
   // The LAST completed lap of each task — the only one that can be brought back, because
   // that is the one undoTaskRep removes. Offering ↺ on an earlier lap would appear to undo
   // that row while actually undoing the most recent one.
   const lastDoneN = {};
-  rows.forEach(r => { if (r.doneAt) lastDoneN[r.t] = r.n; });
+  rows.forEach(r => { if (!r.brk && r.doneAt) lastDoneN[r.t] = r.n; });
   return rows.map((r, i) => {
+    // ☕ A break moves the cursor exactly like a task does — that is the whole point
+    // of planning one. Taken → it keeps the minutes it really took; still to come →
+    // it costs its planned minutes and everything below it re-forecasts.
+    if (r.brk) {
+      const bm = (r.doneAt && isFinite(r.actualMins)) ? r.actualMins : (isFinite(r.mins) ? r.mins : 0);
+      const startWhen = cursor;
+      let when = null;
+      if (r.doneAt) when = new Date(r.doneAt).getTime();
+      else { cursor += bm * 60000; when = Math.max(cursor, floor); }
+      return { ...r, mins: bm, when, startWhen, floor, isDone: !!r.doneAt, lapIdx: 1, lapTotal: 1,
+               isNow: false, tappable: false, undoable: false };
+    }
     seen[r.t] = (seen[r.t] || 0) + 1;
     const a = avg[_normTaskKey(r.t)];
     const mins = (isFinite(a) && a > 0) ? a : 0;
@@ -18870,7 +18937,10 @@ function _rsRender() {
   const head = `<div class="cl-sticky-top">
     <div style="margin:10px 0 4px;padding:9px 12px;border-radius:10px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.35);font-size:13px;color:var(--text);">
       ${summary}${bankedNote}</div>
-    <div style="font-size:11px;color:var(--subtext);margin:0 0 8px;">${hint}</div></div>`;
+    <div style="font-size:11px;color:var(--subtext);margin:0 0 8px;">${hint}</div>
+    <div style="display:flex;justify-content:flex-end;padding:0 0 8px;">${_rsPlacing
+      ? `<span onclick="_rsPlacing=false;_rsRender()" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:13px;">✕ cancel — tap a gap above to drop the break in</span>`
+      : `<span onclick="_rsPlacing=true;_rsRender()" style="color:#ff9f0a;cursor:pointer;font-weight:600;font-size:13px;">☕ Add a break</span>`}</div></div>`;
   const avgMap = _taskHistAvgMap(), cntMap = _taskHistCountMap();   // built once, not per row
   // ▣ which batch each task belongs to, and — once ticked — how long it ACTUALLY
   // took. The actual sits beside the average on the meta line, so the comparison
@@ -18878,7 +18948,38 @@ function _rsRender() {
   const _bRec = _batchRec(ctx.job);
   const _durs = ctx.kind === 'clock' ? _checklistDurations() : {};
   const stepsOf = stepsResolver(ctx.job);   // step AVERAGES aren't read here — the sheet shows no per-step times
-  const rowsHtml = rows.map(r => {
+  const _ins = (i) => _rsPlacing
+    ? `<div onclick="_rsPlaceBreak(${i})" style="margin:2px 0 6px;padding:5px 10px;border-radius:8px;border:1px dashed rgba(255,159,10,0.75);background:rgba(255,159,10,0.10);color:#ff9f0a;font-size:12px;font-weight:700;text-align:center;cursor:pointer;">☕ break goes here</div>`
+    : '';
+  const rowsHtml = rows.map((r, _i) => {
+    // ☕ A break row: no batch, no average, no steps — it is time, not work. On the
+    // clock, tapping it STARTS your break, and ending the break ticks it off, so one
+    // action does the whole thing and the planned minutes are replaced by the real
+    // ones. Planning ahead, it is purely a reservation that shapes the finish time.
+    if (r.brk) {
+      const bk = _rsBrkKey(r.id);
+      const bTime = r.isDone
+        ? `<span style="font-size:13px;font-weight:700;color:#616a7e;white-space:nowrap;">✓ ${_rsHM(r.when)}</span>`
+        : `<span style="font-size:13px;font-weight:700;color:#ff9f0a;white-space:nowrap;">~${_rsHM(r.when)}</span>`;
+      const onBreakNow = !planning && clockState && clockState.onBreak && clockState.brkActiveId === r.id;
+      const stepper = r.isDone ? '' :
+        `<span onclick="event.stopPropagation();_rsBrkAdj('${r.id}', -5)" style="font-size:16px;font-weight:700;color:#8b93a7;cursor:pointer;padding:0 6px;line-height:1;">&minus;</span>
+         <span style="font-size:11px;font-weight:700;color:#ff9f0a;">${fmtMin(r.mins)}</span>
+         <span onclick="event.stopPropagation();_rsBrkAdj('${r.id}', 5)" style="font-size:16px;font-weight:700;color:#8b93a7;cursor:pointer;padding:0 6px;line-height:1;">+</span>`;
+      const actual = r.isDone && isFinite(r.actualMins) ? `<span style="font-size:11px;font-weight:700;color:#30d158;">✓ ${fmtMin(r.actualMins)}</span>` : '';
+      const label = r.isDone ? 'Break taken' : (onBreakNow ? 'On break now' : 'Break');
+      const tapB = (!planning && !r.isDone && !clockState.onBreak) ? ` onclick="_rsBrkStart('${r.id}')"` : '';
+      const hintB = (!planning && !r.isDone) ? (onBreakNow ? '<span style="font-size:11px;color:#ff9f0a;font-weight:700;">tap ☕ End Break when you are back</span>' : '<span style="font-size:11px;color:#8b93a7;">tap to start it</span>') : '';
+      return `${_ins(_i)}<div class="rs-row" data-rs-key="${_attr(bk)}" ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)" style="margin-bottom:8px;">
+        <div${tapB} style="display:flex;align-items:center;gap:9px;padding:11px 10px;border-radius:8px;border:1px ${onBreakNow ? 'solid rgba(255,159,10,0.9)' : 'dashed rgba(255,159,10,0.55)'};background:${r.isDone ? 'transparent' : 'rgba(255,159,10,0.10)'};${tapB ? 'cursor:pointer;' : ''}">
+        <span style="font-size:15px;flex-shrink:0;opacity:${r.isDone ? '0.5' : '1'};">☕</span>
+        <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;">
+          <span style="font-size:15px;color:${r.isDone ? '#616a7e' : 'var(--text)'};">${label}</span>
+          <span style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">${stepper}${actual}${hintB}</span></span>
+        ${bTime}
+        <span onclick="event.stopPropagation();_rsBrkRemove('${r.id}')" title="remove this break" style="font-size:14px;color:#8b93a7;cursor:pointer;padding:0 4px;flex-shrink:0;">✕</span>
+        <span style="font-size:12px;color:var(--subtext);flex-shrink:0;">⠿</span></div></div>`;
+    }
     const key = _rsKey(r.t, r.n);
     const nSteps = stepsOf(r.t).length;
     const open = nSteps ? _rsIsOpen(r, key) : false;
@@ -18922,7 +19023,7 @@ function _rsRender() {
     // The .rs-row is a WRAPPER holding the header line and, when open, its steps —
     // so a drag carries the steps with it instead of stranding them. Tap-to-tick
     // lives on the header, not the wrapper, so tapping a step can't tick the task.
-    return `<div class="rs-row" data-rs-key="${_attr(key)}" ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)"
+    return `${_ins(_i)}<div class="rs-row" data-rs-key="${_attr(key)}" ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)"
       style="margin-bottom:8px;">
       <div${tap} style="display:flex;align-items:center;gap:9px;padding:11px 10px;border-radius:8px;border:1px solid ${border};background:${bg};${(r.tappable || r.undoable) ? 'cursor:pointer;' : ''}">
       <span style="font-size:15px;flex-shrink:0;opacity:${r.isDone ? '0.5' : '1'};">${r.isDone ? '✓' : '🚩'}</span>
@@ -18935,7 +19036,7 @@ function _rsRender() {
   }).join('');
   // Title and body land in the same breath — nothing above this line touches the DOM.
   if (titleEl) titleEl.textContent = ctx.job;
-  body.innerHTML = head + rowsHtml;
+  body.innerHTML = head + rowsHtml + _ins(rows.length);
 }
 
 // ── Steps on the run sheet ────────────────────────────────────────────────────
@@ -19067,7 +19168,60 @@ function _rsDragEnd2() {
   if (ctx) ctx.saveOrder(order);   // onto the block when planning, onto the session when running
   _rsRender();   // every time below the moved row re-forecasts
 }
-function closeRunSheet() { closeModal('modal-run-sheet'); _rsPlanId = null; }
+// ☕ PLANNED BREAKS ─────────────────────────────────────────────────────────────
+// Everybody needs a break in a day, and until now the sheet had no way to say so:
+// the finish time quietly assumed you worked straight through. A break is placed by
+// TAPPING the gap you want it in rather than by dragging one down from the bottom —
+// on a 27-row straw run that drag was the exact pain the lap fix had just removed.
+let _rsPlacing = false;
+function _rsAfterBrkChange(ctx) {
+  _rsRender();
+  if (ctx.kind === 'plan') { _applyBlockEstimate(_rsPlanId); if (typeof renderPlannerScreen === 'function') renderPlannerScreen(); }
+  else { renderRunChecklist(); updateRunRing(); }
+}
+function _rsPlaceBreak(idx) {
+  const ctx = _rsCtx(); if (!ctx || !ctx.saveBreaks) return;
+  const id = 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  ctx.saveBreaks((ctx.breaks || []).concat([{ id, mins: 30 }]));
+  // Put it exactly where the gap was: rebuild the order with the new key spliced in.
+  const c2 = _rsCtx();
+  const keys = _rsOrdered(c2).map(x => _rsInstKey(x)).filter(k => k !== _rsBrkKey(id));
+  keys.splice(Math.max(0, Math.min(idx, keys.length)), 0, _rsBrkKey(id));
+  c2.saveOrder(keys);
+  _rsPlacing = false;
+  _rsAfterBrkChange(_rsCtx());
+  showToast('☕ 30 min break planned');
+}
+function _rsBrkAdj(id, delta) {
+  const ctx = _rsCtx(); if (!ctx || !ctx.saveBreaks) return;
+  let mins = 30;
+  ctx.saveBreaks((ctx.breaks || []).map(b => {
+    if (b.id !== id) return b;
+    mins = Math.max(5, Math.min(240, (b.mins || 30) + delta));
+    return Object.assign({}, b, { mins });
+  }));
+  _rsAfterBrkChange(_rsCtx());
+  showToast('☕ ' + fmtMin(mins) + ' break');
+}
+function _rsBrkRemove(id) {
+  const ctx = _rsCtx(); if (!ctx || !ctx.saveBreaks) return;
+  ctx.saveBreaks((ctx.breaks || []).filter(b => b.id !== id));
+  const c2 = _rsCtx();
+  if (c2.order) c2.saveOrder(c2.order.filter(k => k !== _rsBrkKey(id)));
+  _rsAfterBrkChange(_rsCtx());
+  showToast('Break removed');
+}
+// Tapping the row starts the real break NOW and remembers which planned one it was,
+// so ☕ End Break ticks this row off and the forecast swaps planned for actual.
+function _rsBrkStart(id) {
+  if (!clockState || !clockState.running) return;
+  if (clockState.onBreak) { showToast('Already on a break'); return; }
+  clockState.brkActiveId = id;
+  const n = new Date();
+  applyBreakStart(String(n.getHours()).padStart(2, '0') + ':' + String(n.getMinutes()).padStart(2, '0'));
+  _rsRender(); updateRunRing();
+}
+function closeRunSheet() { closeModal('modal-run-sheet'); _rsPlanId = null; _rsPlacing = false; }
 function toggleChecklistFlag(task, item) {
   const pid = _clTargetPlanId();
   if (pid) {   // flagging within a planner block's arrangement
