@@ -3026,7 +3026,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.306';
+const APP_VERSION = '2026-06-21.307';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4371,11 +4371,29 @@ function finishRunPrompt() {
   const _planned = (clockState && clockState.lapTargets) ? Object.keys(clockState.lapTargets).length : 0;
   if (!jobHasReps(job) && !_planned) { showToast('No reps to reset'); return; }
   if (!confirm('Reset the reps for “' + job + '”?\n\nClears the laps counted so far AND any extra laps planned this session, so the finish time comes back to one lap each.\n\nThe timed reps already saved to your timesheet stay put.')) return;
+  // ⭐ SNAPSHOT BOTH STORES FIRST. This is a destructive press in the middle of a
+  // running job and Lincoln hit it by mistake on 24 Aug 2026. Putting it back by hand
+  // meant stepping every repeat task up one tap at a time, so the mistake cost more
+  // than the action ever saved. Undo restores exactly what was there.
+  const _prevReps = JSON.parse(JSON.stringify(getJobRuns()[job] || null));
+  const _prevLaps = (clockState && clockState.lapTargets) ? JSON.parse(JSON.stringify(clockState.lapTargets)) : null;
   resetRun(job);
   if (_planned) { delete clockState.lapTargets; _storeSet('kr_clock', JSON.stringify(clockState)); }
   renderRunChecklist();
   updateRunRing();          // 🏁 finish and the ring re-cost immediately, not on the next tick
-  showToast('↺ Reps and planned laps reset');
+  showUndoToast('↺ Reps and planned laps reset', () => {
+    const all = getJobRuns();
+    if (_prevReps) all[job] = _prevReps; else delete all[job];
+    saveJobRuns(all);
+    if (clockState) {
+      if (_prevLaps) clockState.lapTargets = _prevLaps; else delete clockState.lapTargets;
+      _storeSet('kr_clock', JSON.stringify(clockState));
+    }
+    renderRunChecklist();
+    updateRunRing();
+    if (typeof _rsRender === 'function' && document.getElementById('modal-run-sheet') && document.getElementById('modal-run-sheet').classList.contains('open')) _rsRender();
+    showToast('↺ Reps and planned laps restored');
+  }, 15000);
 }
 // A 'once' task is "done" when ticked this session; a 'repeat' task is never removed
 // from the list (it stays so you can tick it again) — its state is its rep count.
