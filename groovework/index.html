@@ -3026,7 +3026,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.309';
+const APP_VERSION = '2026-06-21.310';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5899,7 +5899,37 @@ function _entryClockInEpoch(e) {
   return isNaN(d.getTime()) ? null : d.getTime();
 }
 // → { item: durationMinutes } for one entry's timed checklist
-function _entryChecklistDurations(e) {
+// ── ✕ EXCLUDED TIMES ────────────────────────────────────────────────────────
+// A task's time is DERIVED from the gap between ticks, so a run where you ticked
+// something and then walked away for five hours lands a five hour "average" on that
+// task. There was no way to drop it: deleting the task doesn't touch timesheets, and
+// renaming carries the history with it (_migrateItemHistory), so the bad sample
+// followed the name. Deleting the whole timesheet took every good time on that run
+// with it.
+// ⚠️ EXCLUDE, never overwrite. A learned estimate must always come from work that was
+// actually done and timed — see the "learned, never typed" line in the positioning.
+// Excluding says "that sample was rubbish", which is a judgement about evidence.
+// Typing a number would be an invention.
+// ⚠️ NEVER auto-exclude. Outliers are Lincoln's call; the app does not get to decide
+// which of his days didn't count.
+let _texCache = null;
+function getTimeExcl() {
+  if (_texCache) return _texCache;
+  try { _texCache = JSON.parse(localStorage.getItem('kr_time_excl') || '{}') || {}; } catch (x) { _texCache = {}; }
+  return _texCache;
+}
+function saveTimeExcl(o) { _texCache = o; bumpEntriesRev(); return _storeSet('kr_time_excl', JSON.stringify(o)); }
+// Older entries predate entry ids, so fall back to date + clock-in, which is unique
+// per run in practice.
+function _timeExclKey(e, occ) { return (e && (e.id || ((e.date || '') + '|' + (e.clockIn || '')))) + '\u0002' + occ; }
+function _toggleTimeExcl(key) {
+  const all = getTimeExcl();
+  if (all[key]) delete all[key]; else all[key] = 1;
+  saveTimeExcl(all);
+}
+// keepExcluded: the trend chart passes true so it can still SHOW an excluded sample
+// (greyed, out of the average) and let you put it back.
+function _entryChecklistDurations(e, keepExcluded) {
   const list = Array.isArray(e.checklist) ? e.checklist : [];
   if (!list.length) return {};
   const sorted = list.slice().sort((a, b) => new Date(a.at) - new Date(b.at))
@@ -5908,7 +5938,13 @@ function _entryChecklistDurations(e) {
   const clockIn = (ci != null) ? ci : new Date(sorted[0].at).getTime();
   const raw = _computeChecklistDurations(sorted, clockIn, e.breaks);
   const out = {};
-  Object.keys(raw).forEach(k => { const m = raw[k]; if (isFinite(m) && m >= 0 && m <= 24 * 60) out[k] = m; });  // drop outliers
+  const ex = keepExcluded ? null : getTimeExcl();
+  Object.keys(raw).forEach(k => {
+    const m = raw[k];
+    if (!(isFinite(m) && m >= 0 && m <= 24 * 60)) return;          // drop impossible spans
+    if (ex && ex[_timeExclKey(e, k)]) return;                       // hand-excluded outlier
+    out[k] = m;
+  });
   return out;
 }
 function _aggregateChecklistTimes() {
@@ -6053,7 +6089,12 @@ function renderChecklistAvg(filter) {
   const list = document.getElementById('checklist-avg-list');
   if (!list) return;
   const jobsMode = _timesMode === 'jobs';
-  const all = jobsMode ? _aggregateJobTimes() : _aggregateChecklistTimes();
+  let all = jobsMode ? _aggregateJobTimes() : _aggregateChecklistTimes();
+  // ⚠️ ONE-WAY DOOR GUARD. A task whose only timed samples are all excluded has no
+  // average, so it drops out of _aggregateChecklistTimes and off this list — and the
+  // trend is the only place the exclusion can be undone. Keep it listed, marked, so
+  // there is always a way back.
+  if (!jobsMode) all = all.concat(_fullyExcludedTasks(all));
   if (!all.length) {
     _taskAvgRowsShown = [];
     list.innerHTML = jobsMode
@@ -6072,11 +6113,34 @@ function renderChecklistAvg(filter) {
     <div onclick="openTaskTrend(${i})" style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--border);cursor:pointer;">
       <span style="font-size:15px;color:var(--text);flex:1;min-width:0;">${_escHtml(r.item)}</span>
       <span style="text-align:right;white-space:nowrap;">
-        <span style="font-size:16px;font-weight:700;color:var(--blue);">${fmtMin(r.avg)}</span>
-        <span style="font-size:12px;color:var(--subtext);"> avg · ${r.count}×</span>
+        ${r.allExcluded
+          ? `<span style="font-size:13px;font-weight:700;color:#ff9f0a;">all excluded</span><span style="font-size:12px;color:var(--subtext);"> · ${r.exclCount}</span>`
+          : `<span style="font-size:16px;font-weight:700;color:var(--blue);">${fmtMin(r.avg)}</span><span style="font-size:12px;color:var(--subtext);"> avg · ${r.count}×</span>`}
       </span>
       <span style="color:var(--subtext);font-size:16px;flex-shrink:0;">›</span>
     </div>`).join('');
+}
+
+// Tasks whose every timed sample has been hand-excluded. They have no average, so
+// nothing else surfaces them — but the trend is where an exclusion is undone, and
+// this list is the only way in.
+function _fullyExcludedTasks(live) {
+  const ex = getTimeExcl();
+  if (!Object.keys(ex).length) return [];
+  const have = new Set((live || []).map(r => String(r.item).trim().replace(/\s+/g, ' ').toLowerCase()));
+  const agg = {};
+  entries.forEach(e => {
+    const raw = _entryChecklistDurations(e, true);
+    Object.keys(raw).forEach(occ => {
+      if (!ex[_timeExclKey(e, occ)]) return;
+      const label = _stripLap(occ).trim().replace(/\s+/g, ' ');
+      const key = label.toLowerCase();
+      if (have.has(key)) return;                       // still has live samples — already listed
+      if (!agg[key]) agg[key] = { item: label, avg: 0, count: 0, exclCount: 0, allExcluded: true };
+      agg[key].exclCount++;
+    });
+  });
+  return Object.keys(agg).map(k => agg[k]).sort((a, b) => a.item.localeCompare(b.item));
 }
 
 // ── Task Trend: one task's time each time it was done (X=days, Y=minutes) ──
@@ -6108,7 +6172,7 @@ function _jobSessions(job) {
 function _taskCompletions(normKey) {
   const items = [];   // { dayEpoch, at, minutes }  — one per completion
   entries.forEach(e => {
-    const d = _entryChecklistDurations(e);   // { occKey: minutes }
+    const d = _entryChecklistDurations(e, true);   // { occKey: minutes } — excluded kept, tagged below
     const p = String(e.date).split('/').map(Number);   // DD/MM/YYYY
     const dayEpoch = new Date(p[2], (p[1] || 1) - 1, p[0] || 1).getTime();
     if (!isFinite(dayEpoch)) return;
@@ -6117,7 +6181,8 @@ function _taskCompletions(normKey) {
     Object.keys(d).forEach(occ => {
       const label = _stripLap(occ).trim().replace(/\s+/g, ' ').toLowerCase();
       if (label !== normKey) return;
-      items.push({ dayEpoch, at: atOf[occ] || null, minutes: d[occ] });
+      const _xk = _timeExclKey(e, occ);
+      items.push({ dayEpoch, at: atOf[occ] || null, minutes: d[occ], xkey: _xk, excl: !!getTimeExcl()[_xk] });
     });
   });
   items.sort((a, b) => (a.dayEpoch - b.dayEpoch) || (new Date(a.at || 0) - new Date(b.at || 0)));
@@ -6131,7 +6196,7 @@ function openTaskTrend(i) {
   const r = _taskAvgRowsShown && _taskAvgRowsShown[i];
   if (!r) return;
   _trendMode = _timesMode === 'jobs' ? 'job' : 'task';
-  _taskTrendKey = _trendMode === 'job' ? r.item : r.item.toLowerCase();
+  _taskTrendKey = _trendMode === 'job' ? r.item : r.item.trim().replace(/\s+/g, ' ').toLowerCase();
   document.getElementById('task-trend-title').textContent = r.item;
   document.getElementById('task-trend-caption').textContent = '';
   openModal('modal-task-trend');
@@ -6164,18 +6229,25 @@ function renderTaskTrend() {
     return;
   }
 
-  const mins = series.map(s => s.minutes);
+  // An excluded sample stays on the chart, greyed, so you can see what you dropped
+  // and put it back. It counts toward nothing.
+  const live = series.filter(s => !s.excl);
+  const nExcl = series.length - live.length;
+  const mins = (live.length ? live : series).map(s => s.minutes);
   const maxV = Math.max(...mins), minV = Math.min(...mins);
   const avg = mins.reduce((a, b) => a + b, 0) / mins.length;
   // Distinct days → one X column each; laps share their day's column (stacked).
   const days = [...new Set(series.map(s => s.dayEpoch))].sort((a, b) => a - b);
   const dayCol = new Map(days.map((d, i) => [d, i]));
   const nDays = days.length;
-  const nDone = series.length;
-  statsEl.innerHTML = `Done <b style="color:var(--text)">${nDone}×</b>`
-    + (nDone > nDays ? ` over ${nDays} ${nDays === 1 ? 'day' : 'days'}` : ` on ${nDays} ${nDays === 1 ? 'day' : 'days'}`)
-    + ` · avg <b style="color:var(--text)">${fmtMin(avg)}</b>`
-    + (maxV > minV ? ` · ${fmtMin(minV)}–${fmtMin(maxV)}` : '');
+  const nDone = live.length;
+  statsEl.innerHTML = nDone === 0
+    ? `<span style="color:#ff9f0a;">${nExcl} excluded</span> · nothing counting yet — this task has no learned time`
+    : `Done <b style="color:var(--text)">${nDone}×</b>`
+      + (nExcl ? ` · <span style="color:#ff9f0a;">${nExcl} excluded</span>` : '')
+      + (nDone > nDays ? ` over ${nDays} ${nDays === 1 ? 'day' : 'days'}` : ` on ${nDays} ${nDays === 1 ? 'day' : 'days'}`)
+      + ` · avg <b style="color:var(--text)">${fmtMin(avg)}</b>`
+      + (maxV > minV ? ` · ${fmtMin(minV)}–${fmtMin(maxV)}` : '');
 
   const padL = 40, padR = 12, padT = 16, padB = 30;
   const chartW = W - padL - padR, chartH = H - padT - padB;
@@ -6197,24 +6269,32 @@ function renderTaskTrend() {
   }
 
   // Average line (dashed) — the reference the spread is read against
-  const ya = yOf(avg);
-  ctx.save(); ctx.setLineDash([4, 4]); ctx.strokeStyle = avgColor; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(padL, ya); ctx.lineTo(W - padR, ya); ctx.stroke(); ctx.restore();
-  ctx.fillStyle = avgColor; ctx.textAlign = 'left'; ctx.font = '9px -apple-system, sans-serif';
-  ctx.fillText('avg ' + fmtMin(avg), padL + 2, Math.max(padT + 8, ya - 4));
+  if (nDone > 0) {
+    const ya = yOf(avg);
+    ctx.save(); ctx.setLineDash([4, 4]); ctx.strokeStyle = avgColor; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(padL, ya); ctx.lineTo(W - padR, ya); ctx.stroke(); ctx.restore();
+    ctx.fillStyle = avgColor; ctx.textAlign = 'left'; ctx.font = '9px -apple-system, sans-serif';
+    ctx.fillText('avg ' + fmtMin(avg), padL + 2, Math.max(padT + 8, ya - 4));
+  }
 
   // Connecting trend line — completions in chronological order (same-day laps
   // sit at the same X, so the link between them reads as a vertical spread).
   if (nDone > 1) {
     ctx.strokeStyle = blue; ctx.globalAlpha = 0.4; ctx.lineWidth = 2;
     ctx.beginPath();
-    series.forEach((s, i) => { const x = colX(s.dayEpoch), y = yOf(s.minutes); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    live.forEach((s, i) => { const x = colX(s.dayEpoch), y = yOf(s.minutes); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
     ctx.stroke(); ctx.globalAlpha = 1;
   }
-  // Dots — one per completion
+  // Dots — one per completion. An excluded one is a hollow grey ring: still there,
+  // plainly not counting.
   series.forEach(s => {
-    const x = colX(s.dayEpoch), y = yOf(s.minutes);
-    ctx.fillStyle = blue; ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
+    const x = colX(s.dayEpoch), y = Math.max(padT - 6, yOf(s.minutes));
+    if (s.excl) {
+      ctx.strokeStyle = textColor; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.stroke();
+    } else {
+      ctx.fillStyle = blue; ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
+    }
     _taskTrendPts.push({ x, y, s });
   });
   // X date labels — one per day column, sampled to ~6 so they never crowd;
@@ -6239,12 +6319,29 @@ function renderTaskTrend() {
     const cap = document.getElementById('task-trend-caption');
     if (best && bd <= 900) {
       const s = best.s, dt = new Date(s.dayEpoch);
+      // Only a TASK completion can be excluded — a whole clocked run is the timesheet
+      // itself, and dropping one of those is a delete, not an exclusion.
+      const act = (_trendMode === 'task' && s.xkey)
+        ? ` · <span onclick="_taskTrendExcl(decodeURIComponent('${encodeURIComponent(s.xkey).replace(/'/g, '%27')}'))" style="color:${s.excl ? '#5ac8fa' : '#ff9f0a'};font-weight:700;cursor:pointer;">${s.excl ? '↺ put it back' : '✕ exclude this one'}</span>`
+        : '';
       cap.innerHTML = `<b style="color:var(--text)">${dt.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</b> — ${fmtMin(s.minutes)}`
-        + (s.dayCount > 1 ? ` · ${_trendMode === 'job' ? 'run' : 'lap'} ${s.lapIdx} of ${s.dayCount}` : '');
+        + (s.dayCount > 1 ? ` · ${_trendMode === 'job' ? 'run' : 'lap'} ${s.lapIdx} of ${s.dayCount}` : '')
+        + (s.excl ? ' · <span style="color:#ff9f0a;font-weight:700;">excluded</span>' : '')
+        + act;
     }
   };
 }
 
+// Drop a rogue sample out of the averages, or put it back. Every surface reads the
+// same derivation, so one toggle moves the Times list, the trend, the clock's meta
+// line, the run sheet's forecast and the planner block's estimate together.
+function _taskTrendExcl(key) {
+  _toggleTimeExcl(key);
+  renderTaskTrend();
+  if (typeof renderChecklistAvg === 'function') { const _f = document.getElementById('checklist-avg-search'); renderChecklistAvg(_f ? _f.value : ''); }
+  if (typeof renderRunChecklist === 'function' && clockState && clockState.running) { renderRunChecklist(); updateRunRing(); }
+  showToast(getTimeExcl()[key] ? '✕ Time excluded — averages updated' : '↺ Time counted again');
+}
 function formatTimeAmPm(t) {
   if (!t) return '--:--';
   const [h, m] = t.split(':').map(Number);
@@ -8403,7 +8500,7 @@ const KR_SYNC_KEYS = [
   'kr_equipment_notes', 'kr_equipment_links', 'kr_equipment_master',
   'kr_extra_frequencies', 'kr_extra_locations', 'kr_extra_clients',
   'kr_task_order', 'kr_frequency_order', 'kr_group_order', 'kr_location_order',
-  'kr_equipment_order', 'kr_task_types', 'kr_task_merges', 'kr_task_moves',
+  'kr_equipment_order', 'kr_task_types', 'kr_task_merges', 'kr_task_moves', 'kr_time_excl',
   'kr_subtask_origin', 'kr_job_flags', 'kr_job_horizon', 'kr_job_links',
   'kr_task_batches', 'kr_task_videos', 'kr_projects',
   // Planning + assignment (per-member keys are added dynamically below)
@@ -8747,7 +8844,7 @@ const KR_BACKUP_KEYS = [
   'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
   'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_task_videos', 'kr_checklist_flags', 'kr_task_merges', 'kr_subtask_origin', 'kr_pins_applied',
   'kr_agents', 'kr_agent_runs', 'kr_planner_checklist', 'kr_pin_order', 'kr_subtask_photos', 'kr_job_reminders', 'kr_task_reminders',
-  'kr_task_types', 'kr_job_runs', 'kr_job_flags', 'kr_task_moves', 'kr_job_horizon', 'kr_job_links', 'kr_task_batches',
+  'kr_task_types', 'kr_job_runs', 'kr_job_flags', 'kr_task_moves', 'kr_job_horizon', 'kr_job_links', 'kr_task_batches', 'kr_time_excl',
   // Added v219 — these were silently LOST on restore (Lincoln's icon re-add restore
   // dropped team mode → the Ethan tab vanished). Team/role, Ethan's planned day +
   // sent-state, the shared last-done map, view/sort preferences, and the one-time
