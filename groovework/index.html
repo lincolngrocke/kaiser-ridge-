@@ -3026,7 +3026,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.310';
+const APP_VERSION = '2026-06-21.311';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -19065,8 +19065,16 @@ function _rsRender() {
          <span onclick="event.stopPropagation();_rsBrkAdj('${r.id}', 5)" style="font-size:16px;font-weight:700;color:#8b93a7;cursor:pointer;padding:0 6px;line-height:1;">+</span>`;
       const actual = r.isDone && isFinite(r.actualMins) ? `<span style="font-size:11px;font-weight:700;color:#30d158;">✓ ${fmtMin(r.actualMins)}</span>` : '';
       const label = r.isDone ? 'Break taken' : (onBreakNow ? 'On break now' : 'Break');
-      const tapB = (!planning && !r.isDone && !clockState.onBreak) ? ` onclick="_rsBrkStart('${r.id}')"` : '';
-      const hintB = (!planning && !r.isDone) ? (onBreakNow ? '<span style="font-size:11px;color:#ff9f0a;font-weight:700;">tap ☕ End Break when you are back</span>' : '<span style="font-size:11px;color:#8b93a7;">tap to start it</span>') : '';
+      const tapB = planning || r.isDone ? ''
+        : (onBreakNow ? ` onclick="_rsBrkEnd()"`
+          : (!clockState.onBreak ? ` onclick="_rsBrkStart('${r.id}')"` : ''));
+      const hintB = (!planning && !r.isDone)
+        ? (onBreakNow
+            ? '<span style="font-size:11px;color:#ff9f0a;font-weight:700;">tap to end it</span>'
+            : (clockState.onBreak
+                ? '<span style="font-size:11px;color:#8b93a7;">already on another break</span>'
+                : '<span style="font-size:11px;color:#8b93a7;">tap to start it</span>'))
+        : '';
       return `${_ins(_i)}<div class="rs-row" data-rs-key="${_attr(bk)}" ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)" style="margin-bottom:8px;">
         <div${tapB} style="display:flex;align-items:center;gap:9px;padding:11px 10px;border-radius:8px;border:1px ${onBreakNow ? 'solid rgba(255,159,10,0.9)' : 'dashed rgba(255,159,10,0.55)'};background:${r.isDone ? 'transparent' : 'rgba(255,159,10,0.10)'};${tapB ? 'cursor:pointer;' : ''}">
         <span style="font-size:15px;flex-shrink:0;opacity:${r.isDone ? '0.5' : '1'};">☕</span>
@@ -19302,6 +19310,9 @@ function _rsBrkAdj(id, delta) {
 }
 function _rsBrkRemove(id) {
   const ctx = _rsCtx(); if (!ctx || !ctx.saveBreaks) return;
+  // Deleting the break you are currently on would strand brkActiveId, and ending the
+  // break would then tick off a row that no longer exists.
+  if (clockState && clockState.brkActiveId === id) { clockState.brkActiveId = null; _storeSet('kr_clock', JSON.stringify(clockState)); }
   ctx.saveBreaks((ctx.breaks || []).filter(b => b.id !== id));
   const c2 = _rsCtx();
   if (c2.order) c2.saveOrder(c2.order.filter(k => k !== _rsBrkKey(id)));
@@ -19310,6 +19321,13 @@ function _rsBrkRemove(id) {
 }
 // Tapping the row starts the real break NOW and remembers which planned one it was,
 // so ☕ End Break ticks this row off and the forecast swaps planned for actual.
+// Tap the row again to come back. applyBreakEnd banks the real minutes, ticks this
+// row off through brkActiveId and re-renders the sheet.
+function _rsBrkEnd() {
+  if (!clockState || !clockState.onBreak) return;
+  const n = new Date();
+  applyBreakEnd(String(n.getHours()).padStart(2, '0') + ':' + String(n.getMinutes()).padStart(2, '0'));
+}
 function _rsBrkStart(id) {
   if (!clockState || !clockState.running) return;
   if (clockState.onBreak) { showToast('Already on a break'); return; }
