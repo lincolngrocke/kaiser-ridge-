@@ -3026,7 +3026,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.307';
+const APP_VERSION = '2026-06-21.308';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5685,7 +5685,25 @@ function renderRunChecklist() {
           _chipOn = _reps > 0;
           _chipTitle = `${_reps} done — tap to undo last`;
         }
-        _metaBits.push(`<span onclick="event.stopPropagation();undoTaskRep('${enc}')" title="${_chipTitle}" style="display:inline-flex;align-items:center;padding:1px 8px;border-radius:9px;font-weight:700;cursor:pointer;background:${_chipOn ? 'rgba(48,209,88,0.22)' : 'transparent'};border:1px solid ${_chipOn ? 'rgba(48,209,88,0.6)' : 'rgba(255,255,255,0.22)'};color:${_chipOn ? '#30d158' : '#8b93a7'};">${_chipTxt}</span>`);
+        const _chip = `<span onclick="event.stopPropagation();undoTaskRep('${enc}')" title="${_chipTitle}" style="display:inline-flex;align-items:center;padding:1px 8px;border-radius:9px;font-weight:700;cursor:pointer;background:${_chipOn ? 'rgba(48,209,88,0.22)' : 'transparent'};border:1px solid ${_chipOn ? 'rgba(48,209,88,0.6)' : 'rgba(255,255,255,0.22)'};color:${_chipOn ? '#30d158' : '#8b93a7'};">${_chipTxt}</span>`;
+        // ⭐ − / + add and remove a PLANNED lap, the same control as the Organise
+        // sheet's 🔁 pill and the same function underneath, put here because this is
+        // where you are when you realise you need another lap. It had lived only on
+        // the Organise sheet since v257 and Lincoln never found it: the obvious
+        // control on this row is the ⊕, and that banks a TIMED rep instead.
+        // The chip between them keeps its own meaning — tap to undo the last banked
+        // rep — so intent and evidence stay separate, they just sit side by side.
+        // Flagged repeat tasks only, matching the Organise sheet exactly.
+        // NB the new handlers URI-encode the item text rather than escaping quotes,
+        // so a task name containing " or ' cannot kill the tap (see the pre-beta
+        // onclick sweep still owed on the older handlers on this row).
+        if (flagged) {
+          const _le = encodeURIComponent(s).replace(/'/g, '%27');
+          const _stepBtn = (d, glyph, tip) => `<span onclick="event.stopPropagation();_clSessionLapAdj(decodeURIComponent('${_le}'), ${d})" title="${tip}" style="font-size:16px;font-weight:700;color:#8b93a7;cursor:pointer;padding:0 6px;line-height:1;">${glyph}</span>`;
+          _metaBits.push(`<span style="display:inline-flex;align-items:center;">${_stepBtn(-1, '&minus;', 'one less planned lap')}${_chip}${_stepBtn(1, '+', 'one more planned lap')}</span>`);
+        } else {
+          _metaBits.push(_chip);
+        }
       }
       // 📋 The guide — the one thing on this line you tap to be TOLD something
       // rather than to record something. Until now a guide (and the video on it)
@@ -18457,7 +18475,8 @@ function _clSessionLapAdj(item, delta) {
   const n = Math.max(1, Math.min(99, _sessionPlannedLaps(job, item) + delta));
   lt[item] = n;
   _storeSet('kr_clock', JSON.stringify(clockState));
-  _renderClOrganiseBody();   // the sheet's flagged-time total counts the new lap
+  const _org = document.getElementById('modal-cl-organise');
+  if (_org && _org.classList.contains('open')) _renderClOrganiseBody();   // its flagged-time total counts the new lap
   renderRunChecklist();      // the clock's 🔁 chip counts down from the new target
   updateRunRing();           // ring % and 🏁 finish time re-target immediately
   const left = Math.max(0, n - taskRepCount(job, item));
