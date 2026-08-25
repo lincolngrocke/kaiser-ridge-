@@ -3026,7 +3026,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.313';
+const APP_VERSION = '2026-06-21.314';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4664,7 +4664,11 @@ function _linkifyText(s) {
 let _runSegBlockTapUntil = 0;
 function setRunTab(tab) { if (Date.now() < _runSegBlockTapUntil) return; _runTabUserSet = true; _runTab = tab; renderRunChecklist(); }
 function setRunGroupBy(k) { _runGroupBy = (k === 'batch') ? k : 'flag'; renderRunChecklist(); }
-function toggleRunGroup(k, cur) { _runGroupCollapsed[k] = (cur === undefined) ? !_runGroupCollapsed[k] : !cur; renderRunChecklist(); }
+function toggleRunGroup(k, cur) {
+  if (Date.now() < _clSwipeBlockClickUntil) return;   // a swipe just flagged the batch — not a tap
+  _runGroupCollapsed[k] = (cur === undefined) ? !_runGroupCollapsed[k] : !cur;
+  renderRunChecklist();
+}
 
 // ── Drag the Tasks/To-dos section up to cover the clock (bigger list). Snaps
 // back ~3s after you stop touching it. The clock ring collapses via max-height.
@@ -5791,7 +5795,10 @@ function renderRunChecklist() {
         const fl = _gHasFlag(g);
         const col = (g.key in _runGroupCollapsed) ? !!_runGroupCollapsed[g.key] : !fl;
         const allDone = g.members.length > 0 && doneN >= g.members.length;
-        const hd = `<div onclick="toggleRunGroup(decodeURIComponent('${encodeURIComponent(g.key).replace(/'/g, '%27')}'), ${col})" style="display:flex;align-items:center;gap:8px;padding:15px 0 6px;cursor:pointer;">
+        const _gName = g.loose ? '~loose' : g.name;
+        const hd = `<div data-batch-sec="1" data-batch-name="${_attr(_gName)}" data-batch-task="${_attr(clockState.task)}"
+          ontouchstart="clBatchSwipeStart(event)" ontouchmove="clBatchSwipeMove(event)" ontouchend="clBatchSwipeEnd(event)"
+          onclick="toggleRunGroup(decodeURIComponent('${encodeURIComponent(g.key).replace(/'/g, '%27')}'), ${col})" style="display:flex;align-items:center;gap:8px;padding:15px 0 6px;cursor:pointer;">
           <span style="color:#8b93a7;font-size:13px;">${col ? '▸' : '▾'}</span>
           <span style="font-size:13px;font-weight:700;letter-spacing:0.3px;color:${g.loose ? '#8b93a7' : (allDone ? '#30d158' : '#dfe3ec')};">${fl ? '🚩 ' : ''}${allDone ? '✓ ' : ''}${_escHtml(g.name)}</span>
           <span style="font-size:11px;color:#616a7e;background:rgba(255,255,255,0.06);border-radius:9px;padding:1px 7px;">${doneN}/${g.members.length}${est ? ' · ~' + fmtMin(est) : ''}</span>
@@ -18459,21 +18466,111 @@ function _endClDrag() {
 // a hold starts the drag. Persists _bRec.order → the jobs page.
 let _clHeadDrag = null, _clHeadPress = null, _clHeadInfo = null;
 const _CL_HEAD_HOLD_MS = 250;
+// ── 🚩 SWIPE A BATCH HEADING → FLAG THE WHOLE BATCH ───────────────────────────
+// Lincoln, 26 Aug 2026: with the batches collapsed the clock is a handful of headers,
+// and flagging a whole batch meant opening it and swiping every row. The heading is
+// already a deliberate target (tap collapses, hold reorders), so swipe right on it
+// does to the batch what swiping a row does to one task.
+// TOGGLES, like the row swipe: a batch already fully flagged unflags. And it writes
+// through the SAME scopes toggleChecklistFlag uses — a planner block's arrangement,
+// the live session override, else the job's own flags — so nothing can diverge.
+// ⚠️ It can move twenty flags at once, so it always offers an Undo.
+function _clBatchMembers(task, name) {
+  const rec = _batchRec(task);
+  const subs = SUBTASKS[task] || [];
+  if (!rec) return [];
+  if (name === '~loose' || name === 'Other tasks' || name === 'Unbatched')
+    return subs.filter(t => !(rec.items[t] && rec.order.includes(rec.items[t])));
+  return subs.filter(t => rec.items[t] === name);
+}
+function _clFlagStore(task) {
+  const pid = _clTargetPlanId();
+  if (pid) {
+    const m = getPlannerChecklist(); const rec = m[pid] || (m[pid] = { flags: {} });
+    return { get: () => rec.flags || (rec.flags = {}), save: () => { savePlannerChecklist(m); _applyBlockEstimate(pid); }, pid };
+  }
+  if (clockState && clockState.running && clockState.task === task && clockState.flagOverride)
+    return { get: () => clockState.flagOverride, save: () => _storeSet('kr_clock', JSON.stringify(clockState)) };
+  const all = getChecklistFlags();
+  return { get: () => all[task] || (all[task] = {}), save: () => { if (!Object.keys(all[task] || {}).length) delete all[task]; saveChecklistFlags(all); } };
+}
+function _clBatchFlagAll(task, name) {
+  const members = _clBatchMembers(task, name);
+  if (!members.length) { showToast('Nothing in that batch'); return; }
+  const st = _clFlagStore(task);
+  const f = st.get();
+  const before = {}; members.forEach(t => { before[t] = f[t] || null; });
+  const allOn = members.every(t => !!f[t]);
+  const base = Date.now();
+  // Stamp in list order so they land in the order the batch reads, not reversed.
+  members.forEach((t, i) => { if (allOn) delete f[t]; else if (!f[t]) f[t] = base + i; });
+  st.save();
+  const after = () => {
+    if (st.pid) { _renderClOrganiseBody(); if (typeof renderPlannerScreen === 'function') renderPlannerScreen(); }
+    else _refreshChecklistSurfaces(task);
+    const org = document.getElementById('modal-cl-organise');
+    if (org && org.classList.contains('open')) _renderClOrganiseBody();
+  };
+  after();
+  showUndoToast((allOn ? 'Flags removed from ' : '🚩 Flagged all ') + members.length + ' in ▣ ' + name, () => {
+    // ⚠️ ONE store object, used for both the read and the write. Calling _clFlagStore
+    // twice re-parses storage, so the second handle saves an unmutated copy and the
+    // undo silently does nothing.
+    const st2 = _clFlagStore(task);
+    const f2 = st2.get();
+    members.forEach(t => { if (before[t]) f2[t] = before[t]; else delete f2[t]; });
+    st2.save();
+    after();
+    showToast('↺ Batch flags put back');
+  }, 12000);
+}
+// Same gesture as a task row, on a heading. Coexists with the hold-to-reorder drag:
+// a horizontal move cancels the long press, exactly as it does on a row.
+let _clHeadSwipe = null;
+function clBatchSwipeStart(e) {
+  const row = e.currentTarget;
+  _clHeadSwipe = { row, name: row.dataset.batchName, task: row.dataset.batchTask || _clOrganiseTask || (clockState && clockState.task),
+                   x: e.touches[0].clientX, y: e.touches[0].clientY, moved: false };
+}
+function clBatchSwipeMove(e) {
+  const s = _clHeadSwipe; if (!s) return;
+  const dx = e.touches[0].clientX - s.x, dy = e.touches[0].clientY - s.y;
+  if (!s.moved && (Math.abs(dy) > Math.abs(dx) || dx < 0)) { _clHeadSwipe = null; return; }
+  if (dx > 6) {
+    s.moved = true;
+    e.preventDefault();
+    s.row.style.transition = 'none';
+    s.row.style.transform = 'translateX(' + Math.min(dx, 90) + 'px)';
+    s.row.style.opacity = String(Math.max(0.45, 1 - dx / 220));
+  }
+}
+function clBatchSwipeEnd(e) {
+  const s = _clHeadSwipe; _clHeadSwipe = null;
+  if (!s) return;
+  const dx = (e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientX : s.x) - s.x;
+  s.row.style.transition = 'transform 0.16s, opacity 0.16s';
+  s.row.style.transform = ''; s.row.style.opacity = '';
+  if (s.moved) _clSwipeBlockClickUntil = Date.now() + 400;   // don't let it also collapse the batch
+  if (s.moved && dx > 48 && s.task) _clBatchFlagAll(s.task, s.name);
+}
 function clHeadStart(e) {
   const row = e.currentTarget;
   const y = e.touches[0].clientY;
   clearTimeout(_clHeadPress);
   _clHeadInfo = { row, name: row.dataset.batchName, x: e.touches[0].clientX, y };
-  _clHeadPress = setTimeout(() => { _clHeadPress = null; _startClHeadDrag(row); }, _CL_HEAD_HOLD_MS);
+  clBatchSwipeStart(e);   // swipe right flags the batch; the hold below still reorders
+  _clHeadPress = setTimeout(() => { _clHeadPress = null; _clHeadSwipe = null; _startClHeadDrag(row); }, _CL_HEAD_HOLD_MS);
 }
 function clHeadMove(e) {
   if (_clHeadDrag) { e.preventDefault(); const cy = e.touches[0].clientY; _clHeadDrag.lastY = cy; if (_clHeadDrag.clone) _clHeadDrag.clone.style.top = (cy - 20) + 'px'; _clEdgeScroll(document.getElementById('cl-organise-body'), cy, null); return; }
+  clBatchSwipeMove(e);
   const s = _clHeadInfo; if (!s) return;
   if (_clHeadPress && (Math.abs(e.touches[0].clientX - s.x) > 8 || Math.abs(e.touches[0].clientY - s.y) > 8)) { clearTimeout(_clHeadPress); _clHeadPress = null; _clHeadInfo = null; } // scroll → cancel
 }
-function clHeadEnd() {
+function clHeadEnd(e) {
   clearTimeout(_clHeadPress); _clHeadPress = null;
-  if (_clHeadDrag) _endClHeadDrag();
+  if (_clHeadDrag) { _clHeadSwipe = null; _endClHeadDrag(); _clHeadInfo = null; return; }
+  if (e) clBatchSwipeEnd(e);
   _clHeadInfo = null;
 }
 function _startClHeadDrag(row) {
@@ -19552,7 +19649,7 @@ function _renderClOrganiseBody() {
   // ▣ heading — tap to open/close the batch (chevron + task count). Still a drop
   // boundary: dropping a task under a heading re-homes it, so a collapsed batch is
   // a compact target. `count` shown; `collapsed` hides the rows below.
-  const secHd = (label, looseAttr, count, collapsed) => `<div data-batch-sec="1"${looseAttr ? ' data-batch-loose="1"' : ''} data-batch-name="${_attr(label)}" onclick="_clToggleBatchCollapse(decodeURIComponent('${encodeURIComponent(label).replace(/'/g, '%27')}'))"${looseAttr ? '' : ' ontouchstart="clHeadStart(event)" ontouchmove="clHeadMove(event)" ontouchend="clHeadEnd(event)"'} style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--subtext);font-weight:700;letter-spacing:0.4px;margin:16px 0 8px;">
+  const secHd = (label, looseAttr, count, collapsed) => `<div data-batch-sec="1"${looseAttr ? ' data-batch-loose="1"' : ''} data-batch-name="${_attr(label)}" data-batch-task="${taskAttr}" onclick="_clToggleBatchCollapse(decodeURIComponent('${encodeURIComponent(label).replace(/'/g, '%27')}'))"${looseAttr ? ' ontouchstart="clBatchSwipeStart(event)" ontouchmove="clBatchSwipeMove(event)" ontouchend="clBatchSwipeEnd(event)"' : ' ontouchstart="clHeadStart(event)" ontouchmove="clHeadMove(event)" ontouchend="clHeadEnd(event)"'} style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--subtext);font-weight:700;letter-spacing:0.4px;margin:16px 0 8px;">
     <span style="font-size:13px;width:12px;flex-shrink:0;">${collapsed ? '▸' : '▾'}</span>
     <span style="flex:1;min-width:0;">▣ ${_escHtml(label)}</span>
     <span style="font-weight:600;color:#616a7e;background:rgba(127,127,127,0.14);border-radius:9px;padding:1px 8px;flex-shrink:0;">${count}</span>${looseAttr ? '' : '<span style="font-size:13px;color:#616a7e;flex-shrink:0;">⠿</span>'}</div>`;
