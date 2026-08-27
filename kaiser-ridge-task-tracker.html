@@ -3026,7 +3026,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.314';
+const APP_VERSION = '2026-06-21.315';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -8389,9 +8389,29 @@ function _idbOpen() {
 // abort, or a synchronous throw — records the key as unsaved and raises a banner that
 // STAYS UP until a later write for that key completes. Silence is no longer success.
 let _idbUnsaved = Object.create(null);   // key -> reason, while its last write did not complete
-function _idbSet(key, val) {
+let _idbRetrying = Object.create(null);
+function _idbSet(key, val, isRetry) {
   if (!_idbOk) return;
-  const fail = (why) => { _idbUnsaved[key] = why; try { updateStorageAlarm(); } catch (e) {} };
+  const fail = (why) => {
+    _idbUnsaved[key] = why;
+    // ⭐ RETRY ONCE, AUTOMATICALLY. iOS aborts an in-flight transaction whenever it
+    // suspends the app, and that abort is almost always transient: the same write
+    // succeeds a moment later. Without this, a routine overnight suspension leaves a
+    // red banner the user has no way to clear — 2026-08-28, Lincoln woke to exactly
+    // that and had to be talked through editing an old timesheet to force a write.
+    // ⚠️ The retry re-reads _kv[key] and NEVER replays `val`. A newer write may have
+    // landed in between, and replaying the older value would silently undo it.
+    // ⚠️ It does NOT weaken the guard: the banner still goes up on this failure and
+    // only comes down if the retry genuinely completes. Silence is still not success.
+    if (!isRetry && !_idbRetrying[key]) {
+      _idbRetrying[key] = 1;
+      setTimeout(() => {
+        delete _idbRetrying[key];
+        if (key in _idbUnsaved) _idbSet(key, (key in _kv) ? _kv[key] : val, true);
+      }, 400);
+    }
+    try { updateStorageAlarm(); } catch (e) {}
+  };
   const ok = () => { if (key in _idbUnsaved) { delete _idbUnsaved[key]; try { updateStorageAlarm(); } catch (e) {} } };
   try {
     const tx = _idb.transaction('kv', 'readwrite');
@@ -8402,6 +8422,25 @@ function _idbSet(key, val) {
   } catch (e) { fail('threw'); }
 }
 function _idbUnsavedKeys() { return Object.keys(_idbUnsaved); }
+// Rewrite every unsaved key from the RAM cache. This is the actual repair for a
+// dropped write, and until now there was no way to ask for it: the banner offered a
+// backup, which protects the data but leaves it still unwritten.
+function _retryUnsavedWrites(silent) {
+  const keys = _idbUnsavedKeys();
+  if (!keys.length) { if (!silent) showToast('Everything is saved ✓'); return; }
+  keys.forEach(k => { if (k in _kv) _idbSet(k, _kv[k], true); });   // isRetry → one attempt per tap
+  if (!silent) showToast('Retrying ' + keys.length + ' save' + (keys.length === 1 ? '' : 's') + '…');
+  setTimeout(() => {
+    const left = _idbUnsavedKeys();
+    if (!silent) showToast(left.length ? 'Still not saving — export a backup and send it to Claude' : '✓ Saved');
+  }, 900);
+}
+// Coming back to the app is the moment a suspended-mid-write abort can be repaired,
+// so try silently. This is the one that should mean Lincoln never sees the banner
+// for an ordinary overnight suspension.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && _idbUnsavedKeys().length) _retryUnsavedWrites(true);
+});
 
 // The alarm for "your work is not being saved". A 3-second toast was the old warning
 // and it is the wrong instrument for this: Lincoln saw one flash by on 2026-08-07 and
@@ -8417,7 +8456,7 @@ function updateStorageAlarm() {
   if (!el) {
     el = document.createElement('div');
     el.id = 'storage-alarm';
-    el.onclick = () => { try { exportBackup(); } catch (e) {} };
+    el.onclick = () => { try { exportBackup(); } catch (e) {} };   // the bar itself still exports
     el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;padding:11px 14px;'
       + 'background:#B3261E;color:#fff;font-size:13px;font-weight:700;line-height:1.35;'
       + 'box-shadow:0 2px 10px rgba(0,0,0,0.5);cursor:pointer;-webkit-tap-highlight-color:transparent;';
@@ -8426,7 +8465,11 @@ function updateStorageAlarm() {
   const what = keys.map(k => _KEY_LABEL[k] || k).join(' and ');
   el.innerHTML = '🛑 NOT SAVED — your ' + what + ' did not write to storage.<br>'
     + '<span style="font-weight:600;">Tap here to export a backup NOW.</span> '
-    + '<span style="font-weight:400;">Do not close the app until you have.</span>';
+    + '<span style="font-weight:400;">Do not close the app until you have.</span><br>'
+    + '<span onclick="event.stopPropagation();_retryUnsavedWrites()" '
+    + 'style="display:inline-block;margin-top:7px;padding:5px 12px;border-radius:8px;'
+    + 'background:rgba(255,255,255,0.22);border:1px solid rgba(255,255,255,0.5);font-weight:700;">'
+    + '&#8635; Try saving again</span>';
 }
 function _idbDel(key) { if (_idbOk) { try { _idb.transaction('kv', 'readwrite').objectStore('kv').delete(key); } catch (e) {} } }
 
