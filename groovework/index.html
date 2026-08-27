@@ -3026,7 +3026,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.315';
+const APP_VERSION = '2026-06-21.316';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5622,7 +5622,7 @@ function renderRunChecklist() {
       </div>`;
     }
     const buildTaskRow = (s) => {
-      const enc = s.replace(/'/g, "\\'");
+      const enc = encodeURIComponent(s).replace(/'/g, '%27')   // ⭐ URI-encoded, NOT quote-escaped: the attribute is delimited by " and a task name containing one would close it early and kill the row's tap. %27 keeps apostrophes intact.
       const _isRep = isRepeatTask(clockState.task, s);
       const _reps = _isRep ? taskRepCount(clockState.task, s) : 0;
       // The 🔁 rep chip lives on the meta line below the text (moved off the row
@@ -5646,22 +5646,22 @@ function renderRunChecklist() {
       const expanded = _expandedChecklistItems.has(s);
       const checkedCount = steps.filter(st => stepChecks[s] && stepChecks[s][st]).length;
       const flagged = !!clFlags[s];
-      const circle = `<span onclick="markChecklistItemDone('${enc}')" title="${_isRep ? 'Add a rep' : ''}" style="width:24px;height:24px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;${isDone ? 'background:#30d158;' : (_isRep && _reps ? 'border:2px solid rgba(48,209,88,0.6);' : 'border:2px solid rgba(255,255,255,0.28);')}">${isDone ? '<span style="color:#05070c;font-size:14px;">✓</span>' : (_isRep ? '<span style="color:#30d158;font-size:19px;font-weight:700;line-height:1;">+</span>' : '')}</span>`;
+      const circle = `<span onclick="markChecklistItemDone(decodeURIComponent('${enc}'))" title="${_isRep ? 'Add a rep' : ''}" style="width:24px;height:24px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;${isDone ? 'background:#30d158;' : (_isRep && _reps ? 'border:2px solid rgba(48,209,88,0.6);' : 'border:2px solid rgba(255,255,255,0.28);')}">${isDone ? '<span style="color:#05070c;font-size:14px;">✓</span>' : (_isRep ? '<span style="color:#30d158;font-size:19px;font-weight:700;line-height:1;">+</span>' : '')}</span>`;
       // Long tasks (or tasks with steps) clamp to 2 lines and expand on tap — same
       // as to-dos. Short tasks keep tap-the-text-to-complete. The circle always completes.
       const _longish = s.length > 55;
       const _expandable = steps.length > 0 || _longish;
-      const textTap = _expandable ? `toggleChecklistExpand('${enc}')` : `markChecklistItemDone('${enc}')`;
+      const textTap = _expandable ? `toggleChecklistExpand(decodeURIComponent('${enc}'))` : `markChecklistItemDone(decodeURIComponent('${enc}'))`;
       const stepBadge = steps.length ? ` <span style="color:#616a7e;font-size:13px;">(${checkedCount}/${steps.length})</span>` : '';
       const _clamp = (_expandable && !expanded) ? 'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;' : '';
       const textSpan = `<span onclick="${textTap}" style="flex:1;min-width:0;font-size:16px;cursor:pointer;${_clamp}${isDone ? 'color:#616a7e;text-decoration:line-through;' : 'color:#e7eaf0;'}">${flagged ? '🚩 ' : ''}${_escHtml(s)}${stepBadge}</span>`;
       const _avgMin = itemAvg[s.trim().replace(/\s+/g, ' ').toLowerCase()];
       const right = isDone
         ? `<span style="font-size:13px;color:#30d158;font-weight:600;white-space:nowrap;">${fmtMin(dur[s])}</span>`
-        : (_expandable ? `<span onclick="toggleChecklistExpand('${enc}')" style="color:#8b93a7;font-size:14px;cursor:pointer;padding:0 4px;flex-shrink:0;">${expanded ? '▾' : '▸'}</span>` : '');
+        : (_expandable ? `<span onclick="toggleChecklistExpand(decodeURIComponent('${enc}'))" style="color:#8b93a7;font-size:14px;cursor:pointer;padding:0 4px;flex-shrink:0;">${expanded ? '▾' : '▸'}</span>` : '');
       const clFlagAttr = (flagged && !isDone) ? '1' : '';
       const clRowBg = (flagged && !isDone) ? 'background:rgba(255,214,10,0.08);' : '';
-      const editIcon = `<span onclick="event.stopPropagation();openRunEdit('tasks','${enc}')" style="flex-shrink:0;color:#9aa3b7;font-size:23px;line-height:1;cursor:pointer;padding:10px 14px 10px 12px;">✎</span>`;
+      const editIcon = `<span onclick="event.stopPropagation();openRunEdit('tasks',decodeURIComponent('${enc}'))" style="flex-shrink:0;color:#9aa3b7;font-size:23px;line-height:1;cursor:pointer;padding:10px 14px 10px 12px;">✎</span>`;
       let html = `<div class="cl-row" data-cl-item="${_attr(s)}" data-cl-task="${taskAttr}" data-cl-flagged="${clFlagAttr}" ontouchstart="clSwipeStart(event)" ontouchmove="clSwipeMove(event)" ontouchend="clSwipeEnd(event)" style="display:flex;align-items:center;gap:12px;padding:13px 0;border-top:0.5px solid rgba(255,255,255,0.08);${clRowBg}">${circle}${textSpan}${editIcon}${right}</div>`;
       // Meta line under the text — last done, learned average, and the 🔁 rep chip
       // all live here now so the task text keeps the full row width.
@@ -5695,7 +5695,7 @@ function renderRunChecklist() {
           _chipOn = _reps > 0;
           _chipTitle = `${_reps} done — tap to undo last`;
         }
-        const _chip = `<span onclick="event.stopPropagation();undoTaskRep('${enc}')" title="${_chipTitle}" style="display:inline-flex;align-items:center;padding:1px 8px;border-radius:9px;font-weight:700;cursor:pointer;background:${_chipOn ? 'rgba(48,209,88,0.22)' : 'transparent'};border:1px solid ${_chipOn ? 'rgba(48,209,88,0.6)' : 'rgba(255,255,255,0.22)'};color:${_chipOn ? '#30d158' : '#8b93a7'};">${_chipTxt}</span>`;
+        const _chip = `<span onclick="event.stopPropagation();undoTaskRep(decodeURIComponent('${enc}'))" title="${_chipTitle}" style="display:inline-flex;align-items:center;padding:1px 8px;border-radius:9px;font-weight:700;cursor:pointer;background:${_chipOn ? 'rgba(48,209,88,0.22)' : 'transparent'};border:1px solid ${_chipOn ? 'rgba(48,209,88,0.6)' : 'rgba(255,255,255,0.22)'};color:${_chipOn ? '#30d158' : '#8b93a7'};">${_chipTxt}</span>`;
         // ⭐ − / + add and remove a PLANNED lap, the same control as the Organise
         // sheet's 🔁 pill and the same function underneath, put here because this is
         // where you are when you realise you need another lap. It had lived only on
@@ -5730,7 +5730,7 @@ function renderRunChecklist() {
         // holds its own, and nothing when nobody else shares the task.
         const _ownHere = !!(_ownGuidesRun && Object.prototype.hasOwnProperty.call(_ownGuidesRun, s));
         const _sharedVid = !_ownHere && (_taskJobCountRun[s] || 0) > 1;
-        _metaBits.push(`<span onclick="event.stopPropagation();viewSubtaskGuide('${enc}', (clockState&&clockState.task)||null)" style="color:#5ac8fa;cursor:pointer;font-weight:600;">${_escHtml(_label)}${_sharedVid ? ' 🔗' : ''}</span>`);
+        _metaBits.push(`<span onclick="event.stopPropagation();viewSubtaskGuide(decodeURIComponent('${enc}'), (clockState&&clockState.task)||null)" style="color:#5ac8fa;cursor:pointer;font-weight:600;">${_escHtml(_label)}${_sharedVid ? ' 🔗' : ''}</span>`);
       }
       if (_metaBits.length) html += `<div style="font-size:11px;color:#616a7e;padding:1px 0 7px 36px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${_metaBits.join('<span style="opacity:0.6;">·</span>')}</div>`;
       // 💬 Session comments attached to this task (fold into the entry at clock-out)
@@ -5755,7 +5755,7 @@ function renderRunChecklist() {
             <span style="flex:1;font-size:15px;${checked ? 'color:#616a7e;text-decoration:line-through;' : 'color:#c7ccd8;'}">${_escHtml(st)}</span>${_stime}</div>`;
         }).join('');
         // Steps are editable mid-run — saved globally, so the jobs page gets them too.
-        html += `<div onclick="event.stopPropagation();openSubtaskStepsEditor('${enc}', (clockState&&clockState.task)||null)" style="padding:9px 0 9px 36px;color:#5ac8fa;font-size:13px;font-weight:600;cursor:pointer;">＋ Add step</div>`;
+        html += `<div onclick="event.stopPropagation();openSubtaskStepsEditor(decodeURIComponent('${enc}'), (clockState&&clockState.task)||null)" style="padding:9px 0 9px 36px;color:#5ac8fa;font-size:13px;font-weight:600;cursor:pointer;">＋ Add step</div>`;
       }
       return html;
     };
@@ -6414,7 +6414,7 @@ function openTsFilter(type) {
 
   const current = _tsFilters[type];
   document.getElementById('dir-filter-list').innerHTML = options.map(o => `
-    <div onclick="selectTsFilter('${o.replace(/'/g,"\\'")}')"
+    <div onclick="selectTsFilter(decodeURIComponent('${_encArg(o)}'))"
       style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;font-size:15px;">
       <span>${o}</span>
       ${o === current ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}
@@ -8422,6 +8422,13 @@ function _idbSet(key, val, isRetry) {
   } catch (e) { fail('threw'); }
 }
 function _idbUnsavedKeys() { return Object.keys(_idbUnsaved); }
+// ⭐ THE ONLY SAFE WAY TO PUT USER TEXT INTO AN onclick. The attribute is delimited by
+// a double quote, so escaping single quotes (what this app did until v316) protects the
+// JS string and NOT the attribute: a task named `Fit the 2" camlock` closed the
+// attribute early and the row's tap silently died. encodeURIComponent turns " into %22
+// so nothing can break out; %27 keeps apostrophes readable through decodeURIComponent.
+// ⚠️ Never hand-escape quotes into an onclick again — use this and decodeURIComponent.
+function _encArg(v) { return encodeURIComponent(String(v == null ? '' : v)).replace(/'/g, '%27'); }
 // Rewrite every unsaved key from the RAM cache. This is the actual repair for a
 // dropped write, and until now there was no way to ask for it: the banner offered a
 // backup, which protects the data but leaves it still unwritten.
@@ -9845,7 +9852,7 @@ function openDirFilter(type) {
 
   const current = _dirFilters[type];
   document.getElementById('dir-filter-list').innerHTML = options.map(o => `
-    <div onclick="selectDirFilter('${o.replace(/'/g,"\\'")}',this)"
+    <div onclick="selectDirFilter(decodeURIComponent('${_encArg(o)}'),this)"
       style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;font-size:15px;">
       <span>${o}</span>
       ${o === current ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}
@@ -10148,7 +10155,7 @@ function renderDirectory() {
             const nPins = (taskNotes[task] || []).length;
             const pinBadge = nPins ? `<span onclick="event.stopPropagation();showPinnedNotesPopup(this)" ontouchstart="event.stopPropagation()" title="View ${nPins} to-do${nPins === 1 ? '' : 's'}" style="display:inline-block;background:#FFD60A;color:#000;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;cursor:pointer;">📌 ${nPins}</span>` : '';
             const hasVideo = !!(taskVideos[task] || {}).id;
-            const videoBadge = hasVideo ? `<span onclick="event.stopPropagation();playVideoForTask('${task.replace(/'/g, "\\'")}')" ontouchstart="event.stopPropagation()" title="Watch how-to video" style="display:inline-block;background:var(--blue);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;cursor:pointer;">🎥</span>` : '';
+            const videoBadge = hasVideo ? `<span onclick="event.stopPropagation();playVideoForTask(decodeURIComponent('${_encArg(task)}'))" ontouchstart="event.stopPropagation()" title="Watch how-to video" style="display:inline-block;background:var(--blue);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;cursor:pointer;">🎥</span>` : '';
             const nLinks = (jobLinksMap[task] || []).length;
             const linkBadge = nLinks ? `<span title="${nLinks} file${nLinks === 1 ? '' : 's'} / link${nLinks === 1 ? '' : 's'}" style="display:inline-block;background:var(--bg);border:1px solid var(--border);color:var(--subtext);font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;">🔗 ${nLinks}</span>` : '';
             const lu = lastUsed[task];
@@ -10340,13 +10347,13 @@ function _pickerRenamePrompt(type, oldName, renderFn, propagateFn) {
 }
 
 function _pickerRowHtml(type, name, idx, isSelected, extraRight, selFn) {
-  const enc = name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+  const enc = encodeURIComponent(name).replace(/'/g, '%27')   // ⭐ URI-encoded, NOT quote-escaped: the attribute is delimited by " and a task name containing one would close it early and kill the row's tap. %27 keeps apostrophes intact.
   return `<div data-pk-idx="${idx}"
     style="padding:12px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">
-    <span onclick="${selFn}('${enc}',false)" style="flex:1;font-size:16px;color:var(--text);cursor:pointer;">${name}</span>
+    <span onclick="${selFn}(decodeURIComponent('${enc}'),false)" style="flex:1;font-size:16px;color:var(--text);cursor:pointer;">${name}</span>
     ${isSelected ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}
     ${extraRight || ''}
-    <button onclick="_pickerRenamePrompt('${type}','${enc}',render${_cap(type)}PickerList,_rename${_cap(type)})" style="background:none;border:none;color:var(--subtext);font-size:17px;cursor:pointer;padding:4px 6px;flex-shrink:0;">✎</button>
+    <button onclick="_pickerRenamePrompt('${type}',decodeURIComponent('${enc}'),render${_cap(type)}PickerList,_rename${_cap(type)})" style="background:none;border:none;color:var(--subtext);font-size:17px;cursor:pointer;padding:4px 6px;flex-shrink:0;">✎</button>
   </div>`;
 }
 function _cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
@@ -10406,7 +10413,7 @@ function renderFrequencyPickerList() {
   const filtered = query ? ordered.filter(f => f.toLowerCase().includes(query.toLowerCase())) : ordered;
   const list = document.getElementById('frequency-picker-list');
   const addRow = query && !all.some(f => f.toLowerCase() === query.toLowerCase())
-    ? `<div onclick="selectFrequency('${query.replace(/'/g,"\\'")}',true)"
+    ? `<div onclick="selectFrequency(decodeURIComponent('${_encArg(query)}'),true)"
         style="padding:12px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;cursor:pointer;">
         <span style="font-size:20px;color:var(--blue);">＋</span>
         <span style="font-size:16px;color:var(--blue);">Add "${query}"</span>
@@ -10495,7 +10502,7 @@ function renderLocationPickerList() {
   let html = '';
   const exactMatch = allLocs.some(l => l.toLowerCase() === queryLower);
   if (query && !exactMatch) {
-    html += `<div onclick="selectLocation('${query.replace(/'/g,"\\'")}')"
+    html += `<div onclick="selectLocation(decodeURIComponent('${_encArg(query)}'))"
       style="padding:12px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:pointer;">
       <span style="font-size:20px;color:var(--blue);">＋</span>
       <span style="font-size:16px;color:var(--blue);">Add "<strong>${query}</strong>"</span>
@@ -10547,10 +10554,10 @@ function renderClientPickerList() {
       <span>Anyone / general</span>${_selectedClient ? '' : '<span style="color:var(--blue);font-size:18px;">✓</span>'}</div>`;
   const exact = all.some(c => c.toLowerCase() === ql);
   if (query && !exact) {
-    html += `<div onclick="selectClient('${query.replace(/'/g, "\\'")}')" style="padding:12px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:pointer;">
+    html += `<div onclick="selectClient(decodeURIComponent('${_encArg(query)}'))" style="padding:12px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:pointer;">
       <span style="font-size:20px;color:var(--blue);">＋</span><span style="font-size:16px;color:var(--blue);">Add "<strong>${_escHtml(query)}</strong>"</span></div>`;
   }
-  html += filtered.map(c => `<div onclick="selectClient('${c.replace(/'/g, "\\'")}')" style="padding:14px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;font-size:16px;">
+  html += filtered.map(c => `<div onclick="selectClient(decodeURIComponent('${_encArg(c)}'))" style="padding:14px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;font-size:16px;">
       <span>${_escHtml(c)}</span>${c === _selectedClient ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}</div>`).join('');
   list.innerHTML = html;
 }
@@ -10580,7 +10587,7 @@ function renderGroupPickerList() {
   let html = '';
   const exactMatch = groups.some(g => g.toLowerCase() === query);
   if (query && !exactMatch) {
-    html += `<div onclick="selectGroup('${query.replace(/'/g,"\\'")}')"
+    html += `<div onclick="selectGroup(decodeURIComponent('${_encArg(query)}'))"
       style="padding:12px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:pointer;">
       <span style="font-size:20px;color:var(--blue);">＋</span>
       <span style="font-size:16px;color:var(--blue);">Add "<strong>${query}</strong>"</span>
@@ -10998,7 +11005,7 @@ function renderEquipmentPickerList() {
   let html = '';
   const exactMatch = allEquip.some(e => e.toLowerCase() === query);
   if (query && !exactMatch) {
-    html += `<div onclick="selectEquipment('${query.replace(/'/g,"\\'")}')"
+    html += `<div onclick="selectEquipment(decodeURIComponent('${_encArg(query)}'))"
       style="padding:12px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:pointer;">
       <span style="font-size:20px;color:var(--blue);">＋</span>
       <span style="font-size:16px;color:var(--blue);">Add "<strong>${query}</strong>"</span>
@@ -11008,18 +11015,18 @@ function renderEquipmentPickerList() {
   const equipGuides = getEquipmentGuides();
   filtered.forEach(e => {
     const isSelected = _equipmentItems.includes(e);
-    const enc = e.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    const enc = encodeURIComponent(e).replace(/'/g, '%27')   // ⭐ URI-encoded, NOT quote-escaped: the attribute is delimited by " and a task name containing one would close it early and kill the row's tap. %27 keeps apostrophes intact.
     const realIdx = ordered.indexOf(e);
     const hasGuide = equipGuides[e] && (equipGuides[e].instructions || equipGuides[e].url);
     html += `<div data-pk-idx="${realIdx}"
       style="padding:12px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">
-      <div onclick="selectEquipment('${enc}')" style="flex:1;display:flex;align-items:center;gap:8px;cursor:pointer;">
+      <div onclick="selectEquipment(decodeURIComponent('${enc}'))" style="flex:1;display:flex;align-items:center;gap:8px;cursor:pointer;">
         <span style="font-size:16px;color:var(--text);">${e}</span>
         ${hasGuide ? '<span style="font-size:13px;color:var(--blue);background:#e8f0fe;padding:2px 6px;border-radius:6px;">Guide</span>' : ''}
         ${isSelected ? '<span style="color:var(--blue);font-size:18px;margin-left:auto;">✓</span>' : '<span style="margin-left:auto;"></span>'}
       </div>
-      <button onclick="openEquipmentGuide('${enc}')" style="background:none;border:none;color:var(--subtext);font-size:18px;cursor:pointer;padding:4px 6px;flex-shrink:0;" title="Guide">📋</button>
-      <button onclick="_pickerRenamePrompt('equipment','${enc}',renderEquipmentPickerList,_renameEquipment)" style="background:none;border:none;color:var(--subtext);font-size:17px;cursor:pointer;padding:4px 6px;flex-shrink:0;">✎</button>
+      <button onclick="openEquipmentGuide(decodeURIComponent('${enc}'))" style="background:none;border:none;color:var(--subtext);font-size:18px;cursor:pointer;padding:4px 6px;flex-shrink:0;" title="Guide">📋</button>
+      <button onclick="_pickerRenamePrompt('equipment',decodeURIComponent('${enc}'),renderEquipmentPickerList,_renameEquipment)" style="background:none;border:none;color:var(--subtext);font-size:17px;cursor:pointer;padding:4px 6px;flex-shrink:0;">✎</button>
     </div>`;
   });
 
@@ -11078,9 +11085,9 @@ function renderEquipmentManager() {
         <span style="display:block;font-size:16px;color:var(--text);">${e.name}</span>
         <span style="display:block;font-size:12px;color:var(--blue);margin-top:3px;">${equipMetaLabel((allNotes[e.name]||[]).length,(allLinks[e.name]||[]).length)}</span>
       </div>
-      <button onclick="archiveEquipment('${e.name.replace(/'/g,"\\'")}');"
+      <button onclick="archiveEquipment(decodeURIComponent('${_encArg(e.name)}'));"
         style="background:none;border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:13px;color:var(--subtext);cursor:pointer;">Archive</button>
-      <button onclick="deleteEquipment('${e.name.replace(/'/g,"\\'")}');"
+      <button onclick="deleteEquipment(decodeURIComponent('${_encArg(e.name)}'));"
         style="background:none;border:1px solid var(--red);border-radius:8px;padding:6px 12px;font-size:13px;color:var(--red);cursor:pointer;">Delete</button>
     </div>`).join('')
     : '<div style="padding:16px 0;color:var(--subtext);font-size:15px;">No active equipment</div>';
@@ -11090,9 +11097,9 @@ function renderEquipmentManager() {
   archivedEl.innerHTML = archived.length ? archived.map(e => `
     <div style="display:flex;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid var(--border);">
       <span style="flex:1;font-size:16px;color:var(--subtext);text-decoration:line-through;">${e.name}</span>
-      <button onclick="restoreEquipment('${e.name.replace(/'/g,"\\'")}');"
+      <button onclick="restoreEquipment(decodeURIComponent('${_encArg(e.name)}'));"
         style="background:none;border:1px solid var(--blue);border-radius:8px;padding:6px 12px;font-size:13px;color:var(--blue);cursor:pointer;">Restore</button>
-      <button onclick="deleteEquipment('${e.name.replace(/'/g,"\\'")}');"
+      <button onclick="deleteEquipment(decodeURIComponent('${_encArg(e.name)}'));"
         style="background:none;border:1px solid var(--red);border-radius:8px;padding:6px 12px;font-size:13px;color:var(--red);cursor:pointer;">Delete</button>
     </div>`).join('')
     : '<div style="padding:16px 0;color:var(--subtext);font-size:15px;">Nothing archived yet</div>';
@@ -11729,7 +11736,7 @@ function renderSubtaskPickerList() {
   const filtered = query ? all.filter(s => s.toLowerCase().includes(query.toLowerCase())) : all;
   const list = document.getElementById('subtask-picker-list');
   const addRow = query && !all.some(s => s.toLowerCase() === query.toLowerCase())
-    ? `<div onclick="selectSubtask('${query.replace(/'/g,"\\'")}',true)"
+    ? `<div onclick="selectSubtask(decodeURIComponent('${_encArg(query)}'),true)"
         style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;cursor:pointer;">
         <span style="font-size:20px;color:var(--blue);">＋</span>
         <span style="font-size:16px;color:var(--blue);">Add "${query}"</span>
@@ -11738,16 +11745,16 @@ function renderSubtaskPickerList() {
   const guideOf = guidesResolver(_pkJob);
   list.innerHTML = addRow + (filtered.map(s => {
     const isSelected = _subtaskItems.includes(s);
-    const enc = s.replace(/'/g,"\\'");
+    const enc = encodeURIComponent(s).replace(/'/g, '%27')   // ⭐ URI-encoded, NOT quote-escaped: the attribute is delimited by " and a task name containing one would close it early and kill the row's tap. %27 keeps apostrophes intact.
     const _pg = guideOf(s);
     const hasGuide = _guideHasContent(_pg);
     return `<div style="padding:16px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">
-      <div onclick="selectSubtask('${enc}',false)" style="flex:1;display:flex;align-items:center;gap:8px;cursor:pointer;">
+      <div onclick="selectSubtask(decodeURIComponent('${enc}'),false)" style="flex:1;display:flex;align-items:center;gap:8px;cursor:pointer;">
         <span style="font-size:16px;color:var(--text);">${s}</span>
         ${hasGuide ? `<span style="font-size:13px;color:var(--blue);background:#e8f0fe;padding:2px 6px;border-radius:6px;">${_pg.url ? '▶️ Video' : 'Guide'}</span>` : ''}
         ${isSelected ? '<span style="color:var(--blue);font-size:18px;margin-left:auto;">✓</span>' : '<span style="margin-left:auto;"></span>'}
       </div>
-      <button onclick="openSubtaskGuide('${enc}', _dirJobName() || null)" style="background:none;border:none;color:var(--subtext);font-size:18px;cursor:pointer;padding:4px 6px;flex-shrink:0;">✎</button>
+      <button onclick="openSubtaskGuide(decodeURIComponent('${enc}'), _dirJobName() || null)" style="background:none;border:none;color:var(--subtext);font-size:18px;cursor:pointer;padding:4px 6px;flex-shrink:0;">✎</button>
     </div>`;
   }).join('') || (!addRow ? '<div style="padding:24px;text-align:center;color:var(--subtext);">No tasks for this job yet — type above to add one</div>' : ''));
 }
@@ -13288,16 +13295,16 @@ function updateReminderBanners() {
     </div>`;
   }).join('');
   const jobHtml = jobs.map(j => {
-    const jn = _escHtml(j.job), jarg = j.job.replace(/'/g, "\\'");
+    const jn = _escHtml(j.job), jarg = _encArg(j.job);
     const lbl = _remindLabel(j.rec);
     return `<div style="display:flex;align-items:center;gap:10px;background:#1c1c1e;border:1px solid rgba(90,200,250,0.55);border-radius:14px;margin:8px 10px 0;padding:12px 12px 12px 14px;box-shadow:0 5px 18px rgba(0,0,0,0.45);">
       <span style="font-size:18px;flex-shrink:0;">${j.rec.remindRepeat ? '🔁' : '🔔'}</span>
-      <div onclick="openJobReminder('${jarg}')" style="flex:1;min-width:0;cursor:pointer;">
+      <div onclick="openJobReminder(decodeURIComponent('${jarg}'))" style="flex:1;min-width:0;cursor:pointer;">
         <div style="color:#fff;font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${jn}</div>
         ${lbl ? `<div style="color:var(--subtext);font-size:12px;margin-top:2px;">${lbl}</div>` : ''}
       </div>
-      <button onclick="doneJobReminder('${jarg}')" aria-label="Done" title="Done${j.rec.remindRepeat ? ' — ' + _repeatBackWhen(j.rec.remindRepeat) : ''}" style="background:none;border:none;color:#30d158;font-size:20px;font-weight:700;cursor:pointer;padding:2px 6px;flex-shrink:0;">✓</button>
-      <button onclick="dismissJobReminder('${jarg}')" aria-label="Dismiss" style="background:none;border:none;color:var(--subtext);font-size:20px;cursor:pointer;padding:2px 6px;flex-shrink:0;">✕</button>
+      <button onclick="doneJobReminder(decodeURIComponent('${jarg}'))" aria-label="Done" title="Done${j.rec.remindRepeat ? ' — ' + _repeatBackWhen(j.rec.remindRepeat) : ''}" style="background:none;border:none;color:#30d158;font-size:20px;font-weight:700;cursor:pointer;padding:2px 6px;flex-shrink:0;">✓</button>
+      <button onclick="dismissJobReminder(decodeURIComponent('${jarg}'))" aria-label="Dismiss" style="background:none;border:none;color:var(--subtext);font-size:20px;cursor:pointer;padding:2px 6px;flex-shrink:0;">✕</button>
     </div>`;
   }).join('');
   const taskHtml = taskRems.map((tr, idx) => {
@@ -13481,8 +13488,8 @@ function _moveGoDest() {
     ${nTodos ? optRow('move-opt-todos', _moveOptTodos, `📌 Also bring this job's <b>${nTodos} to-do${nTodos === 1 ? '' : 's'}</b> across`) : ''}
   </div>`;
   const list = jobs.length ? jobs.map(j => {
-    const jarg = j.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    return `<div onclick="confirmMoveTo('${jarg}')" style="display:flex;align-items:center;gap:10px;padding:13px 2px;border-bottom:1px solid var(--border);cursor:pointer;">
+    const jarg = _encArg(j);
+    return `<div onclick="confirmMoveTo(decodeURIComponent('${jarg}'))" style="display:flex;align-items:center;gap:10px;padding:13px 2px;border-bottom:1px solid var(--border);cursor:pointer;">
       <span style="flex:1;min-width:0;font-size:15px;color:var(--text);">${_escHtml(j)}</span><span style="color:var(--subtext);">›</span></div>`;
   }).join('') : `<div style="padding:24px 8px;text-align:center;color:var(--subtext);">No other jobs yet — create one first.</div>`;
   document.getElementById('move-tasks-body').innerHTML = back + opts + list;
@@ -13609,8 +13616,8 @@ function openNewReminderPicker() {
   body.innerHTML = `<div style="font-size:12px;color:var(--subtext);padding:4px 2px 10px;line-height:1.45;">Pick a job — set a reminder on the whole job, or on any of its tasks. (For a to-do, set it from the Inbox.)</div>`
     + `<div style="font-size:13px;color:var(--blue);font-weight:600;padding:6px 2px 10px;cursor:pointer;" onclick="renderRemindersOverview()">‹ Back to reminders</div>`
     + (jobs.length ? jobs.map(j => {
-        const jarg = j.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        return `<div onclick="closeModal('modal-reminders-overview');openJobEditByName('${jarg}')" style="display:flex;align-items:center;gap:10px;padding:12px 2px;border-bottom:1px solid var(--border);cursor:pointer;">
+        const jarg = _encArg(j);
+        return `<div onclick="closeModal('modal-reminders-overview');openJobEditByName(decodeURIComponent('${jarg}'))" style="display:flex;align-items:center;gap:10px;padding:12px 2px;border-bottom:1px solid var(--border);cursor:pointer;">
           <span style="flex:1;min-width:0;font-size:15px;color:var(--text);">${_escHtml(j)}</span>
           <span style="color:var(--subtext);font-size:15px;">›</span></div>`;
       }).join('') : `<div style="padding:24px 8px;text-align:center;color:var(--subtext);">No jobs yet.</div>`);
@@ -13802,10 +13809,10 @@ function renderInboxAssignList() {
     list.innerHTML = '<div style="padding:24px;text-align:center;color:var(--subtext);">No matching tasks.</div>';
   } else {
     list.innerHTML = tasks.map(t => {
-      const enc = t.replace(/'/g, "\\'");
+      const enc = encodeURIComponent(t).replace(/'/g, '%27')   // ⭐ URI-encoded, NOT quote-escaped: the attribute is delimited by " and a task name containing one would close it early and kill the row's tap. %27 keeps apostrophes intact.
       const n = (SUBTASKS[t] || []).length;
       const sel = _inboxAssignSelected.has(t);
-      return `<div onclick="toggleInboxAssignTask('${enc}')" style="padding:13px 4px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;align-items:center;gap:10px;">
+      return `<div onclick="toggleInboxAssignTask(decodeURIComponent('${enc}'))" style="padding:13px 4px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;align-items:center;gap:10px;">
         <span style="font-size:20px;flex-shrink:0;color:${sel ? 'var(--blue)' : 'var(--subtext)'};">${sel ? '☑' : '☐'}</span>
         <span style="flex:1;font-size:15px;color:var(--text);">${_hlSearch(t.replace(/&/g, '&amp;').replace(/</g, '&lt;'), q)}</span>
         <span style="font-size:12px;color:var(--subtext);white-space:nowrap;">${n} item${n === 1 ? '' : 's'}</span>
@@ -16071,8 +16078,8 @@ function renderHorizonBoard() {
   const unsorted = [];
   jobs.forEach(j => { const k = hz[j]; if (k && byBucket[k]) byBucket[k].push(j); else unsorted.push(j); });
   const jobRow = j => {
-    const jarg = j.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    return `<div onclick="pickHorizonFor('${jarg}')" style="display:flex;align-items:center;gap:10px;padding:11px 2px;border-bottom:1px solid var(--border);cursor:pointer;">
+    const jarg = _encArg(j);
+    return `<div onclick="pickHorizonFor(decodeURIComponent('${jarg}'))" style="display:flex;align-items:center;gap:10px;padding:11px 2px;border-bottom:1px solid var(--border);cursor:pointer;">
       <span style="flex:1;min-width:0;font-size:15px;color:var(--text);">${_escHtml(j)}</span>
       <span style="color:var(--blue);font-size:13px;font-weight:600;">Move ›</span></div>`;
   };
@@ -16085,9 +16092,9 @@ function renderHorizonBoard() {
 function pickHorizonFor(job) {
   const _b = document.getElementById('horizon-body'); if (_b) _horizonScroll = _b.scrollTop;
   document.getElementById('horizon-title').textContent = 'When for this job?';
-  const jarg = job.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const jarg = _encArg(job);
   const cur = jobHorizon(job);
-  const opt = (k, label) => `<div onclick="setJobHorizon('${jarg}','${k}')" style="display:flex;align-items:center;justify-content:space-between;padding:14px 2px;border-bottom:1px solid var(--border);cursor:pointer;">
+  const opt = (k, label) => `<div onclick="setJobHorizon(decodeURIComponent('${jarg}'),'${k}')" style="display:flex;align-items:center;justify-content:space-between;padding:14px 2px;border-bottom:1px solid var(--border);cursor:pointer;">
     <span style="font-size:15px;color:var(--text);">${label}</span>${cur === k ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}</div>`;
   document.getElementById('horizon-body').innerHTML =
     `<div onclick="renderHorizonBoard()" style="font-size:13px;color:var(--blue);font-weight:600;padding:6px 2px 8px;cursor:pointer;">‹ Back</div>`
@@ -16442,7 +16449,7 @@ function renderPlannerViewSwitch() {
   if (!wrap) return;
   const chip = (key, label, sub) => {
     const on = _plannerView === key;
-    return `<button onclick="switchPlannerView('${String(key).replace(/'/g, "\\'")}')"
+    return `<button onclick="switchPlannerView(decodeURIComponent('${_encArg(key)}'))"
       style="flex:0 0 auto;border-radius:10px;padding:8px 12px;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;
              border:1px solid ${on ? 'var(--blue)' : 'var(--border)'};background:${on ? 'var(--blue)' : 'var(--card)'};color:${on ? '#fff' : 'var(--text)'};">
       ${_escHtml(label)}${sub ? `<span style="opacity:.7;font-weight:400;"> ${_escHtml(sub)}</span>` : ''}</button>`;
@@ -17933,7 +17940,7 @@ function renderPlannerTaskList() {
     const matchEquip = query ? taskEquipmentList(r.task).filter(e => e.toLowerCase().includes(query)) : [];
     const equipHtml = matchEquip.map(e => `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${highlightMatch(e, query)}</div>`).join('');
     const subsHtml = matchSubs.map(s => `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☑️ ${highlightMatch(s, query)}</div>`).join('');
-    return `<div onclick="selectPlannerTask('${r.task.replace(/'/g,"\\'")}')"
+    return `<div onclick="selectPlannerTask(decodeURIComponent('${_encArg(r.task)}'))"
       style="padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;background:${isSelected ? 'rgba(0,122,255,0.08)' : 'transparent'};">
       <div style="min-width:0;">
         <div style="font-size:15px;color:var(--text);">${query ? highlightMatch(r.task, query) : r.task}</div>
