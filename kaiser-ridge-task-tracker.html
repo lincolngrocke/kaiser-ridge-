@@ -3026,7 +3026,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.318';
+const APP_VERSION = '2026-06-21.319';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -13685,8 +13685,42 @@ function renderRemindersOverview() {
         <div style="font-size:12px;color:var(--subtext);margin-top:3px;">${_escHtml(r.sub)} · <span style="color:${due ? '#ffd60a' : 'var(--subtext)'};font-weight:${due ? '600' : '400'};">${_remindLabel(r.rec)}</span>${on ? '' : ' · off'}</div>
       </div>
       <button onclick="toggleReminderEnabled(${i}, event)" aria-label="${on ? 'Turn off' : 'Turn on'}" style="flex-shrink:0;align-self:center;background:${on ? 'rgba(48,209,88,0.18)' : 'var(--bg)'};border:1px solid ${on ? 'rgba(48,209,88,0.6)' : 'var(--border)'};color:${on ? 'var(--green)' : 'var(--subtext)'};border-radius:14px;padding:5px 11px;font-size:12px;font-weight:700;cursor:pointer;">${on ? 'On' : 'Off'}</button>
+      <button onclick="_remDelete(${i}, event)" aria-label="Delete reminder" style="flex-shrink:0;align-self:center;background:none;border:none;color:#8b93a7;font-size:17px;line-height:1;cursor:pointer;padding:6px 2px 6px 8px;">&#10005;</button>
     </div>`;
   }).join('');
+}
+// ⭐ Delete a reminder from THIS screen. Until v319 the only way was to open each
+// reminder's job Edit screen and use its Remove button — about five taps each. That
+// was tolerable for one and awful for the fourteen of Lincoln's that landed on Ethan's
+// phone on 2026-08-28 (see [[groovework-m1-supabase-plan]]); every beta worker will
+// inherit the same pile until S4 scopes rows per person.
+// ⚠️ NO confirm dialog. Fourteen confirmations is worse than the problem it guards
+// against, so this deletes at once and offers an Undo — the same trade the batch-flag
+// swipe and ↺ Reset reps already make. Turning a reminder OFF is not deleting it: the
+// record stays, which is why the toggle alone left them all sitting there.
+function _remDelete(idx, ev) {
+  if (ev) ev.stopPropagation();
+  const r = _remRows[idx]; if (!r) return;
+  let undo;
+  if (r.kind === 'note') {
+    const arr = getInbox(); const n = arr.find(x => x.id === r.id); if (!n) return;
+    const snap = { remindOn: n.remindOn, remindTime: n.remindTime, remindRepeat: n.remindRepeat, enabled: n.enabled, remindDoneOn: n.remindDoneOn };
+    delete n.remindOn; delete n.remindTime; delete n.remindRepeat; delete n.enabled; delete n.remindDoneOn;
+    saveInbox(arr);
+    undo = () => { const a = getInbox(); const m = a.find(x => x.id === r.id); if (!m) return;
+      Object.keys(snap).forEach(k => { if (snap[k] !== undefined) m[k] = snap[k]; }); saveInbox(a); };
+  } else if (r.kind === 'job') {
+    const map = getJobReminders(); const snap = map[r.id]; delete map[r.id]; saveJobReminders(map);
+    undo = () => { const m = getJobReminders(); m[r.id] = snap; saveJobReminders(m); };
+  } else {
+    const map = getTaskReminders(); const snap = map[r.id]; delete map[r.id]; saveTaskReminders(map);
+    undo = () => { const m = getTaskReminders(); m[r.id] = snap; saveTaskReminders(m); };
+  }
+  renderRemindersOverview();
+  updateReminderBanners();
+  showUndoToast('Reminder removed', () => {
+    undo(); renderRemindersOverview(); updateReminderBanners(); showToast('↺ Reminder put back');
+  }, 10000);
 }
 function openRemindersOverview() {
   _remFilter = 'all';
