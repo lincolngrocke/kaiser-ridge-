@@ -3026,7 +3026,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.316';
+const APP_VERSION = '2026-06-21.317';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -8523,6 +8523,25 @@ const KR_SYNC_NEVER = [
   // A per-RUN arrangement, cleared at clock-out. Ethan's flags landing on
   // Lincoln's phone would rearrange his list under him mid-job.
   'kr_checklist_flags',
+  // ⭐⭐ MY OWN DAY IS NOT THE ORG'S DAY. Found 2026-08-28, one toggle before it did
+  // damage, the first time two real phones were ever in the same org.
+  // `_plannerKeyFor('me')` is the literal string 'kr_planner', so EVERY member's own
+  // planner lives under that one key — and a kv row is unique per (org_id, key), so
+  // there is exactly ONE kr_planner row for the whole organisation. Syncing it meant
+  // Ethan pulling Lincoln's day as his own, pushing it back, and the two of them
+  // ping-ponging over each other under last-write-wins with nothing to show for it.
+  // A stub server could never have surfaced this: one device cannot collide with
+  // itself, and a stub has no second member.
+  // ⚠️ It goes back in the shared list ONLY when kv rows are scoped per USER, not
+  // just per org — S4 work. Ethan's day already reaches him on the Apps Script
+  // assignment channel, so removing this loses nothing that works today.
+  'kr_planner',
+  // ⭐ Same shape, same day: this is a list of the to-do ids THIS DEVICE has already
+  // applied, used to dedup the pin pull (see the worker dedup in _applyPins). Shared
+  // org-wide, Lincoln's copy would tell Ethan's phone it had already applied to-dos it
+  // has never seen, and it would skip them silently. A to-do that never arrives and
+  // never says so is the exact failure [[groovework-todos-dont-travel-with-day]] is about.
+  'kr_pins_applied',
   // ⚠️ Rep counters. A scalar count under last-write-wins silently LOSES laps
   // (invariant #6): two people carting straw both tick "Load truck" and one
   // upload overwrites the other. Needs a real increment model — deferred to S4
@@ -8561,7 +8580,7 @@ const KR_SYNC_KEYS = [
   'kr_subtask_origin', 'kr_job_flags', 'kr_job_horizon', 'kr_job_links',
   'kr_task_batches', 'kr_task_videos', 'kr_projects',
   // Planning + assignment (per-member keys are added dynamically below)
-  'kr_planner', 'kr_planner_checklist', 'kr_pin_order', 'kr_pins_applied',
+  'kr_planner_checklist', 'kr_pin_order',
   // Reminders the user set themselves
   'kr_job_reminders', 'kr_task_reminders',
   // Org config + robots
