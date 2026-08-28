@@ -3026,7 +3026,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.319';
+const APP_VERSION = '2026-06-21.320';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -13163,7 +13163,23 @@ function _removePinsForInboxNote(note) {
 // it shows a banner at the top on each app-open until the note is done; tapping
 // opens the note and hides it until the next open. Settable on Inbox notes AND
 // to-dos (a to-do resolves to its origin inbox note via inboxId).
-let _remindSessionDismissed = new Set();   // note ids hidden until next app open
+// ⭐ "Hidden until next app open" — and a RELOAD IS NOT THE USER REOPENING THE APP.
+// This was a bare in-memory Set, so every reload brought all of them back. That was
+// tolerable while reloads were rare (Force Update only). Sync changed that on
+// 2026-08-28: applying a pulled change reloads deliberately, so Lincoln dismissed
+// eight overdue reminders, sent Ethan a day, and had all eight reappear over his clock.
+// sessionStorage is the exact semantic wanted: it survives location.reload() and is
+// cleared when the app is genuinely closed. Same trick the post-Force-Update
+// screen-restore already uses.
+const _REM_DISMISS_KEY = 'kr_remind_dismissed';
+function _remDismissLoad() {
+  try { return new Set(JSON.parse(sessionStorage.getItem(_REM_DISMISS_KEY) || '[]') || []); }
+  catch (e) { return new Set(); }
+}
+let _remindSessionDismissed = _remDismissLoad();
+function _remDismissSave() {
+  try { sessionStorage.setItem(_REM_DISMISS_KEY, JSON.stringify([..._remindSessionDismissed])); } catch (e) {}
+}
 let _reminderNoteId = null;
 function _ymd(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 let _reminderRepeat = '';
@@ -13352,10 +13368,23 @@ function updateReminderBanners() {
       <button onclick="dismissTaskReminder(${idx})" aria-label="Dismiss" style="background:none;border:none;color:var(--subtext);font-size:20px;cursor:pointer;padding:2px 6px;flex-shrink:0;">✕</button>
     </div>`;
   }).join('');
-  wrap.innerHTML = noteHtml + jobHtml + taskHtml;
+  // ⭐ CAP THE STACK. Eight full-width banners buried the clock AND the Clock Out
+  // button on 2026-08-28 — the screen became unusable, which is the opposite of what
+  // a reminder is for. Show the first few; the rest collapse into one line that opens
+  // the Reminders list. Same principle as everywhere else on this screen: a new signal
+  // goes on an existing line, it does not take the whole screen.
+  const _REM_MAX = 3;
+  const all = [noteHtml, jobHtml, taskHtml].join('');
+  const holder = document.createElement('div');
+  holder.innerHTML = all;
+  const cards = [...holder.children];
+  if (cards.length <= _REM_MAX) { wrap.innerHTML = all; return; }
+  const hidden = cards.length - _REM_MAX;
+  wrap.innerHTML = cards.slice(0, _REM_MAX).map(c => c.outerHTML).join('')
+    + `<div onclick="openRemindersOverview()" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 12px;margin:0 0 8px;border-radius:10px;border:1px dashed var(--border);background:var(--card);color:var(--blue);font-size:13px;font-weight:600;cursor:pointer;">🔔 ${hidden} more reminder${hidden === 1 ? '' : 's'} — tap to see them all</div>`;
 }
-function dismissReminder(id) { _remindSessionDismissed.add(id); updateReminderBanners(); }
-function openReminderNote(id) { _remindSessionDismissed.add(id); updateReminderBanners(); openInbox(id); }
+function dismissReminder(id) { _remindSessionDismissed.add(id); _remDismissSave(); updateReminderBanners(); }
+function openReminderNote(id) { _remindSessionDismissed.add(id); _remDismissSave(); updateReminderBanners(); openInbox(id); }
 // ✓ mark a reminder DONE from its banner — for reminders that aren't tied to a
 // clock-out (e.g. a daily whole-job routine). Daily → gone today, back tomorrow;
 // one-off → gone for good. Uses the same remindDoneOn mechanism as completion.
@@ -13387,10 +13416,10 @@ function _dueTaskReminders() {
     .filter(k => _isReminderDue(rem[k]) && !_remindSessionDismissed.has('task:' + k))
     .map(k => ({ key: k, rec: rem[k] }));
 }
-function dismissTaskReminder(idx) { const tr = _dueTaskRemCache[idx]; if (tr) _remindSessionDismissed.add('task:' + tr.key); updateReminderBanners(); }
+function dismissTaskReminder(idx) { const tr = _dueTaskRemCache[idx]; if (tr) _remindSessionDismissed.add('task:' + tr.key); _remDismissSave(); updateReminderBanners(); }
 function openTaskReminder(idx) {
   const tr = _dueTaskRemCache[idx]; if (!tr) return;
-  _remindSessionDismissed.add('task:' + tr.key); updateReminderBanners();
+  _remindSessionDismissed.add('task:' + tr.key); _remDismissSave(); updateReminderBanners();
   showScreen('clock', document.querySelector(".nav-tab[onclick*=\"'clock'\"]")); openCreate();
   showToast('Clock into ' + tr.rec.job);
 }
@@ -13735,8 +13764,8 @@ function _dueJobs() {
     .filter(job => _isReminderDue(reminders[job]) && !_remindSessionDismissed.has('job:' + job))
     .map(job => ({ job, rec: reminders[job] }));
 }
-function dismissJobReminder(job) { _remindSessionDismissed.add('job:' + job); updateReminderBanners(); }
-function openJobReminder(job) { _remindSessionDismissed.add('job:' + job); updateReminderBanners(); showScreen('clock', document.querySelector(".nav-tab[onclick*=\"'clock'\"]")); openCreate(); showToast('Clock into ' + job); }
+function dismissJobReminder(job) { _remindSessionDismissed.add('job:' + job); _remDismissSave(); updateReminderBanners(); }
+function openJobReminder(job) { _remindSessionDismissed.add('job:' + job); _remDismissSave(); updateReminderBanners(); showScreen('clock', document.querySelector(".nav-tab[onclick*=\"'clock'\"]")); openCreate(); showToast('Clock into ' + job); }
 function deleteInboxItem(id) {
   const inbox = getInbox();
   const idx = inbox.findIndex(n => n.id === id);
@@ -16853,6 +16882,11 @@ function rolloverParkedTasks() {
   _allPlannerKeys().forEach(key => {
     let arr;
     try { arr = JSON.parse(localStorage.getItem(key) || '[]'); } catch (e) { return; }
+    // ⚠️ Parsed is not the same as shaped. A planner key holding anything but an array
+    // threw an uncaught TypeError right here, in the BOOT path. That was only reachable
+    // by hand until kr_planner_m_* keys started arriving over the wire and being applied
+    // — a malformed value from the server must not be able to take the app down.
+    if (!Array.isArray(arr)) return;
     let dirty = false;
     arr.forEach(p => {
       if (p && p.parked && _plannerDateNumFromStr(p.date) < targetNum) {
