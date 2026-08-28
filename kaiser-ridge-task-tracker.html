@@ -3026,7 +3026,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.320';
+const APP_VERSION = '2026-06-21.321';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -19476,9 +19476,45 @@ function _rsUntick(task) {
 
 // Minimal drag for a FLAT list — no batches, no flag groups, every row eligible.
 // Commits from DOM order, which is how the Organise drag does it too.
+// ── Swipe a row right to take it off the run sheet ──────────────────────────
+// It doesn't delete anything: it unflags the task, so the row disappears and the task
+// drops back into the unflagged pool on the Organise sheet, ready to be flagged again.
+// ⚠️ Scoped by the SHEET, not by _clTargetPlanId(). That helper reads whether the
+// ORGANISE modal is open, which it isn't when you're looking at the run sheet — using
+// it here would write a planner block's unflag onto the job's global flags instead.
+function _rsFlagStore() {
+  const ctx = _rsCtx(); if (!ctx) return null;
+  if (ctx.kind === 'plan') {
+    const m = getPlannerChecklist(); const rec = m[_rsPlanId] || (m[_rsPlanId] = { flags: {} });
+    return { get: () => rec.flags || (rec.flags = {}),
+             save: () => { savePlannerChecklist(m); _applyBlockEstimate(_rsPlanId); if (typeof renderPlannerScreen === 'function') renderPlannerScreen(); } };
+  }
+  const job = ctx.job;
+  if (clockState && clockState.running && clockState.task === job && clockState.flagOverride)
+    return { get: () => clockState.flagOverride, save: () => { _storeSet('kr_clock', JSON.stringify(clockState)); renderRunChecklist(); updateRunRing(); } };
+  const all = getChecklistFlags();
+  return { get: () => all[job] || (all[job] = {}),
+           save: () => { if (!Object.keys(all[job] || {}).length) delete all[job]; saveChecklistFlags(all); _refreshChecklistSurfaces(job); } };
+}
+function _rsUnflag(task) {
+  const st = _rsFlagStore(); if (!st) return;
+  const f = st.get();
+  const was = f[task];
+  if (was === undefined) return;
+  delete f[task];
+  st.save();
+  _rsRender();
+  // ⭐ Re-flagging restores the row to its ARRANGED position, because the saved
+  // runOrder is never discarded — so undo is just putting the flag back.
+  showUndoToast('Taken off the run sheet — ' + task.slice(0, 40), () => {
+    const st2 = _rsFlagStore(); if (!st2) return;
+    st2.get()[task] = was; st2.save(); _rsRender();
+    showToast('↺ Back on the run sheet');
+  }, 12000);
+}
 function _rsDragStart(e) {
   const row = e.currentTarget, y = e.touches[0].clientY;
-  _rsTouch = { row, y, x: e.touches[0].clientX };
+  _rsTouch = { row, y, x: e.touches[0].clientX, swiped: false };
   clearTimeout(_rsHoldTimer);
   _rsHoldTimer = setTimeout(() => {
     _rsHoldTimer = null;
@@ -19509,13 +19545,38 @@ function _rsDragMove2(e) {
     _clEdgeScroll(_rsDrag.scroller, _rsDrag.lastY, () => { if (_rsDrag) _rsReposition(_rsDrag.lastY); });
     return;
   }
-  if (_rsTouch && _rsHoldTimer) {
-    const dx = Math.abs(e.touches[0].clientX - _rsTouch.x), dy = Math.abs(e.touches[0].clientY - _rsTouch.y);
-    if (dx > 8 || dy > 8) { clearTimeout(_rsHoldTimer); _rsHoldTimer = null; }   // scrolling, not holding
+  if (!_rsTouch) return;
+  const rawDx = e.touches[0].clientX - _rsTouch.x;
+  const dx = Math.abs(rawDx), dy = Math.abs(e.touches[0].clientY - _rsTouch.y);
+  if (_rsHoldTimer && (dx > 8 || dy > 8)) { clearTimeout(_rsHoldTimer); _rsHoldTimer = null; }   // scrolling or swiping, not holding
+  // A vertical move or a leftward one is the list scrolling — leave it alone.
+  if (!_rsTouch.swiped && (dy > dx || rawDx < 0)) { if (dy > 8) _rsTouch = null; return; }
+  if (rawDx > 6) {
+    _rsTouch.swiped = true;
+    e.preventDefault();
+    _rsTouch.row.style.transition = 'none';
+    _rsTouch.row.style.transform = 'translateX(' + Math.min(rawDx, 90) + 'px)';
+    _rsTouch.row.style.opacity = String(Math.max(0.45, 1 - rawDx / 220));
   }
 }
-function _rsDragEnd2() {
-  clearTimeout(_rsHoldTimer); _rsHoldTimer = null; _rsTouch = null;
+function _rsDragEnd2(e) {
+  clearTimeout(_rsHoldTimer); _rsHoldTimer = null;
+  const sw = _rsTouch; _rsTouch = null;
+  if (!_rsDrag && sw && sw.swiped) {
+    const dx = (e && e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientX : sw.x) - sw.x;
+    sw.row.style.transition = 'transform 0.16s, opacity 0.16s';
+    sw.row.style.transform = ''; sw.row.style.opacity = '';
+    _clSwipeBlockClickUntil = Date.now() + 400;   // the swipe must not also tick the row
+    if (dx > 48) {
+      const k = sw.row.dataset.rsKey || '';
+      // A ☕ break has its own ✕ and no flag to remove — leave it to that.
+      if (k.indexOf(_RS_BRK) !== 0) {
+        const i = k.lastIndexOf(_RS_SEP);
+        if (i > 0) _rsUnflag(k.slice(0, i));
+      }
+    }
+    return;
+  }
   if (!_rsDrag) return;
   _clStopEdgeScroll();
   // The browser delivers a click after the finger lifts, and on the run sheet that
