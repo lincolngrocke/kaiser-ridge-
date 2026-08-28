@@ -3026,7 +3026,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.317';
+const APP_VERSION = '2026-06-21.318';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -8542,6 +8542,20 @@ const KR_SYNC_NEVER = [
   // has never seen, and it would skip them silently. A to-do that never arrives and
   // never says so is the exact failure [[groovework-todos-dont-travel-with-day]] is about.
   'kr_pins_applied',
+  // ⭐ MINE, NOT THE ORG'S — the same question that caught kr_planner, asked of the
+  // rest of the list after Ethan's phone showed Lincoln's "Home appliances repairs
+  // and maintenance · Daily" reminder on 2026-08-28. He never set it. Nobody should
+  // receive a reminder somebody else set: that is the sync-side version of the
+  // standing rule that the app must never re-add a reminder you didn't set yourself.
+  'kr_job_reminders', 'kr_task_reminders',
+  // ⭐ Swipe-a-job-right to float it to the top of MY list, in the order I'll work
+  // it in. Its own comment at getJobFlags already said "Device-local; never touches
+  // DIRECTORY or sync" — the comment had the intent right and the sync list
+  // contradicted it. Lincoln's flagged jobs were floating to the top of Ethan's.
+  'kr_job_flags',
+  // The order I keep MY to-dos in. The to-dos themselves are Class B and don't sync
+  // until S4, so sharing their order was meaningless as well as personal.
+  'kr_pin_order',
   // ⚠️ Rep counters. A scalar count under last-write-wins silently LOSES laps
   // (invariant #6): two people carting straw both tick "Load truck" and one
   // upload overwrites the other. Needs a real increment model — deferred to S4
@@ -8577,12 +8591,10 @@ const KR_SYNC_KEYS = [
   'kr_extra_frequencies', 'kr_extra_locations', 'kr_extra_clients',
   'kr_task_order', 'kr_frequency_order', 'kr_group_order', 'kr_location_order',
   'kr_equipment_order', 'kr_task_types', 'kr_task_merges', 'kr_task_moves', 'kr_time_excl',
-  'kr_subtask_origin', 'kr_job_flags', 'kr_job_horizon', 'kr_job_links',
+  'kr_subtask_origin', 'kr_job_horizon', 'kr_job_links',
   'kr_task_batches', 'kr_task_videos', 'kr_projects',
   // Planning + assignment (per-member keys are added dynamically below)
-  'kr_planner_checklist', 'kr_pin_order',
-  // Reminders the user set themselves
-  'kr_job_reminders', 'kr_task_reminders',
+  'kr_planner_checklist',
   // Org config + robots
   'kr_sheet_url', 'kr_gmaps_key', 'kr_agents', 'kr_agent_runs',
   // Shared "when was this last done" map. Last-write-wins can lose a newer mark
