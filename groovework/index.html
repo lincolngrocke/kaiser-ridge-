@@ -3026,7 +3026,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.321';
+const APP_VERSION = '2026-06-21.322';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -7654,6 +7654,20 @@ function confirmTime(choice) {
       const pcm = getPlannerChecklist();
       const rec = pcm[taskInfo._planId];
       if (rec) {
+        // ⭐ A PLANNED BLOCK IS A FRESH RUN, so its laps start from zero.
+        // kr_job_runs is cumulative per RUN and persists across sessions until ↺ Reset
+        // reps, which is right for a job you keep picking up. It is wrong the moment a
+        // block says "do this today": yesterday's three banked laps ate today's planned
+        // three, so tasks showed nothing owing and dropped off the run sheet — the v266
+        // "missing tasks" trap — and Lincoln had to clear the reps by hand every morning.
+        // ⚠️ Gated on the block carrying FLAGS, which is exactly the condition that
+        // suppresses the resume offer below. The code already draws this line: a block's
+        // arrangement is the deliberate new plan and beats a half-finished run. Resuming
+        // still carries its laps, because that IS the same run continuing.
+        if (rec.flags && Object.keys(rec.flags).length && jobHasReps(clockState.task)) {
+          resetRun(clockState.task);
+          showToast('🔁 Laps reset for this planned run');
+        }
         if (rec.flags && Object.keys(rec.flags).length) clockState.flagOverride = { ...rec.flags };
         if (Array.isArray(rec.order) && rec.order.length) clockState.orderOverride = rec.order.slice();
         // 🔁 Lap TARGETS — the planned laps for each flagged repeat task (the

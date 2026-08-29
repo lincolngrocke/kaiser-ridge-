@@ -1,11 +1,7 @@
 # Groovework — brief for legal advisers
 
-Prepared 2026-08-04. **Updated 2026-08-26:** the company is now registered, so its real details
-replace the placeholder; a section on **location tracking** has been added, which the original
-missed entirely; and one wrong fact about the source repository has been corrected.
-
-**Not legal advice** — this is a list of questions to put to professionals, plus the facts they'll
-need to answer them.
+Prepared 2026-08-04. **Not legal advice** — this is a list of questions to put to
+professionals, plus the facts they'll need to answer them.
 
 ## Who you need (two different professionals)
 
@@ -24,10 +20,7 @@ refer you to an attorney they work with.
 
 ### The facts to hand them
 
-- Applicant: **LG Software House Pty Ltd**, ACN 701 401 587, ABN 34 701 401 587
-- Proposed mark: **GROOVEWORK** (word mark). Note the company is deliberately *not* named
-  Groovework; the mark will be filed in the company's own name and registered as a business name
-  once it clears.
+- Proposed mark: **GROOVEWORK** (word mark)
 - Product: work-management software for property/grounds/site operations. Web app now,
   iOS app from ~Sept 2026. Subscription, ~A$19/mo solo, ~A$12/seat teams.
 - Classes likely needed: **9** (software) and **42** (SaaS). Ask whether **35**
@@ -87,10 +80,7 @@ lists from observed behaviour. No competitor found in a ~36-product scan closes 
      disclosure date.
    - **5 July 2026** — GitHub Pages deploy workflow created; the app served publicly at a
      public URL.
-   - ⚠️ **Correction, 26 Aug 2026.** An earlier version of this brief said the repository was
-     switched to private on 4 Aug. **That never happened.** The repository is still public, and
-     the served application has been publicly readable throughout, since it is a client-side app
-     whose full source is delivered to every browser. Please answer Q9 on that basis.
+   - **4 Aug 2026** — repository switched to private. The served app remains public.
 
    Australia and the US both provide a 12-month grace period for the applicant's own
    disclosure, which on the earliest date would run to **~31 May 2027**. Questions:
@@ -107,14 +97,9 @@ lists from observed behaviour. No competitor found in a ~36-product scan closes 
 
 ### Company and IP ownership
 
-11. **LG Software House Pty Ltd** was registered **14 August 2026** (ACN 701 401 587,
-    ABN 34 701 401 587, Tanunda SA, sole director and public officer Lincoln Grocke, GST
-    registered from day one). Should the IP, meaning source code, trade mark and domains, be
-    **assigned to the company**, and what document does that?
-    ⏰ **Timing constraint:** the shares are currently held by Lincoln personally while the company
-    is a shell, and moving them into the family trust structure is only cheap while the company is
-    worth nothing. It stops being worth nothing the day the IP is assigned in. **So the deed must
-    not be executed until the share position is settled with the accountant.**
+11. **Groovework Pty Ltd** is being registered (Aug 2026). Should the IP — source code,
+    trade mark, domains — be **assigned to the company from day one**, and what document
+    does that?
 12. **⚠️ Who owns the code today?** This matters and I need it resolved cleanly:
     - The app began as an internal tool for **Kaiser Ridge Pty Ltd**, originally named
       `kaiser-ridge-task-tracker`, and is still used to run that business daily.
