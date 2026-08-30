@@ -2227,12 +2227,12 @@
 </div>
 
 <!-- ══════════════ ORGANISE CHECKLIST (drag-reorder flagged items) ══════════════ -->
-<div class="modal-backdrop" id="modal-cl-organise" style="z-index:360;" onclick="if(event.target===this)closeModal('modal-cl-organise')">
+<div class="modal-backdrop" id="modal-cl-organise" style="z-index:360;" onclick="if(event.target===this)closeClOrganise()">
   <div class="modal-sheet" style="padding:16px 0 28px;height:92vh;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;">
     <div class="modal-handle"></div>
     <div style="padding:0 20px 10px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
       <span id="cl-organise-title" style="font-size:16px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:10px;"></span>
-      <span onclick="closeModal('modal-cl-organise')" style="color:var(--blue);font-size:16px;cursor:pointer;flex-shrink:0;">Done</span>
+      <span onclick="closeClOrganise()" style="color:var(--blue);font-size:16px;cursor:pointer;flex-shrink:0;">Done</span>
     </div>
     <div id="cl-organise-body" style="padding:0 20px;overflow-y:auto;overflow-x:hidden;flex:1;"></div>
   </div>
@@ -3026,7 +3026,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.322';
+const APP_VERSION = '2026-06-21.323';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -17792,7 +17792,8 @@ function openPlannerDoneDetail(entry) {
   const startStr = formatTimeAmPm(entry.clockIn);
   const endStr   = formatTimeAmPm(entry.clockOut);
   _plannerDetailCopySource = { task: entry.task, group: entry.group, frequency: entry.frequency, location: entry.location, tool: entry.tool, durationHours: entry.durationHours, startTime: entry.clockIn };
-  _plannerDetailArrId = null;   // a finished entry carries no block arrangement
+  _plannerDetailArrId = null;                        // a finished entry has no LIVE arrangement…
+  _plannerDetailArrRec = _arrFromDoneEntry(entry);   // …so rebuild one from what was actually ticked
 
   // Parse ticked checklist items from notes — lines matching [time] pattern
   const tickedItems = [];
@@ -19786,6 +19787,19 @@ function openChecklistOrganise(e) {
 }
 // Organise a planned block's checklist before starting it. Seeds the block's
 // arrangement from the job's current flags the first time; edits then diverge.
+// Closing the Organise sheet re-reads the block underneath. Organising a block calls
+// _applyBlockEstimate, which re-sizes it from the flagged tasks — but that only wrote
+// the estimate into the duration INPUT. The detail sheet's header had been rendered on
+// open and never refreshed, so the one sheet showed two different numbers: "4.28h
+// planned" up top and 6.13 in the field. Both are read from plan.durationHours; only
+// one of them was current.
+function closeClOrganise() {
+  const pid = _clOrganisePlanId;
+  closeModal('modal-cl-organise');
+  const det = document.getElementById('modal-planner-detail');
+  if (pid && det && det.classList.contains('open') && _plannerDetailId === pid) openPlannerDetail(pid);
+}
+
 function openChecklistOrganiseForPlan(planId) {
   if (isWorker()) return;
   const plan = _plannerPlans.find(p => p.id === planId);
@@ -19925,6 +19939,7 @@ function openPlannerDetail(planId) {
   _plannerDetailId = planId;
   _plannerDetailCopySource = { task: plan.task, group: plan.group, frequency: plan.frequency, location: plan.location, tool: plan.tool, durationHours: plan.durationHours, startTime: plan.startTime };
   _plannerDetailArrId = plan.id;   // the block's 🚩 arrangement lives in kr_planner_checklist under this id — Copy takes it too
+  _plannerDetailArrRec = null;     // a live block reads its own record; only a DONE entry needs one rebuilt
   // Restore buttons (may have been hidden by done-detail)
   const clockInBtn = document.querySelector('#modal-planner-detail button[onclick="plannerClockIn()"]');
   const deleteBtn  = document.querySelector('#modal-planner-detail button[onclick="deletePlannerBlock()"]');
@@ -20026,16 +20041,60 @@ function deletePlannerBlock() {
 // block a TEMPLATE for another day, which is the whole point of copying one.
 // Snapshot at COPY time, not paste: the source block can be deleted or re-arranged
 // between the two, and one copy should paste the same thing every time.
-let _plannerClipboard = null, _plannerDetailCopySource = null, _plannerDetailArrId = null, _plannerClipboardArr = null;
+// ⭐ A FINISHED JOB IS THE BEST TEMPLATE THERE IS. It records exactly which tasks the
+// day actually needed, how many laps each one took and the sequence they were worked
+// in — better intent than anything typed the night before.
+//
+// Copying one used to carry the shell and nothing else. The block's own arrangement is
+// CONSUMED and deleted at clock-in (see the _planId branch of the clock-in path), and a
+// done entry never had one, so both routes handed Copy a null. The pasted block landed
+// bare: no 🚩, so _estimateBlockMins skipped the flagged-sum branch and fell through to
+// getTaskAvgDuration — the job's average across ALL runs. Straw carting pasted as 6.13h
+// on a day that had just taken 4.28h, and the run sheet came up in default order.
+//
+// entry.checklist is the tick log: {item, at, rep} in tick order, which is every part
+// we need. Rebuild flags, laps and the run-sheet order straight out of it.
+function _arrFromDoneEntry(entry) {
+  const ticks = (entry && Array.isArray(entry.checklist)) ? entry.checklist.filter(d => d && d.item && d.at) : [];
+  if (!ticks.length) return null;
+  const subs = SUBTASKS[entry.task] || [];
+  const flags = {}, laps = {}, runOrder = [], seen = {};
+  ticks.slice().sort((a, b) => new Date(a.at) - new Date(b.at)).forEach(d => {
+    if (!subs.includes(d.item)) return;      // renamed or deleted since — a flag can't outlive its task
+    flags[d.item] = true;
+    if (!isRepeatTask(entry.task, d.item)) {
+      if (seen[d.item]) return;              // a once-off holds ONE row however the log reads
+      seen[d.item] = 1;
+      runOrder.push(_rsKey(d.item, 0));      // _rsInstances numbers a non-repeat task 0
+      return;
+    }
+    // 🔁 Renumber the laps from 1. The log carries the lap number it had ON THE DAY,
+    // which starts above 1 whenever reps were already banked. A pasted block is a fresh
+    // run (v322 resets its laps), so its sheet numbers from 1 — copy the day's numbers
+    // across verbatim and every key would miss, _rsOrdered would treat every row as
+    // fresh, and the arrangement would be silently replaced by the circuit default.
+    const n = (seen[d.item] = (seen[d.item] || 0) + 1);
+    laps[d.item] = n;
+    runOrder.push(_rsKey(d.item, n));
+  });
+  if (!Object.keys(flags).length) return null;
+  // No `order` key on purpose: that one drives the ORGANISE sheet, which lays itself out
+  // batch by batch. runOrder is instance keys and is what the run sheet reads, so the
+  // worked sequence carries without overriding the batch layout.
+  return { flags, laps, runOrder };
+}
+
+let _plannerClipboard = null, _plannerDetailCopySource = null, _plannerDetailArrId = null, _plannerClipboardArr = null, _plannerDetailArrRec = null;
 function copyPlannerBlock() {
   if (!_plannerDetailCopySource) { showToast('Nothing to copy'); return; }
   _plannerClipboard = JSON.parse(JSON.stringify(_plannerDetailCopySource));
-  const src = _plannerDetailArrId ? getPlannerChecklist()[_plannerDetailArrId] : null;
+  const src = _plannerDetailArrRec || (_plannerDetailArrId ? getPlannerChecklist()[_plannerDetailArrId] : null);
   _plannerClipboardArr = src ? JSON.parse(JSON.stringify(src)) : null;
   const nFlags = _plannerClipboardArr && _plannerClipboardArr.flags ? Object.keys(_plannerClipboardArr.flags).length : 0;
+  const nLaps  = _plannerClipboardArr && _plannerClipboardArr.laps ? Object.keys(_plannerClipboardArr.laps).filter(k => _plannerClipboardArr.laps[k] > 1).length : 0;
   closeModal('modal-planner-detail');
   renderPlannerScreen();                          // reveals the 📋 Paste button
-  showToast('Copied' + (nFlags ? ' with ' + nFlags + ' 🚩 flagged task' + (nFlags === 1 ? '' : 's') : '') + ' — open a day and tap 📋 Paste');
+  showToast('Copied' + (nFlags ? ' with ' + nFlags + ' 🚩 flagged task' + (nFlags === 1 ? '' : 's') : '') + (nLaps ? ' · 🔁 laps' : '') + ' — open a day and tap 📋 Paste');
 }
 function pastePlannerBlock() {
   if (!_plannerClipboard) { showToast('Nothing copied yet'); return; }
