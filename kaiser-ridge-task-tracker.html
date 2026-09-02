@@ -3026,7 +3026,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.323';
+const APP_VERSION = '2026-06-21.324';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -7639,6 +7639,17 @@ function confirmTime(choice) {
     if (Array.isArray(taskInfo._resumeCarried)) {
       clockState.checklistCarried = taskInfo._resumeCarried;
       if (taskInfo._resumeCarriedInfo) clockState.checklistCarriedInfo = taskInfo._resumeCarriedInfo;   // when + how long, per item
+    }
+    // 🚩 …and the arrangement that work was being done against (v324). Reps are NOT
+    // reset here: a resume is the SAME RUN continuing, so last session's laps must
+    // stand. v322's reset is gated on _planId, which a resume never carries.
+    if (taskInfo._resumeFlags && Object.keys(taskInfo._resumeFlags).length) {
+      clockState.flagOverride = Object.assign({}, taskInfo._resumeFlags);
+      if (Array.isArray(taskInfo._resumeOrder) && taskInfo._resumeOrder.length)
+        clockState.orderOverride = taskInfo._resumeOrder.slice();
+      if (taskInfo._resumeLapTargets && Object.keys(taskInfo._resumeLapTargets).length)
+        clockState.lapTargets = Object.assign({}, taskInfo._resumeLapTargets);
+      clearRunResume();   // consumed — clocking out again rewrites it if work is still owing
     }
     _storeSet('kr_clock', JSON.stringify(clockState));
     renderClockState();
@@ -16706,11 +16717,43 @@ async function sendPlannerToMember(view) {
 async function _sendDayTodos(url, plans, assignee) {
   const jobs = [...new Set((plans || []).map(p => p.task).filter(Boolean))];
   const tn = getTaskNotes();
-  const pins = [];
-  jobs.forEach(job => (tn[job] || []).forEach(t => {
-    if (t && t.id && t.text) pins.push({ id: t.id, task: job, text: t.text, ts: t.ts || new Date().toISOString(), caught: t.caught || '' });
-  }));
-  if (!pins.length) return [];
+  const notes = [];
+  jobs.forEach(job => (tn[job] || []).forEach(t => { if (t && t.id && t.text) notes.push({ job, t }); }));
+  if (!notes.length) return [];
+
+  // 📷 A to-do's PHOTOS travel too. Until v324 the pin carried id/task/text/ts/caught
+  // and nothing else, so Ethan got "changeover Kaiser Tiny House" with the words and
+  // none of the pictures — the note stripped of the half that shows him what it means.
+  //
+  // ⭐ Photos travel as DRIVE REFS, never as bytes. `note.photos` is [{id} (Drive) |
+  // {data} (base64 on this device)] and a base64 photo is megabytes, while pinNote is
+  // a text POST. So anything still on-device is uploaded to Drive FIRST and the local
+  // note rewritten to point at it — the same move ⬆️ Move On-Device Photos to Drive
+  // makes, done just for the ones being sent. Both phones then pull the same id back
+  // through `?photo=`, which the Apps Script serves as the deploying account, so this
+  // needs no Drive sharing on Ethan's side.
+  let rewrote = false, stuck = 0;
+  for (const { t } of notes) {
+    const ph = _notePhotos(t);
+    if (!ph.length) continue;
+    // Migrate the legacy single-photo fields on the way past, or they can never be sent.
+    if (!Array.isArray(t.photos)) { t.photos = ph; delete t.image; delete t.imageId; rewrote = true; }
+    for (const ref of t.photos) {
+      if (ref.id || !ref.data) continue;
+      const id = await _uploadPhoto(ref.data);
+      if (id) { delete ref.data; ref.id = id; rewrote = true; }
+      else stuck++;                       // bad signal — send the rest, keep the bytes
+    }
+  }
+  if (rewrote) saveTaskNotes(tn);
+  if (stuck) showToast('📷 ' + stuck + ' photo' + (stuck === 1 ? '' : 's') + " couldn't upload — send again on better signal");
+
+  const pins = notes.map(({ job, t }) => {
+    const pin = { id: t.id, task: job, text: t.text, ts: t.ts || new Date().toISOString(), caught: t.caught || '' };
+    const refs = _notePhotos(t).filter(x => x && x.id).map(x => ({ id: x.id }));
+    if (refs.length) pin.photos = refs;
+    return pin;
+  });
   try {
     const res = await fetch(url, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
@@ -16742,18 +16785,41 @@ async function pullPins() {
     if (!json || !json.success || !Array.isArray(json.pins)) return;
     const applied = new Set(JSON.parse(localStorage.getItem('kr_pins_applied') || '[]'));
     const tn = getTaskNotes();
-    let added = 0;
+    let added = 0, filled = 0;
     json.pins.forEach(p => {
-      if (!p.id || applied.has(p.id)) return;
+      if (!p.id) return;
+      const photos = Array.isArray(p.photos) ? p.photos.filter(x => x && x.id).map(x => ({ id: x.id })) : [];
+      // ⭐ DEDUP BY ID MUST NOT MEAN "NEVER LOOK AGAIN". A to-do that already landed
+      // still needs its photos when they arrive later — because they didn't travel at
+      // all before v324, or because the manager attached one after sending. Skipping
+      // outright left deleting and re-creating the whole to-do as the only way to get
+      // a picture across. Backfill photos only; the TEXT is left alone, since edits
+      // belong to _propagateNoteEdit and re-applying it here would fight it.
+      if (applied.has(p.id)) {
+        if (!photos.length) return;
+        const mine = (tn[p.task] || []).find(x => x && x.id === p.id);
+        if (!mine) return;
+        const have = _notePhotos(mine);
+        const ids = have.map(x => x.id).filter(Boolean);
+        const add = photos.filter(x => ids.indexOf(x.id) < 0);
+        if (!add.length) return;
+        mine.photos = have.concat(add);
+        delete mine.image; delete mine.imageId;   // off the legacy fields, as _notePhotos read them
+        filled++;
+        return;
+      }
       if (!tn[p.task]) tn[p.task] = [];
-      tn[p.task].push({ id: p.id, text: p.text, ts: p.ts || new Date().toISOString(), caught: p.caught || '' });
+      const note = { id: p.id, text: p.text, ts: p.ts || new Date().toISOString(), caught: p.caught || '' };
+      if (photos.length) note.photos = photos;
+      tn[p.task].push(note);
       applied.add(p.id); added++;
     });
-    if (added) {
+    if (added || filled) {
       saveTaskNotes(tn);
-      _storeSet('kr_pins_applied', JSON.stringify([...applied]));
+      if (added) _storeSet('kr_pins_applied', JSON.stringify([...applied]));
       if (clockState && clockState.running) renderRunChecklist();
-      showToast(added + ' to-do' + (added === 1 ? '' : 's') + ' from your manager 📌');
+      if (added) showToast(added + ' to-do' + (added === 1 ? '' : 's') + ' from your manager 📌');
+      else showToast('📷 Photos added to ' + filled + ' to-do' + (filled === 1 ? '' : 's'));
     }
   } catch (e) { /* offline — try next time */ }
 }
@@ -17885,6 +17951,37 @@ function plannerResume() {
       if (m) m[1].split(',').forEach(it => { const t = it.trim(); if (t) carried.push(t); });
     });
   }
+  // ⭐ A RESUME MUST BRING BACK THE PLAN, not just the ticks. Until v324 this carried
+  // `carried`/`carriedInfo` — what was already DONE — and nothing about what was
+  // FLAGGED. So picking a job back up opened an EMPTY run sheet: no flagged tasks, no
+  // lap targets, no 🎯 to work to. You resumed a job and the plan you'd arranged was
+  // simply gone.
+  //
+  // `_saveRunResume()` has always written exactly this at every clock-out that leaves
+  // flagged work outstanding — flags, order, lapTargets, the lot. It was never read
+  // here. Its only reader sits inside the planner-BLOCK branch of the clock-in path,
+  // so the record could only ever surface when clocking in from a block, never on the
+  // resume it was built for. Read it directly: someone tapping Resume has already said
+  // yes, so there is nothing left to ask them.
+  let _rFlags = null, _rOrder = null, _rLaps = null;
+  const _rr = getRunResume();
+  if (_rr && _rr.job === entry.task && _rr.flags && Object.keys(_rr.flags).length &&
+      Date.now() - new Date(_rr.at).getTime() <= RUN_RESUME_MS) {
+    _rFlags = Object.assign({}, _rr.flags);
+    _rOrder = Array.isArray(_rr.order) ? _rr.order.slice() : null;
+    _rLaps  = _rr.lapTargets ? Object.assign({}, _rr.lapTargets) : null;
+  } else if (carried.length) {
+    // No record — older than RUN_RESUME_MS, or cleared. Rebuild the flag set from what
+    // was actually ticked. Less than the original plan (work flagged but never started
+    // can't be recovered), but it is the truth about the run and beats an empty sheet.
+    _rFlags = {};
+    carried.forEach(it => { _rFlags[it] = true; });
+  }
+  // ⚠️ runOrder is deliberately NOT carried. Its keys are task + lapNo, and on a
+  // CONTINUATION repsBefore already counts the laps banked last session, so every saved
+  // key names a lap number this sheet will never generate. That mismatch is the v322
+  // trap and it fails SILENTLY — the arrangement is dropped without a word. The default
+  // order is the LEARNED order, which is the order the job was worked in anyway.
   closeModal('modal-planner-detail');
   // Route through the Clock In time picker so a resume can be BACKDATED — you
   // often pick the job back up before you get to your phone (flagged note 10 Jul).
@@ -17893,6 +17990,7 @@ function plannerResume() {
     location: entry.location, frequency: entry.frequency || '', group: entry.group,
     task: entry.task, subtask: entry.subtask || '', tool: entry.tool || '', notes: '',
     _resumeCarried: carried, _resumeCarriedInfo: carriedInfo,
+    _resumeFlags: _rFlags, _resumeOrder: _rOrder, _resumeLapTargets: _rLaps,
   });
 }
 
@@ -18949,7 +19047,19 @@ function _rsCtx() {
     repsBefore: item => { const mine = done.filter(d => d.item === item && d.rep); return Math.max(0, taskRepCount(job, item) - mine.length); },
     doneAt: (item, n) => {
       const hit = n === 0 ? done.find(d => d.item === item && !d.rep && !d.lap) : done.find(d => d.item === item && d.rep === n);
-      return hit ? hit.at : null;
+      if (hit) return hit.at;
+      // A RESUMED run keeps last session's ticks in `checklistCarried`. The run
+      // checklist and the 🎯 maths both honour them; the run SHEET did not, so once
+      // v324 started carrying the flags across, a once-off finished yesterday would
+      // have come back up as still to do. Laps need no equivalent — repsBefore
+      // already counts the banked ones.
+      if (n === 0 && Array.isArray(clockState.checklistCarried) && clockState.checklistCarried.indexOf(item) >= 0) {
+        const ci = (clockState.checklistCarriedInfo || {})[item];
+        // The legacy notes-parsed path has no per-item time; fall back to this
+        // session's start, which reads as "before you picked it back up".
+        return (ci && ci.at) || new Date(clockState.startMs || Date.now()).toISOString();
+      }
+      return null;
     },
     order: Array.isArray(clockState.runOrder) ? clockState.runOrder : null,
     baseOrder: _orgVisibleOrder(job, _sessionOrGlobalFlags(job), _sessionOrGlobalOrder(job)),
