@@ -3026,7 +3026,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.324';
+const APP_VERSION = '2026-06-21.325';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -8676,7 +8676,7 @@ function _syncOutbox() { return _syncRead(KR_SYNC_OUTBOX, '{}') || {}; }
 function _syncState()  { return _syncRead(KR_SYNC_STATE, '{}') || {}; }
 function _syncSetState(patch) { const s = Object.assign(_syncState(), patch); _syncWrite(KR_SYNC_STATE, s); try { renderSyncUI(); } catch (e) {} return s; }
 function syncHydrateOn() { return localStorage.getItem(KR_SYNC_HYDRATE) === '1'; }
-function syncPending() { return Object.keys(_syncOutbox()).length; }
+function syncPending() { return Object.keys(_syncOutbox()).length + (typeof recPending === 'function' ? recPending() : 0); }
 
 // ── The write hook ───────────────────────────────────────────────────────────
 // Called from _storeSet / _storeRemove — the one seam S1 built for exactly this.
@@ -8800,6 +8800,11 @@ async function syncNow(quiet) {
     try {
       pushed = await _syncPush();
       pulled = await _syncPull();
+      // S4 per-record tables ride the same trip. Folded into the same counts so
+      // the user sees one "Synced" line, not two competing ones.
+      const rec = await _recSyncAll();
+      pushed += rec.pushed;
+      if (pulled) { pulled.seen += rec.seen; pulled.applied += rec.applied; }
     } catch (err) {
       console.warn('[sync]', err);
       _syncSetState({ lastError: 'Sync hit a problem — your work is safe on this device' });
@@ -8822,10 +8827,277 @@ async function syncNow(quiet) {
   } finally { _syncBusy = false; }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+//  S4 — PER-RECORD SYNC (stage 1: the Inbox)
+//
+//  S3 syncs whole keys as opaque blobs through `kv`. That is right for the job
+//  library, wrong for the Class B stores: kr_inbox, kr_task_notes, kr_entries
+//  and kr_subtask_photos are lists of independent records, several megabytes
+//  each, where last-write-wins on the WHOLE LIST means one phone's copy of the
+//  list silently replaces the other's. Per-record rows make the blast radius one
+//  record instead of one store.
+//
+//  ⭐ THIS IS WRITTEN GENERIC ON PURPOSE. Five tables follow the Inbox, so the
+//  deliverable of stage 1 is the scaffold, not the Inbox. Anything Inbox-shaped
+//  in here would have to be written five more times.
+//
+//  Every S3 rule carries over unchanged and for the same reasons:
+//    • the watermark uses gte, NOT gt — a batch upsert shares one now(), so gt
+//      skips the tail of any batch straddling a page boundary
+//    • the watermark only advances when hydrate is ON and nothing threw
+//    • deletes are tombstones (deleted_at), never row removal
+//    • pagination is mandatory, no unbounded select
+//    • _syncApplying guards the write so a pulled record is not re-enqueued as
+//      a local edit and echoed straight back
+// ════════════════════════════════════════════════════════════════════════════
+const KR_REC_OUTBOX = 'kr_sync_rec_outbox';   // { table: { id: {op:'set'|'del', at} } }
+const KR_REC_MARK   = 'kr_sync_rec_mark';     // { table: watermark }
+const KR_REC_SHADOW = 'kr_sync_rec_shadow';   // { table: { id: fingerprint } }
+// All three start 'kr_sync', which _syncEligible refuses outright — so the
+// bookkeeping can never itself become something to sync.
+
+// ── The table registry ──────────────────────────────────────────────────────
+// scope 'user' = a row is the PERSON's (carries user_id, RLS filters to you).
+// scope 'org'  = a row is the ORG's. Ask this of EVERY table before adding it;
+// getting it wrong is the 28 Aug collision, and neither a stub nor one device
+// can surface it.
+const KR_REC_TABLES = {
+  // 📥 Inbox — decided 31 Aug, option C: your captures are yours. Ethan's tray
+  // is his. This stage exists to BACK IT UP, not to share it.
+  inbox: {
+    table: 'inbox', scope: 'user',
+    read:  () => getInbox(),
+    write: arr => saveInbox(arr),
+    idOf:  r => r && r.id,
+  },
+};
+
+// ── Change detection ────────────────────────────────────────────────────────
+// A record store has no per-record write hook the way _storeSet gives us one per
+// KEY, so changes are found by comparing each record against a fingerprint taken
+// last time. Storing the previous JSON instead would double the largest store on
+// the device, which is the one thing this stage is trying to protect.
+//
+// Two independent 32-bit hashes plus the exact length. A missed change needs a
+// collision in both hashes AND identical length, which is not a real risk; a
+// single 32-bit hash on its own would have been.
+function _recFingerprint(str) {
+  let a = 5381, b = 52711;
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    a = ((a << 5) + a + c) | 0;
+    b = ((b << 5) - b + c) | 0;
+  }
+  return str.length + ':' + (a >>> 0).toString(36) + ':' + (b >>> 0).toString(36);
+}
+function _recRead(k, dflt) { try { return JSON.parse(localStorage.getItem(k) || dflt); } catch (e) { return JSON.parse(dflt); } }
+function _recWrite(k, v) { try { _safeSetItem(k, JSON.stringify(v)); } catch (e) {} }
+
+// Diff a store against its shadow and enqueue whatever moved. Called after every
+// save of that store; cheap enough to run on each one.
+function _recScan(name) {
+  try {
+    const desc = KR_REC_TABLES[name];
+    if (!desc || _syncApplying) return;   // a pulled record is not a local edit
+    const shadowAll = _recRead(KR_REC_SHADOW, '{}');
+    const prev = shadowAll[name] || {};
+    const next = {};
+    const q = _recRead(KR_REC_OUTBOX, '{}');
+    const mine = q[name] || (q[name] = {});
+    let changed = false;
+
+    (desc.read() || []).forEach(rec => {
+      const id = desc.idOf(rec);
+      if (!id) return;
+      const fp = _recFingerprint(JSON.stringify(rec));
+      next[id] = fp;
+      if (prev[id] !== fp) { mine[id] = { op: 'set', at: Date.now() }; changed = true; }
+    });
+    // Gone from the list → a tombstone, never a silent absence. A row that simply
+    // vanishes can never be seen by a delta pull, so the delete would not travel.
+    Object.keys(prev).forEach(id => {
+      if (next[id] === undefined) { mine[id] = { op: 'del', at: Date.now() }; changed = true; }
+    });
+
+    shadowAll[name] = next;
+    _recWrite(KR_REC_SHADOW, shadowAll);
+    if (changed) { _recWrite(KR_REC_OUTBOX, q); _syncSchedule(); }
+  } catch (e) { /* never take a save down */ }
+}
+function recPending() {
+  const q = _recRead(KR_REC_OUTBOX, '{}');
+  return Object.keys(q).reduce((n, t) => n + Object.keys(q[t] || {}).length, 0);
+}
+
+// ── Push ────────────────────────────────────────────────────────────────────
+async function _recPush(name) {
+  const desc = KR_REC_TABLES[name];
+  const org = currentOrg();
+  if (!desc || !org || !org.id) return 0;
+  const ids0 = Object.keys(_recRead(KR_REC_OUTBOX, '{}')[name] || {});
+  if (!ids0.length) return 0;
+  const uid = (currentUser() || {}).id || null;
+  if (desc.scope === 'user' && !uid) return 0;   // a per-person row with no person is unwritable under RLS
+
+  // 📷 Photos travel as DRIVE REFS, never as bytes — the same rule v324 landed
+  // for to-dos. A capture holding base64 is megabytes, and subtask_photos plus
+  // Storage is where bytes belong (stage 4). Uploading first also shrinks the
+  // biggest store on the device, which is the point of the exercise.
+  let stuck = 0;
+  if (typeof _notePhotos === 'function' && typeof _uploadPhoto === 'function') {
+    const all = desc.read() || [];
+    let rewrote = false;
+    for (const rec of all) {
+      if (!ids0.includes(desc.idOf(rec))) continue;
+      const ph = _notePhotos(rec);
+      if (!ph.length) continue;
+      if (!Array.isArray(rec.photos)) { rec.photos = ph; delete rec.image; delete rec.imageId; rewrote = true; }
+      for (const ref of rec.photos) {
+        if (ref.id || !ref.data) continue;
+        const newId = await _uploadPhoto(ref.data);
+        if (newId) { delete ref.data; ref.id = newId; rewrote = true; }
+        else stuck++;
+      }
+    }
+    // Writing back re-enters _recScan and re-fingerprints these records, which is
+    // correct: the stored record genuinely changed.
+    if (rewrote) desc.write(all);
+  }
+  if (stuck) _syncSetState({ lastError: stuck + ' photo' + (stuck === 1 ? '' : 's') + ' could not upload — will retry' });
+
+  // ⭐ Snapshot the outbox only NOW. Normalising a photo rewrites the record,
+  // which re-enqueues it with a fresh timestamp — so a snapshot taken before the
+  // photo pass would not match, and the very record just fixed would be left
+  // queued and pushed again on the next trip. Caught by the stage-1 harness.
+  const q = _recRead(KR_REC_OUTBOX, '{}');
+  const mine = q[name] || {};
+  const ids = Object.keys(mine);
+  if (!ids.length) return 0;
+
+  const byId = {};
+  (desc.read() || []).forEach(r => { const id = desc.idOf(r); if (id) byId[id] = r; });
+
+  let pushed = 0;
+  for (let i = 0; i < ids.length; i += _SYNC_BATCH) {
+    const slice = ids.slice(i, i + _SYNC_BATCH);
+    const rows = slice.map(id => {
+      const row = { id: id, org_id: org.id, payload: byId[id] || {}, deleted_at: null };
+      if (desc.scope === 'user') row.user_id = uid;
+      // A delete keeps the row and stamps it. The payload is left as whatever we
+      // last held so the record can still be described after it is gone.
+      if (mine[id].op === 'del' || !byId[id]) row.deleted_at = new Date().toISOString();
+      return row;
+    });
+    const res = await _sb('/rest/v1/' + desc.table, {
+      method: 'POST',
+      headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(rows),
+    });
+    if (res === null) { _syncSetState({ lastError: 'Could not reach the server' }); return pushed; }
+    // Clear only what actually went, and only if it has not been written again
+    // while the request was in flight — otherwise that edit is lost silently.
+    const now = _recRead(KR_REC_OUTBOX, '{}');
+    const cur = now[name] || {};
+    slice.forEach(id => { if (cur[id] && mine[id] && cur[id].at === mine[id].at) delete cur[id]; });
+    now[name] = cur; _recWrite(KR_REC_OUTBOX, now);
+    pushed += slice.length;
+  }
+  return pushed;
+}
+
+// ── Pull ────────────────────────────────────────────────────────────────────
+async function _recPull(name) {
+  const desc = KR_REC_TABLES[name];
+  const org = currentOrg();
+  if (!desc || !org || !org.id) return { seen: 0, applied: 0 };
+  const marks = _recRead(KR_REC_MARK, '{}');
+  const mark = marks[name] || '1970-01-01T00:00:00Z';
+  const hydrate = syncHydrateOn();
+  const uid = (currentUser() || {}).id || null;
+  let offset = 0, seen = 0, applied = 0, maxMark = mark, failed = false;
+  const incoming = [];
+
+  for (;;) {
+    let path = '/rest/v1/' + desc.table + '?select=id,payload,updated_at,deleted_at'
+      + '&org_id=eq.' + encodeURIComponent(org.id)
+      + '&updated_at=gte.' + encodeURIComponent(mark)
+      + '&order=updated_at.asc,id.asc'
+      + '&limit=' + _SYNC_PAGE + '&offset=' + offset;
+    // Belt and braces: RLS already restricts a per-person table to you, but the
+    // filter states the intent in the query rather than relying on the policy
+    // alone. If the policy is ever loosened, this does not quietly widen with it.
+    if (desc.scope === 'user' && uid) path += '&user_id=eq.' + encodeURIComponent(uid);
+    const rows = await _sb(path);
+    if (rows === null) { _syncSetState({ lastError: 'Could not reach the server' }); return { seen, applied, offline: true }; }
+    if (!rows.length) break;
+    rows.forEach(r => { seen++; if (r.updated_at > maxMark) maxMark = r.updated_at; incoming.push(r); });
+    if (rows.length < _SYNC_PAGE) break;
+    offset += _SYNC_PAGE;
+  }
+
+  if (hydrate && incoming.length) {
+    _syncApplying = true;
+    try {
+      const list = (desc.read() || []).slice();
+      const pos = {};
+      list.forEach((r, i) => { const id = desc.idOf(r); if (id) pos[id] = i; });
+      let touched = false;
+      incoming.forEach(r => {
+        const here = pos[r.id] === undefined ? null : list[pos[r.id]];
+        if (r.deleted_at) {
+          if (here) { list.splice(pos[r.id], 1); list.forEach((x, i) => { const id = desc.idOf(x); if (id) pos[id] = i; }); touched = true; applied++; }
+          return;
+        }
+        if (!r.payload || typeof r.payload !== 'object') return;
+        // Idempotent: an unchanged record costs nothing, and gte deliberately
+        // re-delivers the boundary rows every pull.
+        if (here && _recFingerprint(JSON.stringify(here)) === _recFingerprint(JSON.stringify(r.payload))) return;
+        if (here) list[pos[r.id]] = r.payload;
+        else { list.unshift(r.payload); list.forEach((x, i) => { const id = desc.idOf(x); if (id) pos[id] = i; }); }
+        touched = true; applied++;
+      });
+      if (touched) desc.write(list);
+    } catch (e) { failed = true; } finally { _syncApplying = false; }
+    // The store just changed underneath the shadow. Re-fingerprint WITHOUT
+    // enqueuing, or every pulled record bounces straight back as a local edit.
+    if (!failed) {
+      const shadowAll = _recRead(KR_REC_SHADOW, '{}');
+      const next = {};
+      (desc.read() || []).forEach(rec => { const id = desc.idOf(rec); if (id) next[id] = _recFingerprint(JSON.stringify(rec)); });
+      shadowAll[name] = next; _recWrite(KR_REC_SHADOW, shadowAll);
+    }
+  }
+
+  // Same rule as kv: an observation is not a sync. Advancing the watermark past
+  // a change we did not apply is a change that never arrives and never says so.
+  if (hydrate && !failed && maxMark !== mark) { marks[name] = maxMark; _recWrite(KR_REC_MARK, marks); }
+  return { seen, applied };
+}
+
+async function _recSyncAll() {
+  let pushed = 0, seen = 0, applied = 0;
+  for (const name of Object.keys(KR_REC_TABLES)) {
+    pushed += await _recPush(name);
+    const r = await _recPull(name);
+    seen += r.seen; applied += r.applied;
+  }
+  return { pushed, seen, applied };
+}
+
+// First run on a device that already holds records: fingerprint everything as
+// NEW so the whole store is uploaded once, then diffed from then on.
+function _recBoot() {
+  try {
+    const shadowAll = _recRead(KR_REC_SHADOW, '{}');
+    Object.keys(KR_REC_TABLES).forEach(name => { if (!shadowAll[name]) _recScan(name); });
+  } catch (e) {}
+}
+
 function _syncBoot() {
   try {
     _syncAuditKeys();
     window.addEventListener('online', () => _syncSchedule(500));
+    _recBoot();
     if (isSignedIn()) _syncSchedule(4000);   // after auth/org bootstrap has had a moment
   } catch (e) {}
 }
@@ -12446,6 +12718,11 @@ function getInbox() { return JSON.parse(_storeGet('kr_inbox') || '[]'); }
 function saveInbox(arr) {
   if (!_storeSet('kr_inbox', JSON.stringify(arr))) return false;
   updateInboxCount();
+  // S4: a record store has no per-record write hook, so the diff is taken here,
+  // after the write is CONFIRMED. Enqueuing before the save could queue a record
+  // that never landed — the silent-write-loss rule: a write is not saved until
+  // the write says it is.
+  _recScan('inbox');
   return true;
 }
 function updateInboxCount() {
