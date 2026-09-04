@@ -3026,7 +3026,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.325';
+const APP_VERSION = '2026-06-21.326';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -8870,6 +8870,41 @@ const KR_REC_TABLES = {
     write: arr => saveInbox(arr),
     idOf:  r => r && r.id,
   },
+  // 📌 To-dos — the ORG's, deliberately the opposite of the Inbox. A capture is
+  // scratch; a to-do is an INSTRUCTION. It hangs off a job, the library is
+  // manager-writes / worker-reads, and to-dos already travel to workers on the
+  // pin channel today. So: org-scoped, no user_id, everyone in the org sees them.
+  //
+  // ⭐ This store is an OBJECT keyed by job name, not a flat list — which is the
+  // real test of whether the v325 registry is generic or just inbox-shaped. It
+  // needed three optional hooks and no change to the push/pull machinery:
+  //   colsOf    → the job name is a COLUMN (task_id), not payload
+  //   payloadOf → so _task is stripped back out of the payload
+  //   fromRow   → and put back when a row comes home
+  // A note is carried whole otherwise; never pick fields off it, or the next one
+  // added upstream is silently dropped in transit.
+  task_notes: {
+    table: 'task_notes', scope: 'org',
+    read: () => {
+      const o = getTaskNotes(); const out = [];
+      Object.keys(o).forEach(t => (o[t] || []).forEach(n => { if (n && n.id) out.push(Object.assign({}, n, { _task: t })); }));
+      return out;
+    },
+    write: arr => {
+      const o = {};
+      arr.forEach(r => {
+        if (!r || !r._task) return;          // a note with no job has nowhere to live
+        const n = Object.assign({}, r); delete n._task;
+        (o[r._task] || (o[r._task] = [])).push(n);
+      });
+      saveTaskNotes(o);
+    },
+    idOf:      r => r && r.id,
+    select:    'id,task_id,payload,updated_at,deleted_at',
+    colsOf:    r => ({ task_id: r._task || '' }),
+    payloadOf: r => { const n = Object.assign({}, r); delete n._task; return n; },
+    fromRow:   row => Object.assign({}, row.payload, { _task: row.task_id || '' }),
+  },
 };
 
 // ── Change detection ────────────────────────────────────────────────────────
@@ -8901,7 +8936,14 @@ function _recScan(name) {
     if (!desc || _syncApplying) return;   // a pulled record is not a local edit
     const shadowAll = _recRead(KR_REC_SHADOW, '{}');
     const prev = shadowAll[name] || {};
-    const next = {};
+    // ⭐ Last-known COLUMNS, kept beside the fingerprints. A tombstone still has to
+    // populate the table's own NOT NULL columns (task_notes.task_id), and by the
+    // time a record is deleted there is nothing left locally to read them from —
+    // the to-do went up with an EMPTY job name, losing which job it belonged to.
+    // Held in a separate map so the v325 shadow format is unchanged and existing
+    // devices do not re-upload their whole store on upgrade.
+    const prevCols = shadowAll[name + ':cols'] || {};
+    const next = {}, nextCols = {};
     const q = _recRead(KR_REC_OUTBOX, '{}');
     const mine = q[name] || (q[name] = {});
     let changed = false;
@@ -8911,15 +8953,20 @@ function _recScan(name) {
       if (!id) return;
       const fp = _recFingerprint(JSON.stringify(rec));
       next[id] = fp;
+      if (desc.colsOf) nextCols[id] = desc.colsOf(rec);
       if (prev[id] !== fp) { mine[id] = { op: 'set', at: Date.now() }; changed = true; }
     });
     // Gone from the list → a tombstone, never a silent absence. A row that simply
     // vanishes can never be seen by a delta pull, so the delete would not travel.
     Object.keys(prev).forEach(id => {
-      if (next[id] === undefined) { mine[id] = { op: 'del', at: Date.now() }; changed = true; }
+      if (next[id] === undefined) {
+        mine[id] = { op: 'del', at: Date.now(), cols: prevCols[id] || null };
+        changed = true;
+      }
     });
 
     shadowAll[name] = next;
+    if (desc.colsOf) shadowAll[name + ':cols'] = nextCols;
     _recWrite(KR_REC_SHADOW, shadowAll);
     if (changed) { _recWrite(KR_REC_OUTBOX, q); _syncSchedule(); }
   } catch (e) { /* never take a save down */ }
@@ -8981,8 +9028,15 @@ async function _recPush(name) {
   for (let i = 0; i < ids.length; i += _SYNC_BATCH) {
     const slice = ids.slice(i, i + _SYNC_BATCH);
     const rows = slice.map(id => {
-      const row = { id: id, org_id: org.id, payload: byId[id] || {}, deleted_at: null };
+      const rec = byId[id];
+      const row = { id: id, org_id: org.id, deleted_at: null,
+                    payload: rec ? (desc.payloadOf ? desc.payloadOf(rec) : rec) : {} };
       if (desc.scope === 'user') row.user_id = uid;
+      // Columns the table carries in its own right (task_notes.task_id). A DELETED
+      // record has none to read, so use the last-known columns captured by
+      // _recScan when it vanished — otherwise the tombstone goes up with an empty
+      // job name and nothing records which job the to-do belonged to.
+      if (desc.colsOf) Object.assign(row, rec ? desc.colsOf(rec) : (mine[id].cols || desc.colsOf({})));
       // A delete keeps the row and stamps it. The payload is left as whatever we
       // last held so the record can still be described after it is gone.
       if (mine[id].op === 'del' || !byId[id]) row.deleted_at = new Date().toISOString();
@@ -9018,7 +9072,7 @@ async function _recPull(name) {
   const incoming = [];
 
   for (;;) {
-    let path = '/rest/v1/' + desc.table + '?select=id,payload,updated_at,deleted_at'
+    let path = '/rest/v1/' + desc.table + '?select=' + (desc.select || 'id,payload,updated_at,deleted_at')
       + '&org_id=eq.' + encodeURIComponent(org.id)
       + '&updated_at=gte.' + encodeURIComponent(mark)
       + '&order=updated_at.asc,id.asc'
@@ -9049,11 +9103,12 @@ async function _recPull(name) {
           return;
         }
         if (!r.payload || typeof r.payload !== 'object') return;
+        const incomingRec = desc.fromRow ? desc.fromRow(r) : r.payload;
         // Idempotent: an unchanged record costs nothing, and gte deliberately
         // re-delivers the boundary rows every pull.
-        if (here && _recFingerprint(JSON.stringify(here)) === _recFingerprint(JSON.stringify(r.payload))) return;
-        if (here) list[pos[r.id]] = r.payload;
-        else { list.unshift(r.payload); list.forEach((x, i) => { const id = desc.idOf(x); if (id) pos[id] = i; }); }
+        if (here && _recFingerprint(JSON.stringify(here)) === _recFingerprint(JSON.stringify(incomingRec))) return;
+        if (here) list[pos[r.id]] = incomingRec;
+        else { list.unshift(incomingRec); list.forEach((x, i) => { const id = desc.idOf(x); if (id) pos[id] = i; }); }
         touched = true; applied++;
       });
       if (touched) desc.write(list);
@@ -9124,7 +9179,11 @@ function renderSyncUI() {
 }
 function toggleSyncHydrate() {
   const on = !syncHydrateOn();
-  if (on && !confirm('Apply changes from your other devices to this one?\n\nYour job library, plans and settings will be replaced by whatever is newest across your devices. Timesheets and notes are not affected.')) return;
+  // ⚠️ This wording used to promise that PLANS would be replaced. kr_planner has
+  // been never-sync since v317, and the 3 Sep two-phone test proved it — so the
+  // dialog was telling the user the opposite of what the code does, in the two
+  // seconds before they tap OK. Say what actually travels, and what does not.
+  if (on && !confirm('Apply changes from your other devices to this one?\n\nYour job library, equipment and settings will be replaced by whatever is newest across your devices.\n\nYour planned day, timesheets and reminders stay on this phone.')) return;
   try { _safeSetItem(KR_SYNC_HYDRATE, on ? '1' : '0'); } catch (e) {}
   renderSyncUI();
   if (on) syncNow(false).catch(() => {});
@@ -14088,7 +14147,13 @@ function deleteInboxItem(id) {
 // Per-task "pinned notes" — sticky reminders that show at the top of a task each
 // time it's started, until ticked off (then gone). Device-local (not synced).
 function getTaskNotes() { return JSON.parse(_storeGet('kr_task_notes') || '{}'); }
-function saveTaskNotes(o) { return _storeSet('kr_task_notes', JSON.stringify(o)); }
+function saveTaskNotes(o) {
+  const ok = _storeSet('kr_task_notes', JSON.stringify(o));
+  // S4 stage 2: diff AFTER the write is confirmed, never before — a record queued
+  // for a save that did not land is the silent-write-loss trap in miniature.
+  if (ok) _recScan('task_notes');
+  return ok;
+}
 
 // ── How-to videos per task (kr_task_videos) — a tiny reference only, never bytes.
 // { provider:'youtube', id, addedBy, addedAt }. Rides the Task Library publish so
