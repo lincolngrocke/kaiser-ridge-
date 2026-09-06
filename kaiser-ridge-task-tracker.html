@@ -3048,7 +3048,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.331';
+const APP_VERSION = '2026-06-21.332';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4451,10 +4451,45 @@ function _isTaskDoneNow(job, item, done) {
 // ════════════════════════════════════════════════════════════════════════════
 const RUN_RESUME_MS = 24 * 60 * 60 * 1000;
 
-function getRunResume() {
-  try { return JSON.parse(localStorage.getItem('kr_run_resume') || 'null'); } catch (e) { return null; }
+// ⭐⭐ ONE RECORD PER JOB, not one for the whole app. Until v332 `kr_run_resume`
+// held a SINGLE record, so clocking out of any second job overwrote the first —
+// and if that second job had no flagged work outstanding it cleared the store
+// outright. Lincoln's actual day is bouncing between jobs, so in practice only
+// the last job finished could ever be resumed; everything else came back holding
+// just its completed tasks. Reported 6 Sep: left Household chores half done,
+// finished another job, went back, and the run sheet was empty.
+//
+// Stored as { job: record }. The legacy single record is migrated on read, so an
+// interrupted run that predates this is not lost on the way past.
+const _RUN_RESUME_MAX = 20;   // bounded: keeping every job forever is a slow leak
+function _runResumeAll() {
+  let raw = null;
+  try { raw = JSON.parse(localStorage.getItem('kr_run_resume') || 'null'); } catch (e) { return {}; }
+  if (!raw || typeof raw !== 'object') return {};
+  if (raw.job && raw.flags) return { [raw.job]: raw };   // legacy single record
+  return raw;
 }
-function clearRunResume() { _storeRemove('kr_run_resume'); }
+function getRunResume(job) {
+  const all = _runResumeAll();
+  if (job) return all[job] || null;
+  // No job given: the most recent, which is what the old single-record callers meant.
+  const keys = Object.keys(all);
+  if (!keys.length) return null;
+  return keys.map(k => all[k]).sort((a, b) => new Date(b.at) - new Date(a.at))[0];
+}
+function _saveRunResumeAll(all) {
+  // Newest first, then trim. A job you have not touched in twenty runs is not one
+  // you are about to resume.
+  const keys = Object.keys(all).sort((a, b) => new Date(all[b].at) - new Date(all[a].at));
+  const out = {};
+  keys.slice(0, _RUN_RESUME_MAX).forEach(k => { out[k] = all[k]; });
+  return _storeSet('kr_run_resume', JSON.stringify(out));
+}
+function clearRunResume(job) {
+  if (!job) { _storeRemove('kr_run_resume'); return; }   // no job named = clear the lot
+  const all = _runResumeAll();
+  if (all[job]) { delete all[job]; _saveRunResumeAll(all); }
+}
 
 // How much flagged work is still outstanding. Lap tasks are never "done" in the
 // once-off sense, so they're counted against their planned target instead —
@@ -4476,10 +4511,11 @@ function _runOutstanding(job, flags, done, lapTargets) {
 function _saveRunResume() {
   if (!clockState || !clockState.task) return;
   const flags = clockState.flagOverride || {};
-  if (!Object.keys(flags).length) { clearRunResume(); return; }   // nothing was arranged
+  if (!Object.keys(flags).length) { clearRunResume(clockState.task); return; }   // nothing was arranged
   const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
-  if (!_runOutstanding(clockState.task, flags, done, clockState.lapTargets)) { clearRunResume(); return; }   // finished — nothing to resume
-  _storeSet('kr_run_resume', JSON.stringify({
+  if (!_runOutstanding(clockState.task, flags, done, clockState.lapTargets)) { clearRunResume(clockState.task); return; }   // finished — nothing to resume
+  const _rrAll = _runResumeAll();
+  _rrAll[clockState.task] = {
     job: clockState.task,
     at: new Date().toISOString(),
     flags,
@@ -4487,7 +4523,8 @@ function _saveRunResume() {
     runOrder:   Array.isArray(clockState.runOrder)      ? clockState.runOrder      : null,
     lapTargets: clockState.lapTargets || null,
     done: done.map(d => Object.assign({}, d, { carried: true }))
-  }));
+  };
+  _saveRunResumeAll(_rrAll);
 }
 
 let _resumeRec = null;
@@ -4499,9 +4536,11 @@ function _resumeWhenLabel(at) {
 }
 // Offered on clock-in. Silent when there's nothing to offer, or it's gone stale.
 function _maybeOfferResume(job) {
-  const rec = getRunResume();
+  const rec = getRunResume(job);
   if (!rec || rec.job !== job) return;
-  if (Date.now() - new Date(rec.at).getTime() > RUN_RESUME_MS) { clearRunResume(); return; }
+  // The OFFER still ages out — an unasked-for prompt about a run from last week is
+  // noise. Only the deliberate ↻ Resume ignores age (see plannerResume).
+  if (Date.now() - new Date(rec.at).getTime() > RUN_RESUME_MS) { clearRunResume(job); return; }
   _resumeRec = rec;
   const left  = _runOutstanding(job, rec.flags, rec.done || [], rec.lapTargets);
   const doneN = (rec.done || []).length;
@@ -4521,13 +4560,13 @@ function resumeRunYes() {
   if (rec.lapTargets) clockState.lapTargets    = Object.assign({}, rec.lapTargets);
   clockState.checklistDone = (rec.done || []).slice();   // carried:true — display only
   _storeSet('kr_clock', JSON.stringify(clockState));
-  clearRunResume(); _resumeRec = null;
+  clearRunResume(rec.job); _resumeRec = null;
   closeModal('modal-resume-run');
   renderClockState();
   showToast('Picked up where you left off');
 }
 function resumeRunNo() {
-  clearRunResume(); _resumeRec = null;
+  clearRunResume(_resumeRec && _resumeRec.job); _resumeRec = null;
   closeModal('modal-resume-run');
 }
 
@@ -7826,7 +7865,7 @@ function confirmTime(choice) {
         clockState.orderOverride = taskInfo._resumeOrder.slice();
       if (taskInfo._resumeLapTargets && Object.keys(taskInfo._resumeLapTargets).length)
         clockState.lapTargets = Object.assign({}, taskInfo._resumeLapTargets);
-      clearRunResume();   // consumed — clocking out again rewrites it if work is still owing
+      clearRunResume(clockState.task);   // consumed — clocking out again rewrites it if work is still owing
     }
     _storeSet('kr_clock', JSON.stringify(clockState));
     renderClockState();
@@ -18500,7 +18539,7 @@ function plannerResume() {
   // resume it was built for. Read it directly: someone tapping Resume has already said
   // yes, so there is nothing left to ask them.
   let _rFlags = null, _rOrder = null, _rLaps = null;
-  const _rr = getRunResume();
+  const _rr = getRunResume(entry.task);
   // ⭐ MATCH THE RECORD TO THIS ENTRY, don't age it out. RUN_RESUME_MS exists so a
   // stale "pick up where you left off?" OFFER stops nagging at clock-in — an offer
   // nobody asked for should go quiet. But tapping ↻ Resume on a specific finished
