@@ -3048,7 +3048,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.330';
+const APP_VERSION = '2026-06-21.331';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -20188,11 +20188,18 @@ function _rsUnflag(task) {
   _rsRender();
   // ⭐ Re-flagging restores the row to its ARRANGED position, because the saved
   // runOrder is never discarded — so undo is just putting the flag back.
-  showUndoToast('Taken off the run sheet — ' + task.slice(0, 40), () => {
+  // Short message, short life. Lincoln's real task names run to a full sentence
+  // ("Log in to Newbook and add or remove any…"), and 40 characters of that wrapped
+  // into a block covering half the run sheet for twelve seconds. The row visibly
+  // disappearing already says WHICH task went, so the name only has to be enough to
+  // recognise. 3s is his call: taking a row off is trivially redone by re-flagging
+  // it, so this undo does not need the long window a deletion gets.
+  const _short = task.length > 24 ? task.slice(0, 24).trimEnd() + '…' : task;
+  showUndoToast('Off the run sheet — ' + _short, () => {
     const st2 = _rsFlagStore(); if (!st2) return;
     st2.get()[task] = was; st2.save(); _rsRender();
     showToast('↺ Back on the run sheet');
-  }, 12000);
+  }, 3000);
 }
 function _rsDragStart(e) {
   const row = e.currentTarget, y = e.touches[0].clientY;
