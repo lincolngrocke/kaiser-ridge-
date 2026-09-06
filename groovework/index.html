@@ -1198,6 +1198,7 @@
       times, reps and averages come back onto the current task. Nothing is deleted, and
       you can undo it straight after.
     </div>
+    <div id="repair-history-count" style="font-size:13px;color:var(--blue);font-weight:600;margin:8px 0 2px;"></div>
     <div id="repair-history-body" style="max-height:52vh;overflow-y:auto;"></div>
     <button id="repair-history-go" class="btn-sync" style="background:#5856d6;margin-top:12px;" onclick="applyRepairHistory()">Reconnect</button>
   </div>
@@ -3047,7 +3048,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.327';
+const APP_VERSION = '2026-06-21.328';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5154,8 +5155,17 @@ function _repairScore(a, b) {
 // Grouped by the JOB its entries were logged against, so candidates are drawn
 // from that job's current tasks rather than the whole library.
 function findOrphanHistory() {
-  const live = new Set();
-  Object.keys(SUBTASKS || {}).forEach(j => (SUBTASKS[j] || []).forEach(t => live.add(_normTaskKey(t))));
+  // ⭐ STRANDING IS PER JOB, NOT GLOBAL. v327 skipped any old name that still
+  // existed on ANY job, but tasks are shared by name across jobs — so a name
+  // still living on another job hid the loss on this one, and every straw-job
+  // tense rename went unreported. What matters is whether THIS job still has it.
+  const liveOn = {};
+  Object.keys(SUBTASKS || {}).forEach(j => { liveOn[j] = new Set((SUBTASKS[j] || []).map(_normTaskKey)); });
+  // Kept only to LABEL a row: an old name still in use elsewhere is more likely a
+  // task that was MOVED than one that was renamed, and moved history should stay
+  // where it is. Worth telling a person; not worth deciding for them.
+  const liveAnywhere = new Set();
+  Object.keys(SUBTASKS || {}).forEach(j => (SUBTASKS[j] || []).forEach(t => liveAnywhere.add(_normTaskKey(t))));
   const byJob = {};
   (entries || []).forEach(e => {
     const job = e && e.task; if (!job) return;
@@ -5163,7 +5173,7 @@ function findOrphanHistory() {
     (Array.isArray(e.checklist) ? e.checklist : []).forEach(d => { if (d && d.item) seen.push(d.item); });
     (Array.isArray(e.steps) ? e.steps : []).forEach(d => { if (d && d.item) seen.push(d.item); });
     seen.forEach(item => {
-      if (live.has(_normTaskKey(item))) return;                 // still a real task
+      if ((liveOn[job] || new Set()).has(_normTaskKey(item))) return;   // this job still has it
       const m = (byJob[job] || (byJob[job] = {}));
       m[item] = (m[item] || 0) + 1;
     });
@@ -5176,7 +5186,8 @@ function findOrphanHistory() {
         .map(t => ({ task: t, score: _repairScore(orphan, t) }))
         .filter(c => c.score >= 0.55)
         .sort((a, b) => b.score - a.score);
-      out.push({ job, orphan, ticks: byJob[job][orphan], best: ranked[0] || null, alts: ranked.slice(1, 4) });
+      out.push({ job, orphan, ticks: byJob[job][orphan], best: ranked[0] || null, alts: ranked.slice(1, 4),
+                 elsewhere: liveAnywhere.has(_normTaskKey(orphan)) });
     });
   });
   // Confident matches first — they are the ones a person can approve at a glance.
@@ -5187,11 +5198,12 @@ function findOrphanHistory() {
 let _repairRows = [], _repairUndo = null;
 function openRepairHistory() {
   _repairRows = findOrphanHistory();
-  const withMatch = _repairRows.filter(r => r.best);
   if (!_repairRows.length) { showToast('✓ Nothing stranded — every task still has its history'); return; }
-  if (!withMatch.length) { showToast(_repairRows.length + ' stranded task' + (_repairRows.length === 1 ? '' : 's') + ', but nothing close enough to match'); return; }
-  _repairRows = withMatch;
-  _repairRows.forEach(r => { r.pick = r.best.task; r.on = r.best.score >= 0.7; });
+  // ⭐ Everything stranded is LISTED, matched or not. Hiding the unmatchable ones
+  // meant the screen quietly disagreed with itself — it said "53 stranded" and
+  // then showed 14 — and left a person with no way to see what had been lost.
+  // A row with no suggestion is still the answer to "what went missing".
+  _repairRows.forEach(r => { r.pick = r.best ? r.best.task : null; r.on = !!r.best && r.best.score >= 0.7 && !r.elsewhere; });
   renderRepairHistory();
   openModal('modal-repair-history');
 }
@@ -5201,16 +5213,26 @@ function renderRepairHistory() {
   const el = document.getElementById('repair-history-body'); if (!el) return;
   const on = _repairRows.filter(r => r.on);
   const ticks = on.reduce((n, r) => n + r.ticks, 0);
+  const head = document.getElementById('repair-history-count');
+  if (head) {
+    const m = _repairRows.filter(r => r.best).length;
+    head.textContent = _repairRows.length + ' stranded · ' + m + ' with a suggested match · '
+      + (_repairRows.length - m) + ' with none';
+  }
   el.innerHTML = _repairRows.map((r, i) => {
-    const pct = Math.round((r.best.score) * 100);
     const alts = r.alts.map(a => `<div onclick="_repairSetPick(${i},'${_encArg(a.task)}')" style="padding:6px 0;font-size:13px;color:var(--blue);cursor:pointer;">↳ ${a.task}</div>`).join('');
+    const meta = r.job + ' · ' + r.ticks + ' recorded time' + (r.ticks === 1 ? '' : 's')
+      + (r.best ? ' · ' + Math.round(r.best.score * 100) + '% match' : '');
     return `<div style="border-top:1px solid var(--border);padding:12px 0;">
       <div style="display:flex;gap:10px;align-items:flex-start;">
-        <div onclick="_repairToggle(${i})" style="flex-shrink:0;width:24px;height:24px;border-radius:6px;border:1px solid var(--border);background:${r.on ? 'var(--blue)' : 'transparent'};color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:15px;">${r.on ? '✓' : ''}</div>
+        ${r.best ? `<div onclick="_repairToggle(${i})" style="flex-shrink:0;width:24px;height:24px;border-radius:6px;border:1px solid var(--border);background:${r.on ? 'var(--blue)' : 'transparent'};color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:15px;">${r.on ? '✓' : ''}</div>`
+          : `<div style="flex-shrink:0;width:24px;"></div>`}
         <div style="min-width:0;flex:1;">
-          <div style="font-size:12px;color:var(--subtext);">${r.job} · ${r.ticks} recorded time${r.ticks === 1 ? '' : 's'} · ${pct}% match</div>
+          <div style="font-size:12px;color:var(--subtext);">${meta}</div>
           <div style="font-size:14px;color:var(--subtext);text-decoration:line-through;margin-top:3px;">${r.orphan}</div>
-          <div style="font-size:15px;color:var(--text);margin-top:3px;">→ ${r.pick}</div>
+          ${r.best ? `<div style="font-size:15px;color:var(--text);margin-top:3px;">→ ${r.pick}</div>`
+                   : `<div style="font-size:13px;color:var(--subtext);margin-top:3px;font-style:italic;">no similar task on this job — nothing to reconnect it to</div>`}
+          ${r.elsewhere ? `<div style="font-size:12px;color:#ff9f0a;margin-top:4px;">⚠️ this name is still used on another job — it may have been MOVED, not renamed</div>` : ''}
           ${alts ? `<div style="margin-top:4px;">${alts}</div>` : ''}
         </div>
       </div>
