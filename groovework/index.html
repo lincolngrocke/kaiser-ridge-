@@ -3048,7 +3048,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.332';
+const APP_VERSION = '2026-06-21.333';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5829,7 +5829,10 @@ function renderRunChecklist() {
     const _hasBatches = _jobHasBatches(clockState.task);
     if (_hasBatches) {
       const _gopt = (k, label) => `<span onclick="setRunGroupBy('${k}')" style="padding:5px 12px;border-radius:14px;font-size:12px;font-weight:600;cursor:pointer;${_runGroupBy === k ? 'background:rgba(90,200,250,0.18);color:#5ac8fa;' : 'color:#8b93a7;'}">${label}</span>`;
-      rows += `<div style="display:flex;gap:5px;align-items:center;padding:2px 0 8px;">${_gopt('batch', 'Batches')}${_gopt('flag', 'Flagged')}</div>`;
+      // ⚠️ These are SORT ORDERS, not filters. "Flagged" read as "show only flagged",
+      // so when a run came back with its flags lost the view showed all 52 tasks and
+      // looked broken rather than empty. "Flagged first" says what it does.
+      rows += `<div style="display:flex;gap:5px;align-items:center;padding:2px 0 8px;">${_gopt('batch', 'Batches')}${_gopt('flag', 'Flagged first')}</div>`;
     }
     // ↺ Reset reps — subtle, shown once any repeatable task has reps on this run.
     if (jobHasReps(clockState.task)) {
