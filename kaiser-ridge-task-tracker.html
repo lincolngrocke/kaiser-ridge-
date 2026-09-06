@@ -3048,7 +3048,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.328';
+const APP_VERSION = '2026-06-21.329';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5285,14 +5285,23 @@ function _renameChecklistItem(task, oldName, newName) {
   Object.keys(flags).forEach(t => { if (flags[t] && flags[t][oldName] != null) { flags[t][newName] = flags[t][oldName]; delete flags[t][oldName]; flagsChanged = true; } });
   if (flagsChanged) saveChecklistFlags(flags);
   // Current session: keep a ticked/carried/expanded item ticked under its new name.
+  // ⚠️ clockState is NULL whenever you are not clocked in (it is parsed straight
+  // from kr_clock, and clock-out sets it back to null). Reading it unguarded threw
+  // right here, which aborted the tail of the rename — the expanded-rows set and
+  // the editor's own list never got updated, and an uncaught error escaped into a
+  // blur handler. Everything above this line had already run, so the damage was
+  // invisible rather than absent. Found 6 Sep when v327 routed the job editor's
+  // rename through this function and the harness ran it clocked OUT.
   let clockChanged = false;
+  if (clockState) {
   if (Array.isArray(clockState.checklistDone)) clockState.checklistDone.forEach(d => { if (d.item === oldName) { d.item = newName; clockChanged = true; } });
   if (Array.isArray(clockState.checklistCarried)) clockState.checklistCarried = clockState.checklistCarried.map(s => { if (s === oldName) { clockChanged = true; return newName; } return s; });
   if (clockState.checklistCarriedInfo && clockState.checklistCarriedInfo[oldName]) { clockState.checklistCarriedInfo[newName] = clockState.checklistCarriedInfo[oldName]; delete clockState.checklistCarriedInfo[oldName]; clockChanged = true; }
   if (clockState.stepChecks && clockState.stepChecks[oldName]) { clockState.stepChecks[newName] = clockState.stepChecks[oldName]; delete clockState.stepChecks[oldName]; clockChanged = true; }
   if (Array.isArray(clockState.stepDone)) clockState.stepDone.forEach(d => { if (d.item === oldName) { d.item = newName; clockChanged = true; } });
-  if (_expandedChecklistItems.has(oldName)) { _expandedChecklistItems.delete(oldName); _expandedChecklistItems.add(newName); }
   if (clockChanged) _storeSet('kr_clock', JSON.stringify(clockState));
+  }
+  if (_expandedChecklistItems.has(oldName)) { _expandedChecklistItems.delete(oldName); _expandedChecklistItems.add(newName); }
   const pi = _subtaskItems.indexOf(oldName); if (pi !== -1) _subtaskItems[pi] = newName;
 }
 // Edit a pinned to-do's text/photos in place. If it came from the Inbox, edit the
