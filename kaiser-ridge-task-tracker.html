@@ -1186,6 +1186,23 @@
 </div>
 
 <!-- Reminders overview: every job + task reminder you've set -->
+<div class="modal-backdrop" id="modal-repair-history" style="z-index:300;" onclick="if(event.target===this)closeModal('modal-repair-history')">
+  <div class="modal-sheet">
+    <div class="modal-head">
+      <span style="font-size:17px;font-weight:600;">🔧 Reconnect Lost Task History</span>
+      <span onclick="closeModal('modal-repair-history')" style="color:var(--blue);font-size:16px;cursor:pointer;">Close</span>
+    </div>
+    <div class="settings-note" style="margin:10px 0 4px;">
+      These tasks have recorded times in your timesheets but no longer exist under that
+      name, usually because the task was renamed. Tick the ones to reconnect and their
+      times, reps and averages come back onto the current task. Nothing is deleted, and
+      you can undo it straight after.
+    </div>
+    <div id="repair-history-body" style="max-height:52vh;overflow-y:auto;"></div>
+    <button id="repair-history-go" class="btn-sync" style="background:#5856d6;margin-top:12px;" onclick="applyRepairHistory()">Reconnect</button>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="modal-reminders-overview" style="z-index:300;" onclick="if(event.target===this)closeModal('modal-reminders-overview')">
   <div class="modal-sheet" style="padding:16px 20px 24px;max-height:80vh;display:flex;flex-direction:column;">
     <div class="modal-handle"></div>
@@ -1484,6 +1501,10 @@
       </div>
     </div>
     <button class="btn-sync" style="background:var(--blue); margin-top:8px;" onclick="exportBackup()">⬇ Export Backup</button>
+    <!-- 🔧 Recovery for history stranded by a rename (see openRepairHistory). Sits
+         with the backup tools because that is where someone goes when they are
+         trying to get something back. -->
+    <button class="btn-sync" style="background:#5856d6; margin-top:8px;" onclick="openRepairHistory()">🔧 Reconnect Lost Task History</button>
     <button class="btn-sync" style="background:var(--green); margin-top:8px;" onclick="restoreFromDriveBackup()">☁️ Restore from Drive Backup</button>
     <button class="btn-sync" style="background:var(--subtext); margin-top:8px;" onclick="triggerRestoreBackup()">⟲ Restore from Backup File</button>
     <input type="file" id="restore-file-input" accept="application/json,.json" style="display:none;" onchange="restoreBackupFromFile(event)">
@@ -3026,7 +3047,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.326';
+const APP_VERSION = '2026-06-21.327';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5092,6 +5113,131 @@ function _migrateStepHistory(item, oldStep, newStep) {
     if (ch) _storeSet('kr_clock', JSON.stringify(clockState));
   }
 }
+// ════════════════════════════════════════════════════════════════════════════
+//  🔧 REPAIR — reunite timed history stranded by a rename
+//
+//  Until 6 Sep, editing a task's text inline in the job editor moved the NAME
+//  and nothing else. The timings stayed in the timesheets under the old wording,
+//  so the task came back with no average and the learned estimate for that job
+//  quietly went wrong. The cause is fixed above; this puts the history back.
+//
+//  ⭐ NOTHING IS EVER APPLIED AUTOMATICALLY. This rewrites the item text inside
+//  historical entries, which is the input to every learned average in the app.
+//  A wrong pairing would silently teach the engine a lie, and a lie in the
+//  averages is invisible afterwards. So it proposes, a person confirms, and the
+//  whole thing is undoable in one tap.
+// ════════════════════════════════════════════════════════════════════════════
+
+// Tense changes are the common case ("Load truck" → "Loaded truck"), so tokens
+// match on a shared stem as well as exactly. Deliberately crude: it only has to
+// rank candidates well enough for a person to recognise the right one.
+function _repairTokens(s) {
+  return _normTaskKey(s).replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(Boolean);
+}
+function _repairScore(a, b) {
+  const A = _repairTokens(a), B = _repairTokens(b);
+  if (!A.length || !B.length) return 0;
+  const used = new Array(B.length).fill(false);
+  let hit = 0;
+  A.forEach(x => {
+    for (let j = 0; j < B.length; j++) {
+      if (used[j]) continue;
+      const y = B[j];
+      const stem = x === y || (Math.min(x.length, y.length) >= 4 && (x.startsWith(y) || y.startsWith(x)));
+      if (stem) { used[j] = true; hit++; return; }
+    }
+  });
+  return hit / Math.max(A.length, B.length);
+}
+
+// Item text that appears in the timesheets but on no job's task list any more.
+// Grouped by the JOB its entries were logged against, so candidates are drawn
+// from that job's current tasks rather than the whole library.
+function findOrphanHistory() {
+  const live = new Set();
+  Object.keys(SUBTASKS || {}).forEach(j => (SUBTASKS[j] || []).forEach(t => live.add(_normTaskKey(t))));
+  const byJob = {};
+  (entries || []).forEach(e => {
+    const job = e && e.task; if (!job) return;
+    const seen = [];
+    (Array.isArray(e.checklist) ? e.checklist : []).forEach(d => { if (d && d.item) seen.push(d.item); });
+    (Array.isArray(e.steps) ? e.steps : []).forEach(d => { if (d && d.item) seen.push(d.item); });
+    seen.forEach(item => {
+      if (live.has(_normTaskKey(item))) return;                 // still a real task
+      const m = (byJob[job] || (byJob[job] = {}));
+      m[item] = (m[item] || 0) + 1;
+    });
+  });
+  const out = [];
+  Object.keys(byJob).forEach(job => {
+    const current = (SUBTASKS[job] || []);
+    Object.keys(byJob[job]).forEach(orphan => {
+      const ranked = current
+        .map(t => ({ task: t, score: _repairScore(orphan, t) }))
+        .filter(c => c.score >= 0.55)
+        .sort((a, b) => b.score - a.score);
+      out.push({ job, orphan, ticks: byJob[job][orphan], best: ranked[0] || null, alts: ranked.slice(1, 4) });
+    });
+  });
+  // Confident matches first — they are the ones a person can approve at a glance.
+  out.sort((a, b) => (b.best ? b.best.score : 0) - (a.best ? a.best.score : 0));
+  return out;
+}
+
+let _repairRows = [], _repairUndo = null;
+function openRepairHistory() {
+  _repairRows = findOrphanHistory();
+  const withMatch = _repairRows.filter(r => r.best);
+  if (!_repairRows.length) { showToast('✓ Nothing stranded — every task still has its history'); return; }
+  if (!withMatch.length) { showToast(_repairRows.length + ' stranded task' + (_repairRows.length === 1 ? '' : 's') + ', but nothing close enough to match'); return; }
+  _repairRows = withMatch;
+  _repairRows.forEach(r => { r.pick = r.best.task; r.on = r.best.score >= 0.7; });
+  renderRepairHistory();
+  openModal('modal-repair-history');
+}
+function _repairSetPick(i, encoded) { const r = _repairRows[i]; if (r) { r.pick = decodeURIComponent(encoded); r.on = true; renderRepairHistory(); } }
+function _repairToggle(i) { const r = _repairRows[i]; if (r) { r.on = !r.on; renderRepairHistory(); } }
+function renderRepairHistory() {
+  const el = document.getElementById('repair-history-body'); if (!el) return;
+  const on = _repairRows.filter(r => r.on);
+  const ticks = on.reduce((n, r) => n + r.ticks, 0);
+  el.innerHTML = _repairRows.map((r, i) => {
+    const pct = Math.round((r.best.score) * 100);
+    const alts = r.alts.map(a => `<div onclick="_repairSetPick(${i},'${_encArg(a.task)}')" style="padding:6px 0;font-size:13px;color:var(--blue);cursor:pointer;">↳ ${a.task}</div>`).join('');
+    return `<div style="border-top:1px solid var(--border);padding:12px 0;">
+      <div style="display:flex;gap:10px;align-items:flex-start;">
+        <div onclick="_repairToggle(${i})" style="flex-shrink:0;width:24px;height:24px;border-radius:6px;border:1px solid var(--border);background:${r.on ? 'var(--blue)' : 'transparent'};color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:15px;">${r.on ? '✓' : ''}</div>
+        <div style="min-width:0;flex:1;">
+          <div style="font-size:12px;color:var(--subtext);">${r.job} · ${r.ticks} recorded time${r.ticks === 1 ? '' : 's'} · ${pct}% match</div>
+          <div style="font-size:14px;color:var(--subtext);text-decoration:line-through;margin-top:3px;">${r.orphan}</div>
+          <div style="font-size:15px;color:var(--text);margin-top:3px;">→ ${r.pick}</div>
+          ${alts ? `<div style="margin-top:4px;">${alts}</div>` : ''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  const btn = document.getElementById('repair-history-go');
+  if (btn) {
+    btn.textContent = on.length ? ('Reconnect ' + on.length + ' task' + (on.length === 1 ? '' : 's') + ' · ' + ticks + ' time' + (ticks === 1 ? '' : 's')) : 'Nothing selected';
+    btn.style.opacity = on.length ? '' : '0.5';
+  }
+}
+function applyRepairHistory() {
+  const picked = _repairRows.filter(r => r.on && r.pick);
+  if (!picked.length) { showToast('Tick the ones to reconnect first'); return; }
+  picked.forEach(r => _migrateItemHistory(r.orphan, r.pick));
+  _repairUndo = picked.map(r => ({ from: r.pick, to: r.orphan }));
+  closeModal('modal-repair-history');
+  const n = picked.length, t = picked.reduce((x, r) => x + r.ticks, 0);
+  showUndoToast('✓ Reconnected ' + n + ' task' + (n === 1 ? '' : 's') + ' · ' + t + ' recorded time' + (t === 1 ? '' : 's'), () => {
+    // The reverse migration, which is the same function with the pair flipped.
+    (_repairUndo || []).forEach(u => _migrateItemHistory(u.from, u.to));
+    _repairUndo = null;
+    showToast('Undone — history put back as it was');
+  });
+  autoBackup();
+}
+
 function _renameChecklistItem(task, oldName, newName) {
   if (!newName || newName === oldName) return;
   _migrateItemHistory(oldName, newName);   // history follows the name — averages, reps, type, reminders, plans
@@ -11967,11 +12113,28 @@ function _sizeDirSubtaskInputs() {
   });
 }
 
+// ⭐⭐ NAME IS IDENTITY. Everything a task owns — its timed history and therefore
+// its learned average, its reps, its once/repeat type, reminders, steps, guide,
+// 🚩 flag and ▣ batch — is keyed on the task's TEXT. Renaming it here used to
+// overwrite the working array and nothing else, so all of that was left stranded
+// under the old wording and the save's batch prune then deleted the membership on
+// the way past. Lincoln hit it on 6 Sep converting the straw job's tasks from
+// present to past tense: twenty-one tasks fell out of their batches and silently
+// lost their averages.
+//
+// `_renameChecklistItem` is the path that carries all of it, and every OTHER
+// rename in the app already used it. This one just never did.
 function updateSubtaskItem(i, val) {
   if (_stDragging) return; // don't interfere with active drag
   const trimmed = val.trim();
   if (trimmed && trimmed !== _subtaskItems[i]) {
+    const _old = _subtaskItems[i];
     _subtaskItems[i] = trimmed;
+    // Only for a task that already EXISTS on the saved job — a row typed from
+    // scratch has nothing to carry, and migrating it would rewrite history that
+    // belongs to whatever half-typed text was in the box a keystroke ago.
+    const _job = _dirJobName();
+    if (_old && _job && (SUBTASKS[_job] || []).includes(_old)) _renameChecklistItem(_job, _old, trimmed);
   } else if (!trimmed) {
     // Empty — remove the item
     _subtaskItems.splice(i, 1);
