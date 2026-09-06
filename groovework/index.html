@@ -3048,7 +3048,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.329';
+const APP_VERSION = '2026-06-21.330';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -18501,17 +18501,38 @@ function plannerResume() {
   // yes, so there is nothing left to ask them.
   let _rFlags = null, _rOrder = null, _rLaps = null;
   const _rr = getRunResume();
+  // ⭐ MATCH THE RECORD TO THIS ENTRY, don't age it out. RUN_RESUME_MS exists so a
+  // stale "pick up where you left off?" OFFER stops nagging at clock-in — an offer
+  // nobody asked for should go quiet. But tapping ↻ Resume on a specific finished
+  // job is not an offer, it is an instruction, and the run being a day old is the
+  // normal case: you clock out Friday and pick it up Monday.
+  //
+  // Both `at` and the entry's `createdAt` are stamped in the same tick of the same
+  // clock-out, so being within minutes of each other identifies the record as
+  // belonging to THIS run — far tighter than any age limit, and it never expires.
+  // The old wall-clock test stays as the fallback for entries written before
+  // createdAt existed. Lincoln, 6 Sep: resumed a straw run and the sheet came back
+  // holding only the tasks he had already finished.
+  const _rrSameRun = !!(_rr && _rr.at && entry.createdAt &&
+    Math.abs(new Date(_rr.at).getTime() - new Date(entry.createdAt).getTime()) < 5 * 60000);
+  const _rrFresh = !!(_rr && _rr.at && Date.now() - new Date(_rr.at).getTime() <= RUN_RESUME_MS);
   if (_rr && _rr.job === entry.task && _rr.flags && Object.keys(_rr.flags).length &&
-      Date.now() - new Date(_rr.at).getTime() <= RUN_RESUME_MS) {
+      (_rrSameRun || _rrFresh)) {
     _rFlags = Object.assign({}, _rr.flags);
     _rOrder = Array.isArray(_rr.order) ? _rr.order.slice() : null;
     _rLaps  = _rr.lapTargets ? Object.assign({}, _rr.lapTargets) : null;
   } else if (carried.length) {
-    // No record — older than RUN_RESUME_MS, or cleared. Rebuild the flag set from what
-    // was actually ticked. Less than the original plan (work flagged but never started
-    // can't be recovered), but it is the truth about the run and beats an empty sheet.
+    // No usable record. Rebuild the flag set from what was actually ticked — less than
+    // the original plan, because work flagged but never started leaves no trace in the
+    // entry at all.
+    //
+    // ⚠️ AND SAY SO. This produces a run sheet holding ONLY finished tasks, which
+    // reads as a completed run rather than a partial recovery. Silently handing
+    // someone a plan that says there is nothing left to do is worse than handing them
+    // an empty one, so the limitation is stated out loud.
     _rFlags = {};
     carried.forEach(it => { _rFlags[it] = true; });
+    setTimeout(() => showToast('Only the finished tasks could be recovered — flag what is still owing'), 900);
   }
   // ⚠️ runOrder is deliberately NOT carried. Its keys are task + lapNo, and on a
   // CONTINUATION repsBefore already counts the laps banked last session, so every saved
