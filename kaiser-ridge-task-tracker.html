@@ -1420,6 +1420,17 @@
       </div>
     </div>
 
+    <!-- collapsed by default: everyday things stay in the open, the rest is one tap away -->
+    <div style="margin-top:16px;">
+      <div onclick="toggleSetGroup('clock')" style="display:flex;align-items:center;gap:10px;padding:15px 16px;background:var(--card);border:1px solid var(--border);border-radius:14px;cursor:pointer;">
+        <span style="font-size:18px;">⏱</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:15px;font-weight:600;color:var(--text);">How the clock works</div>
+          <div style="font-size:12px;color:var(--subtext);margin-top:2px;">Weekly target, task order, where new flags sit</div>
+        </div>
+        <span id="setgrp-clock-chev" style="color:var(--subtext);font-size:17px;">›</span>
+      </div>
+      <div id="setgrp-clock" style="display:none;">
     <div class="settings-section" style="margin-top:16px">
       <div class="settings-row">
         <div class="settings-label">Weekly Hours Target</div>
@@ -1449,6 +1460,20 @@
     </div>
     <div class="settings-note" style="margin-top:0">Where a task lands when you swipe right to flag it — anywhere you can flag. Bottom = it sits below the flags you’ve already made, keeping your list order as you flag top-to-bottom. Top = the newest flag jumps to the front.</div>
 
+      </div>
+    </div>
+
+    <!-- collapsed by default: everyday things stay in the open, the rest is one tap away -->
+    <div style="margin-top:16px;">
+      <div onclick="toggleSetGroup('conn')" style="display:flex;align-items:center;gap:10px;padding:15px 16px;background:var(--card);border:1px solid var(--border);border-radius:14px;cursor:pointer;">
+        <span style="font-size:18px;">🔌</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:15px;font-weight:600;color:var(--text);">Connections</div>
+          <div style="font-size:12px;color:var(--subtext);margin-top:2px;">Google Sheet and Maps. Optional.</div>
+        </div>
+        <span id="setgrp-conn-chev" style="color:var(--subtext);font-size:17px;">›</span>
+      </div>
+      <div id="setgrp-conn" style="display:none;">
     <div class="settings-section" style="margin-top:16px">
       <div class="settings-row">
         <div class="settings-label">Google Sheet Web App URL</div>
@@ -1487,6 +1512,20 @@
     <button class="btn-sync" style="background:#34C759; margin-top:8px;" onclick="forceAppUpdate()">⟳ Force Update App</button>
     <div id="version-status" style="font-size:13px; color:var(--subtext); margin-top:8px; text-align:center; cursor:pointer;" onclick="checkForUpdate(true)">Checking version…</div>
 
+      </div>
+    </div>
+
+    <!-- collapsed by default: everyday things stay in the open, the rest is one tap away -->
+    <div style="margin-top:16px;">
+      <div onclick="toggleSetGroup('data')" style="display:flex;align-items:center;gap:10px;padding:15px 16px;background:var(--card);border:1px solid var(--border);border-radius:14px;cursor:pointer;">
+        <span style="font-size:18px;">💾</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:15px;font-weight:600;color:var(--text);">Your data</div>
+          <div style="font-size:12px;color:var(--subtext);margin-top:2px;">Backup, restore, storage and recovery</div>
+        </div>
+        <span id="setgrp-data-chev" style="color:var(--subtext);font-size:17px;">›</span>
+      </div>
+      <div id="setgrp-data" style="display:none;">
     <div class="settings-section" style="margin-top:16px">
       <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
         <div class="settings-label" style="font-weight:600;">Backup &amp; Restore</div>
@@ -1531,6 +1570,20 @@
     </div>
     <button class="btn-sync" style="background:var(--blue); margin-top:8px;" onclick="movePhotosToDrive()" id="btn-move-photos">⬆️ Move On-Device Photos to Drive</button>
 
+      </div>
+    </div>
+
+    <!-- collapsed by default: everyday things stay in the open, the rest is one tap away -->
+    <div style="margin-top:16px;">
+      <div onclick="toggleSetGroup('adv')" style="display:flex;align-items:center;gap:10px;padding:15px 16px;background:var(--card);border:1px solid var(--border);border-radius:14px;cursor:pointer;">
+        <span style="font-size:18px;">🔧</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:15px;font-weight:600;color:var(--text);">Advanced</div>
+          <div style="font-size:12px;color:var(--subtext);margin-top:2px;">Sharing your library, totals, setup guide</div>
+        </div>
+        <span id="setgrp-adv-chev" style="color:var(--subtext);font-size:17px;">›</span>
+      </div>
+      <div id="setgrp-adv" style="display:none;">
     <div class="settings-section" style="margin-top:16px">
       <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
         <div class="settings-label" style="font-weight:600;">Share Job Library</div>
@@ -1572,6 +1625,9 @@
           4. Set "Who has access" to <strong>Anyone</strong><br>
           5. Copy the Web App URL and paste it above
         </div>
+      </div>
+    </div>
+
       </div>
     </div>
 
@@ -3058,7 +3114,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.336';
+const APP_VERSION = '2026-06-21.337';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4450,6 +4506,18 @@ function _computeChecklistDurations(sorted, clockInMs, breaks) {
 }
 // Checklist display order: 'manual' (editor order) or 'typical' (avg completion
 // order across this task's recent entries). Display-only; never changes SUBTASKS.
+// Settings groups. Collapsed by default and NOT remembered between visits: the
+// point is that the screen looks calm every time it is opened, which is exactly
+// when a new person is deciding whether this app is too much for them.
+let _setGroups = {};
+function toggleSetGroup(id) {
+  const body = document.getElementById('setgrp-' + id), chev = document.getElementById('setgrp-' + id + '-chev');
+  if (!body) return;
+  _setGroups[id] = !_setGroups[id];
+  body.style.display = _setGroups[id] ? '' : 'none';
+  if (chev) chev.textContent = _setGroups[id] ? '⌄' : '›';
+}
+
 function setChecklistOrder(mode) {
   _storeSet('kr_checklist_order', mode);
   _syncChecklistOrderUI();
