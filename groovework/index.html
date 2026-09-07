@@ -3114,7 +3114,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.338';
+const APP_VERSION = '2026-06-21.339';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -20069,6 +20069,46 @@ function _applyChecklistFlagOrder(task, orderedItems) {
 // Persist a drag-set manual order of the non-flagged items — scoped exactly like
 // flags: a planner block (This block), the live run (session override), else the
 // whole job (rewrites SUBTASKS' order). fullOrder = flagged first, then the rest.
+// 🗓 Reorder the browse pool by when each task was last done, most recent first,
+// never-done to the bottom. Saved as the arranged order, so it sticks and the
+// list stays draggable afterwards.
+//
+// ⭐ FLAGGED WORK IS NOT TOUCHED. It keeps its arranged order, because that order
+// is the run you are about to do and it IS the engine's output. Same split the
+// clock has made since v276: flagged work above, browse pool below.
+// ⭐ Batches are preserved too — the sort happens WITHIN each batch, never across
+// them, or tapping this would scatter a job's batching.
+function _clSortByLastDone() {
+  const task = _clOrganiseTask;              // the module global the renderer uses
+  if (!task) return;
+  const all = (SUBTASKS[task] || []).slice();
+  if (all.length < 2) return;
+  const flags = _editTargetFlags();          // block flags when opened from a block, session flags on the clock
+  const last = _checklistItemLastDone(task);
+  const rec = _batchRec(task);
+
+  const sortPool = arr => {
+    const head = [], tail = [];
+    arr.forEach(t => (flags[t] ? head : tail).push(t));
+    tail.sort((a, b) => (last[b] || 0) - (last[a] || 0));
+    return head.concat(tail);
+  };
+
+  let out = [];
+  if (rec && rec.order.length) {
+    const used = new Set();
+    rec.order.forEach(bn => {
+      const mem = all.filter(t => rec.items[t] === bn && !used.has(t));
+      sortPool(mem).forEach(t => { used.add(t); out.push(t); });
+    });
+    sortPool(all.filter(t => !used.has(t))).forEach(t => out.push(t));
+  } else {
+    out = sortPool(all);
+  }
+  _applyChecklistManualOrder(task, out);
+  showToast('🗓 Sorted by last done');
+}
+
 function _applyChecklistManualOrder(task, fullOrder) {
   const pid = _clTargetPlanId();
   if (pid) {   // this planned block only
@@ -21141,7 +21181,14 @@ function _renderClOrganiseBody() {
   }
   const _bRec = _batchRec(task);
   const _hasBatches = !!(_bRec && _bRec.order.length);
-  const intro = `<div style="font-size:11px;color:var(--subtext);margin:${_clOrganisePlanId ? '8px' : '12px'} 0 8px;">Hold &amp; drag any item to set the order it’s done in · swipe an item right to 🚩 flag it${_hasBatches ? ' (it stays in its batch, floated to the top). Tap a ▣ heading to open/close it; hold &amp; drag a heading to reorder batches; drag a task under a heading to move it there.' : ' to the top.'}</div>`;
+  const intro = `<div style="font-size:11px;color:var(--subtext);margin:${_clOrganisePlanId ? '8px' : '12px'} 0 8px;">Hold &amp; drag any item to set the order it’s done in · swipe an item right to 🚩 flag it${_hasBatches ? ' (it stays in its batch, floated to the top). Tap a ▣ heading to open/close it; hold &amp; drag a heading to reorder batches; drag a task under a heading to move it there.' : ' to the top.'}</div>`
+    // ⭐ ON DEMAND, NOT AUTOMATIC. The running clock re-sorts its unflagged tail by
+    // last-completed on every render, and that is right there because the clock is
+    // a browse-and-pick surface. HERE, dragging is the whole point of the screen —
+    // an automatic sort would silently undo a drag the moment the list redrew. So
+    // this is a button: it reorders once, saves the result as the arranged order,
+    // and everything stays draggable afterwards.
+    + `<div style="text-align:right;margin:-2px 0 8px;"><span onclick="_clSortByLastDone()" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;">🗓 Sort by last done</span></div>`;
   // 🔁 Planned-laps stepper — on flagged repeat tasks, the estimate counts these
   // once per lap. Two homes, one control: a planner BLOCK (edits the block's laps,
   // re-sizing it on the timeline) and the RUNNING CLOCK (edits this session's lap
@@ -21153,6 +21200,7 @@ function _renderClOrganiseBody() {
   const _lapEnc = s => encodeURIComponent(s).replace(/'/g, '%27');   // %27: apostrophes survive encodeURIComponent and would break the onclick string
   const _lapAdjFn = _lapPlan ? '_clLapAdj' : '_clSessionLapAdj';
   const _oAvg = _taskEstMap(), _oCnt = _taskHistCountMap();   // built once, not per row (count stays measured)
+  const _oLast = _checklistItemLastDone(task);   // 🗓 last-done per task, same one pass
   const rowHtml = (s) => {
     const isFlagged = !!flags[s];
     const lapChip = ((_lapPlan || _lapSess) && isFlagged && isRepeatTask(task, s))
@@ -21165,7 +21213,15 @@ function _renderClOrganiseBody() {
       <span style="font-size:16px;flex-shrink:0;">${isFlagged ? '🚩' : '▫️'}</span>
       <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;">
         <span style="overflow-wrap:anywhere;font-size:15px;color:var(--text);">${s}</span>
-        ${_avgMeta(s, _oAvg, _oCnt)}</span>
+        <span style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;">${_avgMeta(s, _oAvg, _oCnt)}${(() => {
+          // 🗓 WHEN THIS TASK WAS LAST DONE. Deciding what to flag for a planned
+          // run, "12 days ago" is the fact that makes the decision, and it only
+          // ever appeared in the job directory. "~5m avg · 46×" says how long and
+          // how often; it never said WHEN.
+          const _ld = _oLast[s];
+          return _ld ? `<span style="font-size:11px;color:#616a7e;">🗓 ${_agoWords(_ld)}</span>`
+                     : `<span style="font-size:11px;color:#4a5165;font-style:italic;">🗓 not done yet</span>`;
+        })()}</span></span>
       ${lapChip}
       <span style="font-size:12px;color:var(--subtext);flex-shrink:0;">⠿</span></div>`;
   };
