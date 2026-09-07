@@ -3114,7 +3114,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.339';
+const APP_VERSION = '2026-06-21.340';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -21147,7 +21147,36 @@ function _renderClOrganiseBody() {
   const flags = _editTargetFlags();
   const pid = _clTargetPlanId();
   const orderArg = pid ? ((getPlannerChecklist()[pid] || {}).order || null) : _sessionOrGlobalOrder(task);
-  const ordered = _orderedChecklistItems(task, all, flags, orderArg);
+  let ordered = _orderedChecklistItems(task, all, flags, orderArg);
+  // ⭐ SORTED BY LAST DONE BY DEFAULT, and a drag beats it forever.
+  //
+  // The button alone was the wrong default: Lincoln asked for the list arranged by
+  // when things were last done, and arriving unsorted with a button to press is not
+  // that. But an unconditional sort would undo a drag on every redraw.
+  //
+  // Both hold because a drag SAVES an order (orderArg). So: no saved order means
+  // nobody has arranged this yet, and recency is the most useful starting point.
+  // The moment anything is dragged, orderArg exists and this never runs again.
+  // The button stays, for re-sorting a list that has been arranged before.
+  if (!orderArg && ordered.length > 1) {
+    const _dLast = _checklistItemLastDone(task);
+    const _dPool = arr => {
+      const head = [], tail = [];
+      arr.forEach(t => (flags[t] ? head : tail).push(t));
+      tail.sort((a, b) => (_dLast[b] || 0) - (_dLast[a] || 0));
+      return head.concat(tail);
+    };
+    const _dRec = _batchRec(task);
+    if (_dRec && _dRec.order.length) {
+      const used = new Set(), seq = [];
+      _dRec.order.forEach(bn => _dPool(ordered.filter(t => _dRec.items[t] === bn && !used.has(t)))
+        .forEach(t => { used.add(t); seq.push(t); }));
+      _dPool(ordered.filter(t => !used.has(t))).forEach(t => seq.push(t));
+      ordered = seq;
+    } else {
+      ordered = _dPool(ordered);
+    }
+  }
   const taskAttr = _attr(task);
   const flagged = ordered.filter(s => flags[s]);
   // Opened from a planner block → always arranges THAT block. The old
@@ -21328,14 +21357,24 @@ function openPlannerDetail(planId) {
     tail.sort((a, b) => (_pdLast[b] || 0) - (_pdLast[a] || 0));
     return head.concat(tail);
   };
+  // ⚠️ THE HEADINGS HAVE TO SHOW. Sorting happens WITHIN each batch, so a correctly
+  // grouped list restarts its dates at every boundary — today, yesterday, 30 days,
+  // then today again. With the headings hidden that reads as random order, which is
+  // exactly how Lincoln read it. `_pdHeads` marks where each batch starts.
+  const _pdHeads = {};
   const _pdBRec = _batchRec(plan.task);
   if (_pdBRec && _pdBRec.order.length && orderedSubs.length) {
     const _used = new Set(), _seq = [];
     _pdBRec.order.forEach(bn => {
       const mem = orderedSubs.filter(s => _pdBRec.items[s] === bn && !_used.has(s));
-      _pdRecency(mem).forEach(s => { _used.add(s); _seq.push(s); });
+      if (!mem.length) return;
+      const sorted = _pdRecency(mem);
+      _pdHeads[sorted[0]] = bn;
+      sorted.forEach(s => { _used.add(s); _seq.push(s); });
     });
-    _pdRecency(orderedSubs.filter(s => !_used.has(s))).forEach(s => _seq.push(s));
+    const rest = _pdRecency(orderedSubs.filter(s => !_used.has(s)));
+    if (rest.length && _seq.length) _pdHeads[rest[0]] = 'Unbatched';
+    rest.forEach(s => _seq.push(s));
     orderedSubs = _seq;
   } else if (orderedSubs.length) {
     orderedSubs = _pdRecency(orderedSubs);   // no batches: same rule over the whole list
@@ -21353,7 +21392,10 @@ function openPlannerDetail(planId) {
           const _ld = _pdLast[s];
           const _ldLine = _ld ? `<div style="font-size:11px;color:#616a7e;margin-top:1px;">🗓 ${_agoWords(_ld)}</div>`
                               : `<div style="font-size:11px;color:#4a5165;margin-top:1px;font-style:italic;">🗓 not done yet</div>`;
-          return `<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:7px;">
+          const _hd = _pdHeads[s]
+            ? `<div style="display:flex;align-items:center;gap:6px;margin:12px 0 6px;font-size:11px;font-weight:700;color:var(--subtext);letter-spacing:0.4px;text-transform:uppercase;">▣ ${_pdHeads[s]}</div>`
+            : '';
+          return `${_hd}<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:7px;">
           <span style="color:var(--subtext);font-size:14px;margin-top:1px;">${clFlags[s] ? '🚩' : '☐'}</span>
           <div style="min-width:0;flex:1;">
           <span style="font-size:14px;color:var(--text);">${s}${_laps > 1 ? ` <span style="font-size:12px;font-weight:700;color:#30d158;">🔁×${_laps}</span>` : ''}</span>${_ldLine}</div>
