@@ -3048,7 +3048,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.333';
+const APP_VERSION = '2026-06-21.334';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -3841,7 +3841,7 @@ function startClock(taskInfo) {
     notes: taskInfo.notes,
     pin: (taskInfo.pin && taskInfo.pin.url) ? taskInfo.pin : null,
     flagOverride: {},   // clock in with NO flags; only a planner-block preset adds them (a job's global flags stay off the clock)
-    tempId: Date.now().toString(),
+    tempId: _newEntryId(),
   };
   _storeRemove('kr_clock_trash'); // fresh session supersedes any discarded one
   _storeSet('kr_clock', JSON.stringify(clockState));
@@ -7080,7 +7080,7 @@ function saveEntry() {
     // Manual completed entry built straight from the form's times
     if (!task) { showToast('Pick a job first'); return; }
     entries.unshift({
-      id: Date.now().toString(),
+      id: _newEntryId(),
       date: dateFormatted,
       personnel: getUserName(),
       location, frequency, group, task,
@@ -7850,7 +7850,7 @@ function confirmTime(choice) {
       notes:     taskInfo.notes     || '',
       pin: _pendingTaskInfo && _pendingTaskInfo.pin ? _pendingTaskInfo.pin : (currentPin || null),
       flagOverride: {},   // clock in with NO flags; a planner block (_planId) fills these below
-      tempId: Date.now().toString(),
+      tempId: _newEntryId(),
     };
     _storeRemove('kr_clock_trash'); // fresh session supersedes any discarded one
     // Resuming a finished entry → keep what was already ticked off ticked off,
@@ -9080,6 +9080,14 @@ const KR_REC_SHADOW = 'kr_sync_rec_shadow';   // { table: { id: fingerprint } }
 // scope 'org'  = a row is the ORG's. Ask this of EVERY table before adding it;
 // getting it wrong is the 28 Aug collision, and neither a stub nor one device
 // can surface it.
+// ⭐ An entry id must be unique across DEVICES, not just this phone. Both paths
+// used a bare millisecond, and once timesheets sync that id is the primary key
+// for the whole ORG. Two people clocking out in the same millisecond would have
+// collided, and one person's timesheet would have been silently taken for a
+// revision of the other's. Vanishingly rare, and silent loss of a business
+// record is not a risk worth carrying for one line. Existing ids stay valid.
+function _newEntryId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
 const KR_REC_TABLES = {
   // 📥 Inbox — decided 31 Aug, option C: your captures are yours. Ethan's tray
   // is his. This stage exists to BACK IT UP, not to share it.
@@ -9123,6 +9131,35 @@ const KR_REC_TABLES = {
     colsOf:    r => ({ task_id: r._task || '' }),
     payloadOf: r => { const n = Object.assign({}, r); delete n._task; return n; },
     fromRow:   row => Object.assign({}, row.payload, { _task: row.task_id || '' }),
+  },
+  // 🕐 Timesheets — the ORG's, so a manager can review the team's hours. That is
+  // the point of the team tier.
+  //
+  // ⭐ A LEDGER, not a mutable table. The `entries` table is INSERT and SELECT
+  // only, by design and by policy: nothing recorded can be altered or removed
+  // through the API by anyone. But the app lets you edit and delete a timesheet
+  // entry, so a correction is appended as a NEW ROW for the same logical entry,
+  // and the newest revision wins on read. A delete is a revision with deleted.
+  //
+  // ⚠️ Ordering is the SERVER's. Revisions sort on created_at, stamped by
+  // Postgres; the row id's suffix is for uniqueness only and is never compared.
+  // Device clock skew must not order merges.
+  entries: {
+    table: 'entries', scope: 'org', ledger: true,
+    stamp: 'created_at',                       // append-only: a row never changes, so this IS its watermark
+    select: 'id,entry_id,payload,created_at,deleted',
+    read:  () => entries,
+    write: arr => { entries = arr; saveEntries(); },
+    idOf:  r => r && r.id,
+    rowId: id => id + ':' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    colsOf: r => ({
+      entry_id: r.id,
+      // WHOSE hours these are. personnel stays in the payload as a display name;
+      // it was the only record of who did the work, which is what blocks per-user
+      // estimates today.
+      user_id: (currentUser() || {}).id || null,
+    }),
+    fromRow: row => row.payload,
   },
 };
 
@@ -9248,8 +9285,12 @@ async function _recPush(name) {
     const slice = ids.slice(i, i + _SYNC_BATCH);
     const rows = slice.map(id => {
       const rec = byId[id];
-      const row = { id: id, org_id: org.id, deleted_at: null,
+      // ⭐ A LEDGER never reuses a row id — every push is a new revision, and the
+      // table has no UPDATE policy to fall back on. Everything else upserts on the
+      // record's own id, which is what makes a re-push idempotent.
+      const row = { id: desc.ledger ? desc.rowId(id) : id, org_id: org.id,
                     payload: rec ? (desc.payloadOf ? desc.payloadOf(rec) : rec) : {} };
+      if (!desc.ledger) row.deleted_at = null;
       if (desc.scope === 'user') row.user_id = uid;
       // Columns the table carries in its own right (task_notes.task_id). A DELETED
       // record has none to read, so use the last-known columns captured by
@@ -9258,12 +9299,13 @@ async function _recPush(name) {
       if (desc.colsOf) Object.assign(row, rec ? desc.colsOf(rec) : (mine[id].cols || desc.colsOf({})));
       // A delete keeps the row and stamps it. The payload is left as whatever we
       // last held so the record can still be described after it is gone.
-      if (mine[id].op === 'del' || !byId[id]) row.deleted_at = new Date().toISOString();
+      const _gone = mine[id].op === 'del' || !byId[id];
+      if (_gone) { if (desc.ledger) row.deleted = true; else row.deleted_at = new Date().toISOString(); }
       return row;
     });
     const res = await _sb('/rest/v1/' + desc.table, {
       method: 'POST',
-      headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      headers: { 'Prefer': (desc.ledger ? 'return=minimal' : 'resolution=merge-duplicates,return=minimal') },
       body: JSON.stringify(rows),
     });
     if (res === null) { _syncSetState({ lastError: 'Could not reach the server' }); return pushed; }
@@ -9291,10 +9333,13 @@ async function _recPull(name) {
   const incoming = [];
 
   for (;;) {
+    // Append-only tables have no updated_at: a row never changes, so created_at IS
+    // its watermark. Everything else uses updated_at as before.
+    const _st = desc.stamp || 'updated_at';
     let path = '/rest/v1/' + desc.table + '?select=' + (desc.select || 'id,payload,updated_at,deleted_at')
       + '&org_id=eq.' + encodeURIComponent(org.id)
-      + '&updated_at=gte.' + encodeURIComponent(mark)
-      + '&order=updated_at.asc,id.asc'
+      + '&' + _st + '=gte.' + encodeURIComponent(mark)
+      + '&order=' + _st + '.asc,id.asc'
       + '&limit=' + _SYNC_PAGE + '&offset=' + offset;
     // Belt and braces: RLS already restricts a per-person table to you, but the
     // filter states the intent in the query rather than relying on the policy
@@ -9303,7 +9348,12 @@ async function _recPull(name) {
     const rows = await _sb(path);
     if (rows === null) { _syncSetState({ lastError: 'Could not reach the server' }); return { seen, applied, offline: true }; }
     if (!rows.length) break;
-    rows.forEach(r => { seen++; if (r.updated_at > maxMark) maxMark = r.updated_at; incoming.push(r); });
+    rows.forEach(r => {
+      seen++;
+      const t = r[desc.stamp || 'updated_at'];
+      if (t > maxMark) maxMark = t;
+      incoming.push(r);
+    });
     if (rows.length < _SYNC_PAGE) break;
     offset += _SYNC_PAGE;
   }
@@ -9316,6 +9366,10 @@ async function _recPull(name) {
       list.forEach((r, i) => { const id = desc.idOf(r); if (id) pos[id] = i; });
       let touched = false;
       incoming.forEach(r => {
+        // ⭐ A ledger row's `id` is the REVISION; `entry_id` is the record it
+        // revises. Rows arrive ordered by created_at, so applying them in order
+        // leaves the newest revision standing — which is the whole resolution.
+        if (desc.ledger) r = Object.assign({}, r, { id: r.entry_id, deleted_at: r.deleted ? 'x' : null });
         const here = pos[r.id] === undefined ? null : list[pos[r.id]];
         if (r.deleted_at) {
           if (here) { list.splice(pos[r.id], 1); list.forEach((x, i) => { const id = desc.idOf(x); if (id) pos[id] = i; }); touched = true; applied++; }
@@ -9487,6 +9541,8 @@ function bumpEntriesRev() { _entriesRev++; }
 function saveEntries() {
   _storeSet('kr_entries', JSON.stringify(entries));
   bumpEntriesRev();
+  // S4 stage 3: diff after the write, never before.
+  if (typeof _recScan === 'function') _recScan('entries');
   updateSummary();
 }
 
