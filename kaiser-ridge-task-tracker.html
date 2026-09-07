@@ -3114,7 +3114,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.337';
+const APP_VERSION = '2026-06-21.338';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4896,6 +4896,32 @@ function resumeRunYes() {
 function resumeRunNo() {
   clearRunResume(_resumeRec && _resumeRec.job); _resumeRec = null;
   closeModal('modal-resume-run');
+}
+
+// "6 days ago" / "yesterday" / "today". One wording for every surface, so the
+// planner, the directory and the clock never disagree about the same date.
+function _agoWords(ts) {
+  if (!ts) return '';
+  const d = new Date(ts), now = new Date();
+  const days = Math.floor((new Date(now.getFullYear(), now.getMonth(), now.getDate())
+                         - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+  return days <= 0 ? 'today' : days === 1 ? 'yesterday' : days + ' days ago';
+}
+// When this JOB was last clocked. Reads the timesheets and folds in kr_lastdone,
+// the shared map, so a job Ethan did counts as done.
+function _jobLastDone(job) {
+  let best = 0;
+  (entries || []).forEach(e => {
+    if (e.task !== job) return;
+    const t = _parseEntryDate ? _parseEntryDate(e.date) : null;
+    const ms = t ? t.getTime() : (e.createdAt ? new Date(e.createdAt).getTime() : 0);
+    if (ms > best) best = ms;
+  });
+  try {
+    const shared = JSON.parse(localStorage.getItem('kr_lastdone') || '{}');
+    if (typeof shared[job] === 'number' && shared[job] > best) best = shared[job];
+  } catch (e) {}
+  return best;
 }
 
 function _checklistItemLastDone(job) {
@@ -21232,12 +21258,31 @@ function openPlannerDetail(planId) {
   // like the sheet that arranged it.
   const _povOrder = (planOv && Array.isArray(planOv.order) && planOv.order.length) ? planOv.order : null;
   let orderedSubs = subtasks.length ? _orderedChecklistItems(plan.task, subtasks, clFlags, _povOrder) : [];
+  // ⭐ THE SAME TWO-PART SORT THE RUNNING CLOCK USES (v276). A batch serves two
+  // activities and conflating them is what went wrong before: flagged work is the
+  // run you are about to do and keeps its arranged order, because that order IS
+  // the engine's output. Everything below it is the browse-to-flag pool, so it
+  // sorts by LAST COMPLETED, most recent first, with never-done settling to the
+  // bottom. The clock has done this since v276; the planner never did, so
+  // household chores read as a flat list here and a sensible one there.
+  const _pdLast = _checklistItemLastDone(plan.task);
+  const _pdRecency = (members) => {
+    const head = [], tail = [];
+    members.forEach(t => (clFlags[t] ? head : tail).push(t));
+    tail.sort((a, b) => (_pdLast[b] || 0) - (_pdLast[a] || 0));
+    return head.concat(tail);
+  };
   const _pdBRec = _batchRec(plan.task);
   if (_pdBRec && _pdBRec.order.length && orderedSubs.length) {
     const _used = new Set(), _seq = [];
-    _pdBRec.order.forEach(bn => orderedSubs.forEach(s => { if (_pdBRec.items[s] === bn && !_used.has(s)) { _used.add(s); _seq.push(s); } }));
-    orderedSubs.forEach(s => { if (!_used.has(s)) _seq.push(s); });
+    _pdBRec.order.forEach(bn => {
+      const mem = orderedSubs.filter(s => _pdBRec.items[s] === bn && !_used.has(s));
+      _pdRecency(mem).forEach(s => { _used.add(s); _seq.push(s); });
+    });
+    _pdRecency(orderedSubs.filter(s => !_used.has(s))).forEach(s => _seq.push(s));
     orderedSubs = _seq;
+  } else if (orderedSubs.length) {
+    orderedSubs = _pdRecency(orderedSubs);   // no batches: same rule over the whole list
   }
   const subtaskHtml = subtasks.length > 0
     ? `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">
@@ -21245,15 +21290,32 @@ function openPlannerDetail(planId) {
           <span style="font-size:12px;color:var(--subtext);font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Tasks${hasPlanArr ? ' · 📅 arranged' : ''}</span>
           ${isWorker() ? '' : `<span onclick="openChecklistOrganiseForPlan('${planId}')" style="font-size:13px;color:var(--blue);font-weight:600;cursor:pointer;">⚙️ Organise</span>`}
         </div>
-        ${orderedSubs.map(s => { const _laps = (clFlags[s] && isRepeatTask(plan.task, s)) ? _plannedLapsFor(plan, s) : 1; return `<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:7px;">
+        ${orderedSubs.map(s => { const _laps = (clFlags[s] && isRepeatTask(plan.task, s)) ? _plannedLapsFor(plan, s) : 1;
+          // 🗓 When each task was last done. Planning household chores, "vacuum,
+          // 12 days ago" is the fact that decides whether you flag it, and it was
+          // only ever visible in the job directory.
+          const _ld = _pdLast[s];
+          const _ldLine = _ld ? `<div style="font-size:11px;color:#616a7e;margin-top:1px;">🗓 ${_agoWords(_ld)}</div>`
+                              : `<div style="font-size:11px;color:#4a5165;margin-top:1px;font-style:italic;">🗓 not done yet</div>`;
+          return `<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:7px;">
           <span style="color:var(--subtext);font-size:14px;margin-top:1px;">${clFlags[s] ? '🚩' : '☐'}</span>
-          <span style="font-size:14px;color:var(--text);">${s}${_laps > 1 ? ` <span style="font-size:12px;font-weight:700;color:#30d158;">🔁×${_laps}</span>` : ''}</span>
+          <div style="min-width:0;flex:1;">
+          <span style="font-size:14px;color:var(--text);">${s}${_laps > 1 ? ` <span style="font-size:12px;font-weight:700;color:#30d158;">🔁×${_laps}</span>` : ''}</span>${_ldLine}</div>
         </div>`; }).join('')}
       </div>`
     : '';
   document.getElementById('planner-detail-info').innerHTML =
     `<div style="margin-bottom:6px;">⏰ ${startStr} – ${endStr}</div>
      <div style="margin-bottom:6px;">⏱ ${plan.durationHours}h planned</div>
+     ${(() => {
+       // 🗓 WHEN THIS JOB WAS LAST DONE. Planning a job, "last done 29 days ago" is
+       // the fact that decides whether it needs doing this week, and it lived only
+       // in the job directory. The app already knew; the planner just never said.
+       const _jld = _jobLastDone(plan.task);
+       return _jld
+         ? `<div style="margin-bottom:6px;">🗓 Last done ${new Date(_jld).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} · ${_agoWords(_jld)}</div>`
+         : `<div style="margin-bottom:6px;color:var(--subtext);">🗓 Not done yet</div>`;
+     })()}
      ${plan.group ? `<div style="margin-bottom:6px;">📂 ${plan.group}</div>` : ''}
      ${plan.location ? `<div style="margin-bottom:6px;">📍 ${plan.location}</div>` : ''}
      ${_pinnedNotesHtml(plan.task)}
