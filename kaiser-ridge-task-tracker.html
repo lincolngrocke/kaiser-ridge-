@@ -1850,7 +1850,16 @@
     <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:6px;">WHAT SHOULD WE CALL YOU?</div>
     <input id="onboard-name" type="text" placeholder="Your name" autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false" style="width:100%;padding:14px;border:1px solid var(--border);border-radius:12px;background:var(--card);color:var(--text);font-size:16px;margin-bottom:26px;">
 
-    <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:10px;">PICK A STARTING POINT</div>
+    <!-- 👋 The guided flow replaces "pick a template" as the FRONT DOOR, because a
+         template populates the app without producing one completed job, and one
+         completed job is the whole day-one goal. Templates stay as the escape
+         hatch for anyone who would rather poke about first. -->
+    <div id="ob-flow" style="display:none;"></div>
+    <div id="ob-intro">
+    <button onclick="obStart()" style="display:block;width:100%;text-align:left;background:var(--blue);border:none;border-radius:14px;padding:18px;margin-bottom:18px;cursor:pointer;color:#fff;font-size:17px;font-weight:700;">✨ Set up my first job
+      <div style="font-weight:400;font-size:13px;opacity:0.9;margin-top:4px;">Tell me about one job you do and I'll build it with you. Takes a couple of minutes.</div></button>
+
+    <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:10px;">OR START FROM A TEMPLATE</div>
     <button onclick="onboardPick('household')" style="display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:10px;cursor:pointer;color:var(--text);font-size:16px;font-weight:600;">🏠 Household
       <div style="font-weight:400;font-size:13px;color:var(--subtext);margin-top:4px;">A few home routines to get going — morning reset, cleaning, washing.</div></button>
     <button onclick="onboardPick('trades')" style="display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:10px;cursor:pointer;color:var(--text);font-size:16px;font-weight:600;">🔧 Trade / Work
@@ -1858,6 +1867,7 @@
     <button onclick="onboardPick('empty')" style="display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;cursor:pointer;color:var(--text);font-size:16px;font-weight:600;">✨ Start empty
       <div style="font-weight:400;font-size:13px;color:var(--subtext);margin-top:4px;">Build your own jobs from scratch.</div></button>
     <div style="font-size:12px;color:var(--subtext);text-align:center;margin-top:16px;">You can add, edit or delete anything later.</div>
+    </div>
   </div>
 </div>
 
@@ -3048,7 +3058,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.334';
+const APP_VERSION = '2026-06-21.335';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -3584,6 +3594,219 @@ const STARTER_PACKS = {
     steps: {},
   },
 };
+// ════════════════════════════════════════════════════════════════════════════
+//  👋 GUIDED FIRST RUN — get to ONE COMPLETED JOB on day one
+//
+//  ⭐ THE GOAL IS NOT A POPULATED APP. Cold, this app renders a column of dashes
+//  and looks like a checklist with a stopwatch: everything that makes it worth
+//  having — learned order, the auto estimate, the 🏁 forecast, the 🎯 target — is
+//  downstream of history a new user has not generated. The magic lands in week
+//  three and most people leave in week one.
+//
+//  So day one aims at the smallest COMPLETE circuit: one job, described, timed,
+//  then planned. Seeing a measured duration become a block you can drop onto
+//  tomorrow is the carrot; filling in the rest of the app stops being a chore once
+//  someone has seen it happen.
+//
+//  ⭐ EVERY STEP LEAVES AN ARTIFACT. A step that produces only words should not
+//  have happened. Describe → the job and its tasks EXIST. Give a total → the
+//  estimates EXIST. Say yes → a block is ON the planner.
+//
+//  ⚠️ THE AI IS AN ACCELERATOR, NOT A DEPENDENCY. Extraction runs behind
+//  `_obExtract`, which falls back to splitting the text locally. No key, no
+//  signal, a bad reply — onboarding still completes. This app works in vineyards
+//  with no bars of reception and first run is no exception.
+// ════════════════════════════════════════════════════════════════════════════
+let _ob = null;   // { step, name, raw, job, tasks[], weights{}, totalMins, planned }
+
+function obStart() {
+  _ob = { step: 'describe', name: (document.getElementById('onboard-name') || {}).value || '',
+          raw: '', job: '', tasks: [], weights: {}, totalMins: 0, planned: false, busy: false };
+  if (_ob.name.trim()) _storeSet('kr_user_name', _ob.name.trim());
+  obRender();
+}
+function obCancel() { _ob = null; obRender(); }
+
+// Split a free-text description into candidate tasks WITHOUT any AI. Lines first,
+// because that is how people naturally list things; sentences if they wrote a
+// paragraph. Deliberately generous — the next screen lets them fix it, and a list
+// they can correct beats a blank page.
+function _obLocalSplit(text) {
+  let parts = String(text || '').split(/\r?\n/).map(t => t.trim()).filter(Boolean);
+  if (parts.length < 2) parts = String(text || '').split(/[.;•]|\s+then\s+|\s*,\s*/i).map(t => t.trim()).filter(Boolean);
+  return parts
+    .map(t => t.replace(/^[-*\d.)\s]+/, '').trim())
+    .filter(t => t.length > 2 && t.length < 200)
+    .slice(0, 14)
+    .map(t => t.charAt(0).toUpperCase() + t.slice(1));
+}
+
+// The seam the Edge Function will sit behind. Returns { job, tasks, weights }.
+// ⚠️ It takes a TRANSCRIPT STRING, never audio — so voice is later a capture step
+// in FRONT of this, with nothing here changing.
+async function _obExtract(text) {
+  const local = { job: '', tasks: _obLocalSplit(text), weights: {} };
+  try {
+    if (typeof _aiExtractJob === 'function') {
+      const r = await _aiExtractJob(text);
+      if (r && Array.isArray(r.tasks) && r.tasks.length) return r;
+    }
+  } catch (e) { /* fall through — never block first run on the network */ }
+  return local;
+}
+
+async function obDescribeNext() {
+  const el = document.getElementById('ob-desc');
+  const text = (el && el.value || '').trim();
+  if (text.length < 8) { showToast('Tell me a bit more about the job'); return; }
+  _ob.raw = text; _ob.busy = true; obRender();
+  const r = await _obExtract(text);
+  _ob.busy = false;
+  _ob.tasks = (r.tasks || []).slice(0, 14);
+  _ob.weights = r.weights || {};
+  if (!_ob.job) _ob.job = (r.job || '').trim() || (_ob.tasks[0] || 'My job');
+  if (!_ob.tasks.length) { showToast('Could not pick out any tasks — try one per line'); obRender(); return; }
+  _ob.step = 'tasks';
+  obRender();
+}
+function obRemoveTask(i) { _ob.tasks.splice(i, 1); obRender(); }
+function obTasksNext() {
+  const nameEl = document.getElementById('ob-jobname');
+  if (nameEl && nameEl.value.trim()) _ob.job = nameEl.value.trim();
+  if (!_ob.job) { showToast('Give the job a name'); return; }
+  if (!_ob.tasks.length) { showToast('Keep at least one task'); return; }
+  _ob.step = 'howlong'; obRender();
+}
+function obTotalNext() {
+  const v = parseFloat((document.getElementById('ob-total') || {}).value);
+  if (!(v > 0)) { showToast('Roughly how long, in minutes?'); return; }
+  // ⚠️ No task can be under a minute, so a total below one-per-task cannot be
+  // split without silently coming out higher than the number they typed. Say so
+  // rather than quietly overruling them — usually it means they read the units
+  // as hours.
+  if (v < _ob.tasks.length) {
+    showToast('That\'s under a minute per task — is that minutes, not hours?');
+    return;
+  }
+  _ob.totalMins = v;
+  obCommit();
+  _ob.step = 'done'; obRender();
+}
+
+// ⭐ THE ARTIFACT. Everything the conversation produced becomes real here: the job
+// is in the directory, its tasks are on it, and the estimates are seeded from the
+// one number they actually knew.
+function obCommit() {
+  const job = _ob.job;
+  if (!DIRECTORY.some(r => r.task === job)) {
+    DIRECTORY.push({ frequency: 'Weekly', group: 'General', task: job, equipment: '' });
+    _storeSet('kr_directory', JSON.stringify(DIRECTORY));
+  }
+  SUBTASKS[job] = _ob.tasks.slice();
+  _storeSet('kr_subtasks', JSON.stringify(SUBTASKS));
+  seedJobFromTotal(job, _ob.totalMins, _ob.weights);
+  _storeSet('kr_onboarded', '1');
+  autoBackup();
+}
+
+// Put it on the planner — the second half of the day-one loop. A job you can see
+// on tomorrow is a job you will actually do.
+function obPlan(when) {
+  const d = new Date();
+  if (when === 'tomorrow') d.setDate(d.getDate() + 1);
+  const est = (_ob.totalMins || 60) / 60;
+  _plannerPlans.push({
+    id: 'p' + Date.now() + Math.random().toString(36).slice(2, 6),
+    date: plannerDateStr(d), task: _ob.job, group: 'General', frequency: 'Weekly',
+    location: '', tool: '', startTime: '08:00',
+    durationHours: Math.max(0.25, parseFloat(est.toFixed(2))),
+    parked: true,   // holding bay, not dropped on a time they did not choose
+  });
+  savePlanner();
+  _ob.planned = true; obRender();
+  showToast('📅 Added to ' + (when === 'tomorrow' ? 'tomorrow' : 'today'));
+}
+function obFinish() {
+  _ob = null;
+  closeModal('modal-onboard');
+  renderDirectory(); renderClockState();
+  showToast('You\'re set up — clock in when you start 👍');
+}
+
+// The screen. One modal, four steps, so there is no navigation to learn — each
+// step replaces the last and the only way is forward.
+function obRender() {
+  const host = document.getElementById('ob-flow'), intro = document.getElementById('ob-intro');
+  if (!host || !intro) return;
+  intro.style.display = _ob ? 'none' : '';
+  host.style.display = _ob ? '' : 'none';
+  if (!_ob) { host.innerHTML = ''; return; }
+  const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const btn = (label, fn, primary) => `<button onclick="${fn}" style="width:100%;padding:15px;border-radius:14px;border:none;font-size:16px;font-weight:700;cursor:pointer;margin-top:14px;background:${primary ? 'var(--blue)' : 'var(--card)'};color:${primary ? '#fff' : 'var(--text)'};">${label}</button>`;
+  const back = `<div onclick="obCancel()" style="text-align:center;color:var(--subtext);font-size:14px;margin-top:18px;cursor:pointer;">← start over</div>`;
+  let h = '';
+
+  if (_ob.step === 'describe') {
+    h = `<div style="font-size:20px;font-weight:700;color:var(--text);">Tell me about one job you do</div>
+      <div style="font-size:14px;color:var(--subtext);line-height:1.6;margin:8px 0 16px;">
+        Anything you do regularly. Talk me through it the way you'd tell someone
+        who was about to do it for you — one step per line is perfect.</div>
+      <textarea id="ob-desc" rows="8" placeholder="Changeover at the tiny house&#10;Strip the beds&#10;Clean the bathroom&#10;Vacuum through&#10;Restock the basket" style="width:100%;padding:14px;border:1px solid var(--border);border-radius:12px;background:var(--card);color:var(--text);font-size:16px;line-height:1.5;box-sizing:border-box;">${esc(_ob.raw)}</textarea>
+      ${_ob.busy ? `<div style="text-align:center;color:var(--subtext);font-size:14px;margin-top:16px;">Reading that…</div>`
+                 : btn('Next', 'obDescribeNext()', true)}`;
+  }
+
+  if (_ob.step === 'tasks') {
+    h = `<div style="font-size:20px;font-weight:700;color:var(--text);">Here's what I got</div>
+      <div style="font-size:14px;color:var(--subtext);line-height:1.6;margin:8px 0 16px;">Remove anything that isn't right. You can add more later.</div>
+      <div style="font-size:12px;font-weight:600;color:var(--subtext);margin-bottom:6px;">JOB NAME</div>
+      <input id="ob-jobname" type="text" value="${esc(_ob.job)}" style="width:100%;padding:13px;border:1px solid var(--border);border-radius:12px;background:var(--card);color:var(--text);font-size:16px;box-sizing:border-box;margin-bottom:16px;">
+      <div style="font-size:12px;font-weight:600;color:var(--subtext);margin-bottom:6px;">TASKS · ${_ob.tasks.length}</div>
+      ${_ob.tasks.map((t, i) => `<div style="display:flex;gap:10px;align-items:flex-start;padding:11px 0;border-top:1px solid var(--border);">
+        <div style="flex:1;font-size:15px;color:var(--text);">${esc(t)}</div>
+        <div onclick="obRemoveTask(${i})" style="color:var(--subtext);font-size:18px;cursor:pointer;padding:0 4px;">✕</div></div>`).join('')}
+      ${btn('That\'s right', 'obTasksNext()', true)}${back}`;
+  }
+
+  if (_ob.step === 'howlong') {
+    h = `<div style="font-size:20px;font-weight:700;color:var(--text);">Roughly how long does the whole job take you?</div>
+      <div style="font-size:14px;color:var(--subtext);line-height:1.6;margin:8px 0 16px;">
+        Your best guess is fine — a number you'd actually believe. I'll split it
+        across the ${_ob.tasks.length} tasks so the app has somewhere to start.
+        <b>Your real times will replace it as you work.</b></div>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <input id="ob-total" type="number" inputmode="numeric" min="1" max="960" placeholder="90" style="flex:1;padding:14px;border:1px solid var(--border);border-radius:12px;background:var(--card);color:var(--text);font-size:18px;box-sizing:border-box;">
+        <span style="font-size:16px;color:var(--subtext);">minutes</span></div>
+      ${btn('Set it up', 'obTotalNext()', true)}${back}`;
+  }
+
+  if (_ob.step === 'done') {
+    const per = _ob.tasks.map(t => {
+      const m = _taskSeedMap()[_normTaskKey(t)];
+      return `<div style="display:flex;justify-content:space-between;padding:9px 0;border-top:1px solid var(--border);">
+        <span style="font-size:14px;color:var(--text);flex:1;padding-right:10px;">${esc(t)}</span>
+        <span style="font-size:12px;color:#4a5165;font-style:italic;white-space:nowrap;">~${m || '?'}m est</span></div>`;
+    }).join('');
+    h = `<div style="text-align:center;font-size:38px;line-height:1;">✅</div>
+      <div style="font-size:20px;font-weight:700;color:var(--text);text-align:center;margin-top:8px;">${esc(_ob.job)} is set up</div>
+      <div style="font-size:14px;color:var(--subtext);line-height:1.6;margin:10px 0 4px;text-align:center;">
+        Every task has a starting estimate. They're guesses — marked <i>est</i> — and
+        each one is replaced the first time you actually do it.</div>
+      ${per}
+      <div style="font-size:14px;color:var(--subtext);line-height:1.6;margin:20px 0 0;">
+        <b>Now the important bit:</b> go and do it once with the clock running. That's
+        when the app starts learning, and it's the whole point.</div>
+      ${_ob.planned
+        ? `<div style="text-align:center;color:#30d158;font-size:15px;font-weight:600;margin-top:16px;">📅 On your planner</div>`
+        : `<div style="display:flex;gap:10px;margin-top:14px;">
+             <button onclick="obPlan('today')" style="flex:1;padding:14px;border-radius:14px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:15px;font-weight:600;cursor:pointer;">Plan it today</button>
+             <button onclick="obPlan('tomorrow')" style="flex:1;padding:14px;border-radius:14px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:15px;font-weight:600;cursor:pointer;">Tomorrow</button>
+           </div>`}
+      ${btn('Done', 'obFinish()', true)}`;
+  }
+  host.innerHTML = h;
+}
+
 function seedStarterPack(key) {
   const pack = STARTER_PACKS[key];
   if (!pack) return;
@@ -3610,6 +3833,7 @@ function maybeShowOnboarding() {
   if (DIRECTORY && DIRECTORY.length) { _storeSet('kr_onboarded', '1'); return; } // existing user — skip
   const nameEl = document.getElementById('onboard-name');
   if (nameEl) nameEl.value = getUserName();
+  _ob = null; obRender();   // always open on the intro, never mid-flow from last time
   openModal('modal-onboard');
 }
 
@@ -5556,7 +5780,7 @@ function _runEstSec() {
   if (_runEstCache.sig === sig + _ltSig) return _runEstCache.sec;
   let sec = 0, basis = 'job';
   if (flagged.length) {
-    const map = _taskHistAvgMap();
+    const map = _taskEstMap();          // forecast: seeds fill in where nothing is measured yet
     let sum = 0;
     // A planned run counts each repeat task once per PLANNED lap (lapTargets,
     // v227) — the same math that sized the block (v196), so the ring and the
@@ -5584,7 +5808,7 @@ function _runRemainingSec() {
   const task = clockState.task;
   const flagged = Object.keys(_sessionOrGlobalFlags(task));
   if (!flagged.length) return null;
-  const map = _taskHistAvgMap();
+  const map = _taskEstMap();            // forecast
   const lt = clockState.lapTargets || {};
   const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
   const carried = new Set(Array.isArray(clockState.checklistCarried) ? clockState.checklistCarried : []);
@@ -8837,6 +9061,11 @@ const KR_SYNC_KEYS = [
   'kr_equipment_order', 'kr_task_types', 'kr_task_merges', 'kr_task_moves', 'kr_time_excl',
   'kr_subtask_origin', 'kr_job_horizon', 'kr_job_links',
   'kr_task_batches', 'kr_task_videos', 'kr_projects',
+  // 🌱 Onboarding's seeded times. Org library data like the rest of this block —
+  // a worker joining a set-up org should get the estimates, not a wall of dashes.
+  // ⚠️ Safe to share precisely BECAUSE it is separate from measured history: it
+  // carries no one's real timings.
+  'kr_task_seeds',
   // Planning + assignment (per-member keys are added dynamically below)
   'kr_planner_checklist',
   // Org config + robots
@@ -17960,21 +18189,174 @@ function _taskHistCountMap() {
   _histCountCache = { rev: _entriesRev, map };
   return map;
 }
+// ════════════════════════════════════════════════════════════════════════════
+//  🌱 SEEDED TIMES — the onboarding's guesses, kept apart from what was measured
+//
+//  A new install has no history, so every estimate the app is built on renders as
+//  a dash. The magic arrives around week three and most people leave before it.
+//  Onboarding fixes that by SEEDING a time for each task on day one.
+//
+//  ⭐⭐ THE HARD LINE, and it is the whole product. A seed is a GUESS and must
+//  NEVER become evidence. `_taskHistAvgMap` and `_taskHistCountMap` stay exactly
+//  as they are — pure measured, straight out of the timesheets — and seeds live in
+//  their own store, consulted ONLY where a measurement is absent. Nothing here
+//  ever writes to `entries`, and the ×N count NEVER counts a seed.
+//
+//  If a guess could pass for a measurement, "the estimate is learned, never typed"
+//  would quietly stop being true, and there would be no way to tell from the
+//  outside. That sentence is what the product sells.
+//
+//  Written in pencil; your own times are in pen. The screen says which is which:
+//  a seed reads "~12m est" faint, a measurement reads "~12m avg · 8×" solid.
+// ════════════════════════════════════════════════════════════════════════════
+// { normKey: { mins, source: 'ai' | 'corpus' | 'user', at } }
+//   ai     — distributed from the whole-job number the user gave at onboarding
+//   corpus — from other users' real times, once there are enough (the flywheel)
+//   user   — typed by hand
+function getTaskSeeds() { try { return JSON.parse(localStorage.getItem('kr_task_seeds') || '{}') || {}; } catch (e) { return {}; } }
+function saveTaskSeeds(o) { _seedRev++; return _storeSet('kr_task_seeds', JSON.stringify(o)); }
+let _seedRev = 0, _seedCache = { rev: -1, map: null };
+function _taskSeedMap() {
+  if (_seedCache.rev === _seedRev && _seedCache.map) return _seedCache.map;
+  const src = getTaskSeeds(), map = {};
+  Object.keys(src).forEach(k => {
+    const m = src[k] && src[k].mins;
+    if (isFinite(m) && m > 0) map[_normTaskKey(k)] = m;
+  });
+  _seedCache = { rev: _seedRev, map };
+  return map;
+}
+// What a FORECAST should use: measured where it exists, the seed only where it
+// does not. Never the other way round — one real timing beats any guess.
+// ⚠️ Analytics, charts and the learning engine must keep using _taskHistAvgMap.
+// This map is for "how long will this take", never for "how long did this take".
+function _taskEstMap() {
+  const measured = _taskHistAvgMap(), seeds = _taskSeedMap();
+  const out = Object.assign({}, seeds);      // seeds first…
+  Object.keys(measured).forEach(k => { out[k] = measured[k]; });   // …measured wins
+  return out;
+}
+// Is this task's number still a guess? Drives the faint/solid rendering, and the
+// "5 of 12 tasks now have your real times" line.
+function _taskIsSeeded(item) {
+  const k = _normTaskKey(item);
+  const a = _taskHistAvgMap()[k];
+  if (isFinite(a) && a > 0) return false;
+  return isFinite(_taskSeedMap()[k]);
+}
+// ⭐ Watching your own numbers replace the guesses IS the product experience, and
+// it costs no new store — both halves are already derivable.
+function seedFillProgress(job) {
+  const items = (SUBTASKS[job] || []);
+  if (!items.length) return null;
+  const measured = _taskHistAvgMap(), seeds = _taskSeedMap();
+  let real = 0, known = 0;
+  items.forEach(t => {
+    const k = _normTaskKey(t);
+    const a = measured[k];
+    if (isFinite(a) && a > 0) { real++; known++; }
+    else if (isFinite(seeds[k])) known++;
+  });
+  return { real, known, total: items.length };
+}
+
+// ⭐ ANCHOR AND DISTRIBUTE. Do not ask anyone how long each task takes — nobody
+// knows, and a pile of invented per-task numbers adds up to a total they will not
+// recognise. Ask for the ONE number they do know ("roughly how long does this
+// whole job take you?") and split it across the tasks by relative weight.
+//
+// Day 1's finish-time forecast then lands near their own expectation, so it feels
+// right immediately. The per-task split is wrong ON PURPOSE — correcting it as
+// real times arrive IS the engine working, and it is the thing they came for.
+//
+// Weights come from the AI; a missing or nonsense weight falls back to an even
+// share, so a bad reply degrades to "divide by N" rather than to nothing.
+function seedJobFromTotal(job, totalMins, weights) {
+  const items = (SUBTASKS[job] || []).slice();
+  if (!items.length || !(totalMins > 0)) return 0;
+  const w = items.map(t => {
+    const v = weights && weights[t];
+    return (isFinite(v) && v > 0) ? v : 1;
+  });
+  const sumW = w.reduce((a, b) => a + b, 0) || items.length;
+
+  // ⭐ THE PARTS MUST ADD UP TO THE NUMBER THEY GAVE. Rounding each share on its
+  // own does not: 90 minutes across 4 tasks is 22.5 each, which rounds to 23 and
+  // totals 92. The whole promise of asking for one number they believe is that
+  // day one's forecast matches their own expectation, and a block reading 92 when
+  // they said 90 breaks it before they have done anything.
+  //
+  // So allocate against the REMAINING total and let the last task take the
+  // balance. Computed across ALL tasks, then written only to the ones that need a
+  // seed — a task with a real measurement already accounts for its own share, so
+  // its budget is not handed to the others.
+  const alloc = [];
+  let left = totalMins, leftW = sumW;
+  items.forEach((t, i) => {
+    const m = (i === items.length - 1) ? Math.max(1, left)
+                                       : Math.max(1, Math.round((left * w[i]) / (leftW || 1)));
+    alloc.push(m); left -= m; leftW -= w[i];
+  });
+
+  const seeds = getTaskSeeds();
+  const now = new Date().toISOString();
+  let written = 0;
+  items.forEach((t, i) => {
+    const k = _normTaskKey(t);
+    // ⭐ NEVER OVERWRITE A REAL MEASUREMENT, and never overwrite an existing seed
+    // either — re-running onboarding on a job someone has already worked must not
+    // quietly move their numbers.
+    const measured = _taskHistAvgMap()[k];
+    if (isFinite(measured) && measured > 0) return;
+    if (seeds[k]) return;
+    seeds[k] = { mins: alloc[i], source: 'ai', at: now };
+    written++;
+  });
+  if (written) saveTaskSeeds(seeds);
+  return written;
+}
+// A seed has served its purpose the moment a real timing exists. Clearing it keeps
+// the store honest and small; nothing reads it once measured wins, so this is
+// tidying rather than correctness.
+function pruneSeededTimes() {
+  const seeds = getTaskSeeds(), measured = _taskHistAvgMap();
+  let n = 0;
+  Object.keys(seeds).forEach(k => {
+    const a = measured[_normTaskKey(k)];
+    if (isFinite(a) && a > 0) { delete seeds[k]; n++; }
+  });
+  if (n) saveTaskSeeds(seeds);
+  return n;
+}
+
 // "~12m avg · 9×" — the learned time for a task and how much evidence it rests on.
 // Same read as the clock's meta line and the Dashboard Times list, so the number is
 // the same wherever you meet it. Returns '' when there's no timed history yet, so
 // callers can drop the line rather than print a hollow "~0m".
 function _taskAvgCountLabel(item, avgMap, cntMap) {
-  const a = (avgMap || _taskHistAvgMap())[_normTaskKey(item)];
-  if (!(isFinite(a) && a > 0)) return '';
-  const c = (cntMap || _taskHistCountMap())[_normTaskKey(item)];
-  return '~' + fmtMin(a) + ' avg' + (c ? ' · ' + c + '×' : '');
+  const k = _normTaskKey(item);
+  const a = (avgMap || _taskHistAvgMap())[k];
+  if (isFinite(a) && a > 0) {
+    const c = (cntMap || _taskHistCountMap())[k];
+    return '~' + fmtMin(a) + ' avg' + (c ? ' · ' + c + '×' : '');
+  }
+  // ⭐ NEVER LAUNDER A GUESS AS A MEASUREMENT. A seed says "est" and carries no
+  // ×N, because there is nothing to count. The wording is the honesty: "avg"
+  // means the app watched you do it, "est" means somebody guessed.
+  const sd = _taskSeedMap()[k];
+  if (isFinite(sd) && sd > 0) return '~' + fmtMin(sd) + ' est';
+  return '';
 }
 // The same label as a row meta line (Organise sheet + run sheet). Empty for a task
 // with no history, so those rows just don't carry the line.
 function _avgMeta(item, avgMap, cntMap) {
   const t = _taskAvgCountLabel(item, avgMap, cntMap);
-  return t ? `<span style="font-size:11px;color:#616a7e;">${t}</span>` : '';
+  if (!t) return '';
+  // Faint and italic for a guess, solid for a measurement. The difference has to
+  // be visible at a glance, not only readable — you should be able to see your
+  // real numbers arriving without reading a word.
+  const seeded = t.indexOf(' est') > 0;
+  return `<span style="font-size:11px;color:${seeded ? '#4a5165' : '#616a7e'};${seeded ? 'font-style:italic;' : ''}">${t}</span>`;
 }
 
 // ── Learned STEP times ────────────────────────────────────────────────────────
@@ -18080,7 +18462,7 @@ function _estimateBlockMins(plan) {
   // block's end out on the timeline, so whatever is planned after it sits right.
   const _brk = (rec && Array.isArray(rec.breaks)) ? rec.breaks.reduce((t, b) => t + (b.mins || 0), 0) : 0;
   if (flagged.length) {
-    const map = _taskHistAvgMap();
+    const map = _taskEstMap();          // forecast — this is what sizes a planner block on day one
     const reps = _taskRepsPerRunMap();
     let sum = 0, n = 0, lapped = false;
     flagged.forEach(item => {
@@ -19876,7 +20258,7 @@ function _rsRows(ctx) {
   if (!ctx) return [];
   const rows = _rsOrdered(ctx);
   if (!rows.length) return [];
-  const avg = _taskHistAvgMap();
+  const avg = _taskEstMap();            // forecast — run sheet row times
   const now = Date.now();
   let cursor, floor;
   if (ctx.kind === 'plan') {
@@ -20073,7 +20455,8 @@ function _rsRender() {
     <div style="display:flex;justify-content:flex-end;padding:0 0 8px;">${_rsPlacing
       ? `<span onclick="_rsPlacing=false;_rsRender()" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:13px;">✕ cancel — tap a gap above to drop the break in</span>`
       : `<span onclick="_rsPlacing=true;_rsRender()" style="color:#ff9f0a;cursor:pointer;font-weight:600;font-size:13px;">☕ Add a break</span>`}</div></div>`;
-  const avgMap = _taskHistAvgMap(), cntMap = _taskHistCountMap();   // built once, not per row
+  const avgMap = _taskEstMap(), cntMap = _taskHistCountMap();   // built once, not per row
+  // ⚠️ cntMap stays MEASURED — the ×N must never count a guess.
   // ▣ which batch each task belongs to, and — once ticked — how long it ACTUALLY
   // took. The actual sits beside the average on the meta line, so the comparison
   // that matters ("~9m avg · 9× · ✓ 12m") needs no arithmetic from you.
@@ -20615,7 +20998,7 @@ function _renderClOrganiseBody() {
     // Clock-opened sheet: the same accumulating total the planner shows — the sum
     // of the flagged tasks' learned averages (laps counted), live as you flag.
     // This is exactly what the ring's % and the 🏁 finish time are targeting.
-    const _eMap = _taskHistAvgMap();
+    const _eMap = _taskEstMap();        // forecast
     const _eLt = clockState.lapTargets || {};
     let _eSum = 0, _eN = 0, _eLapped = false;
     Object.keys(flags).forEach(item => {
@@ -20639,7 +21022,7 @@ function _renderClOrganiseBody() {
   const _lapReps = (_lapPlan || _lapSess) ? _taskRepsPerRunMap() : null;
   const _lapEnc = s => encodeURIComponent(s).replace(/'/g, '%27');   // %27: apostrophes survive encodeURIComponent and would break the onclick string
   const _lapAdjFn = _lapPlan ? '_clLapAdj' : '_clSessionLapAdj';
-  const _oAvg = _taskHistAvgMap(), _oCnt = _taskHistCountMap();   // built once, not per row
+  const _oAvg = _taskEstMap(), _oCnt = _taskHistCountMap();   // built once, not per row (count stays measured)
   const rowHtml = (s) => {
     const isFlagged = !!flags[s];
     const lapChip = ((_lapPlan || _lapSess) && isFlagged && isRepeatTask(task, s))
