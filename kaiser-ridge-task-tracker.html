@@ -3114,7 +3114,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.341';
+const APP_VERSION = '2026-06-21.342';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -9503,10 +9503,22 @@ const KR_REC_TABLES = {
   // ⚠️ Ordering is the SERVER's. Revisions sort on created_at, stamped by
   // Postgres; the row id's suffix is for uniqueness only and is never compared.
   // Device clock skew must not order merges.
+  // ⚠️⚠️ scope 'user', NOT 'org', and this was wrong in v334.
+  //
+  // The TABLE is org-readable on purpose, so a manager can review the team's hours
+  // one day. But the local `entries` array has always meant "MY timesheets on this
+  // device", and every single consumer reads it that way: the planner's ✓ blocks,
+  // the weekly hours total, the dashboard, and — the serious one — the LEARNED
+  // AVERAGES. Pulling the whole org into it blended Ethan's times with Lincoln's
+  // and quietly corrupted the engine, with the planner showing each other's jobs
+  // as the visible symptom. Reported 8 Sep, hours after v334 shipped.
+  //
+  // ⭐ Backing up my timesheets and reading everyone's are two different features.
+  // This one is the backup. A manager view queries the server directly, later.
   entries: {
-    table: 'entries', scope: 'org', ledger: true,
+    table: 'entries', scope: 'user', ledger: true,
     stamp: 'created_at',                       // append-only: a row never changes, so this IS its watermark
-    select: 'id,entry_id,payload,created_at,deleted',
+    select: 'id,entry_id,payload,created_at,deleted,user_id',
     read:  () => entries,
     write: arr => { entries = arr; saveEntries(); },
     idOf:  r => r && r.id,
@@ -9518,7 +9530,10 @@ const KR_REC_TABLES = {
       // estimates today.
       user_id: (currentUser() || {}).id || null,
     }),
-    fromRow: row => row.payload,
+    // Carry user_id onto the local record. `personnel` is a NAME STRING and was the
+    // only marker of whose work it was, which is the same weakness as the hardcoded
+    // Ethan. With this, "is this mine" is answerable without matching names.
+    fromRow: row => Object.assign({}, row.payload, row.user_id ? { user_id: row.user_id } : {}),
   },
 };
 
@@ -9780,11 +9795,49 @@ function _recBoot() {
   } catch (e) {}
 }
 
+// ⚠️⚠️ ONE-TIME REPAIR for v334's scope mistake. Between v334 and v342 the pull
+// applied the whole ORG's timesheets into the local `entries` array, which every
+// consumer treats as "mine" — the weekly total, the dashboard, the planner's ✓
+// blocks and, worst, the learned averages.
+//
+// ⭐ NOTHING IS DELETED. Foreign entries are MOVED to kr_entries_foreign, so if
+// this misjudges one it can be put back. Deleting someone's recorded hours to fix
+// a bug of mine is not a trade I get to make.
+//
+// Matching: user_id when the row carries one (v342+), else the personnel name.
+// An entry with neither is LEFT ALONE — absence of proof is not proof it is
+// someone else's, and Lincoln's own older entries predate both markers.
+function _purgeForeignEntries() {
+  try {
+    if (localStorage.getItem('kr_entries_purged_v342') === '1') return 0;
+    const me = (currentUser() || {}).id || null;
+    const myName = (getUserName() || '').trim().toLowerCase();
+    const mine = [], foreign = [];
+    (entries || []).forEach(e => {
+      if (e && e.user_id && me) { (e.user_id === me ? mine : foreign).push(e); return; }
+      const p = (e && e.personnel || '').trim().toLowerCase();
+      if (p && myName && p !== myName) { foreign.push(e); return; }
+      mine.push(e);                       // unknown owner → keep, never guess it away
+    });
+    _storeSet('kr_entries_purged_v342', '1');
+    if (!foreign.length) return 0;
+    const kept = JSON.parse(localStorage.getItem('kr_entries_foreign') || '[]');
+    _storeSet('kr_entries_foreign', JSON.stringify(kept.concat(foreign)));
+    entries = mine;
+    saveEntries();
+    _histAvgCache = { rev: -1, map: null };   // the averages were built on the blend
+    _histCountCache = { rev: -1, map: null };
+    return foreign.length;
+  } catch (e) { return 0; }
+}
+
 function _syncBoot() {
   try {
     _syncAuditKeys();
     window.addEventListener('online', () => _syncSchedule(500));
     _recBoot();
+    const _pf = _purgeForeignEntries();
+    if (_pf) setTimeout(() => showToast('↩ Moved ' + _pf + ' timesheet' + (_pf === 1 ? '' : 's') + " that weren't yours out of your hours"), 1500);
     if (isSignedIn()) _syncSchedule(4000);   // after auth/org bootstrap has had a moment
   } catch (e) {}
 }
