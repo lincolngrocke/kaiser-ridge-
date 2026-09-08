@@ -3114,7 +3114,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.343';
+const APP_VERSION = '2026-06-21.344';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -18498,6 +18498,56 @@ function seedJobFromTotal(job, totalMins, weights) {
   if (written) saveTaskSeeds(seeds);
   return written;
 }
+// ⭐ TYPE AN ESTIMATE FOR A TASK NOBODY HAS TIMED YET.
+// Onboarding could seed times; nothing else could, so a task added later sat at no
+// number forever and silently contributed ZERO to the block that was meant to size
+// the day. This is the missing write path, and it deliberately reuses the whole
+// existing seed contract rather than inventing a second kind of number:
+//   • measured always wins on read (_taskEstMap), so this only ever fills a gap
+//   • it is auto-deleted the moment a real timing lands (pruneSeededTimes)
+//   • it renders "est", faint and italic, never "avg", and carries no ×N
+// ⚠️ Keyed by task TEXT like steps and guides, so setting it once covers every job
+// that uses that task name. That is the same sharing model, not a new one.
+function setTaskEstimate(item) {
+  if (isWorker()) return;                       // the job library is manager-writes
+  const k = _normTaskKey(item);
+  const measured = _taskHistAvgMap()[k];
+  if (isFinite(measured) && measured > 0) {     // guard: the UI never offers this, but never launder a measurement
+    showToast('That task has a real timed average now, so it does not need an estimate.');
+    return;
+  }
+  const seeds = getTaskSeeds();
+  const cur = seeds[k] && seeds[k].mins;
+  const raw = prompt('About how many minutes does this usually take?\n\n' + item +
+                     '\n\nLeave it blank to clear the estimate.',
+                     isFinite(cur) && cur > 0 ? String(Math.round(cur)) : '');
+  if (raw === null) return;                     // cancelled
+  const t = String(raw).trim();
+  if (t === '') {                               // blank clears
+    if (seeds[k]) { delete seeds[k]; saveTaskSeeds(seeds); showToast('Estimate cleared.'); _estRefresh(); }
+    return;
+  }
+  const mins = Math.round(parseFloat(t));
+  if (!isFinite(mins) || mins <= 0) { showToast('Enter a number of minutes, for example 20.'); return; }
+  seeds[k] = { mins, source: 'user', at: new Date().toISOString() };
+  saveTaskSeeds(seeds);
+  showToast('Estimated ' + fmtMin(mins) + '. It will be replaced the first time you time it.');
+  _estRefresh();
+}
+// Re-render whatever is open. The Organise sheet draws the rows AND the block
+// estimate above them from one function, so a single call moves both; the planner
+// detail behind it carries the same number and is re-opened the way closeClOrganise
+// already does it. ⚠️ The block's saved durationHours is NOT touched here — sizing
+// it is _applyBlockEstimate's job and happens when the sheet opens, so typing an
+// estimate updates what the sheet SAYS without silently resizing a block you may
+// have hand-set.
+function _estRefresh() {
+  const org = document.getElementById('modal-cl-organise');
+  if (org && org.classList.contains('open')) _renderClOrganiseBody();
+  if (_clOrganiseTask) _refreshChecklistSurfaces(_clOrganiseTask);
+  const det = document.getElementById('modal-planner-detail');
+  if (det && det.classList.contains('open') && _plannerDetailId) openPlannerDetail(_plannerDetailId);
+}
 // A seed has served its purpose the moment a real timing exists. Clearing it keeps
 // the store honest and small; nothing reads it once measured wins, so this is
 // tidying rather than correctness.
@@ -18519,26 +18569,45 @@ function pruneSeededTimes() {
 function _taskAvgCountLabel(item, avgMap, cntMap) {
   const k = _normTaskKey(item);
   const a = (avgMap || _taskHistAvgMap())[k];
-  if (isFinite(a) && a > 0) {
-    const c = (cntMap || _taskHistCountMap())[k];
-    return '~' + fmtMin(a) + ' avg' + (c ? ' · ' + c + '×' : '');
+  if (!isFinite(a) || a <= 0) {
+    // Nothing measured and nothing passed in — the seed map is the last resort.
+    const sd = _taskSeedMap()[k];
+    return (isFinite(sd) && sd > 0) ? '~' + fmtMin(sd) + ' est' : '';
   }
   // ⭐ NEVER LAUNDER A GUESS AS A MEASUREMENT. A seed says "est" and carries no
   // ×N, because there is nothing to count. The wording is the honesty: "avg"
   // means the app watched you do it, "est" means somebody guessed.
-  const sd = _taskSeedMap()[k];
-  if (isFinite(sd) && sd > 0) return '~' + fmtMin(sd) + ' est';
-  return '';
+  //
+  // ⚠️⚠️ THE CALLER'S avgMap IS _taskEstMap(), WHICH ALREADY CONTAINS SEEDS.
+  // So "the number is present" never meant "the number was measured", and this
+  // branch had been printing "avg" over every onboarding seed since v335 — the
+  // one thing the seed design exists to prevent. Ask the seed map directly
+  // rather than inferring it from which map happened to be handed in.
+  if (_taskIsSeeded(item)) return '~' + fmtMin(a) + ' est';
+  const c = (cntMap || _taskHistCountMap())[k];
+  return '~' + fmtMin(a) + ' avg' + (c ? ' · ' + c + '×' : '');
 }
 // The same label as a row meta line (Organise sheet + run sheet). Empty for a task
 // with no history, so those rows just don't carry the line.
 function _avgMeta(item, avgMap, cntMap) {
   const t = _taskAvgCountLabel(item, avgMap, cntMap);
-  if (!t) return '';
+  // ⭐ NO NUMBER IS ITSELF THE SIGNAL, and it used to render as nothing at all.
+  // A task with no history is exactly the one that throws the day out, so this is
+  // where the invitation to estimate belongs — on the existing meta line, not a
+  // new row. Workers see the blank as before; the library is theirs to read only.
+  if (!t) {
+    if (isWorker()) return '';
+    return `<span ontouchstart="event.stopPropagation()" onclick="event.stopPropagation();setTaskEstimate(decodeURIComponent('${_encArg(item)}'))" style="font-size:11px;color:#4a5165;font-style:italic;cursor:pointer;">＋ est</span>`;
+  }
   // Faint and italic for a guess, solid for a measurement. The difference has to
   // be visible at a glance, not only readable — you should be able to see your
   // real numbers arriving without reading a word.
   const seeded = t.indexOf(' est') > 0;
+  // A guess is editable, a measurement is not. Tapping your own real average to
+  // "correct" it would launder a guess into the learning engine.
+  if (seeded && !isWorker()) {
+    return `<span ontouchstart="event.stopPropagation()" onclick="event.stopPropagation();setTaskEstimate(decodeURIComponent('${_encArg(item)}'))" style="font-size:11px;color:#4a5165;font-style:italic;cursor:pointer;">${t}</span>`;
+  }
   return `<span style="font-size:11px;color:${seeded ? '#4a5165' : '#616a7e'};${seeded ? 'font-style:italic;' : ''}">${t}</span>`;
 }
 
@@ -18647,16 +18716,21 @@ function _estimateBlockMins(plan) {
   if (flagged.length) {
     const map = _taskEstMap();          // forecast — this is what sizes a planner block on day one
     const reps = _taskRepsPerRunMap();
-    let sum = 0, n = 0, lapped = false;
+    // ⭐ A FLAGGED TASK WITH NO NUMBER USED TO VANISH FROM THIS SUM WITHOUT TRACE.
+    // It added no minutes and did not raise n either, so the block read "from 32
+    // flagged tasks" and looked complete while silently under-sizing the day by
+    // however many tasks had never been timed. Counting them is what makes the
+    // gap fixable — you cannot estimate what you cannot see is missing.
+    let sum = 0, n = 0, lapped = false, missing = 0;
     flagged.forEach(item => {
       const a = map[_normTaskKey(item)];
       if (isFinite(a) && a > 0) {
         const laps = _plannedLapsFor(plan, item, reps);   // 🔁 repeat tasks count once per planned lap
         sum += a * laps; n++;
         if (laps > 1) lapped = true;
-      }
+      } else missing++;
     });
-    if (sum > 0) return { mins: sum + _brk, basis: 'flagged', n, lapped, brkMins: _brk };
+    if (sum > 0) return { mins: sum + _brk, basis: 'flagged', n, lapped, brkMins: _brk, missing };
   }
   const jobAvgH = getTaskAvgDuration(plan.task);   // hours
   if (jobAvgH && jobAvgH > 0) return { mins: jobAvgH * 60 + _brk, basis: 'job', n: 0, brkMins: _brk };
@@ -21267,9 +21341,15 @@ function _renderClOrganiseBody() {
   if (_clOrganisePlanId && _clEditScope === 'plan') {
     const plan = _plannerPlans.find(p => p.id === _clOrganisePlanId);
     const est = plan ? _estimateBlockMins(plan) : null;
+    // ⚠️ The missing line is the point of the whole panel. A block sized from 32
+    // tasks while 6 more contribute nothing is not "sized", it is short, and the
+    // old copy gave no hint. Tap ＋ est on a row to fill one in.
+    const _miss = est && est.basis === 'flagged' && est.missing > 0
+      ? `<div style="font-size:11px;color:#ffd60a;margin-top:3px;">⚠️ ${est.missing} flagged task${est.missing === 1 ? ' has' : 's have'} no time yet, so ${est.missing === 1 ? 'it adds' : 'they add'} nothing to this total. Tap <b>＋ est</b> on a task below to estimate ${est.missing === 1 ? 'it' : 'them'}.</div>`
+      : '';
     estLine = est
-      ? `<div style="margin:10px 0 2px;padding:9px 12px;border-radius:10px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.35);font-size:13px;color:var(--text);">⏱ Block sized to <b>~${fmtMin(est.mins)}</b> · ${est.basis === 'flagged' ? 'from ' + est.n + ' flagged task' + (est.n === 1 ? '' : 's') + (est.lapped ? ' · 🔁 laps counted' : '') : 'from this job’s history'}<div style="font-size:11px;color:var(--subtext);margin-top:2px;">Auto-filled from your timed history — you can still edit the block’s duration.</div></div>`
-      : `<div style="margin:10px 0 2px;padding:9px 12px;border-radius:10px;background:rgba(127,127,127,0.1);font-size:12px;color:var(--subtext);">⏱ No timed history yet — flag tasks you’ve timed before (or clock this job once) to size the block automatically.</div>`;
+      ? `<div style="margin:10px 0 2px;padding:9px 12px;border-radius:10px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.35);font-size:13px;color:var(--text);">⏱ Block sized to <b>~${fmtMin(est.mins)}</b> · ${est.basis === 'flagged' ? 'from ' + est.n + ' flagged task' + (est.n === 1 ? '' : 's') + (est.lapped ? ' · 🔁 laps counted' : '') : 'from this job’s history'}<div style="font-size:11px;color:var(--subtext);margin-top:2px;">Auto-filled from your timed history — you can still edit the block’s duration.</div>${_miss}</div>`
+      : `<div style="margin:10px 0 2px;padding:9px 12px;border-radius:10px;background:rgba(127,127,127,0.1);font-size:12px;color:var(--subtext);">⏱ Nothing here has a time yet — tap <b>＋ est</b> on a task to estimate it, or clock this job once and the real times take over.</div>`;
   } else if (!_clOrganisePlanId && clockState && clockState.running && clockState.task === task) {
     // Clock-opened sheet: the same accumulating total the planner shows — the sum
     // of the flagged tasks' learned averages (laps counted), live as you flag.
