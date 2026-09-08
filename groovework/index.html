@@ -3114,7 +3114,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.340';
+const APP_VERSION = '2026-06-21.341';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -20413,9 +20413,33 @@ function _rsOrdered(ctx) {
   if (!pool.size) return out;
   const fresh = _rsDefaultOrder([...pool.values()], ctx);
   // Nothing arranged yet → the circuit default IS the order.
-  if (!out.length) return fresh;
+  if (!out.length) return _rsDoneFirst(fresh);
   fresh.forEach(x => _rsPlaceFresh(out, x, multi));
-  return out;
+  return _rsDoneFirst(out);
+}
+
+// ⭐ FINISHED WORK FLOATS TO THE TOP, IN THE ORDER IT ACTUALLY HAPPENED.
+//
+// The run sheet is a TIMELINE: every row carries a clock time, and it is meant to
+// read straight down. A ticked row keeps the moment it was ticked, so leaving it in
+// the arranged position put 6:43am underneath an 8:52am forecast and the column of
+// times stopped being a column of times. On a resumed run, where several things
+// were finished in an earlier session, it read as done and to-do shuffled together.
+//
+// Done above, earliest first, so the past reads in the order it happened. Still to
+// do below, in the order you arranged. "You are here" is the boundary between them.
+//
+// ⚠️ Costs the forecast nothing: a done row keeps its own timestamp and never
+// advances the cursor (see _rsRows), so only undone rows accumulate. Moving them
+// cannot shift a single forecast time.
+// ⚠️ Idempotent, which matters because a drag saves the DOM order back: floating an
+// already-floated list is a no-op, so the saved order and the rendered order agree.
+function _rsDoneFirst(rows) {
+  const done = [], todo = [];
+  rows.forEach(r => (r.doneAt ? done : todo).push(r));
+  if (!done.length || !todo.length) return rows;
+  done.sort((a, b) => new Date(a.doneAt) - new Date(b.doneAt));
+  return done.concat(todo);
 }
 
 // Stamp each row with a clock time. Done rows keep the moment they were ticked;
