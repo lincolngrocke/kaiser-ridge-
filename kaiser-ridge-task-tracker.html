@@ -3114,7 +3114,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.344';
+const APP_VERSION = '2026-06-21.345';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -20766,16 +20766,25 @@ function _rsRender() {
   const summary = planning
     ? `🗓 ${rows.length} step${rows.length === 1 ? '' : 's'} from ${_rsHM(ctx.startMs)}${lastPending ? ' · 🏁 done by ~<b>' + _rsHM(lastPending.when) + '</b>' : ''}`
     : `✓ ${doneN} of ${rows.length} done${lastPending ? ' · 🏁 last one ~<b>' + _rsHM(lastPending.when) + '</b>' : ''}${tgtBit}`;
+  // ⭐ Lead with the ⠿ tap, not the drag. On a 44-step sheet the drag is the thing
+  // that does not work, so naming it first taught the wrong habit.
   const hint = planning
-    ? 'Hold &amp; drag a row to set the order you\'ll do them in — every time below it re-forecasts. This order carries onto the clock when you start the job.'
-    : 'Hold &amp; drag a row to set the order you\'ll actually do them in — every time below it re-forecasts. Tap a row to tick it off.';
+    ? 'Tap ⠿ on a row, then tap the gap where it goes. Every time below re-forecasts. Hold &amp; drag still works for a short nudge. This order carries onto the clock when you start the job.'
+    : 'Tap ⠿ on a row, then tap the gap where it goes. Every time below re-forecasts. Hold &amp; drag still works for a short nudge. Tap a row to tick it off.';
   const head = `<div class="cl-sticky-top">
     <div style="margin:10px 0 4px;padding:9px 12px;border-radius:10px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.35);font-size:13px;color:var(--text);">
       ${summary}${bankedNote}</div>
     <div style="font-size:11px;color:var(--subtext);margin:0 0 8px;">${hint}</div>
-    <div style="display:flex;justify-content:flex-end;padding:0 0 8px;">${_rsPlacing
+    ${_rsMoveKey ? `<div style="margin:0 0 8px;padding:9px 12px;border-radius:10px;background:rgba(90,200,250,0.12);border:1px solid rgba(90,200,250,0.5);font-size:13px;color:var(--text);">
+      ⤴ Moving <b>${_escHtml(_rsMoveLabel())}</b><div style="font-size:11px;color:var(--subtext);margin-top:2px;">Tap a <b>⤵ move here</b> gap to drop it in. Scroll as far as you like first.</div>
+      <div onclick="_rsMoveKey=null;_rsRender()" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:12px;margin-top:5px;">✕ cancel</div></div>` : ''}
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:0 0 8px;">
+      <span>${(ctx.order && !_rsMoveKey && !_rsPlacing)
+        ? `<span onclick="_rsResetOrder()" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:13px;">↺ Back to the learned order</span>`
+        : ''}</span>
+      <span>${_rsPlacing
       ? `<span onclick="_rsPlacing=false;_rsRender()" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:13px;">✕ cancel — tap a gap above to drop the break in</span>`
-      : `<span onclick="_rsPlacing=true;_rsRender()" style="color:#ff9f0a;cursor:pointer;font-weight:600;font-size:13px;">☕ Add a break</span>`}</div></div>`;
+      : (_rsMoveKey ? '' : `<span onclick="_rsPlacing=true;_rsRender()" style="color:#ff9f0a;cursor:pointer;font-weight:600;font-size:13px;">☕ Add a break</span>`)}</span></div></div>`;
   const avgMap = _taskEstMap(), cntMap = _taskHistCountMap();   // built once, not per row
   // ⚠️ cntMap stays MEASURED — the ×N must never count a guess.
   // ▣ which batch each task belongs to, and — once ticked — how long it ACTUALLY
@@ -20784,9 +20793,15 @@ function _rsRender() {
   const _bRec = _batchRec(ctx.job);
   const _durs = ctx.kind === 'clock' ? _checklistDurations() : {};
   const stepsOf = stepsResolver(ctx.job);   // step AVERAGES aren't read here — the sheet shows no per-step times
-  const _ins = (i) => _rsPlacing
+  // ⭐ THE GAPS ARE THE TARGET, for a break AND now for a task. Dragging a row up
+  // 30 places on a 44-step straw run is the pain this replaces: pick the row up,
+  // scroll wherever you like, tap the gap. Distance stops costing anything, which
+  // a drag can never manage no matter how good the edge-scrolling is.
+  const _ins = (i) => _rsMoveKey
+    ? `<div onclick="_rsMoveTo(${i})" style="margin:2px 0 6px;padding:5px 10px;border-radius:8px;border:1px dashed rgba(90,200,250,0.75);background:rgba(90,200,250,0.10);color:#5ac8fa;font-size:12px;font-weight:700;text-align:center;cursor:pointer;">⤵ move here</div>`
+    : (_rsPlacing
     ? `<div onclick="_rsPlaceBreak(${i})" style="margin:2px 0 6px;padding:5px 10px;border-radius:8px;border:1px dashed rgba(255,159,10,0.75);background:rgba(255,159,10,0.10);color:#ff9f0a;font-size:12px;font-weight:700;text-align:center;cursor:pointer;">☕ break goes here</div>`
-    : '';
+    : '');
   const rowsHtml = rows.map((r, _i) => {
     // ☕ A break row: no batch, no average, no steps — it is time, not work. On the
     // clock, tapping it STARTS your break, and ending the break ticks it off, so one
@@ -20857,8 +20872,12 @@ function _rsRender() {
       : (r.when ? `<span style="font-size:13px;font-weight:700;color:${r.tappable ? '#30d158' : 'var(--subtext)'};white-space:nowrap;">~${_rsHM(r.when)}</span>`
                 : '<span style="font-size:13px;color:var(--subtext);white-space:nowrap;" title="no timed history yet">—</span>');
     const _enc = encodeURIComponent(r.t).replace(/'/g, '%27');
-    const tap = r.tappable ? ` onclick="_rsTick(decodeURIComponent('${_enc}'))"`
-              : (r.undoable ? ` onclick="_rsUntick(decodeURIComponent('${_enc}'))"` : '');
+    // ⚠️ While a row is being placed the whole sheet is a placement surface, so
+    // tap-to-tick has to stand down. Otherwise the tap that means "put it here"
+    // lands on a row and ticks off work that has not been done.
+    const tap = (_rsMoveKey || _rsPlacing) ? ''
+              : (r.tappable ? ` onclick="_rsTick(decodeURIComponent('${_enc}'))"`
+              : (r.undoable ? ` onclick="_rsUntick(decodeURIComponent('${_enc}'))"` : ''));
     // ▶ NOW — the one row you're on. Blue, so it can't be confused with the green
     // that means "timed/forecast" elsewhere on the sheet, and calm rather than
     // alarming: it says where you are, it doesn't chase you.
@@ -20868,8 +20887,9 @@ function _rsRender() {
     const nowChip = r.isNow
       ? `<span style="display:inline-flex;align-items:center;flex-shrink:0;font-size:11px;font-weight:700;color:#5ac8fa;background:rgba(90,200,250,0.18);border:1px solid rgba(90,200,250,0.5);border-radius:9px;padding:0 7px;gap:4px;"><span>▶ NOW ·</span><span id="rs-now-elapsed">${fmtMin(_rsNowElapsedMin())}</span></span>`
       : '';
-    const border = r.isNow ? 'rgba(90,200,250,0.75)' : (r.tappable ? 'rgba(48,209,88,0.45)' : 'var(--border)');
-    const bg = r.isDone ? 'transparent' : (r.isNow ? 'rgba(90,200,250,0.10)' : 'var(--card)');
+    const _lifted = _rsMoveKey === key;   // the row in your hand, so you can see what you're placing
+    const border = _lifted ? 'rgba(90,200,250,0.9)' : (r.isNow ? 'rgba(90,200,250,0.75)' : (r.tappable ? 'rgba(48,209,88,0.45)' : 'var(--border)'));
+    const bg = _lifted ? 'rgba(90,200,250,0.16)' : (r.isDone ? 'transparent' : (r.isNow ? 'rgba(90,200,250,0.10)' : 'var(--card)'));
     // The .rs-row is a WRAPPER holding the header line and, when open, its steps —
     // so a drag carries the steps with it instead of stranding them. Tap-to-tick
     // lives on the header, not the wrapper, so tapping a step can't tick the task.
@@ -20881,7 +20901,7 @@ function _rsRender() {
         <span style="overflow-wrap:anywhere;font-size:15px;color:${r.isDone ? '#616a7e' : 'var(--text)'};">${_escHtml(r.t)}</span>
         ${(_avgMeta(r.t, avgMap, cntMap) || nowChip || stepChip || batchChip || actualChip) ? `<span style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">${batchChip}${_avgMeta(r.t, avgMap, cntMap)}${actualChip}${nowChip}${stepChip}</span>` : ''}</span>
       ${lap}${timeTxt}
-      <span style="font-size:12px;color:var(--subtext);flex-shrink:0;">⠿</span></div>
+      <span onclick="event.stopPropagation();_rsPickUp(decodeURIComponent('${_encArg(key)}'))" title="move this row" style="font-size:15px;color:${_lifted ? '#5ac8fa' : 'var(--subtext)'};flex-shrink:0;cursor:pointer;padding:2px 5px;margin:-2px -5px;">⠿</span></div>
       ${open ? `<div style="padding-top:6px;">${_rsStepsHtml(r, ctx, stepsOf)}</div>` : ''}</div>`;
   }).join('');
   // Title and body land in the same breath — nothing above this line touches the DOM.
@@ -21092,6 +21112,57 @@ function _rsDragEnd2(e) {
 // TAPPING the gap you want it in rather than by dragging one down from the bottom —
 // on a 27-row straw run that drag was the exact pain the lap fix had just removed.
 let _rsPlacing = false;
+let _rsMoveKey = null;              // the row picked up and waiting to be placed
+// The name of what you're holding, for the banner. A break has no task name.
+function _rsMoveLabel() {
+  if (!_rsMoveKey) return '';
+  if (_rsMoveKey.indexOf(_RS_BRK) === 0) return 'the break';
+  const i = _rsMoveKey.lastIndexOf(_RS_SEP);
+  return i > 0 ? _rsMoveKey.slice(0, i) : _rsMoveKey;
+}
+// ⭐ PICK IT UP. Tapping ⠿ is a plain tap, not a hold: _rsDragStart only arms a
+// timer, and lifting the finger early clears it without ever setting _rsDrag, so
+// the click comes through untouched. The drag still works for nudging a row a
+// place or two; this is for the long moves it was never good at.
+function _rsPickUp(key) {
+  if (Date.now() < _clSwipeBlockClickUntil) return;   // a drag just finished — not a tap
+  _rsPlacing = false;                                  // the two modes are exclusive
+  _rsMoveKey = (_rsMoveKey === key) ? null : key;      // tapping the same handle puts it back down
+  _rsRender();
+}
+// Drop it in. The gap index counts the CURRENT rendering, which still includes the
+// row being moved, so removing it first shifts every later gap down by one.
+function _rsMoveTo(idx) {
+  const key = _rsMoveKey;
+  const ctx = _rsCtx();
+  if (!key || !ctx) { _rsMoveKey = null; _rsRender(); return; }
+  const keys = _rsOrdered(ctx).map(x => _rsInstKey(x));
+  const from = keys.indexOf(key);
+  if (from < 0) { _rsMoveKey = null; _rsRender(); return; }
+  keys.splice(from, 1);
+  const to = Math.max(0, Math.min(from < idx ? idx - 1 : idx, keys.length));
+  if (to === from) { _rsMoveKey = null; _rsRender(); return; }   // dropped where it already was
+  keys.splice(to, 0, key);
+  ctx.saveOrder(keys);
+  _rsMoveKey = null;
+  _rsRender();
+  showToast('⤵ Moved');
+}
+// ↺ Back to the learned order. A block dragged into a mess had no way out short of
+// dragging every row back. Clearing the saved order returns it to the order the app
+// LEARNED from the sequence things were actually ticked off, which is the whole
+// point of the learning: it should be the thing you fall back to, not something you
+// lose the first time you arrange a block by hand.
+// ⚠️ Confirmed, not undoable: it discards an arrangement that can be long.
+function _rsResetOrder() {
+  const ctx = _rsCtx();
+  if (!ctx || !ctx.order) return;
+  if (!confirm('Put this run sheet back to the order the app learned from your past runs?\n\nYour hand-arranged order for this one is discarded. Planned breaks stay where they are.')) return;
+  ctx.saveOrder(null);
+  _rsMoveKey = null; _rsPlacing = false;
+  _rsRender();
+  showToast('↺ Back to the learned order');
+}
 function _rsAfterBrkChange(ctx) {
   _rsRender();
   if (ctx.kind === 'plan') { _applyBlockEstimate(_rsPlanId); if (typeof renderPlannerScreen === 'function') renderPlannerScreen(); }
@@ -21178,7 +21249,7 @@ function _rsBrkStart(id) {
   applyBreakStart(String(n.getHours()).padStart(2, '0') + ':' + String(n.getMinutes()).padStart(2, '0'));
   _rsRender(); updateRunRing();
 }
-function closeRunSheet() { closeModal('modal-run-sheet'); _rsPlanId = null; _rsPlacing = false; }
+function closeRunSheet() { closeModal('modal-run-sheet'); _rsPlanId = null; _rsPlacing = false; _rsMoveKey = null; }
 function toggleChecklistFlag(task, item) {
   const pid = _clTargetPlanId();
   if (pid) {   // flagging within a planner block's arrangement
