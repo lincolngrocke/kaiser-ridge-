@@ -1898,7 +1898,7 @@
 
 <!-- ══════════════ FIRST-RUN ONBOARDING ══════════════ -->
 <div class="modal-backdrop" id="modal-onboard" style="z-index:900;background:var(--bg);align-items:stretch;">
-  <div style="position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;padding:calc(env(safe-area-inset-top) + 44px) 24px calc(env(safe-area-inset-bottom) + 32px);">
+  <div style="position:absolute;inset:0;max-width:430px;margin:0 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;padding:calc(env(safe-area-inset-top) + 44px) 24px calc(env(safe-area-inset-bottom) + 32px);">
     <div style="text-align:center;font-size:44px;line-height:1;margin-bottom:10px;">👋</div>
     <div style="text-align:center;font-size:24px;font-weight:700;color:var(--text);">Welcome to Groovework</div>
     <div style="text-align:center;font-size:15px;color:var(--subtext);line-height:1.6;margin:10px 0 26px;">Capture the jobs you do, time your tasks, and watch the app get smarter about how long things take, and the best order to do them in.</div>
@@ -1931,7 +1931,7 @@
 <!-- Optional in S2: only ever shown on a genuinely fresh install, and always
      skippable. An install that already holds data is never gated. -->
 <div class="modal-backdrop" id="modal-signin" style="z-index:901;background:var(--bg);align-items:stretch;">
-  <div style="position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;padding:calc(env(safe-area-inset-top) + 44px) 24px calc(env(safe-area-inset-bottom) + 32px);">
+  <div style="position:absolute;inset:0;max-width:430px;margin:0 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;padding:calc(env(safe-area-inset-top) + 44px) 24px calc(env(safe-area-inset-bottom) + 32px);">
     <div style="text-align:center;font-size:44px;line-height:1;margin-bottom:10px;">🔑</div>
     <div style="text-align:center;font-size:24px;font-weight:700;color:var(--text);">Sign in to Groovework</div>
     <div style="text-align:center;font-size:15px;color:var(--subtext);line-height:1.6;margin:10px 0 26px;">Your work stays on this device either way. An account is what lets it reach your other devices — and your team.</div>
@@ -3114,7 +3114,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.342';
+const APP_VERSION = '2026-06-21.343';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
