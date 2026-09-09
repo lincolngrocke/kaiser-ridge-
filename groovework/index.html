@@ -1526,6 +1526,20 @@
         <span id="setgrp-data-chev" style="color:var(--subtext);font-size:17px;">›</span>
       </div>
       <div id="setgrp-data" style="display:none;">
+    <!-- ↩ Put this FIRST in Your data: it is the one thing on this screen that can be
+         actively wrong right now, and the person who needs it is looking for it. -->
+    <div class="settings-section" style="margin-top:16px">
+      <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
+        <div class="settings-label" style="font-weight:600;">↩ Whose hours are these?</div>
+        <div style="font-size:13px; color:var(--subtext); line-height:1.6;">
+          Timesheets from another phone can end up mixed into yours. This shows what is on this
+          phone and who it looks like it belongs to. Nothing is ever deleted; anything moved out
+          is kept here and can be put back.
+        </div>
+        <div id="whose-hours" style="width:100%;"></div>
+        <div onclick="_renderWhoseHours()" style="font-size:12px;color:#5ac8fa;cursor:pointer;">↻ Refresh</div>
+      </div>
+    </div>
     <div class="settings-section" style="margin-top:16px">
       <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
         <div class="settings-label" style="font-weight:600;">Backup &amp; Restore</div>
@@ -3114,7 +3128,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.345';
+const APP_VERSION = '2026-06-21.346';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4516,6 +4530,9 @@ function toggleSetGroup(id) {
   _setGroups[id] = !_setGroups[id];
   body.style.display = _setGroups[id] ? '' : 'none';
   if (chev) chev.textContent = _setGroups[id] ? '⌄' : '›';
+  // Read the timesheets fresh each time the group is opened, never at boot: it is a
+  // full pass over every entry and nothing should pay for it until it is on screen.
+  if (id === 'data' && _setGroups[id] && typeof _renderWhoseHours === 'function') _renderWhoseHours();
 }
 
 function setChecklistOrder(mode) {
@@ -9812,6 +9829,10 @@ function _purgeForeignEntries() {
     if (localStorage.getItem('kr_entries_purged_v342') === '1') return 0;
     const me = (currentUser() || {}).id || null;
     const myName = (getUserName() || '').trim().toLowerCase();
+    // ⚠️ NO BASIS TO JUDGE ON → LEAVE THE LATCH UNSET AND TRY AGAIN NEXT LAUNCH.
+    // Spending the attempt here is what left Ethan's phone on v345 still holding
+    // Lincoln's whole history, with no toast to say anything had happened.
+    if (!me && !myName) return 0;
     const mine = [], foreign = [];
     (entries || []).forEach(e => {
       if (e && e.user_id && me) { (e.user_id === me ? mine : foreign).push(e); return; }
@@ -9829,6 +9850,140 @@ function _purgeForeignEntries() {
     _histCountCache = { rev: -1, map: null };
     return foreign.length;
   } catch (e) { return 0; }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  ↩ WHOSE HOURS ARE THESE — the readable, re-runnable version of the v342 repair
+//
+// ⚠️⚠️ THE v342 REPAIR SPENT ITS ONE ATTEMPT EVEN WHEN IT COULD NOT JUDGE.
+// It set kr_entries_purged_v342 before checking whether it had any way to tell
+// whose rows these were, so a phone that first launched v342 while signed out and
+// with no name set moved nothing, said nothing, and would never try again. That is
+// exactly what happened to Ethan's phone: it reads v345 and still holds ~1,149
+// hours, almost all of them Lincoln's.
+//
+// ⭐ THE LESSON: "if it cannot tell, do nothing" is right, but doing nothing must
+// not consume the only chance to do something. A guard and a latch are different
+// things. The latch below is only set when the repair actually had a basis to
+// judge on, so an un-runnable repair stays pending instead of silently expiring.
+//
+// ⭐ And it is no longer silent OR one-shot. It reports what it can see, previews
+// what it would move, and can be run by hand from Settings as many times as
+// needed. A repair nobody can see the workings of is a repair you have to take on
+// faith, and this one had already been wrong once.
+
+// Can this device answer "is this row mine" at all?
+function _hoursIdentity() {
+  const u = currentUser();
+  const name = (getUserName() || '').trim();
+  return { userId: (u && u.id) || null, name, canJudge: !!((u && u.id) || name) };
+}
+// Group every timesheet on this device by who it looks like it belongs to.
+// Nothing is changed here; this only reads.
+function _hoursBreakdown() {
+  const id = _hoursIdentity();
+  const myKey = id.name.toLowerCase();
+  const out = { mine: { n: 0, hours: 0 }, unknown: { n: 0, hours: 0 }, others: {}, total: 0, totalHours: 0, id };
+  (entries || []).forEach(e => {
+    if (!e) return;
+    const h = isFinite(e.durationHours) ? e.durationHours : 0;
+    out.total++; out.totalHours += h;
+    const who = (e.personnel || '').trim();
+    // The same order of evidence the repair uses: the id when both sides have one,
+    // then the name, then nothing.
+    if (e.user_id && id.userId) {
+      if (e.user_id === id.userId) { out.mine.n++; out.mine.hours += h; }
+      else { const k = who || 'Someone else (no name on the row)';
+             (out.others[k] || (out.others[k] = { n: 0, hours: 0, by: 'account' })).n++; out.others[k].hours += h; }
+      return;
+    }
+    if (who && myKey) {
+      if (who.toLowerCase() === myKey) { out.mine.n++; out.mine.hours += h; }
+      else { (out.others[who] || (out.others[who] = { n: 0, hours: 0, by: 'name' })).n++; out.others[who].hours += h; }
+      return;
+    }
+    out.unknown.n++; out.unknown.hours += h;   // no marker either way → never guessed at
+  });
+  return out;
+}
+// Move everything that is not this person's into kr_entries_foreign. Same three
+// rules as the v342 repair: nothing is deleted, no marker means KEEP, and if it
+// cannot tell it does nothing.
+function repairMyHours() {
+  const b = _hoursBreakdown();
+  if (!b.id.canJudge) {
+    alert('This phone cannot tell whose hours these are yet.\n\nSet Your Name in Settings (or sign in) so it knows who it is, then run this again.');
+    return;
+  }
+  const names = Object.keys(b.others);
+  const n = names.reduce((t, k) => t + b.others[k].n, 0);
+  const hrs = names.reduce((t, k) => t + b.others[k].hours, 0);
+  if (!n) { alert('Nothing to move. Every timesheet on this phone already looks like yours.'); return; }
+  const who = names.map(k => k + ' (' + b.others[k].n + ')').join(', ');
+  if (!confirm('Move ' + n + ' timesheet' + (n === 1 ? '' : 's') + ', about ' + hrs.toFixed(2) + ' hours, out of your hours?\n\nThey belong to: ' + who + '\n\nNothing is deleted. They are kept on this phone and you can put them back from this same screen.')) return;
+  const id = b.id, myKey = id.name.toLowerCase();
+  const mine = [], foreign = [];
+  (entries || []).forEach(e => {
+    if (!e) { return; }
+    if (e.user_id && id.userId) { (e.user_id === id.userId ? mine : foreign).push(e); return; }
+    const who2 = (e.personnel || '').trim().toLowerCase();
+    if (who2 && myKey && who2 !== myKey) { foreign.push(e); return; }
+    mine.push(e);
+  });
+  const kept = JSON.parse(localStorage.getItem('kr_entries_foreign') || '[]');
+  _storeSet('kr_entries_foreign', JSON.stringify(kept.concat(foreign)));
+  entries = mine;
+  saveEntries();
+  bumpEntriesRev();
+  _histAvgCache = { rev: -1, map: null };
+  _histCountCache = { rev: -1, map: null };
+  _storeSet('kr_entries_purged_v342', '1');
+  showToast('↩ Moved ' + foreign.length + ' timesheet' + (foreign.length === 1 ? '' : 's') + ' out of your hours');
+  _renderWhoseHours();
+  if (typeof renderTimesheet === 'function') { try { renderTimesheet(); } catch (e) {} }
+}
+// Put back everything that was moved. The escape hatch the v342 repair never had:
+// its own note said the rows were "recoverable", but nothing in the app could reach
+// them, so recoverable meant "by me, by hand, on request".
+function restoreMovedHours() {
+  const kept = JSON.parse(localStorage.getItem('kr_entries_foreign') || '[]');
+  if (!kept.length) { alert('Nothing has been moved out.'); return; }
+  if (!confirm('Put all ' + kept.length + ' moved timesheet' + (kept.length === 1 ? '' : 's') + ' back into your hours?')) return;
+  const have = new Set((entries || []).map(e => e && e.id));
+  entries = (entries || []).concat(kept.filter(e => e && !have.has(e.id)));
+  saveEntries();
+  bumpEntriesRev();
+  _histAvgCache = { rev: -1, map: null };
+  _histCountCache = { rev: -1, map: null };
+  _storeSet('kr_entries_foreign', '[]');
+  showToast('↩ Put ' + kept.length + ' back');
+  _renderWhoseHours();
+  if (typeof renderTimesheet === 'function') { try { renderTimesheet(); } catch (e) {} }
+}
+function _renderWhoseHours() {
+  const el = document.getElementById('whose-hours');
+  if (!el) return;
+  const b = _hoursBreakdown();
+  const moved = JSON.parse(localStorage.getItem('kr_entries_foreign') || '[]').length;
+  const who = b.id.name || '(no name set)';
+  const idLine = b.id.canJudge
+    ? 'This phone is <b>' + _escHtml(who) + '</b>' + (b.id.userId ? ', signed in.' : ', by name. Not signed in.')
+    : '<span style="color:#ff9f0a;">⚠️ This phone does not know who it is yet. Set Your Name above, then come back.</span>';
+  const rows = Object.keys(b.others).map(k =>
+    '<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;color:#ff9f0a;"><span>' + _escHtml(k) + '</span><span>' + b.others[k].n + ' · ' + b.others[k].hours.toFixed(2) + 'h</span></div>').join('');
+  const foreignN = Object.keys(b.others).reduce((t, k) => t + b.others[k].n, 0);
+  el.innerHTML =
+    '<div style="font-size:13px;color:var(--subtext);line-height:1.6;margin-bottom:8px;">' + idLine + '</div>' +
+    '<div style="font-size:13px;color:var(--text);">' +
+      '<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;"><span>Yours</span><span>' + b.mine.n + ' · ' + b.mine.hours.toFixed(2) + 'h</span></div>' +
+      rows +
+      (b.unknown.n ? '<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;color:var(--subtext);"><span>No name on the row, kept</span><span>' + b.unknown.n + ' · ' + b.unknown.hours.toFixed(2) + 'h</span></div>' : '') +
+      '<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0 0;margin-top:5px;border-top:1px solid var(--border);font-weight:700;"><span>All timesheets here</span><span>' + b.total + ' · ' + b.totalHours.toFixed(2) + 'h</span></div>' +
+    '</div>' +
+    (foreignN
+      ? '<div onclick="repairMyHours()" style="margin-top:10px;padding:11px;border-radius:10px;background:rgba(255,159,10,0.15);border:1px solid rgba(255,159,10,0.5);color:#ff9f0a;font-weight:700;font-size:14px;text-align:center;cursor:pointer;">↩ Move ' + foreignN + " that aren't mine out of my hours</div>"
+      : '<div style="margin-top:10px;font-size:12px;color:var(--subtext);">Nothing here looks like someone else\'s.</div>') +
+    (moved ? '<div onclick="restoreMovedHours()" style="margin-top:8px;font-size:12px;color:#5ac8fa;cursor:pointer;text-align:center;">↩ Put back the ' + moved + ' moved earlier</div>' : '');
 }
 
 function _syncBoot() {
