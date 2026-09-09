@@ -3128,7 +3128,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.347';
+const APP_VERSION = '2026-06-21.348';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -9887,7 +9887,7 @@ function _hoursIdentity() {
 function _hoursBreakdown() {
   const id = _hoursIdentity();
   const myKey = id.name.toLowerCase();
-  const out = { mine: { n: 0, hours: 0 }, unknown: { n: 0, hours: 0 }, others: {}, bots: { n: 0, hours: 0 }, total: 0, totalHours: 0, id };
+  const out = { mine: { n: 0, hours: 0 }, unknown: { n: 0, hours: 0 }, others: {}, disputed: {}, bots: { n: 0, hours: 0 }, total: 0, totalHours: 0, id };
   (entries || []).forEach(e => {
     if (!e) return;
     const h = isFinite(e.durationHours) ? e.durationHours : 0;
@@ -9904,7 +9904,25 @@ function _hoursBreakdown() {
     // The same order of evidence the repair uses: the id when both sides have one,
     // then the name, then nothing.
     if (e.user_id && id.userId) {
-      if (e.user_id === id.userId) { out.mine.n++; out.mine.hours += h; }
+      const mineByAcct = e.user_id === id.userId;
+      // ⚠️⚠️ THE TWO MARKERS CAN CONTRADICT EACH OTHER, and trusting the account
+      // blindly is what let one of Lincoln's firewood entries survive on Ethan's
+      // phone. On PUSH a row is stamped with whoever's device is pushing it, so
+      // while entries synced org-wide, one person's rows could be re-pushed by the
+      // other's phone and come back permanently wearing the wrong account. The
+      // NAME inside the payload was never rewritten, so it still tells the truth.
+      // ⭐ A contradiction is not a tie to be broken, it is a thing to show. This
+      // is the same rule as "if it cannot tell, it does nothing": disputed rows are
+      // never moved automatically in either direction, they are put in front of the
+      // person who knows.
+      if (who && myKey) {
+        const mineByName = who.toLowerCase() === myKey;
+        if (mineByAcct !== mineByName) {
+          const d = (out.disputed[who] || (out.disputed[who] = { n: 0, hours: 0, acct: mineByAcct }));
+          d.n++; d.hours += h; return;
+        }
+      }
+      if (mineByAcct) { out.mine.n++; out.mine.hours += h; }
       else { const k = who || 'Someone else (no name on the row)';
              (out.others[k] || (out.others[k] = { n: 0, hours: 0, by: 'account' })).n++; out.others[k].hours += h; }
       return;
@@ -9938,7 +9956,11 @@ function repairMyHours() {
   (entries || []).forEach(e => {
     if (!e) { return; }
     if (e.bot) { mine.push(e); return; }        // ⚠️ a robot run stays put, always
-    if (e.user_id && id.userId) { (e.user_id === id.userId ? mine : foreign).push(e); return; }
+    if (e.user_id && id.userId) {
+      const a = e.user_id === id.userId, w = (e.personnel || '').trim().toLowerCase();
+      if (w && myKey && a !== (w === myKey)) { mine.push(e); return; }   // markers disagree → never moved by this button
+      (a ? mine : foreign).push(e); return;
+    }
     const who2 = (e.personnel || '').trim().toLowerCase();
     if (who2 && myKey && who2 !== myKey) { foreign.push(e); return; }
     mine.push(e);
@@ -9952,6 +9974,31 @@ function repairMyHours() {
   _histCountCache = { rev: -1, map: null };
   _storeSet('kr_entries_purged_v342', '1');
   showToast('↩ Moved ' + foreign.length + ' timesheet' + (foreign.length === 1 ? '' : 's') + ' out of your hours');
+  _renderWhoseHours();
+  if (typeof renderTimesheet === 'function') { try { renderTimesheet(); } catch (e) {} }
+}
+// Move the disputed rows that are NAMED as someone else, trusting the name over
+// the account stamp. Offered as its own decision rather than folded into the main
+// button, because it overrides a marker the app itself wrote, and the person
+// holding the phone is the only one who actually knows.
+function moveDisputedNamed(who) {
+  const id = _hoursIdentity();
+  if (!id.canJudge) return;
+  const key = String(who).trim().toLowerCase();
+  const hit = (entries || []).filter(e => e && !e.bot && (e.personnel || '').trim().toLowerCase() === key
+                                        && e.user_id && id.userId && e.user_id === id.userId);
+  if (!hit.length) { alert('Nothing left that is named ' + who + ' but marked as yours.'); return; }
+  const hrs = hit.reduce((t, e) => t + (isFinite(e.durationHours) ? e.durationHours : 0), 0);
+  if (!confirm('Move ' + hit.length + ' timesheet' + (hit.length === 1 ? '' : 's') + ', about ' + hrs.toFixed(2) + ' hours, out of your hours?\n\nThese say ' + who + ' inside, but this phone\'s account is stamped on them. That happens when the other phone re-sent them while timesheets were shared across the whole team.\n\nNothing is deleted, and you can put them back.')) return;
+  const drop = new Set(hit.map(e => e.id));
+  const kept = JSON.parse(localStorage.getItem('kr_entries_foreign') || '[]');
+  _storeSet('kr_entries_foreign', JSON.stringify(kept.concat(hit)));
+  entries = (entries || []).filter(e => !(e && drop.has(e.id)));
+  saveEntries();
+  bumpEntriesRev();
+  _histAvgCache = { rev: -1, map: null };
+  _histCountCache = { rev: -1, map: null };
+  showToast('↩ Moved ' + hit.length + ' out of your hours');
   _renderWhoseHours();
   if (typeof renderTimesheet === 'function') { try { renderTimesheet(); } catch (e) {} }
 }
@@ -9985,6 +10032,13 @@ function _renderWhoseHours() {
   const rows = Object.keys(b.others).map(k =>
     '<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;color:#ff9f0a;"><span>' + _escHtml(k) + '</span><span>' + b.others[k].n + ' · ' + b.others[k].hours.toFixed(2) + 'h</span></div>').join('');
   const foreignN = Object.keys(b.others).reduce((t, k) => t + b.others[k].n, 0);
+  // Named as someone else, but stamped with this phone's account. Shown apart from
+  // the clean rows because the app's own marker is the thing being overruled.
+  const dispRows = Object.keys(b.disputed).filter(k => b.disputed[k].acct).map(k =>
+    '<div style="margin-top:8px;padding:9px 11px;border-radius:9px;background:rgba(255,159,10,0.10);border:1px solid rgba(255,159,10,0.4);">' +
+      '<div style="display:flex;justify-content:space-between;gap:10px;font-size:13px;color:#ff9f0a;font-weight:600;"><span>⚠️ Says ' + _escHtml(k) + ', marked yours</span><span>' + b.disputed[k].n + ' · ' + b.disputed[k].hours.toFixed(2) + 'h</span></div>' +
+      '<div style="font-size:11px;color:var(--subtext);line-height:1.5;margin-top:3px;">The other phone re-sent these while timesheets were shared across the team, so they carry this account. The name inside still says ' + _escHtml(k) + '.</div>' +
+      '<div onclick="moveDisputedNamed(decodeURIComponent(\'' + _encArg(k) + '\'))" style="margin-top:7px;font-size:13px;font-weight:700;color:#ff9f0a;cursor:pointer;">↩ Move these ' + b.disputed[k].n + ' out too</div></div>').join('');
   el.innerHTML =
     '<div style="font-size:13px;color:var(--subtext);line-height:1.6;margin-bottom:8px;">' + idLine + '</div>' +
     '<div style="font-size:13px;color:var(--text);">' +
@@ -9997,6 +10051,7 @@ function _renderWhoseHours() {
     (foreignN
       ? '<div onclick="repairMyHours()" style="margin-top:10px;padding:11px;border-radius:10px;background:rgba(255,159,10,0.15);border:1px solid rgba(255,159,10,0.5);color:#ff9f0a;font-weight:700;font-size:14px;text-align:center;cursor:pointer;">↩ Move ' + foreignN + " that aren't mine out of my hours</div>"
       : '<div style="margin-top:10px;font-size:12px;color:var(--subtext);">Nothing here looks like someone else\'s.</div>') +
+    dispRows +
     (moved ? '<div onclick="restoreMovedHours()" style="margin-top:8px;font-size:12px;color:#5ac8fa;cursor:pointer;text-align:center;">↩ Put back the ' + moved + ' moved earlier</div>' : '');
 }
 
