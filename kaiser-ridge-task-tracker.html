@@ -3128,7 +3128,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.346';
+const APP_VERSION = '2026-06-21.347';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -9835,6 +9835,10 @@ function _purgeForeignEntries() {
     if (!me && !myName) return 0;
     const mine = [], foreign = [];
     (entries || []).forEach(e => {
+      // ⚠️ Robots first. This repair would otherwise have swept every Roborock and
+      // Lymow run out of the timesheets on ANY phone where it ran successfully,
+      // because a robot's name never matches the person holding the phone.
+      if (e && e.bot) { mine.push(e); return; }
       if (e && e.user_id && me) { (e.user_id === me ? mine : foreign).push(e); return; }
       const p = (e && e.personnel || '').trim().toLowerCase();
       if (p && myName && p !== myName) { foreign.push(e); return; }
@@ -9883,10 +9887,18 @@ function _hoursIdentity() {
 function _hoursBreakdown() {
   const id = _hoursIdentity();
   const myKey = id.name.toLowerCase();
-  const out = { mine: { n: 0, hours: 0 }, unknown: { n: 0, hours: 0 }, others: {}, total: 0, totalHours: 0, id };
+  const out = { mine: { n: 0, hours: 0 }, unknown: { n: 0, hours: 0 }, others: {}, bots: { n: 0, hours: 0 }, total: 0, totalHours: 0, id };
   (entries || []).forEach(e => {
     if (!e) return;
     const h = isFinite(e.durationHours) ? e.durationHours : 0;
+    // ⚠️⚠️ A ROBOT RUN IS NOT A TIMESHEET, AND ITS `personnel` IS A MACHINE NAME.
+    // Roborock, Lymow One and the like write entries with bot:true and the robot's
+    // name in the same field a person's name goes in. Every hours total in the app
+    // already excludes them (see the weekly sum, the averages, and the Timesheets
+    // robot filter), so counting them here made this panel disagree with every
+    // other screen, and treating them as "someone else's" would have moved the
+    // robot history somewhere nothing can read it.
+    if (e.bot) { out.bots.n++; out.bots.hours += h; return; }
     out.total++; out.totalHours += h;
     const who = (e.personnel || '').trim();
     // The same order of evidence the repair uses: the id when both sides have one,
@@ -9925,6 +9937,7 @@ function repairMyHours() {
   const mine = [], foreign = [];
   (entries || []).forEach(e => {
     if (!e) { return; }
+    if (e.bot) { mine.push(e); return; }        // ⚠️ a robot run stays put, always
     if (e.user_id && id.userId) { (e.user_id === id.userId ? mine : foreign).push(e); return; }
     const who2 = (e.personnel || '').trim().toLowerCase();
     if (who2 && myKey && who2 !== myKey) { foreign.push(e); return; }
@@ -9979,6 +9992,7 @@ function _renderWhoseHours() {
       rows +
       (b.unknown.n ? '<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;color:var(--subtext);"><span>No name on the row, kept</span><span>' + b.unknown.n + ' · ' + b.unknown.hours.toFixed(2) + 'h</span></div>' : '') +
       '<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0 0;margin-top:5px;border-top:1px solid var(--border);font-weight:700;"><span>All timesheets here</span><span>' + b.total + ' · ' + b.totalHours.toFixed(2) + 'h</span></div>' +
+      (b.bots.n ? '<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0 0;color:var(--subtext);font-size:12px;"><span>🤖 Robot runs, never moved</span><span>' + b.bots.n + ' · ' + b.bots.hours.toFixed(2) + 'h</span></div>' : '') +
     '</div>' +
     (foreignN
       ? '<div onclick="repairMyHours()" style="margin-top:10px;padding:11px;border-radius:10px;background:rgba(255,159,10,0.15);border:1px solid rgba(255,159,10,0.5);color:#ff9f0a;font-weight:700;font-size:14px;text-align:center;cursor:pointer;">↩ Move ' + foreignN + " that aren't mine out of my hours</div>"
@@ -9986,11 +10000,35 @@ function _renderWhoseHours() {
     (moved ? '<div onclick="restoreMovedHours()" style="margin-top:8px;font-size:12px;color:#5ac8fa;cursor:pointer;text-align:center;">↩ Put back the ' + moved + ' moved earlier</div>' : '');
 }
 
+// 🤖 Put back robot runs that an earlier repair swept out. The v342 repair matched
+// on the name in `personnel`, and a robot's name never matches the person holding
+// the phone, so on every device where that repair actually ran it also moved the
+// Roborock and Lymow history out of the timesheets. Silent, and nothing in the app
+// could show it had happened. This returns them and is safe to run on every boot:
+// with no robot runs in the moved-out store it does nothing at all.
+function _rescueBotEntries() {
+  try {
+    const kept = JSON.parse(localStorage.getItem('kr_entries_foreign') || '[]');
+    if (!kept.length) return 0;
+    const bots = kept.filter(e => e && e.bot), rest = kept.filter(e => !(e && e.bot));
+    if (!bots.length) return 0;
+    const have = new Set((entries || []).map(e => e && e.id));
+    entries = (entries || []).concat(bots.filter(e => !have.has(e.id)));
+    saveEntries();
+    bumpEntriesRev();
+    _histAvgCache = { rev: -1, map: null };
+    _histCountCache = { rev: -1, map: null };
+    _storeSet('kr_entries_foreign', JSON.stringify(rest));
+    return bots.length;
+  } catch (e) { return 0; }
+}
 function _syncBoot() {
   try {
     _syncAuditKeys();
     window.addEventListener('online', () => _syncSchedule(500));
     _recBoot();
+    const _rb = _rescueBotEntries();   // before the purge, so nothing can be swept twice
+    if (_rb) setTimeout(() => showToast('🤖 Put ' + _rb + ' robot run' + (_rb === 1 ? '' : 's') + ' back'), 2600);
     const _pf = _purgeForeignEntries();
     if (_pf) setTimeout(() => showToast('↩ Moved ' + _pf + ' timesheet' + (_pf === 1 ? '' : 's') + " that weren't yours out of your hours"), 1500);
     if (isSignedIn()) _syncSchedule(4000);   // after auth/org bootstrap has had a moment
