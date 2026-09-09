@@ -3128,7 +3128,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.348';
+const APP_VERSION = '2026-06-21.349';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -21149,7 +21149,7 @@ function _rsRender() {
         <span style="overflow-wrap:anywhere;font-size:15px;color:${r.isDone ? '#616a7e' : 'var(--text)'};">${_escHtml(r.t)}</span>
         ${(_avgMeta(r.t, avgMap, cntMap) || nowChip || stepChip || batchChip || actualChip) ? `<span style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">${batchChip}${_avgMeta(r.t, avgMap, cntMap)}${actualChip}${nowChip}${stepChip}</span>` : ''}</span>
       ${lap}${timeTxt}
-      <span onclick="event.stopPropagation();_rsPickUp(decodeURIComponent('${_encArg(key)}'))" title="move this row" style="font-size:15px;color:${_lifted ? '#5ac8fa' : 'var(--subtext)'};flex-shrink:0;cursor:pointer;padding:2px 5px;margin:-2px -5px;">⠿</span></div>
+      <span ontouchstart="event.stopPropagation()" ontouchmove="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_rsPickUp(decodeURIComponent('${_encArg(key)}'))" title="move this row" style="font-size:17px;line-height:1;color:${_lifted ? '#5ac8fa' : '#8b93a7'};flex-shrink:0;cursor:pointer;padding:10px 8px;margin:-10px -6px -10px 0;">⠿</span></div>
       ${open ? `<div style="padding-top:6px;">${_rsStepsHtml(r, ctx, stepsOf)}</div>` : ''}</div>`;
   }).join('');
   // Title and body land in the same breath — nothing above this line touches the DOM.
@@ -21373,7 +21373,13 @@ function _rsMoveLabel() {
 // the click comes through untouched. The drag still works for nudging a row a
 // place or two; this is for the long moves it was never good at.
 function _rsPickUp(key) {
-  if (Date.now() < _clSwipeBlockClickUntil) return;   // a drag just finished — not a tap
+  // ⚠️⚠️ The ⠿ now swallows its own touch events (see the row markup). Without that
+  // the ROW's swipe watcher saw the tap first, and it calls anything past 7px of
+  // rightward drift a swipe — which then blocks the click on purpose. A thumb on a
+  // small target drifts that far nearly every time, so the handle appeared dead.
+  // ⭐ A tap target sitting inside a swipeable row must stop the touch, not just
+  // the click. By the time a click fires the gesture has already been judged.
+  if (Date.now() < _clSwipeBlockClickUntil) return;   // a real drag just finished elsewhere
   _rsPlacing = false;                                  // the two modes are exclusive
   _rsMoveKey = (_rsMoveKey === key) ? null : key;      // tapping the same handle puts it back down
   _rsRender();
