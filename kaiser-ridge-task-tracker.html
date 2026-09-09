@@ -3128,7 +3128,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.349';
+const APP_VERSION = '2026-06-21.350';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -21046,7 +21046,7 @@ function _rsRender() {
   // scroll wherever you like, tap the gap. Distance stops costing anything, which
   // a drag can never manage no matter how good the edge-scrolling is.
   const _ins = (i) => _rsMoveKey
-    ? `<div onclick="_rsMoveTo(${i})" style="margin:2px 0 6px;padding:5px 10px;border-radius:8px;border:1px dashed rgba(90,200,250,0.75);background:rgba(90,200,250,0.10);color:#5ac8fa;font-size:12px;font-weight:700;text-align:center;cursor:pointer;">⤵ move here</div>`
+    ? `<div onclick="_rsMoveTo(${i}, this)" style="margin:2px 0 6px;padding:5px 10px;border-radius:8px;border:1px dashed rgba(90,200,250,0.75);background:rgba(90,200,250,0.10);color:#5ac8fa;font-size:12px;font-weight:700;text-align:center;cursor:pointer;">⤵ move here</div>`
     : (_rsPlacing
     ? `<div onclick="_rsPlaceBreak(${i})" style="margin:2px 0 6px;padding:5px 10px;border-radius:8px;border:1px dashed rgba(255,159,10,0.75);background:rgba(255,159,10,0.10);color:#ff9f0a;font-size:12px;font-weight:700;text-align:center;cursor:pointer;">☕ break goes here</div>`
     : '');
@@ -21135,7 +21135,9 @@ function _rsRender() {
     const nowChip = r.isNow
       ? `<span style="display:inline-flex;align-items:center;flex-shrink:0;font-size:11px;font-weight:700;color:#5ac8fa;background:rgba(90,200,250,0.18);border:1px solid rgba(90,200,250,0.5);border-radius:9px;padding:0 7px;gap:4px;"><span>▶ NOW ·</span><span id="rs-now-elapsed">${fmtMin(_rsNowElapsedMin())}</span></span>`
       : '';
-    const _lifted = _rsMoveKey === key;   // the row in your hand, so you can see what you're placing
+    // Blue means "this is the one": in your hand while placing, and for 3 seconds
+    // after you drop it so you can see where it landed.
+    const _lifted = _rsMoveKey === key || _rsJustMoved === key;
     const border = _lifted ? 'rgba(90,200,250,0.9)' : (r.isNow ? 'rgba(90,200,250,0.75)' : (r.tappable ? 'rgba(48,209,88,0.45)' : 'var(--border)'));
     const bg = _lifted ? 'rgba(90,200,250,0.16)' : (r.isDone ? 'transparent' : (r.isNow ? 'rgba(90,200,250,0.10)' : 'var(--card)'));
     // The .rs-row is a WRAPPER holding the header line and, when open, its steps —
@@ -21361,6 +21363,47 @@ function _rsDragEnd2(e) {
 // on a 27-row straw run that drag was the exact pain the lap fix had just removed.
 let _rsPlacing = false;
 let _rsMoveKey = null;              // the row picked up and waiting to be placed
+let _rsJustMoved = null, _rsJustMovedTimer = null;   // the row you just dropped, held blue so you can see where it went
+// ⭐ KEEP YOUR PLACE. Picking a row up inserts a gap bar above every row plus the
+// banner up top, so the list grows by hundreds of pixels and everything below the
+// touch slides down the screen. Re-rendering then leaves you somewhere else in a
+// 44 step sheet, which is precisely the problem tap-to-move exists to solve.
+// The fix is to anchor on the thing you touched: note where it sits on screen
+// BEFORE the render, find it again AFTER, and correct the scroll by the
+// difference. The list reflows around it and it does not appear to move at all.
+function _rsRowTop(key) {
+  const sc = document.getElementById('run-sheet-body');
+  if (!sc) return null;
+  const el = [...sc.querySelectorAll('.rs-row')].find(r => r.dataset.rsKey === key);
+  return el ? el.getBoundingClientRect().top : null;
+}
+// Render, then put `key` back at `prevTop` on screen. prevTop may be the row's own
+// old position (picking up) or the position of the gap you tapped (dropping).
+function _rsRenderKeeping(key, prevTop) {
+  _rsRender();
+  const sc = document.getElementById('run-sheet-body');
+  if (!sc) return;
+  if (isFinite(prevTop)) {
+    const now = _rsRowTop(key);
+    if (isFinite(now)) {
+      const want = sc.scrollTop + (now - prevTop);
+      sc.scrollTop = Math.max(0, Math.min(want, sc.scrollHeight - sc.clientHeight));
+    }
+  }
+  // ⚠️ Near either end of the list the scroll cannot travel far enough to hold the
+  // exact spot: it clamps at 0 or at the bottom and the row lands somewhere else.
+  // Dropping into the first or last few rows of a 44 step sheet is a normal thing
+  // to do, so when the anchor cannot be honoured, fall back to the promise behind
+  // it — the row you just moved must be ON SCREEN. Losing your place is the
+  // complaint; the exact pixel was only ever the means.
+  const top = _rsRowTop(key);
+  if (!isFinite(top)) return;
+  const scTop = sc.getBoundingClientRect().top;
+  if (top < scTop + 8 || top > scTop + sc.clientHeight - 60) {
+    const el = [...sc.querySelectorAll('.rs-row')].find(r => r.dataset.rsKey === key);
+    if (el) el.scrollIntoView({ block: 'center' });
+  }
+}
 // The name of what you're holding, for the banner. A break has no task name.
 function _rsMoveLabel() {
   if (!_rsMoveKey) return '';
@@ -21381,25 +21424,41 @@ function _rsPickUp(key) {
   // the click. By the time a click fires the gesture has already been judged.
   if (Date.now() < _clSwipeBlockClickUntil) return;   // a real drag just finished elsewhere
   _rsPlacing = false;                                  // the two modes are exclusive
+  const top = _rsRowTop(key);                          // where it sits right now, before the gaps appear
   _rsMoveKey = (_rsMoveKey === key) ? null : key;      // tapping the same handle puts it back down
-  _rsRender();
+  _rsRenderKeeping(key, top);
 }
 // Drop it in. The gap index counts the CURRENT rendering, which still includes the
 // row being moved, so removing it first shifts every later gap down by one.
-function _rsMoveTo(idx) {
+function _rsMoveTo(idx, gapEl) {
   const key = _rsMoveKey;
   const ctx = _rsCtx();
+  // Where the gap you tapped sits on screen. The row lands there, so holding that
+  // spot still is what "it stays where I put it" actually means.
+  const gapTop = gapEl && gapEl.getBoundingClientRect ? gapEl.getBoundingClientRect().top : null;
   if (!key || !ctx) { _rsMoveKey = null; _rsRender(); return; }
   const keys = _rsOrdered(ctx).map(x => _rsInstKey(x));
   const from = keys.indexOf(key);
   if (from < 0) { _rsMoveKey = null; _rsRender(); return; }
   keys.splice(from, 1);
   const to = Math.max(0, Math.min(from < idx ? idx - 1 : idx, keys.length));
-  if (to === from) { _rsMoveKey = null; _rsRender(); return; }   // dropped where it already was
+  if (to === from) { _rsMoveKey = null; _rsRenderKeeping(key, gapTop); return; }   // dropped where it already was
   keys.splice(to, 0, key);
   ctx.saveOrder(keys);
   _rsMoveKey = null;
-  _rsRender();
+  // ⭐ Hold it blue for 3 seconds. On a 44 step sheet the row you just placed is
+  // one of forty identical looking rows, and without the marker you have to read
+  // the list back to find it. The colour is the receipt.
+  _rsJustMoved = key;
+  clearTimeout(_rsJustMovedTimer);
+  _rsJustMovedTimer = setTimeout(() => {
+    _rsJustMoved = null;
+    const sc = document.getElementById('run-sheet-body');
+    const keep = sc ? sc.scrollTop : null;      // colour only: nothing reflows, so hold the exact position
+    _rsRender();
+    if (sc && isFinite(keep)) sc.scrollTop = keep;
+  }, 3000);
+  _rsRenderKeeping(key, gapTop);
   showToast('⤵ Moved');
 }
 // ↺ Back to the learned order. A block dragged into a mess had no way out short of
@@ -21503,7 +21562,7 @@ function _rsBrkStart(id) {
   applyBreakStart(String(n.getHours()).padStart(2, '0') + ':' + String(n.getMinutes()).padStart(2, '0'));
   _rsRender(); updateRunRing();
 }
-function closeRunSheet() { closeModal('modal-run-sheet'); _rsPlanId = null; _rsPlacing = false; _rsMoveKey = null; }
+function closeRunSheet() { closeModal('modal-run-sheet'); _rsPlanId = null; _rsPlacing = false; _rsMoveKey = null; _rsJustMoved = null; clearTimeout(_rsJustMovedTimer); }
 function toggleChecklistFlag(task, item) {
   const pid = _clTargetPlanId();
   if (pid) {   // flagging within a planner block's arrangement
