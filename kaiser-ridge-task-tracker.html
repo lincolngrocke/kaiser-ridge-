@@ -3128,7 +3128,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.350';
+const APP_VERSION = '2026-06-21.351';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -3537,9 +3537,7 @@ function appUrlNoCache() {
 
 async function forceAppUpdate() {
   showToast('Updating app…');
-  // Remember the current screen so we can return to it after the reload
-  const cur = document.querySelector('.screen.active');
-  if (cur) sessionStorage.setItem('kr_resume_screen', cur.id.replace('screen-', ''));
+  _rememberScreen();   // return to this screen after the reload
   // Unregister any old service workers and clear caches
   try {
     if ('serviceWorker' in navigator) {
@@ -9277,6 +9275,56 @@ function syncPending() { return Object.keys(_syncOutbox()).length + (typeof recP
 // Called from _storeSet / _storeRemove — the one seam S1 built for exactly this.
 // Synchronous, tiny, and it must NEVER throw: the app's data safety sits on the
 // other side of this call.
+// ⚠️⚠️ A SYNC RELOAD USED TO FIRE FROM WHEREVER THE USER HAPPENED TO BE.
+// Lincoln, 12 Sep: "I'm working on a screen and all of a sudden it cuts out and
+// jumps back to this screen, halfway through doing something."
+//
+// Sync is scheduled 2.5s after EVERY local write to a synced key, so while you
+// work the app is syncing almost continuously. Any cycle that pulls and applies
+// something from the other phone called location.reload() 900ms later. Two
+// separate faults sat on top of each other:
+//   1. the reload never saved which screen you were on. Only forceAppUpdate did
+//      that, so a sync reload always dropped you on the Clock.
+//   2. far worse, it reloaded MID-TASK. An open sheet closes, a half-typed name
+//      is gone. The screen was the visible half of the problem, not the whole one.
+//
+// ⭐ THE RULE: BACKGROUND WORK MUST NEVER YANK THE APP OUT FROM UNDER SOMEONE.
+// A reload the user did not ask for waits for a pause. Hidden is the best moment
+// of all, because then it costs nothing and they never see it.
+//
+// It got worse "lately" for a reason: both phones went hydrate-on in early Sep and
+// S4 stages 1 to 3 put the inbox, to-dos and timesheets on the wire, so there is
+// far more to pull and apply than when this reload was written.
+let _reloadWanted = false, _reloadTimer = null, _lastTouchMs = 0;
+['touchstart', 'mousedown', 'keydown'].forEach(function (ev) {
+  document.addEventListener(ev, function () { _lastTouchMs = Date.now(); }, true);
+});
+function _userIsBusy() {
+  if (document.querySelector('.modal-backdrop.open')) return true;          // a sheet is open
+  const a = document.activeElement;
+  if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return true;        // typing
+  if (a && a.isContentEditable) return true;
+  if (Date.now() - _lastTouchMs < 10000) return true;                       // touched it in the last 10s
+  return false;
+}
+// Remember the screen so ANY reload comes back where it was, not just Force Update.
+function _rememberScreen() {
+  try {
+    const cur = document.querySelector('.screen.active');
+    if (cur) sessionStorage.setItem('kr_resume_screen', cur.id.replace('screen-', ''));
+  } catch (e) {}
+}
+function _reloadWhenIdle() {
+  _reloadWanted = true;
+  if (_reloadTimer) return;
+  _reloadTimer = setInterval(function () {
+    if (document.hidden || !_userIsBusy()) {
+      clearInterval(_reloadTimer); _reloadTimer = null; _reloadWanted = false;
+      _rememberScreen();
+      location.reload();
+    }
+  }, 2000);
+}
 function _syncEnqueue(key, op) {
   try {
     if (_syncApplying) return;          // a pulled value is not a local edit — no echo
@@ -9417,7 +9465,10 @@ async function syncNow(quiet) {
     // the globals (DIRECTORY, SUBTASKS, …) were read at load. Reload to re-read
     // them — the same thing a backup restore does, and the live clock survives it
     // because kr_clock is local and re-read at boot.
-    if (pulled && pulled.applied) { showToast('Updated from your other device — reloading…'); setTimeout(() => location.reload(), 900); }
+    // ⚠️ Deferred, never immediate. See _reloadWhenIdle above. The wording changed
+    // with it: the old string promised a reload that is now going to wait, and it
+    // carried an em dash into a line a user reads.
+    if (pulled && pulled.applied) { showToast('Updated from your other device. It will refresh when you pause.'); _reloadWhenIdle(); }
     return { pushed, pulled };
   } finally { _syncBusy = false; }
 }
