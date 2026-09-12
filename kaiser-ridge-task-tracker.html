@@ -3128,7 +3128,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.351';
+const APP_VERSION = '2026-06-21.352';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -21077,13 +21077,16 @@ function _rsRender() {
     ${_rsMoveKey ? `<div style="margin:0 0 8px;padding:9px 12px;border-radius:10px;background:rgba(90,200,250,0.12);border:1px solid rgba(90,200,250,0.5);font-size:13px;color:var(--text);">
       ⤴ Moving <b>${_escHtml(_rsMoveLabel())}</b><div style="font-size:11px;color:var(--subtext);margin-top:2px;">Tap a <b>⤵ move here</b> gap to drop it in. Scroll as far as you like first.</div>
       <div onclick="_rsMoveKey=null;_rsRender()" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:12px;margin-top:5px;">✕ cancel</div></div>` : ''}
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:0 0 8px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:0 0 2px;">
       <span>${(ctx.order && !_rsMoveKey && !_rsPlacing)
         ? `<span onclick="_rsResetOrder()" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:13px;">↺ Back to the learned order</span>`
         : ''}</span>
       <span>${_rsPlacing
       ? `<span onclick="_rsPlacing=false;_rsRender()" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:13px;">✕ cancel — tap a gap above to drop the break in</span>`
-      : (_rsMoveKey ? '' : `<span onclick="_rsPlacing=true;_rsRender()" style="color:#ff9f0a;cursor:pointer;font-weight:600;font-size:13px;">☕ Add a break</span>`)}</span></div></div>`;
+      : (_rsMoveKey ? '' : `<span onclick="_rsPlacing=true;_rsRender()" style="color:#ff9f0a;cursor:pointer;font-weight:600;font-size:13px;">☕ Add a break</span>`)}</span></div>
+    ${(ctx.order && !_rsMoveKey && !_rsPlacing)
+      ? `<div style="font-size:11px;color:#6d7686;line-height:1.5;padding:0 0 8px;">The learned order is the order you ticked these off <b>last time you did this job</b>. You have arranged this one by hand, so it is following your order instead.</div>`
+      : '<div style="padding:0 0 6px;"></div>'}</div>`;
   const avgMap = _taskEstMap(), cntMap = _taskHistCountMap();   // built once, not per row
   // ⚠️ cntMap stays MEASURED — the ×N must never count a guess.
   // ▣ which batch each task belongs to, and — once ticked — how long it ACTUALLY
@@ -21521,7 +21524,7 @@ function _rsMoveTo(idx, gapEl) {
 function _rsResetOrder() {
   const ctx = _rsCtx();
   if (!ctx || !ctx.order) return;
-  if (!confirm('Put this run sheet back to the order the app learned from your past runs?\n\nYour hand-arranged order for this one is discarded. Planned breaks stay where they are.')) return;
+  if (!confirm('Put this run sheet back to the order you ticked these off last time you did this job?\n\nYour hand-arranged order for this one is discarded. Planned breaks stay where they are.')) return;
   ctx.saveOrder(null);
   _rsMoveKey = null; _rsPlacing = false;
   _rsRender();
