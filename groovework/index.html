@@ -3128,7 +3128,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.352';
+const APP_VERSION = '2026-06-21.353';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -21039,7 +21039,7 @@ function _rsRender() {
     });
   }
   const bankedNote = banked
-    ? `<div style="font-size:11px;color:var(--subtext);margin-top:4px;">🔁 ${banked} flagged task${banked === 1 ? '' : 's'} already done this run — <b>↺ Reset reps</b> on the clock to bring ${banked === 1 ? 'it' : 'them'} back.</div>`
+    ? `<div style="font-size:11px;color:var(--subtext);margin-top:4px;">🔁 ${banked} of those finished earlier in this run, so ${banked === 1 ? 'it is' : 'they are'} not listed below. Tap <b>↺ Reset reps</b> on the clock to do ${banked === 1 ? 'it' : 'them'} again.</div>`
     : '';
   if (!rows.length) {
     if (titleEl) titleEl.textContent = ctx.job;
@@ -21047,7 +21047,7 @@ function _rsRender() {
       ? `<div style="padding:34px 6px;text-align:center;color:var(--subtext);font-size:15px;line-height:1.55;">Every flagged task is already done this run.<br>
          <span style="font-size:13px;">🔁 ${banked} task${banked === 1 ? '' : 's'} banked ${banked === 1 ? 'its' : 'their'} planned laps in an earlier session. Tap <b>↺ Reset reps</b> on the clock to run ${banked === 1 ? 'it' : 'them'} again, or flag something else.</span></div>`
       : `<div style="padding:38px 6px;text-align:center;color:var(--subtext);font-size:15px;line-height:1.55;">Nothing flagged yet.<br>
-         <span style="font-size:13px;">Swipe a task right to 🚩 flag it${planning ? ' on this block' : ' in ⤢ Organise'}. Flagged tasks are the ones you plan to do — they're what this sheet lists.</span></div>`;
+         <span style="font-size:13px;">Swipe a task right to 🚩 flag it${planning ? ' on this block' : ' in ⤢ Organise'}. Flagged tasks are the ones you plan to do, and they are what this sheet lists.</span></div>`;
     return;
   }
   const doneN = rows.filter(r => r.isDone).length;
@@ -21064,7 +21064,17 @@ function _rsRender() {
   const tgtBit = tgt ? ` · 🎯 ${_rsHM(tgt)}` : '';
   const summary = planning
     ? `🗓 ${rows.length} step${rows.length === 1 ? '' : 's'} from ${_rsHM(ctx.startMs)}${lastPending ? ' · 🏁 done by ~<b>' + _rsHM(lastPending.when) + '</b>' : ''}`
-    : `✓ ${doneN} of ${rows.length} done${lastPending ? ' · 🏁 last one ~<b>' + _rsHM(lastPending.when) + '</b>' : ''}${tgtBit}`;
+    // ⭐ COUNT THE BANKED ONES. Lincoln, 14 Sep: "I have six flagged tasks in the
+    // organise screen, when I go to run sheet, only three are available?"
+    // Nothing was missing. Three had banked their laps in an earlier session of
+    // the same run, so they are not listed. But the header read "0 of 3 done"
+    // right above a line saying "3 flagged tasks already done this run", and the
+    // Organise sheet said 6. Three numbers, three different meanings of "done",
+    // and no line anywhere reconciling them.
+    // ⚠️ A number is only reassuring if it agrees with the number on the screen
+    // you came from. "3 of 6" matches the Organise sheet and the gap explains
+    // itself; "0 of 3" reads as the sheet having lost your work.
+    : `✓ ${doneN + banked} of ${rows.length + banked} done${lastPending ? ' · 🏁 last one ~<b>' + _rsHM(lastPending.when) + '</b>' : ''}${tgtBit}`;
   // ⭐ Lead with the ⠿ tap, not the drag. On a 44-step sheet the drag is the thing
   // that does not work, so naming it first taught the wrong habit.
   const hint = planning
