@@ -1132,6 +1132,7 @@
   <!-- Filter chips -->
   <div id="dir-filter-bar" style="display:flex;gap:8px;padding:8px 12px;overflow-x:auto;background:var(--card);border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch;scrollbar-width:none;">
     <button id="chip-reminders" onclick="openRemindersOverview()" class="dir-chip" style="color:var(--blue);font-weight:600;">🔔 Reminders</button>
+    <button id="chip-todos" onclick="openTodosOverview()" class="dir-chip" style="color:var(--blue);font-weight:600;">📌 To-dos</button>
     <button id="chip-horizon" onclick="openHorizonReview()" class="dir-chip" style="color:var(--blue);font-weight:600;">🗓 Horizon</button>
     <button id="chip-filters" onclick="openDirFilters()" class="dir-chip">⚲ Filter</button>
     <button id="chip-dir-sort" onclick="cycleDirSort()" class="dir-chip">↕ Grouped</button>
@@ -1201,6 +1202,25 @@
     <div id="repair-history-count" style="font-size:13px;color:var(--blue);font-weight:600;margin:8px 0 2px;"></div>
     <div id="repair-history-body" style="max-height:52vh;overflow-y:auto;"></div>
     <button id="repair-history-go" class="btn-sync" style="background:#5856d6;margin-top:12px;" onclick="applyRepairHistory()">Reconnect</button>
+  </div>
+</div>
+
+<!-- ══════════════ 📌 ALL TO-DOS, ACROSS EVERY JOB ══════════════ -->
+<!-- ⭐ A to-do hangs off a JOB and only ever appeared when you were clocked into
+     that job. Right for DOING the work, and the reason they pile up: a to-do on a
+     quarterly job waits a quarter, and nothing anywhere adds them up.
+     ⚠️ Worse, and the real mechanism: togglePinnedNote needs a live clock, and a
+     ticked to-do is only removed from the store at CLOCK-OUT. So there was no way
+     to finish or bin one without clocking into its job and out again. A list you
+     cannot act on would not have fixed anything, so this one clears too. -->
+<div class="modal-backdrop" id="modal-todos-overview" style="z-index:300;" onclick="if(event.target===this)closeModal('modal-todos-overview')">
+  <div class="modal-sheet" style="padding:16px 20px 28px;display:flex;flex-direction:column;max-height:88vh;">
+    <div class="modal-handle"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:2px 0 6px;">
+      <span id="todos-overview-title" style="font-size:17px;font-weight:600;">📌 To-dos</span>
+      <button onclick="closeModal('modal-todos-overview')" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Done</button>
+    </div>
+    <div id="todos-overview-body" style="overflow-y:auto;margin-top:2px;"></div>
   </div>
 </div>
 
@@ -3128,7 +3148,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.353';
+const APP_VERSION = '2026-06-21.354';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -11416,6 +11436,7 @@ function renderDirectory() {
   const list = document.getElementById('dir-list');
   if (!list) return;
   _syncDirSortChip();
+  _syncTodosChip();
 
   const searchTerm = (document.getElementById('dir-search')?.value || '').toLowerCase().trim();
   const autoMap = computeAutoFrequencies();
@@ -15045,6 +15066,108 @@ function openNewReminderPicker() {
           <span style="flex:1;min-width:0;font-size:15px;color:var(--text);">${_escHtml(j)}</span>
           <span style="color:var(--subtext);font-size:15px;">›</span></div>`;
       }).join('') : `<div style="padding:24px 8px;text-align:center;color:var(--subtext);">No jobs yet.</div>`);
+}
+// ⭐ The COUNT goes on the chip, not just inside the panel. The pile building up
+// unseen is the whole complaint, so the number has to be visible without opening
+// anything. New signal on a line that already exists, which is the cheapest kind.
+// The 🗓 turns amber once anything has gone stale, so the chip can say "there is
+// something old in here" without a second line or a badge.
+function _syncTodosChip() {
+  const el = document.getElementById('chip-todos');
+  if (!el) return;
+  const all = _allTodoRows();
+  const stale = all.filter(r => _todoAgeDays(r) >= _TODO_STALE_DAYS).length;
+  el.textContent = '📌 To-dos' + (all.length ? ' · ' + all.length : '');
+  el.style.color = stale ? '#ff9f0a' : 'var(--blue)';
+}
+// ── 📌 Every to-do, across every job ────────────────────────────────────────
+// Flatten the per-job store into one list. `caught` is when it was first captured
+// in the Inbox and `ts` is when it became a to-do; caught is the honest age of the
+// THOUGHT, so it leads, with ts as the fallback for anything typed straight in.
+let _todoFilter = 'all';
+const _TODO_STALE_DAYS = 30;
+function _todoAgeDays(r) {
+  const t = new Date(r.when).getTime();
+  return isFinite(t) ? Math.floor((Date.now() - t) / 86400000) : 0;
+}
+function _allTodoRows() {
+  const tn = getTaskNotes(), out = [];
+  Object.keys(tn).forEach(job => {
+    (tn[job] || []).forEach(p => {
+      if (!p || !p.id) return;
+      out.push({ job, id: p.id, text: p.text || '', when: p.caught || p.ts || '', photos: (p.photos || []).length });
+    });
+  });
+  // Oldest first. The pile is the problem, so the far end of it leads.
+  return out.sort((a, b) => new Date(a.when || 0) - new Date(b.when || 0));
+}
+function openTodosOverview() {
+  _todoFilter = 'all';
+  openModal('modal-todos-overview');
+  renderTodosOverview();
+}
+function setTodoFilter(f) { _todoFilter = f; renderTodosOverview(); }
+// ⭐ Clear one WITHOUT a clock. This is the capability that was missing, not the
+// list. ⚠️ It records no time: ticking a to-do on the clock writes its duration
+// into the entry, and clearing from here cannot, so the wording must not imply
+// the work was timed. Undoable, because a mis-tap on a 30 day old note that you
+// can no longer remember is not recoverable by memory.
+function clearTodo(job, id) {
+  const tn = getTaskNotes();
+  if (!Array.isArray(tn[job])) return;
+  const row = tn[job].find(p => p && p.id === id);
+  if (!row) return;
+  const idx = tn[job].indexOf(row);
+  tn[job] = tn[job].filter(p => p.id !== id);
+  if (!tn[job].length) delete tn[job];
+  saveTaskNotes(tn);
+  renderTodosOverview();
+  if (typeof renderDirectory === 'function') { try { renderDirectory(); } catch (e) {} }
+  showUndoToast('Cleared from ' + job, function () {
+    const back = getTaskNotes();
+    if (!Array.isArray(back[job])) back[job] = [];
+    if (!back[job].some(p => p && p.id === id)) back[job].splice(Math.min(idx, back[job].length), 0, row);
+    saveTaskNotes(back);
+    renderTodosOverview();
+    if (typeof renderDirectory === 'function') { try { renderDirectory(); } catch (e) {} }
+  }, 15000);
+}
+function renderTodosOverview() {
+  const body = document.getElementById('todos-overview-body');
+  if (!body) return;
+  // ⚠️ The chip sits on the Directory screen directly BEHIND this panel, so the two
+  // are on screen together and must never disagree. Syncing it here rather than
+  // only from renderDirectory removes the whole class of drift instead of the one
+  // path that happened to be noticed.
+  _syncTodosChip();
+  const all = _allTodoRows();
+  const stale = all.filter(r => _todoAgeDays(r) >= _TODO_STALE_DAYS);
+  const titleEl = document.getElementById('todos-overview-title');
+  if (titleEl) titleEl.textContent = '📌 To-dos' + (all.length ? ' · ' + all.length : '');
+  const rows = _todoFilter === 'stale' ? stale : all;
+  const chip = (f, label) => `<button onclick="setTodoFilter('${f}')" style="background:${_todoFilter === f ? 'var(--blue)' : 'var(--bg)'};color:${_todoFilter === f ? '#fff' : 'var(--text)'};border:1px solid var(--border);border-radius:16px;padding:6px 12px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">${label}</button>`;
+  const head = `<div style="display:flex;align-items:center;gap:8px;padding:2px 0 10px;overflow-x:auto;">
+      ${chip('all', 'All · ' + all.length)}${chip('stale', 'Over ' + _TODO_STALE_DAYS + ' days · ' + stale.length)}
+    </div>
+    <div style="font-size:11px;color:var(--subtext);line-height:1.5;padding:0 0 10px;">A to-do sits on its job and only shows up when you clock into that job, so they build up quietly. Oldest first. Tap one to open its job, or clear it here.</div>`;
+  if (!rows.length) {
+    body.innerHTML = head + `<div style="padding:26px 8px;text-align:center;color:var(--subtext);font-size:15px;line-height:1.55;">${all.length ? 'Nothing over ' + _TODO_STALE_DAYS + ' days old.' : 'No to-dos anywhere.'}<br><span style="font-size:13px;">${all.length ? 'Tap All to see the rest.' : 'File one against a job from the Inbox.'}</span></div>`;
+    return;
+  }
+  body.innerHTML = head + rows.map(r => {
+    const days = _todoAgeDays(r);
+    const old = days >= _TODO_STALE_DAYS;
+    const age = r.when ? _agoWords(r.when) : 'no date';
+    return `<div style="display:flex;align-items:flex-start;gap:10px;padding:11px 2px;border-bottom:1px solid var(--border);">
+      <span onclick="closeModal('modal-todos-overview');openJobEditByName(decodeURIComponent('${_encArg(r.job)}'))" style="flex:1;min-width:0;cursor:pointer;display:flex;flex-direction:column;gap:3px;">
+        <span style="font-size:15px;color:var(--text);overflow-wrap:anywhere;">${_escHtml(r.text)}${r.photos ? ' <span style="font-size:12px;color:var(--subtext);">📷' + r.photos + '</span>' : ''}</span>
+        <span style="display:flex;gap:8px;flex-wrap:wrap;font-size:11px;">
+          <span style="color:var(--subtext);">${_escHtml(r.job)}</span>
+          <span style="color:${old ? '#ff9f0a' : '#6d7686'};font-weight:${old ? '700' : '400'};">🗓 ${age}</span>
+        </span></span>
+      <button onclick="clearTodo(decodeURIComponent('${_encArg(r.job)}'), decodeURIComponent('${_encArg(r.id)}'))" style="flex-shrink:0;background:none;border:1px solid var(--border);border-radius:8px;color:var(--subtext);font-size:12px;font-weight:600;padding:5px 10px;cursor:pointer;">✓ Clear</button>
+    </div>`;
+  }).join('');
 }
 function renderRemindersOverview() {
   _remRows = _allReminderRows();
