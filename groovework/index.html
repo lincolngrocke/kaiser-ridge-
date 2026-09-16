@@ -3148,7 +3148,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.354';
+const APP_VERSION = '2026-06-21.355';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -15080,6 +15080,48 @@ function _syncTodosChip() {
   el.textContent = '📌 To-dos' + (all.length ? ' · ' + all.length : '');
   el.style.color = stale ? '#ff9f0a' : 'var(--blue)';
 }
+// ── 🗃 Cleared to-dos, kept ─────────────────────────────────────────────────
+// ⚠️⚠️ Settings promises "capture forever, delete nothing" about to-dos, and until
+// now that was not true of them: ticking one on the clock strips it at clock-out
+// and the timesheet keeps only a `pin:<id>` reference, so a later look at that day
+// renders "(removed to-do)". v354's Clear button made one-tap deletion easy and
+// made the gap between the promise and the behaviour matter.
+//
+// ⭐ NOTHING IS DELETED, IT MOVES. Same rule the v342 timesheet repair banks: a
+// cleared to-do goes to an archive it can be pulled back out of. That is not only
+// honesty. A button you cannot undo is a button you hesitate over, and hesitating
+// on every row is exactly what leaves the pile sitting there. Clearing has to feel
+// free or it will not get used.
+//
+// ⚠️ LOCAL ONLY, deliberately not synced. To-dos themselves are org data, but this
+// store means "what I cleared on THIS phone", which is a personal record, not the
+// org's. The v342 rule: sync scope follows what the LOCAL store means, never what
+// the table would permit.
+function getClearedTodos() { try { return JSON.parse(localStorage.getItem('kr_todos_cleared') || '[]') || []; } catch (e) { return []; } }
+function saveClearedTodos(a) { return _storeSet('kr_todos_cleared', JSON.stringify(a)); }
+function _archiveTodo(job, row) {
+  const a = getClearedTodos();
+  if (a.some(x => x && x.id === row.id)) return;      // already there, never double up
+  a.push(Object.assign({}, row, { job, clearedAt: new Date().toISOString() }));
+  saveClearedTodos(a);
+}
+function _unarchiveTodo(id) { saveClearedTodos(getClearedTodos().filter(x => !(x && x.id === id))); }
+// Put one back on its job, exactly as it was.
+function restoreClearedTodo(id) {
+  const row = getClearedTodos().find(x => x && x.id === id);
+  if (!row) return;
+  const tn = getTaskNotes(), job = row.job;
+  if (!Array.isArray(tn[job])) tn[job] = [];
+  if (!tn[job].some(p => p && p.id === id)) {
+    const back = Object.assign({}, row); delete back.job; delete back.clearedAt;
+    tn[job].push(back);
+  }
+  saveTaskNotes(tn);
+  _unarchiveTodo(id);
+  renderTodosOverview();
+  if (typeof renderDirectory === 'function') { try { renderDirectory(); } catch (e) {} }
+  showToast('Put back on ' + job);
+}
 // ── 📌 Every to-do, across every job ────────────────────────────────────────
 // Flatten the per-job store into one list. `caught` is when it was first captured
 // in the Inbox and `ts` is when it became a to-do; caught is the honest age of the
@@ -15118,16 +15160,18 @@ function clearTodo(job, id) {
   const row = tn[job].find(p => p && p.id === id);
   if (!row) return;
   const idx = tn[job].indexOf(row);
+  _archiveTodo(job, row);                 // moved, never deleted
   tn[job] = tn[job].filter(p => p.id !== id);
   if (!tn[job].length) delete tn[job];
   saveTaskNotes(tn);
   renderTodosOverview();
   if (typeof renderDirectory === 'function') { try { renderDirectory(); } catch (e) {} }
-  showUndoToast('Cleared from ' + job, function () {
+  showUndoToast('Cleared from ' + job + ', kept', function () {
     const back = getTaskNotes();
     if (!Array.isArray(back[job])) back[job] = [];
     if (!back[job].some(p => p && p.id === id)) back[job].splice(Math.min(idx, back[job].length), 0, row);
     saveTaskNotes(back);
+    _unarchiveTodo(id);                   // undone, so it was never really cleared
     renderTodosOverview();
     if (typeof renderDirectory === 'function') { try { renderDirectory(); } catch (e) {} }
   }, 15000);
@@ -15144,12 +15188,27 @@ function renderTodosOverview() {
   const stale = all.filter(r => _todoAgeDays(r) >= _TODO_STALE_DAYS);
   const titleEl = document.getElementById('todos-overview-title');
   if (titleEl) titleEl.textContent = '📌 To-dos' + (all.length ? ' · ' + all.length : '');
-  const rows = _todoFilter === 'stale' ? stale : all;
+  const cleared = getClearedTodos().slice().sort((a, b) => new Date(b.clearedAt || 0) - new Date(a.clearedAt || 0));
+  const rows = _todoFilter === 'stale' ? stale : _todoFilter === 'cleared' ? [] : all;
   const chip = (f, label) => `<button onclick="setTodoFilter('${f}')" style="background:${_todoFilter === f ? 'var(--blue)' : 'var(--bg)'};color:${_todoFilter === f ? '#fff' : 'var(--text)'};border:1px solid var(--border);border-radius:16px;padding:6px 12px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">${label}</button>`;
   const head = `<div style="display:flex;align-items:center;gap:8px;padding:2px 0 10px;overflow-x:auto;">
-      ${chip('all', 'All · ' + all.length)}${chip('stale', 'Over ' + _TODO_STALE_DAYS + ' days · ' + stale.length)}
+      ${chip('all', 'All · ' + all.length)}${chip('stale', 'Over ' + _TODO_STALE_DAYS + ' days · ' + stale.length)}${cleared.length ? chip('cleared', '🗃 Cleared · ' + cleared.length) : ''}
     </div>
-    <div style="font-size:11px;color:var(--subtext);line-height:1.5;padding:0 0 10px;">A to-do sits on its job and only shows up when you clock into that job, so they build up quietly. Oldest first. Tap one to open its job, or clear it here.</div>`;
+    <div style="font-size:11px;color:var(--subtext);line-height:1.5;padding:0 0 10px;">${_todoFilter === 'cleared'
+      ? 'Cleared to-dos are kept, not deleted. Newest first. Put one back on its job any time.'
+      : 'A to-do sits on its job and only shows up when you clock into that job, so they build up quietly. Oldest first. Tap one to open its job, or clear it here. Clearing keeps it.'}</div>`;
+  // 🗃 The archive gets its own list, because the action on it is the opposite one.
+  if (_todoFilter === 'cleared') {
+    body.innerHTML = head + (cleared.length ? cleared.map(r => `<div style="display:flex;align-items:flex-start;gap:10px;padding:11px 2px;border-bottom:1px solid var(--border);">
+        <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;">
+          <span style="font-size:15px;color:var(--subtext);overflow-wrap:anywhere;">${_escHtml(r.text || '')}</span>
+          <span style="display:flex;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--subtext);">
+            <span>${_escHtml(r.job || '')}</span><span>🗃 cleared ${r.clearedAt ? _agoWords(r.clearedAt) : ''}</span>
+          </span></span>
+        <button onclick="restoreClearedTodo(decodeURIComponent('${_encArg(r.id)}'))" style="flex-shrink:0;background:none;border:1px solid var(--border);border-radius:8px;color:var(--blue);font-size:12px;font-weight:600;padding:5px 10px;cursor:pointer;">↩ Put back</button>
+      </div>`).join('') : `<div style="padding:26px 8px;text-align:center;color:var(--subtext);font-size:15px;">Nothing cleared yet.</div>`);
+    return;
+  }
   if (!rows.length) {
     body.innerHTML = head + `<div style="padding:26px 8px;text-align:center;color:var(--subtext);font-size:15px;line-height:1.55;">${all.length ? 'Nothing over ' + _TODO_STALE_DAYS + ' days old.' : 'No to-dos anywhere.'}<br><span style="font-size:13px;">${all.length ? 'Tap All to see the rest.' : 'File one against a job from the Inbox.'}</span></div>`;
     return;
