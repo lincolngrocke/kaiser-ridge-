@@ -3148,7 +3148,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.356';
+const APP_VERSION = '2026-06-21.357';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4521,20 +4521,42 @@ function _breakOverlapMs(breaks, s, e) {
 // treated as one batch and the elapsed time is shared evenly across them (so
 // ticking several at once doesn't dump it all on the first). Breaks subtracted.
 const _BATCH_WINDOW_MS = 60000;
-function _computeChecklistDurations(sorted, clockInMs, breaks) {
+// outBreaks (optional): filled with { item: minutesOfBreakInsideThisSpan }. A task
+// whose span swallowed a break shows a correct but surprising number, so the screen
+// needs to be able to say WHY it is bigger than the average.
+function _computeChecklistDurations(sorted, clockInMs, breaks, outBreaks) {
   const out = {};
   let prev = clockInMs, i = 0;
   while (i < sorted.length) {
     let j = i;
     while (j + 1 < sorted.length && (new Date(sorted[j + 1].at) - new Date(sorted[j].at)) < _BATCH_WINDOW_MS) j++;
     const last = new Date(sorted[j].at).getTime();
-    const net = Math.max(0, (last - prev) - _breakOverlapMs(breaks, prev, last));
+    const brk = _breakOverlapMs(breaks, prev, last);
+    const net = Math.max(0, (last - prev) - brk);
     const per = net / (j - i + 1) / 60000;            // minutes per item in the batch
-    for (let k = i; k <= j; k++) out[sorted[k].item] = per;
+    const brkPer = brk / (j - i + 1) / 60000;
+    for (let k = i; k <= j; k++) {
+      out[sorted[k].item] = per;
+      if (outBreaks && brkPer > 0) outBreaks[sorted[k].item] = brkPer;
+    }
     prev = last;
     i = j + 1;
   }
   return out;
+}
+// Minutes of break sitting inside each task's span this session.
+function _checklistBreakMins() {
+  if (!clockState) return {};
+  const done = (Array.isArray(clockState.checklistDone) ? clockState.checklistDone : []).filter(d => !d.carried);
+  const pinDone = clockState.pinDone || {};
+  const breaks = Array.isArray(clockState.breaks) ? clockState.breaks.slice() : [];
+  if (clockState.onBreak && clockState.breakStartMs) breaks.push({ start: clockState.breakStartMs, end: Date.now() });
+  const events = done.map(d => ({ item: _occKey(d), at: d.at }))
+    .concat(Object.keys(pinDone).map(id => ({ item: 'pin:' + id, at: pinDone[id] })))
+    .sort((a, b) => new Date(a.at) - new Date(b.at));
+  const outB = {};
+  _computeChecklistDurations(events, _clockInEpoch(), breaks, outB);
+  return outB;
 }
 // Checklist display order: 'manual' (editor order) or 'typical' (avg completion
 // order across this task's recent entries). Display-only; never changes SUBTASKS.
@@ -21079,7 +21101,16 @@ function _rsOrdered(ctx) {
   const multi = new Set(Object.keys(count).filter(t => count[t] > 1));
   const out = [];
   if (ctx.order) ctx.order.forEach(k => { if (pool.has(k)) { out.push(pool.get(k)); pool.delete(k); } });
-  if (!pool.size) return out;
+  // ⚠️⚠️ THIS EARLY RETURN SILENTLY TURNED OFF v341. Once a block has been arranged
+  // by hand the saved order names EVERY row, so the pool empties here and the
+  // function returned before _rsDoneFirst ever ran. Finished work stopped floating
+  // to the top in the order it happened, and a break taken mid-task sat wherever
+  // the arrangement had put it instead of at the time it was taken.
+  // Lincoln's 16 Sep straw run: break at 11:06 displayed BELOW a travel row ticked
+  // at 11:42, which reads as the break happening after the trip rather than inside
+  // it. The sort was never the optional part; the saved order is only the order of
+  // what is still TO DO.
+  if (!pool.size) return _rsDoneFirst(out);
   const fresh = _rsDefaultOrder([...pool.values()], ctx);
   // Nothing arranged yet → the circuit default IS the order.
   if (!out.length) return _rsDoneFirst(fresh);
@@ -21341,6 +21372,7 @@ function _rsRender() {
       ? `<div style="font-size:11px;color:#6d7686;line-height:1.5;padding:0 0 8px;">The learned order is the order you ticked these off <b>last time you did this job</b>. You have arranged this one by hand, so it is following your order instead.</div>`
       : '<div style="padding:0 0 6px;"></div>'}</div>`;
   const avgMap = _taskEstMap(), cntMap = _taskHistCountMap();   // built once, not per row
+  const _brks = ctx.kind === 'clock' ? _checklistBreakMins() : {};   // minutes of break sitting inside each done task
   // ⚠️ cntMap stays MEASURED — the ×N must never count a guess.
   // ▣ which batch each task belongs to, and — once ticked — how long it ACTUALLY
   // took. The actual sits beside the average on the meta line, so the comparison
@@ -21420,8 +21452,17 @@ function _rsRender() {
     // (item, or item+lap for a rep), so laps are timed individually.
     const _dk = r.n === 0 ? r.t : _occKey({ item: r.t, rep: r.n });
     const _actual = r.isDone ? _durs[_dk] : null;
+    // ☕ A break taken mid-task is already OUT of this number, but nothing said so.
+    // Lincoln, 17 Sep: a 7m break inside a travel leg, the row read 1h 09m against
+    // a 1h 01m average, and he read the extra 8m as the break being added on. It
+    // was not: 76 minutes elapsed, 7 deducted, 69 shown. The figure was right and
+    // unreadable. ⭐ When a number is correct but surprising, say what was taken
+    // out of it, on the number itself.
+    const _brkIn = r.isDone ? _brks[_dk] : null;
+    const brkNote = (isFinite(_brkIn) && _brkIn >= 1)
+      ? `<span style="font-size:11px;color:#ff9f0a;flex-shrink:0;" title="a break inside this task, already deducted">☕ ${fmtMin(_brkIn)} out</span>` : '';
     const actualChip = (isFinite(_actual) && _actual > 0)
-      ? `<span style="font-size:11px;font-weight:700;color:#30d158;flex-shrink:0;" title="actual time for this one">✓ ${fmtMin(_actual)}</span>` : '';
+      ? `<span style="font-size:11px;font-weight:700;color:#30d158;flex-shrink:0;" title="actual time for this one, breaks already taken out">✓ ${fmtMin(_actual)}</span>` : '';
     const timeTxt = r.isDone
       ? `<span style="font-size:13px;font-weight:700;color:#616a7e;white-space:nowrap;">${r.undoable ? '<span style="font-weight:400;opacity:0.75;">↺ </span>' : ''}✓ ${_rsHM(r.when)}</span>`
       : (r.when ? `<span style="font-size:13px;font-weight:700;color:${r.tappable ? '#30d158' : 'var(--subtext)'};white-space:nowrap;">~${_rsHM(r.when)}</span>`
@@ -21456,7 +21497,7 @@ function _rsRender() {
       <span style="font-size:15px;flex-shrink:0;opacity:${r.isDone ? '0.5' : '1'};">${r.isDone ? '✓' : '🚩'}</span>
       <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;">
         <span style="overflow-wrap:anywhere;font-size:15px;color:${r.isDone ? '#616a7e' : 'var(--text)'};">${_escHtml(r.t)}</span>
-        ${(_avgMeta(r.t, avgMap, cntMap) || nowChip || stepChip || batchChip || actualChip) ? `<span style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">${batchChip}${_avgMeta(r.t, avgMap, cntMap)}${actualChip}${nowChip}${stepChip}</span>` : ''}</span>
+        ${(_avgMeta(r.t, avgMap, cntMap) || nowChip || stepChip || batchChip || actualChip) ? `<span style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">${batchChip}${_avgMeta(r.t, avgMap, cntMap)}${actualChip}${brkNote}${nowChip}${stepChip}</span>` : ''}</span>
       ${lap}${timeTxt}
       <span ontouchstart="event.stopPropagation()" ontouchmove="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_rsPickUp(decodeURIComponent('${_encArg(key)}'))" title="move this row" style="font-size:17px;line-height:1;color:${_lifted ? '#5ac8fa' : '#8b93a7'};flex-shrink:0;cursor:pointer;padding:10px 8px;margin:-10px -6px -10px 0;">⠿</span></div>
       ${open ? `<div style="padding-top:6px;">${_rsStepsHtml(r, ctx, stepsOf)}</div>` : ''}</div>`;
