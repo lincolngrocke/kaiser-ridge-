@@ -3148,7 +3148,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.355';
+const APP_VERSION = '2026-06-21.356';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -6573,14 +6573,19 @@ function _aggregateChecklistTimes() {
       // Strip the lap stamp: doing a task on 4 laps gives 4 samples of the same item.
       const label = _stripLap(item).trim().replace(/\s+/g, ' ');
       const key = label.toLowerCase();
-      if (!agg[key]) agg[key] = { label, count: 0, total: 0, last: 0 };
+      if (!agg[key]) agg[key] = { label, count: 0, total: 0, last: 0, min: Infinity, max: -Infinity };
       agg[key].count++;
       agg[key].total += d[item];
       agg[key].last = d[item];
+      // ⭐ The SPREAD, carried by the pass that already walks every sample. An
+      // average alone says a task takes 8 minutes; 3 to 15 says whether you can
+      // rely on that. Free here, and a second pass over every entry would not be.
+      if (d[item] < agg[key].min) agg[key].min = d[item];
+      if (d[item] > agg[key].max) agg[key].max = d[item];
     });
   });
   return Object.keys(agg)
-    .map(k => ({ item: agg[k].label, count: agg[k].count, avg: agg[k].total / agg[k].count, last: agg[k].last }))
+    .map(k => ({ item: agg[k].label, count: agg[k].count, avg: agg[k].total / agg[k].count, last: agg[k].last, min: agg[k].min, max: agg[k].max }))
     .sort((a, b) => b.count - a.count || b.avg - a.avg);
 }
 // The ⏱ Times sheet has two tabs: Jobs (whole clocked runs) and Tasks (items
@@ -6816,6 +6821,25 @@ function openTaskTrend(i) {
   document.getElementById('task-trend-caption').textContent = '';
   openModal('modal-task-trend');
   requestAnimationFrame(renderTaskTrend);   // let the sheet lay out before measuring
+}
+// ⭐ OPEN A TASK'S HISTORY FROM WHEREVER YOU MEET THE TASK.
+// openTaskTrend takes an INDEX into the Dashboard's own list, so the chart was
+// reachable only by going Dashboard, Times, search, tap. Lincoln, 17 Sep: planning
+// a job, he wants the history of the row in front of him without leaving the sheet.
+// ⚠️ On the clock a row tap ticks the task off, so this must hang off the time
+// PILL and nothing else, and the pill has to swallow the touch as well as the
+// click. v349: by the time a click fires the row's swipe watcher has already
+// judged the gesture and blocked it.
+function openTaskTrendByName(item) {
+  if (!item) return;
+  _trendMode = 'task';
+  _taskTrendKey = String(item).trim().replace(/\s+/g, ' ').toLowerCase();
+  const t = document.getElementById('task-trend-title');
+  if (t) t.textContent = item;
+  const c = document.getElementById('task-trend-caption');
+  if (c) c.textContent = '';
+  openModal('modal-task-trend');
+  requestAnimationFrame(renderTaskTrend);
 }
 function renderTaskTrend() {
   const canvas = document.getElementById('task-trend-canvas');
@@ -18979,6 +19003,27 @@ function seedJobFromTotal(job, totalMins, weights) {
   if (written) saveTaskSeeds(seeds);
   return written;
 }
+// The measured SPREAD per task: { normKey: {min, max} }. Measured only, never
+// seeded — a guess has no spread, and pretending otherwise would be the same
+// laundering the est/avg split exists to prevent.
+let _histRangeCache = { rev: -1, map: null };
+function _taskHistRangeMap() {
+  if (_histRangeCache.rev === _entriesRev && _histRangeCache.map) return _histRangeCache.map;
+  const map = {};
+  _aggregateChecklistTimes().forEach(a => {
+    if (isFinite(a.min) && isFinite(a.max)) map[_normTaskKey(a.item)] = { min: a.min, max: a.max };
+  });
+  _histRangeCache = { rev: _entriesRev, map };
+  return map;
+}
+// "3–15m". Only worth printing when the two ends actually differ and there is
+// more than one sample to differ between.
+function _rangeLabel(item, rangeMap) {
+  const r = (rangeMap || _taskHistRangeMap())[_normTaskKey(item)];
+  if (!r || !isFinite(r.min) || !isFinite(r.max)) return '';
+  if (Math.round(r.min) >= Math.round(r.max)) return '';
+  return fmtMin(r.min).replace(/m$/, '') + '–' + fmtMin(r.max);
+}
 // ⭐ TYPE AN ESTIMATE FOR A TASK NOBODY HAS TIMED YET.
 // Onboarding could seed times; nothing else could, so a task added later sat at no
 // number forever and silently contributed ZERO to the block that was meant to size
@@ -19070,6 +19115,17 @@ function _taskAvgCountLabel(item, avgMap, cntMap) {
 }
 // The same label as a row meta line (Organise sheet + run sheet). Empty for a task
 // with no history, so those rows just don't carry the line.
+// ⭐ The time meta is now a PILL you can tap to open that task's history. Bordered
+// so it reads as a control rather than a label, and so it is a precise target on a
+// row where a stray tap would tick the task off.
+function _timePill(item, inner, seeded) {
+  const enc = _encArg(item);
+  return `<span ontouchstart="event.stopPropagation()" ontouchmove="event.stopPropagation()" ontouchend="event.stopPropagation()"`
+    + ` onclick="event.stopPropagation();openTaskTrendByName(decodeURIComponent('${enc}'))"`
+    + ` title="See this task's history"`
+    + ` style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:${seeded ? '#4a5165' : '#6d7686'};`
+    + `${seeded ? 'font-style:italic;' : ''}border:1px solid var(--border);border-radius:9px;padding:2px 7px;cursor:pointer;">${inner}</span>`;
+}
 function _avgMeta(item, avgMap, cntMap) {
   const t = _taskAvgCountLabel(item, avgMap, cntMap);
   // ⭐ NO NUMBER IS ITSELF THE SIGNAL, and it used to render as nothing at all.
@@ -19089,7 +19145,12 @@ function _avgMeta(item, avgMap, cntMap) {
   if (seeded && !isWorker()) {
     return `<span ontouchstart="event.stopPropagation()" onclick="event.stopPropagation();setTaskEstimate(decodeURIComponent('${_encArg(item)}'))" style="font-size:11px;color:#4a5165;font-style:italic;cursor:pointer;">${t}</span>`;
   }
-  return `<span style="font-size:11px;color:${seeded ? '#4a5165' : '#616a7e'};${seeded ? 'font-style:italic;' : ''}">${t}</span>`;
+  if (seeded) return `<span style="font-size:11px;color:#4a5165;font-style:italic;">${t}</span>`;
+  // ⭐ "~8m avg · 9× · 3–15m". The average says what to expect, the spread says how
+  // much to trust it. Printed only when the ends actually differ, so a task that
+  // always takes the same time stays quiet rather than carrying a useless 8–8m.
+  const rng = _rangeLabel(item);
+  return _timePill(item, t + (rng ? ` · <span style="opacity:0.8;">${rng}</span>` : ''), false);
 }
 
 // ── Learned STEP times ────────────────────────────────────────────────────────
