@@ -3148,7 +3148,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.360';
+const APP_VERSION = '2026-06-21.361';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -3260,11 +3260,22 @@ async function _authRefresh() {
 // ⚠️ Matters well past one phone: a beta tester whose session quietly expires
 // would see a network error forever while their hours stopped backing up.
 let _sbLastFail = null;   // 'signedout' | 'offline' | 'auth' | 'server'
+let _sbLastCode = 0, _sbLastWhere = '';   // the status and which table, so a refusal can be REPORTED
+// ⭐ "The server refused that" is not reportable. A phone has no console, so the
+// one person who can see the failure cannot tell anyone what it was, and I end up
+// guessing at them one reading at a time. The status and the table cost nothing
+// to carry and turn a dead end into a fact.
 function _sbFailWords() {
-  return _sbLastFail === 'auth' ? 'Your sign-in has expired. Sign out and back in from Settings.'
+  const det = _sbLastCode ? ' (' + _sbLastCode + (_sbLastWhere ? ' on ' + _sbLastWhere : '') + ')' : '';
+  return _sbLastFail === 'auth' ? 'Your sign-in has expired. Sign out and back in from Settings.' + det
        : _sbLastFail === 'signedout' ? 'Not signed in, so nothing can sync yet.'
-       : _sbLastFail === 'server' ? 'The server refused that. Your work is safe on this device.'
+       : _sbLastFail === 'server' ? 'The server refused that' + det + '. Your work is safe on this device.'
        : 'Could not reach the server. Your work is safe on this device.';
+}
+// "entries", "kv" … from '/rest/v1/entries?select=…'
+function _sbWhere(path) {
+  const m = String(path || '').match(/\/rest\/v1\/([a-z_]+)/);
+  return m ? m[1] : '';
 }
 async function _sb(path, opts = {}, _retried) {
   if (!isSignedIn()) { _sbLastFail = 'signedout'; return null; }
@@ -3275,15 +3286,21 @@ async function _sb(path, opts = {}, _retried) {
   }, opts.headers || {});
   let res;
   try { res = await fetch(SB_URL + path, Object.assign({}, opts, { headers })); }
-  catch (e) { _sbLastFail = 'offline'; return null; }
+  catch (e) { _sbLastFail = 'offline'; _sbLastCode = 0; _sbLastWhere = ''; return null; }
   if (res.status === 401 && !_retried) {
     if (await _authRefresh()) return _sb(path, opts, true);
-    _sbLastFail = 'auth';                          // refresh failed: the session is dead, not the network
+    _sbLastFail = 'auth'; _sbLastCode = 401; _sbLastWhere = _sbWhere(path);   // refresh failed: the session is dead, not the network
     return null;
   }
-  if (res.status === 401 || res.status === 403) { _sbLastFail = 'auth'; console.warn('[sb]', res.status, path); return null; }
-  if (!res.ok) { _sbLastFail = 'server'; console.warn('[sb]', res.status, path, await res.text().catch(() => '')); return null; }
-  _sbLastFail = null;
+  if (res.status === 401 || res.status === 403) { _sbLastFail = 'auth'; _sbLastCode = res.status; _sbLastWhere = _sbWhere(path); console.warn('[sb]', res.status, path); return null; }
+  if (!res.ok) {
+    _sbLastFail = 'server'; _sbLastCode = res.status; _sbLastWhere = _sbWhere(path);
+    const body = await res.text().catch(() => '');
+    console.warn('[sb]', res.status, path, body);
+    _syncSetState({ lastDetail: res.status + ' ' + _sbLastWhere + ' ' + String(body).slice(0, 160) });
+    return null;
+  }
+  _sbLastFail = null; _sbLastCode = 0; _sbLastWhere = '';
   if (res.status === 204) return [];
   try { return await res.json(); } catch (e) { return []; }
 }
