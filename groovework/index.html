@@ -3148,7 +3148,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.359';
+const APP_VERSION = '2026-06-21.360';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -3250,8 +3250,24 @@ async function _authRefresh() {
 }
 
 // One retry on 401, after a refresh. Returns parsed JSON, or null on failure.
+// ⚠️⚠️ _sb returns null for FOUR different failures and every caller reported the
+// same sentence: "Could not reach the server". Setting up Ethan's new phone on
+// 21 Sep the old one failed to sync while sitting on wifi, and that message sent
+// both of us hunting a network fault that did not exist.
+// ⭐ A failure message names the ACTION that fixes it, or it is worse than no
+// message: it spends the user's time on the wrong thing. _sbLastFail records
+// which one actually happened so the status line can say it.
+// ⚠️ Matters well past one phone: a beta tester whose session quietly expires
+// would see a network error forever while their hours stopped backing up.
+let _sbLastFail = null;   // 'signedout' | 'offline' | 'auth' | 'server'
+function _sbFailWords() {
+  return _sbLastFail === 'auth' ? 'Your sign-in has expired. Sign out and back in from Settings.'
+       : _sbLastFail === 'signedout' ? 'Not signed in, so nothing can sync yet.'
+       : _sbLastFail === 'server' ? 'The server refused that. Your work is safe on this device.'
+       : 'Could not reach the server. Your work is safe on this device.';
+}
 async function _sb(path, opts = {}, _retried) {
-  if (!isSignedIn()) return null;
+  if (!isSignedIn()) { _sbLastFail = 'signedout'; return null; }
   const headers = Object.assign({
     'apikey': SB_ANON,
     'Authorization': 'Bearer ' + _auth.access_token,
@@ -3259,12 +3275,15 @@ async function _sb(path, opts = {}, _retried) {
   }, opts.headers || {});
   let res;
   try { res = await fetch(SB_URL + path, Object.assign({}, opts, { headers })); }
-  catch (e) { return null; }                       // offline
+  catch (e) { _sbLastFail = 'offline'; return null; }
   if (res.status === 401 && !_retried) {
     if (await _authRefresh()) return _sb(path, opts, true);
+    _sbLastFail = 'auth';                          // refresh failed: the session is dead, not the network
     return null;
   }
-  if (!res.ok) { console.warn('[sb]', res.status, path, await res.text().catch(() => '')); return null; }
+  if (res.status === 401 || res.status === 403) { _sbLastFail = 'auth'; console.warn('[sb]', res.status, path); return null; }
+  if (!res.ok) { _sbLastFail = 'server'; console.warn('[sb]', res.status, path, await res.text().catch(() => '')); return null; }
+  _sbLastFail = null;
   if (res.status === 204) return [];
   try { return await res.json(); } catch (e) { return []; }
 }
@@ -9431,7 +9450,7 @@ async function _syncPush() {
       headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify(rows),
     });
-    if (res === null) { _syncSetState({ lastError: 'Could not reach the server' }); return pushed; }  // offline — keep the queue
+    if (res === null) { _syncSetState({ lastError: _sbFailWords() }); return pushed; }  // offline — keep the queue
     // Clear only what we actually sent, and only if it hasn't been written again
     // while the request was in flight. Otherwise that edit is lost silently.
     const now = _syncOutbox();
@@ -9465,7 +9484,7 @@ async function _syncPull() {
       + '&order=updated_at.asc,key.asc'
       + '&limit=' + _SYNC_PAGE + '&offset=' + offset;
     const rows = await _sb(path);
-    if (rows === null) { _syncSetState({ lastError: 'Could not reach the server' }); return { seen, applied, offline: true }; }
+    if (rows === null) { _syncSetState({ lastError: _sbFailWords() }); return { seen, applied, offline: true }; }
     if (!rows.length) break;
     rows.forEach(r => {
       seen++;
@@ -9517,7 +9536,7 @@ async function syncNow(quiet) {
     } catch (err) {
       console.warn('[sync]', err);
       _syncSetState({ lastError: 'Sync hit a problem — your work is safe on this device' });
-      if (!quiet) showToast('Could not sync just now — nothing was lost');
+      if (!quiet) showToast(_sbFailWords());
       return null;
     }
     if (!quiet) {
@@ -9816,7 +9835,7 @@ async function _recPush(name) {
       headers: { 'Prefer': (desc.ledger ? 'return=minimal' : 'resolution=merge-duplicates,return=minimal') },
       body: JSON.stringify(rows),
     });
-    if (res === null) { _syncSetState({ lastError: 'Could not reach the server' }); return pushed; }
+    if (res === null) { _syncSetState({ lastError: _sbFailWords() }); return pushed; }
     // Clear only what actually went, and only if it has not been written again
     // while the request was in flight — otherwise that edit is lost silently.
     const now = _recRead(KR_REC_OUTBOX, '{}');
@@ -9854,7 +9873,7 @@ async function _recPull(name) {
     // alone. If the policy is ever loosened, this does not quietly widen with it.
     if (desc.scope === 'user' && uid) path += '&user_id=eq.' + encodeURIComponent(uid);
     const rows = await _sb(path);
-    if (rows === null) { _syncSetState({ lastError: 'Could not reach the server' }); return { seen, applied, offline: true }; }
+    if (rows === null) { _syncSetState({ lastError: _sbFailWords() }); return { seen, applied, offline: true }; }
     if (!rows.length) break;
     rows.forEach(r => {
       seen++;
