@@ -3148,7 +3148,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.358';
+const APP_VERSION = '2026-06-21.359';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -9993,6 +9993,22 @@ function _purgeForeignEntries() {
 // needed. A repair nobody can see the workings of is a repair you have to take on
 // faith, and this one had already been wrong once.
 
+// Is `who` the name of someone OTHER than the person holding this phone?
+// Only a match against another known member counts. A name nobody recognises is
+// almost always the same person written differently ("Ethan" vs "Ethan Grocke"),
+// and guessing it away would move that person's own history out of their hours.
+function _namesAnotherPerson(who, myKey) {
+  const w = String(who || '').trim().toLowerCase();
+  if (!w || w === myKey) return false;
+  // Either name containing the other is the same person spelled longer or shorter.
+  if (myKey && (w.indexOf(myKey) === 0 || myKey.indexOf(w) === 0)) return false;
+  let members = [];
+  try { members = getOrgMembers() || []; } catch (e) { members = []; }
+  return members.some(m => {
+    const n = String((m && (m.name || m.personnel || m.email)) || '').trim().toLowerCase();
+    return n && n !== myKey && (n === w || n.indexOf(w) === 0 || w.indexOf(n) === 0);
+  });
+}
 // Can this device answer "is this row mine" at all?
 function _hoursIdentity() {
   const u = currentUser();
@@ -10032,8 +10048,18 @@ function _hoursBreakdown() {
       // is the same rule as "if it cannot tell, it does nothing": disputed rows are
       // never moved automatically in either direction, they are put in front of the
       // person who knows.
-      if (who && myKey) {
-        const mineByName = who.toLowerCase() === myKey;
+      // ⚠️⚠️ A NAME THAT IS NOT MINE IS NOT THE SAME AS SOMEONE ELSE'S NAME.
+      // v348 disputed any row whose `personnel` did not equal this device's current
+      // display name. Setting up Ethan's new iPhone on 21 Sep he typed "Ethan
+      // Grocke" where his old phone had written "Ethan", so ALL 106 of his own
+      // timesheets came up disputed and the button offered to move his entire
+      // history out. `personnel` is free text a person can change at any time;
+      // treating any variation as evidence of another owner is far too eager.
+      // ⭐ Only a name belonging to a DIFFERENT KNOWN PERSON is evidence. Anything
+      // else, the account marker stands, because the account is the strong
+      // identifier and the whole point of v342.
+      if (who && myKey && _namesAnotherPerson(who, myKey)) {
+        const mineByName = false;
         if (mineByAcct !== mineByName) {
           const d = (out.disputed[who] || (out.disputed[who] = { n: 0, hours: 0, acct: mineByAcct }));
           d.n++; d.hours += h; return;
