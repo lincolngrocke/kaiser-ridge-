@@ -3148,7 +3148,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.357';
+const APP_VERSION = '2026-06-21.358';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -10233,7 +10233,7 @@ function toggleSyncHydrate() {
   // been never-sync since v317, and the 3 Sep two-phone test proved it — so the
   // dialog was telling the user the opposite of what the code does, in the two
   // seconds before they tap OK. Say what actually travels, and what does not.
-  if (on && !confirm('Apply changes from your other devices to this one?\n\nYour job library, equipment and settings will be replaced by whatever is newest across your devices.\n\nYour planned day, timesheets and reminders stay on this phone.')) return;
+  if (on && !confirm('Apply changes from your other devices to this one?\n\nYour job library and equipment are replaced by whatever is newest across your devices.\n\nYour timesheets, inbox notes and to-dos are added in, never replaced.\n\nYour planned day and your reminders stay on this phone.')) return;
   try { _safeSetItem(KR_SYNC_HYDRATE, on ? '1' : '0'); } catch (e) {}
   renderSyncUI();
   if (on) syncNow(false).catch(() => {});
