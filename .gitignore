@@ -7,3 +7,8 @@
 
 # Editor / OS cruft
 .DS_Store
+
+# Editor backups. legal-brief.md.bak sat in a PUBLIC repo until 2026-09-22;
+# the file it backed up was already tracked and newer, so it was pure exposure.
+*.bak
+*~
