@@ -3148,7 +3148,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.361';
+const APP_VERSION = '2026-06-21.362';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -8387,7 +8387,20 @@ function confirmTime(choice) {
         // 📋 The run sheet arranged on the block BEFORE the job started becomes this
         // session's run sheet — plan it in detail the night before, work to it today.
         if (Array.isArray(rec.runOrder) && rec.runOrder.length) clockState.runOrder = rec.runOrder.slice();
-        if (clockState.flagOverride || clockState.orderOverride || clockState.lapTargets || clockState.runOrder) { _storeSet('kr_clock', JSON.stringify(clockState)); renderRunChecklist(); }
+        // ☕ AND THE BREAKS. Lincoln, 21 Sep: "I had my breaks all set and planned
+        // into my job, and started the job. The breaks have removed themselves."
+        // Planned breaks live on the BLOCK as rec.breaks and on the SESSION as
+        // clockState.plannedBreaks. Clock-in carried the flags, the laps and the
+        // run sheet order across and then deleted the block's record outright, so
+        // the breaks were not lost in transit, they were destroyed on arrival.
+        // ⭐ Same shape both sides ([{id, mins}]), so this is a straight copy, and
+        // because runOrder already carries the ☕ keys the breaks land back in the
+        // exact positions they were planned into rather than at the end.
+        // ⚠️ THE RULE: anything deleted in a hand-off must be copied FIRST, and the
+        // list of what to copy is every field the thing had, not the ones that came
+        // to mind. Three of four was invisible until a break went missing.
+        if (Array.isArray(rec.breaks) && rec.breaks.length) clockState.plannedBreaks = rec.breaks.map(b => Object.assign({}, b));
+        if (clockState.flagOverride || clockState.orderOverride || clockState.lapTargets || clockState.runOrder || clockState.plannedBreaks) { _storeSet('kr_clock', JSON.stringify(clockState)); renderRunChecklist(); }
         delete pcm[taskInfo._planId]; savePlannerChecklist(pcm);
       }
       // Nothing arranged by a block? Then a half-finished run of this job may be
