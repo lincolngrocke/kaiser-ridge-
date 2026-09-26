@@ -3148,7 +3148,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.362';
+const APP_VERSION = '2026-06-21.363';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -6828,6 +6828,7 @@ function _fullyExcludedTasks(live) {
 let _taskTrendKey = null;       // task: normalised lowercase label · job: exact job name
 let _trendMode = 'task';        // 'task' (checklist item) or 'job' (whole clocked runs)
 let _taskTrendPts = [];         // [{x, y, s}] hit regions for tap-to-inspect
+let _trendSelKey = null;        // the point you last tapped, drawn green
 // One point per clocked RUN of a job (robots excluded) — same-day runs stack at
 // that day's X, mirroring how task laps plot (v208 rule: never sum them).
 function _jobSessions(job) {
@@ -6905,7 +6906,15 @@ function renderTaskTrend() {
   const statsEl = document.getElementById('task-trend-stats');
   const series = _trendMode === 'job' ? _jobSessions(_taskTrendKey) : _taskCompletions(_taskTrendKey);
   const dpr = window.devicePixelRatio || 1;
-  const W = canvas.parentElement.clientWidth;
+  // ⚠️ clientWidth INCLUDES the container's padding, and that container carries
+  // 12px each side. The canvas was therefore sized 24px wider than the space it
+  // actually had, overflowed the sheet, and clipped the newest point and its date
+  // label off the right edge. Lincoln, 27 Sep: "too close to the edge of the page
+  // on the right." Measure the CONTENT box, never clientWidth, when the element
+  // has padding.
+  const _pcs = getComputedStyle(canvas.parentElement);
+  const W = Math.max(60, canvas.parentElement.clientWidth
+              - (parseFloat(_pcs.paddingLeft) || 0) - (parseFloat(_pcs.paddingRight) || 0));
   const H = 240;
   canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
   canvas.width = W * dpr; canvas.height = H * dpr;
@@ -6946,7 +6955,7 @@ function renderTaskTrend() {
       + ` · avg <b style="color:var(--text)">${fmtMin(avg)}</b>`
       + (maxV > minV ? ` · ${fmtMin(minV)}–${fmtMin(maxV)}` : '');
 
-  const padL = 40, padR = 12, padT = 16, padB = 30;
+  const padL = 40, padR = 18, padT = 16, padB = 30;
   const chartW = W - padL - padR, chartH = H - padT - padB;
   const yMax = Math.max(1, maxV * 1.12);
   const yOf = v => padT + chartH - (v / yMax) * chartH;
@@ -6986,11 +6995,16 @@ function renderTaskTrend() {
   // plainly not counting.
   series.forEach(s => {
     const x = colX(s.dayEpoch), y = Math.max(padT - 6, yOf(s.minutes));
+    // ⭐ The one you tapped goes GREEN and grows. Tapping a point put its date in
+    // the caption but left 35 identical blue dots on screen, so there was no way to
+    // tell WHICH one you were about to exclude. Lincoln, 27 Sep.
+    const _sel = _trendSelKey && s.xkey === _trendSelKey;
     if (s.excl) {
-      ctx.strokeStyle = textColor; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = _sel ? '#30d158' : textColor; ctx.lineWidth = _sel ? 2.5 : 1.5;
+      ctx.beginPath(); ctx.arc(x, y, _sel ? 6 : 4, 0, Math.PI * 2); ctx.stroke();
     } else {
-      ctx.fillStyle = blue; ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = _sel ? '#30d158' : blue;
+      ctx.beginPath(); ctx.arc(x, y, _sel ? 6 : 4, 0, Math.PI * 2); ctx.fill();
     }
     _taskTrendPts.push({ x, y, s });
   });
@@ -7016,6 +7030,8 @@ function renderTaskTrend() {
     const cap = document.getElementById('task-trend-caption');
     if (best && bd <= 900) {
       const s = best.s, dt = new Date(s.dayEpoch);
+      _trendSelKey = s.xkey || null;
+      _trendRedrawKeepingSel();
       // Only a TASK completion can be excluded — a whole clocked run is the timesheet
       // itself, and dropping one of those is a delete, not an exclusion.
       const act = (_trendMode === 'task' && s.xkey)
@@ -7032,12 +7048,37 @@ function renderTaskTrend() {
 // Drop a rogue sample out of the averages, or put it back. Every surface reads the
 // same derivation, so one toggle moves the Times list, the trend, the clock's meta
 // line, the run sheet's forecast and the planner block's estimate together.
+// Redraw the chart without losing which point is selected.
+function _trendRedrawKeepingSel() { const k = _trendSelKey; renderTaskTrend(); _trendSelKey = k; }
+// ⚠️⚠️ THE COMMENT ABOVE USED TO CLAIM MORE THAN THE CODE DID. It said one toggle
+// moves "the run sheet's forecast and the planner block's estimate together". The
+// DERIVATION is shared, so those surfaces would read the new number, but nothing
+// told them to re-render. Until v356 that did not show, because the only way in was
+// the Dashboard. Tapping the pill on a run sheet row made the chart sit directly on
+// top of the very surfaces that were not refreshing, so Lincoln excluded a time and
+// watched the row behind it keep the old average until he closed and reopened.
+// ⭐ A SHARED DERIVATION IS NOT A SHARED REFRESH. Every screen that can be looking
+// at the number has to be told, and the list is "every screen that could be open",
+// not "the screen I had in mind when I wrote it".
 function _taskTrendExcl(key) {
   _toggleTimeExcl(key);
-  renderTaskTrend();
+  _trendRedrawKeepingSel();
   if (typeof renderChecklistAvg === 'function') { const _f = document.getElementById('checklist-avg-search'); renderChecklistAvg(_f ? _f.value : ''); }
   if (typeof renderRunChecklist === 'function' && clockState && clockState.running) { renderRunChecklist(); updateRunRing(); }
-  showToast(getTimeExcl()[key] ? '✕ Time excluded — averages updated' : '↺ Time counted again');
+  // The run sheet sits behind this chart whenever you got here from a row pill:
+  // its meta pills, every forecast time and the 🏁 finish all move.
+  try { const rs = document.getElementById('modal-run-sheet');
+        if (rs && rs.classList.contains('open') && typeof _rsRender === 'function') _rsRender(); } catch (e) {}
+  // The Organise sheet carries the same pills, and its block estimate is summed
+  // from these averages.
+  try { const org = document.getElementById('modal-cl-organise');
+        if (org && org.classList.contains('open')) {
+          if (_clOrganisePlanId) _applyBlockEstimate(_clOrganisePlanId);
+          _renderClOrganiseBody();
+        } } catch (e) {}
+  // And the planner behind everything, where a block's length came from these times.
+  try { if (typeof renderPlannerScreen === 'function') renderPlannerScreen(); } catch (e) {}
+  showToast(getTimeExcl()[key] ? '✕ Time excluded, averages updated' : '↺ Time counted again');
 }
 function formatTimeAmPm(t) {
   if (!t) return '--:--';
