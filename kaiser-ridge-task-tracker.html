@@ -3148,7 +3148,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.363';
+const APP_VERSION = '2026-06-21.364';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -10727,14 +10727,24 @@ function exportBackup() {
   // Make sure the snapshot is bang up to date before exporting
   autoBackup();
   const snapshot = JSON.parse(_storeGet('kr_last_backup'));
-  const json = JSON.stringify(snapshot, null, 2);
+  // Compact rather than pretty-printed. ⚠️ Measured, and it saves almost nothing:
+  // every value in `data` is ALREADY a JSON string, so indenting only touched the
+  // ~160 outer keys. 157KB either way on a real snapshot. Kept because a file that
+  // exists to be fed back to restoreBackupFromFile has no reader to indent for,
+  // but do not record this as a size fix. It is not one.
+  const json = JSON.stringify(snapshot);
   const stamp = new Date().toISOString().slice(0,10);
   const filename = `kaiser-ridge-backup-${stamp}.json`;
   const file = new File([json], filename, { type: 'application/json' });
 
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    navigator.share({ files: [file], title: 'Groovework Backup', text: 'Groovework task tracker backup — ' + stamp })
-      .catch(err => { if (err.name !== 'AbortError') showToast('Could not share — try Save instead'); });
+    // ⚠️ FILE ONLY, no `text`. Sending both handed the share target TWO items, and
+    // Drive queued them separately: Lincoln, 4 Oct, saw "Groovework task tracker
+    // backup — 2026…" upload fine while the .json beside it failed. The text was
+    // never the backup, so a share that half succeeds is worse than one that does
+    // one thing. A backup is one file or it is nothing.
+    navigator.share({ files: [file], title: filename })
+      .catch(err => { if (err.name !== 'AbortError') showToast('Could not share. Try Save to Files instead, then move it.'); });
   } else {
     // Fallback: trigger a download
     const blob = new Blob([json], { type: 'application/json' });
