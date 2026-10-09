@@ -47,16 +47,31 @@ function doGet(e) {
       for (let i = 0; i < count; i++) lib += (props.getProperty('kr_lib_' + i) || '');
       return jsonResponse({ success: true, version: props.getProperty('kr_lib_version') || '', library: lib });
     }
-    // Latest Drive auto-backup for a person — restore on a new/wiped phone.
-    // Date is in the file name, so newest sorts last lexicographically.
+    // The dated Drive backups for a person, newest first, each with what it HOLDS.
+    // ⭐ 6 Oct 2026: the restore used to take the newest file by name, and on the
+    // morning of a data loss the newest file WAS the loss. The app now shows this
+    // list and the person picks. A file holding a fraction of the one before it is
+    // marked `collapsed` so the app can refuse it.
+    if (p.backups === '1') {
+      const files = listKrBackups_(String(p.who || '').trim()).slice(0, 10);
+      const rows = files.map(f => ({ name: f.getName(), size: f.getSize(), savedAt: f.getLastUpdated().toISOString(), stats: krBackupFileStats_(f) }));
+      rows.forEach((r, i) => { r.collapsed = !!(rows[i + 1] && krBackupCollapsed_(rows[i + 1].stats, r.stats)); });
+      return jsonResponse({ success: true, backups: rows });
+    }
+    // One Drive backup for a person. With `name`, exactly that file. Without it
+    // (an older app), the newest file that is NOT a collapse of the one before,
+    // so the old button can no longer hand back the loss either.
     if (p.backup === '1') {
       const who = String(p.who || '').trim();
-      const prefix = 'kr-backup-' + (who ? who + '-' : '');
-      const files = getKrBackupsFolder().getFiles();
+      const files = listKrBackups_(who);
       let best = null;
-      while (files.hasNext()) {
-        const f = files.next();
-        if (f.getName().indexOf(prefix) === 0 && (!best || f.getName() > best.getName())) best = f;
+      if (p.name) {
+        best = files.filter(f => f.getName() === String(p.name))[0] || null;
+      } else {
+        for (let i = 0; i < files.length && !best; i++) {
+          const older = files[i + 1];
+          if (!older || !krBackupCollapsed_(krBackupFileStats_(older), krBackupFileStats_(files[i]))) best = files[i];
+        }
       }
       if (!best) return jsonResponse({ success: false, error: 'No Drive backup found' + (who ? ' for ' + who : '') });
       return jsonResponse({ success: true, name: best.getName(), savedAt: best.getLastUpdated().toISOString(), json: best.getBlob().getDataAsString() });
@@ -281,15 +296,29 @@ function doPost(e) {
     // Auto-backup: save a device's full backup JSON to Drive ("KR App Backups").
     // One file per person per day (overwritten within the day), named
     // kr-backup-<who>-<YYYY-MM-DD>.json — daily history accumulates, never pruned.
+    // ⭐ 6 Oct 2026: this wrote a 2-timesheet state over the day's file on a phone
+    // that had held 1,242 the day before, and answered "success". It now compares
+    // what is arriving with the newest backup already here and REFUSES a collapse,
+    // leaving every existing file untouched. `force` is the person saying, in the
+    // app, that the smaller state is right.
     if (data.action === 'saveBackup') {
       const who = String(data.who || 'Unknown').trim() || 'Unknown';
       const day = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
       const name = 'kr-backup-' + who + '-' + day + '.json';
       const folder = getKrBackupsFolder();
+      const content = String(data.json || '');
+      const stats = krBackupStats_(content);
+      const prior = listKrBackups_(who)[0];
+      if (prior && !data.force) {
+        const prev = krBackupFileStats_(prior);
+        if (krBackupCollapsed_(prev, stats)) {
+          return jsonResponse({ success: false, collapsed: true, prevName: prior.getName(), prev: prev, now: stats });
+        }
+      }
       const existing = folder.getFilesByName(name);
-      if (existing.hasNext()) existing.next().setContent(String(data.json || ''));
-      else folder.createFile(name, String(data.json || ''), 'application/json');
-      return jsonResponse({ success: true, file: name });
+      const file = existing.hasNext() ? existing.next().setContent(content) : folder.createFile(name, content, 'application/json');
+      try { file.setDescription(JSON.stringify({ krStats: stats, krSize: file.getSize() })); } catch (e) {}
+      return jsonResponse({ success: true, file: name, stats: stats });
     }
 
     const ss    = SpreadsheetApp.getActiveSpreadsheet();
@@ -612,6 +641,70 @@ function getKrBackupsFolder() {
   const NAME = 'KR App Backups';
   const it = DriveApp.getFoldersByName(NAME);
   return it.hasNext() ? it.next() : DriveApp.createFolder(NAME);
+}
+
+// This person's dated backups, newest first. The name must be exactly
+// kr-backup-<who>-<YYYY-MM-DD>.json, so "Ethan" never picks up "Ethan Grocke".
+function listKrBackups_(who) {
+  const prefix = 'kr-backup-' + (who ? who + '-' : '');
+  const out = [];
+  const files = getKrBackupsFolder().getFiles();
+  while (files.hasNext()) {
+    const f = files.next(), n = f.getName();
+    if (n.indexOf(prefix) !== 0) continue;
+    if (who && !/^\d{4}-\d{2}-\d{2}\.json$/.test(n.slice(prefix.length))) continue;
+    out.push(f);
+  }
+  out.sort((a, b) => (a.getName() < b.getName() ? 1 : a.getName() > b.getName() ? -1 : 0));
+  return out;
+}
+
+// What a backup HOLDS: timesheets, hours, the latest day worked and inbox notes.
+// A file's size cannot answer this. Moving photos to Drive shrinks a backup by
+// megabytes and loses nothing, so the counts are what get compared.
+function krBackupStats_(jsonStr) {
+  const stats = { entries: 0, bots: 0, hours: 0, inbox: 0, latest: '' };
+  try {
+    const d = (JSON.parse(jsonStr) || {}).data || {};
+    const list = k => { try { const v = JSON.parse(d[k] || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } };
+    const es = list('kr_entries');
+    let best = 0;
+    es.forEach(e => {
+      if (!e) return;
+      if (e.bot) { stats.bots++; return; }   // a robot's run is not a timesheet
+      stats.entries++;
+      stats.hours += Number(e.durationHours) || 0;
+      const p = String(e.date || '').split('/').map(Number);
+      const t = p.length === 3 ? new Date(p[2], p[1] - 1, p[0]).getTime() : 0;
+      if (t > best) { best = t; stats.latest = e.date; }
+    });
+    stats.hours = Math.round(stats.hours * 100) / 100;
+    stats.inbox = list('kr_inbox').length;
+  } catch (e) { stats.unreadable = true; }
+  return stats;
+}
+
+// Stats for a file already in Drive. Worked out once, then kept on the file's
+// description, because reading and parsing a 5 MB backup per file per listing
+// would make the restore list take a minute to open. The byte size rides along
+// so a file replaced by hand in Drive is read again instead of trusted.
+function krBackupFileStats_(file) {
+  const size = file.getSize();
+  try {
+    const d = JSON.parse(file.getDescription() || '{}');
+    if (d && d.krStats && d.krSize === size) return d.krStats;
+  } catch (e) {}
+  const stats = krBackupStats_(file.getBlob().getDataAsString());
+  try { file.setDescription(JSON.stringify({ krStats: stats, krSize: size })); } catch (e) {}
+  return stats;
+}
+
+// "It had a lot and now has almost none", never "it has few". A new phone or a
+// first backup has nothing before it to collapse from, so it never trips this.
+function krBackupCollapsed_(prev, now) {
+  if (!prev || !now || prev.unreadable) return false;
+  const fell = (was, is) => was >= 20 && is < was / 2;
+  return fell(prev.entries || 0, now.entries || 0) || fell(prev.inbox || 0, now.inbox || 0);
 }
 
 // ── Receipt / invoice extraction via Claude vision ──────────────────────────

@@ -1205,6 +1205,22 @@
   </div>
 </div>
 
+<!-- ☁️ Restore: the dated backups with what each one holds. See openDriveBackups. -->
+<div class="modal-backdrop" id="modal-drive-backups" style="z-index:300;" onclick="if(event.target===this)closeModal('modal-drive-backups')">
+  <div class="modal-sheet">
+    <div class="modal-head">
+      <span style="font-size:17px;font-weight:600;">☁️ Restore a backup</span>
+      <span onclick="closeModal('modal-drive-backups')" style="color:var(--blue);font-size:16px;cursor:pointer;">Close</span>
+    </div>
+    <div class="settings-note" style="margin:10px 0 4px;">
+      One backup is kept for every day you clocked out. Pick the day to go back to. You
+      are shown what it holds and asked once more before anything is replaced.
+    </div>
+    <div id="drive-backups-here" style="font-size:13px;color:var(--blue);font-weight:600;margin:8px 0 2px;padding:0 16px;"></div>
+    <div id="drive-backups-body" style="max-height:56vh;overflow-y:auto;padding:0 16px;"></div>
+  </div>
+</div>
+
 <!-- ══════════════ 📌 ALL TO-DOS, ACROSS EVERY JOB ══════════════ -->
 <!-- ⭐ A to-do hangs off a JOB and only ever appeared when you were clocked into
      that job. Right for DOING the work, and the reason they pile up: a to-do on a
@@ -1613,11 +1629,21 @@
         <span style="font-size:18px;">🔧</span>
         <div style="flex:1;min-width:0;">
           <div style="font-size:15px;font-weight:600;color:var(--text);">Advanced</div>
-          <div style="font-size:12px;color:var(--subtext);margin-top:2px;">Sharing your library, totals, setup guide</div>
+          <div style="font-size:12px;color:var(--subtext);margin-top:2px;">Sharing your library, totals, setup guide, hidden features</div>
         </div>
         <span id="setgrp-adv-chev" style="color:var(--subtext);font-size:17px;">›</span>
       </div>
       <div id="setgrp-adv" style="display:none;">
+    <div class="settings-section" style="margin-top:16px">
+      <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
+        <div class="settings-label" style="font-weight:600;" id="hidden-features-title">Hidden features</div>
+        <div style="font-size:13px; color:var(--subtext); line-height:1.6;">
+          Parts of the app that are put to the side to keep it simple. Nothing is deleted
+          and anything stored in them is kept. Switch one on to bring it back.
+        </div>
+        <div id="hidden-features-list" style="width:100%;"></div>
+      </div>
+    </div>
     <div class="settings-section" style="margin-top:16px">
       <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
         <div class="settings-label" style="font-weight:600;">Share Job Library</div>
@@ -2143,8 +2169,14 @@
   <div class="modal-sheet" style="padding:8px 0 calc(24px + env(safe-area-inset-bottom));">
     <div class="modal-handle"></div>
     <div style="font-size:13px;font-weight:600;color:var(--subtext);padding:4px 20px 8px;">MORE</div>
-    <button onclick="moreMenuGo('dashboard')" class="more-row">
+    <button onclick="moreMenuGo('dashboard')" class="more-row" data-feature="dashboard">
       <span style="font-size:22px;width:30px;text-align:center;">📊</span><span>Dashboard</span>
+    </button>
+    <!-- The Times list used to be reachable only from the Dashboard. It is the one way
+         to prune a task that is not in today's plan, so it gets its own door here and
+         the Dashboard can be hidden without taking it along. -->
+    <button onclick="closeModal('modal-more-menu');openChecklistAvg()" class="more-row">
+      <span style="font-size:22px;width:30px;text-align:center;">⏱</span><span>Times</span>
     </button>
     <button onclick="moreMenuGo('directory')" class="more-row">
       <span style="font-size:22px;width:30px;text-align:center;">📁</span><span>Jobs</span>
@@ -3148,7 +3180,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.364';
+const APP_VERSION = '2026-06-21.365';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4609,6 +4641,7 @@ function toggleSetGroup(id) {
   // Read the timesheets fresh each time the group is opened, never at boot: it is a
   // full pass over every entry and nothing should pay for it until it is on screen.
   if (id === 'data' && _setGroups[id] && typeof _renderWhoseHours === 'function') _renderWhoseHours();
+  if (id === 'adv' && _setGroups[id]) renderHiddenFeatures();
 }
 
 function setChecklistOrder(mode) {
@@ -9125,6 +9158,8 @@ function _safeSetItem(key, val) {
 // is unavailable (rare), everything falls back to localStorage as before.
 const KR_IDB_KEYS = ['kr_inbox', 'kr_task_notes', 'kr_entries', 'kr_last_backup'];
 let _kv = {}, _idb = null, _idbOk = false;
+// True when the big store exists on this phone but could not be READ this launch.
+let _kvUnread = false;
 // Resolves once hydration+migration are done. Background jobs that write the
 // big stores (pin pulls, auto-sync) await this so they can never race the
 // boot and write against half-loaded data.
@@ -9161,6 +9196,9 @@ let _idbUnsaved = Object.create(null);   // key -> reason, while its last write 
 let _idbRetrying = Object.create(null);
 function _idbSet(key, val, isRetry) {
   if (!_idbOk) return;
+  // The store was never read this launch, so RAM holds an empty stand-in. Writing
+  // it would replace the real data with that stand-in. See _krdbBoot.
+  if (_kvUnread) { _idbUnsaved[key] = 'unread'; return; }
   const fail = (why) => {
     _idbUnsaved[key] = why;
     // ⭐ RETRY ONCE, AUTOMATICALLY. iOS aborts an in-flight transaction whenever it
@@ -9247,7 +9285,7 @@ function updateStorageAlarm() {
     + 'background:rgba(255,255,255,0.22);border:1px solid rgba(255,255,255,0.5);font-weight:700;">'
     + '&#8635; Try saving again</span>';
 }
-function _idbDel(key) { if (_idbOk) { try { _idb.transaction('kv', 'readwrite').objectStore('kv').delete(key); } catch (e) {} } }
+function _idbDel(key) { if (_idbOk && !_kvUnread) { try { _idb.transaction('kv', 'readwrite').objectStore('kv').delete(key); } catch (e) {} } }
 
 // ════════════════════════════════
 //  M1 / S3 — CLOUD SYNC: kv MIRROR · OUTBOX · DELTA PULL
@@ -9339,7 +9377,7 @@ const KR_SYNC_NEVER = [
   'kr_inbox_pinnedtasks_backfilled', 'kr_lib_applied_version', 'kr_lib_synced',
   'kr_onboarded', 'kr_cal_used',
   // View preferences. A phone and a desktop should not fight over sort order.
-  'kr_dark_mode', 'kr_checklist_order', 'kr_flag_new_pos', 'kr_pin_sort',
+  'kr_dark_mode', 'kr_checklist_order', 'kr_flag_new_pos', 'kr_pin_sort', 'kr_unhidden',
   'kr_dir_sort', 'kr_planner_task_sort', 'kr_create_task_sort',
   'kr_assign_task_sort', 'kr_planner_mode', 'kr_planner_zoom',
   // Server-derived cache. org_members is fetched from the DB and is the server's
@@ -10381,19 +10419,65 @@ function _storeSet(key, val) {
   return _safeSetItem(key, val);
 }
 function _storeRemove(key) { _syncEnqueue(key, 'del'); delete _kv[key]; _idbDel(key); localStorage.removeItem(key); }
-async function _krdbBoot() {
-  try { _idb = await _idbOpen(); _idbOk = true; } catch (e) { _kvReadyResolve(); return; } // no IndexedDB → localStorage as before
-  // Ask the OS to protect this app's storage from cleanup eviction.
-  if (navigator.storage && navigator.storage.persist) { try { navigator.storage.persist(); } catch (e) {} }
-  // Hydrate the RAM cache from IndexedDB.
-  await new Promise(resolve => {
+// ⭐⭐ A STORE IS NOT EMPTY UNTIL THE READ SAYS IT IS. The mirror of the v277 rule
+// for writes, and found on 6 Oct 2026 by reading this function after Lincoln's
+// timesheets went from 1,229 to 2.
+//
+// The read below used to hook tx.onerror and carry on, and it never hooked
+// tx.onabort at all, which is the same omission that cost a day on 7 Aug. Either
+// way the app came up with an EMPTY RAM cache over a full database: no timesheets,
+// no inbox, nothing on screen to say why. The first clock-out then wrote that
+// day's one entry over the whole history, and the first capture did the same to
+// the inbox. Stores nobody wrote to that session were left alone, which is the
+// pattern seen on the day (big store 13.5 MB down to 3.1 MB, not to zero).
+//
+// So a read that fails is retried, and if it still fails the app STOPS: nothing
+// may be written to a store that was never read, and the screen says so.
+// ⚠️ An empty database that reads fine is NOT a failure. That is a new phone.
+function _idbReadAll() {
+  return new Promise(resolve => {
+    let done = false;
+    const fin = ok => { if (!done) { done = true; resolve(ok); } };
+    setTimeout(() => fin(false), 5000);   // iOS can leave a transaction hanging with no event at all
     try {
       const tx = _idb.transaction('kv', 'readonly'), st = tx.objectStore('kv');
       const kr = st.getAllKeys(), vr = st.getAll();
-      tx.oncomplete = () => { (kr.result || []).forEach((k, i) => { _kv[k] = vr.result[i]; }); resolve(); };
-      tx.onerror = () => resolve();
-    } catch (e) { resolve(); }
+      tx.oncomplete = () => { (kr.result || []).forEach((k, i) => { _kv[k] = vr.result[i]; }); fin(true); };
+      tx.onerror = () => fin(false);
+      tx.onabort = () => fin(false);
+    } catch (e) { fin(false); }
   });
+}
+function _showUnreadAlarm() {
+  if (document.getElementById('unread-alarm')) return;
+  const el = document.createElement('div');
+  el.id = 'unread-alarm';
+  el.style.cssText = 'position:fixed;inset:0;z-index:100000;background:#B3261E;color:#fff;display:flex;'
+    + 'flex-direction:column;justify-content:center;gap:14px;padding:28px 24px;font-size:16px;line-height:1.45;';
+  el.innerHTML = '<div style="font-size:22px;font-weight:800;">🛑 Your saved work could not be opened</div>'
+    + '<div><b>Nothing has been lost.</b> Your timesheets and notes are still on this phone. The app could not read them this time, so it has stopped before anything could be written over them.</div>'
+    + '<div onclick="location.reload()" style="margin-top:6px;padding:14px;border-radius:12px;background:#fff;color:#B3261E;font-weight:800;text-align:center;cursor:pointer;">&#8635; Try again</div>'
+    + '<div style="font-size:14px;opacity:0.9;">If this screen comes back, close the app fully and open it again. If it still comes back, restart the phone.</div>';
+  document.body.appendChild(el);
+}
+async function _krdbBoot() {
+  // "Has the big store ever worked on this phone?" If it has, failing to open it
+  // is a failed READ, and falling back to localStorage would show an empty app.
+  const usedBefore = localStorage.getItem('kr_idb_used') === '1';
+  try {
+    _idb = await Promise.race([_idbOpen(), new Promise((_, rej) => setTimeout(() => rej(new Error('idb open timeout')), 8000))]);
+    _idbOk = true;
+  } catch (e) {
+    if (usedBefore) { _kvUnread = true; _showUnreadAlarm(); return; }
+    _kvReadyResolve(); return;   // no IndexedDB on this device at all → localStorage as before
+  }
+  // Ask the OS to protect this app's storage from cleanup eviction.
+  if (navigator.storage && navigator.storage.persist) { try { navigator.storage.persist(); } catch (e) {} }
+  // Hydrate the RAM cache from IndexedDB. Three goes, then stop.
+  let read = false;
+  for (let i = 0; i < 3 && !read; i++) read = await _idbReadAll();
+  if (!read) { _kvUnread = true; _showUnreadAlarm(); return; }
+  if (!usedBefore) _safeSetItem('kr_idb_used', '1');
   // One-time migration: move the big keys out of localStorage, freeing the
   // 5MB pool for settings/library. The localStorage copy is deleted only
   // after IndexedDB confirms the write, so a failure can't lose anything.
@@ -10422,6 +10506,9 @@ async function _krdbBoot() {
   updateSummary();
   const ts = document.getElementById('screen-timesheets');
   if (ts && ts.classList.contains('active')) renderTimesheets();
+  // Say so at OPEN if this phone now holds far less than its last backup did,
+  // which is before the next clock-out rather than after it.
+  try { _backupCheck(); } catch (e) {}
 }
 _krdbBoot(); // async — completes after the script finishes loading
 
@@ -10467,7 +10554,8 @@ const KR_BACKUP_KEYS = [
   'kr_lastdone', 'kr_flag_new_pos', 'kr_checklist_order', 'kr_pin_sort', 'kr_dir_sort',
   'kr_planner_task_sort', 'kr_create_task_sort', 'kr_assign_task_sort', 'kr_planner_mode', 'kr_planner_zoom',
   'kr_onboarded', 'kr_cal_used', 'kr_lib_applied_version', 'kr_lib_synced',
-  'kr_inbox_assigned_migrated', 'kr_inbox_pinnedtasks_backfilled'
+  'kr_inbox_assigned_migrated', 'kr_inbox_pinnedtasks_backfilled',
+  'kr_unhidden'
 ];
 
 function buildBackupSnapshot() {
@@ -10523,6 +10611,9 @@ function autoBackup(force) {
   const sig = _snapSig(), now = Date.now();
   if (!force && sig === _lastSnapSig) return;                                  // nothing changed
   if (!force && _lastSnapAt && now - _lastSnapAt < _SNAP_MIN_GAP_MS) return;   // too soon
+  // The copy kept on this phone obeys the same rule as the one in Drive: a
+  // collapsed state never replaces a good one. It is offered back in the restore list.
+  try { if (!_backupCheck()) return; } catch (e) {}
   try {
     const snapshot = buildBackupSnapshot();
     _storeSet('kr_last_backup', JSON.stringify(snapshot));
@@ -10650,6 +10741,13 @@ function updateLastBackupLabel() {
 function updateBackupReminder() {
   const el = document.getElementById('backup-reminder');
   if (!el) return;
+  if (_backupAlarm()) {
+    el.style.background = 'rgba(179,38,30,0.12)';
+    el.style.border = '1px solid rgba(179,38,30,0.5)';
+    el.style.color = 'var(--red)';
+    el.innerHTML = '🛑 Backup stopped. ' + _backupAlarmWords() + ' Your Drive backups have not been touched.';
+    return;
+  }
   const today = new Date();
   const todayStr = today.toLocaleDateString(undefined, { weekday:'short', day:'numeric', month:'short', year:'numeric' });
   // Manual file export OR the automatic Drive push — whichever is newest.
@@ -10702,7 +10800,9 @@ function updateBackupBanner() {
   const due = now.getHours() >= BACKUP_DUE_HOUR;
 
   let cls, html, show = true;
-  if (backedToday) {
+  if (_backupAlarm()) {
+    cls = 'warn'; html = '🛑 Backup stopped. ' + _backupAlarmWords();
+  } else if (backedToday) {
     cls = 'ok';  html = '✓ Backed up ' + ref;
   } else if (due) {
     cls = 'warn';
@@ -10724,9 +10824,11 @@ function updateBackupBanner() {
 }
 
 function exportBackup() {
-  // Make sure the snapshot is bang up to date before exporting
+  // Export what the phone holds NOW, built fresh. This used to read back the
+  // stored snapshot, which is throttled to one write per five minutes and is now
+  // deliberately left alone while the backup alarm is up, so it could be stale.
   autoBackup();
-  const snapshot = JSON.parse(_storeGet('kr_last_backup'));
+  const snapshot = buildBackupSnapshot();
   // Compact rather than pretty-printed. ⚠️ Measured, and it saves almost nothing:
   // every value in `data` is ALREADY a JSON string, so indenting only touched the
   // ~160 outer keys. 157KB either way on a real snapshot. Kept because a file that
@@ -10833,40 +10935,253 @@ function exportDebugState() {
 // Pushes the full backup snapshot to Drive ("KR App Backups", one file per
 // person per day) via the Apps Script. Silent: offline or an old backend
 // just means the next clock-out retries. Lost/wiped phone → ☁️ Restore.
+//
+// ⭐⭐ A BACKUP MUST NOT REPLACE A GOOD COPY WITH A COLLAPSED ONE. 6 Oct 2026: this
+// phone went from 1,229 timesheets to 2, and at 07:18 this function sent the 2 to
+// Drive and the Settings screen said "✓ Backed up today" in green. Only the dated
+// filename saved the history.
+//
+// What a backup HOLDS (timesheets, hours, inbox notes) is recorded after every good
+// backup, in the small store, which is the one that survived that morning. Before
+// the next one is sent, and at every open, the phone is compared with that record.
+// The Apps Script makes the same comparison against the newest file in Drive, so
+// the check still holds if this record is lost along with everything else.
+// ⚠️ The test is "it had a lot and now has under half", never "it has few". A new
+// phone has no record to fall from, so it can never trip this.
+// ⚠️ Counts, not bytes: moving photos to Drive shrinks a backup by megabytes and
+// loses nothing.
+const KR_BACKUP_GOOD = 'kr_backup_good', KR_BACKUP_ALARM = 'kr_backup_alarm';
+function _backupStatsOf(data) {
+  const list = k => { try { const v = JSON.parse((data && data[k]) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } };
+  const es = list('kr_entries');
+  // ⚠️ Robot runs share this store and are not timesheets. Counting them read 1,375
+  // against the 1,242 on Lincoln's own screen: a number that does not match the one
+  // the user is holding is a question, so they are counted apart.
+  let n = 0, bots = 0, hours = 0, best = 0, latest = '';
+  es.forEach(e => {
+    if (!e) return;
+    if (e.bot) { bots++; return; }
+    n++; hours += Number(e.durationHours) || 0;
+    const t = e.date ? _dmyToDate(e.date).getTime() : 0;
+    if (t > best) { best = t; latest = e.date; }
+  });
+  return { entries: n, bots, hours: Math.round(hours * 100) / 100, inbox: list('kr_inbox').length, latest };
+}
+function _backupStatsNow() { return _backupStatsOf({ kr_entries: _storeGet('kr_entries'), kr_inbox: _storeGet('kr_inbox') }); }
+function _backupFell(was, is) { return (was || 0) >= 20 && (is || 0) < (was || 0) / 2; }
+function _backupCollapsed(prev, now) {
+  return !!prev && !!now && (_backupFell(prev.entries, now.entries) || _backupFell(prev.inbox, now.inbox));
+}
+function _backupJson(key) { try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { return null; } }
+function _backupGood() { return _backupJson(KR_BACKUP_GOOD); }
+function _backupAlarm() { return _backupJson(KR_BACKUP_ALARM); }
+function _fmtN(x) { return Number(x || 0).toLocaleString(); }
+function _fmtHrs(x) { return Number(x || 0).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + 'h'; }
+function _backupAlarmWords() {
+  const a = _backupAlarm();
+  if (!a) return '';
+  return 'At its last backup this phone held ' + _fmtN(a.prev.entries) + ' timesheets and ' + _fmtN(a.prev.inbox)
+    + ' inbox notes. It now holds ' + _fmtN(a.now.entries) + ' and ' + _fmtN(a.now.inbox) + '.';
+}
+function _backupRefreshLabels() {
+  try { updateBackupAlarm(); updateBackupBanner(); updateBackupReminder(); } catch (e) {}
+}
+function _raiseBackupAlarm(prev, now) {
+  _storeSet(KR_BACKUP_ALARM, JSON.stringify({ prev, now, at: new Date().toISOString() }));
+  _backupRefreshLabels();
+}
+function _clearBackupAlarm() {
+  if (localStorage.getItem(KR_BACKUP_ALARM) === null) return;
+  _storeRemove(KR_BACKUP_ALARM);
+  _backupRefreshLabels();
+}
+// True when it is safe to back up. Raises the alarm when it is not, and takes it
+// down by itself once the work is back, which is what a restore does.
+function _backupCheck() {
+  const good = _backupGood(), now = _backupStatsNow();
+  if (good && _backupCollapsed(good, now)) { _raiseBackupAlarm(good, now); return false; }
+  _clearBackupAlarm();
+  updateBackupAlarm();
+  return true;
+}
+// Same instrument as the NOT SAVED bar and for the same reason: a toast is gone in
+// three seconds, and this is a thing to act on before the next clock-in.
+function updateBackupAlarm() {
+  let el = document.getElementById('backup-alarm');
+  if (!_backupAlarm()) { if (el) el.remove(); return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'backup-alarm';
+    el.onclick = () => openDriveBackups();
+    el.style.cssText = 'position:fixed;left:0;right:0;z-index:99998;padding:11px 14px;'
+      + 'background:#B3261E;color:#fff;font-size:13px;font-weight:700;line-height:1.35;'
+      + 'box-shadow:0 2px 10px rgba(0,0,0,0.5);cursor:pointer;-webkit-tap-highlight-color:transparent;';
+    document.body.appendChild(el);
+  }
+  const above = document.getElementById('storage-alarm');
+  el.style.top = (above ? above.offsetHeight : 0) + 'px';
+  el.innerHTML = '🛑 BACKUP STOPPED. ' + _backupAlarmWords() + '<br>'
+    + '<span style="font-weight:600;">Your Drive backups have not been touched. Do not clock in.</span> '
+    + '<span style="font-weight:400;">Tap here to get your work back.</span><br>'
+    + '<span onclick="event.stopPropagation();confirmBackupAsIs()" '
+    + 'style="display:inline-block;margin-top:7px;padding:5px 12px;border-radius:8px;'
+    + 'background:rgba(255,255,255,0.22);border:1px solid rgba(255,255,255,0.5);font-weight:700;">'
+    + 'This is right, back up as it is</span>';
+}
+// The way out for the real case: he meant to remove that work.
+function confirmBackupAsIs() {
+  const now = _backupStatsNow();
+  if (!confirm('Back up this phone as it is now?\n\nIt holds ' + _fmtN(now.entries) + ' timesheets and ' + _fmtN(now.inbox) + ' inbox notes.\n\nOnly say OK if you meant to remove the rest. Your older Drive backups are kept either way.')) return;
+  _storeSet(KR_BACKUP_GOOD, JSON.stringify(Object.assign({ at: new Date().toISOString() }, now)));
+  _clearBackupAlarm();
+  autoBackupToDrive(true);
+}
+
 let _driveBackupBusy = false;
-async function autoBackupToDrive() {
+async function autoBackupToDrive(force) {
   if (_driveBackupBusy) return;
   const url = localStorage.getItem('kr_sheet_url');
   if (!url) return;
+  if (!force && !_backupCheck()) return;   // collapsed: send nothing, the alarm is up
   _driveBackupBusy = true;
   try {
     const snapshot = buildBackupSnapshot();
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'saveBackup', who: getUserName(), json: JSON.stringify(snapshot) }) });
+    const stats = _backupStatsOf(snapshot.data);
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'saveBackup', who: getUserName(), force: !!force, json: JSON.stringify(snapshot) }) });
     const json = await res.json();
     if (json && json.success) {
       _storeSet('kr_last_drive_backup_at', new Date().toISOString());
+      _storeSet(KR_BACKUP_GOOD, JSON.stringify(Object.assign({ at: new Date().toISOString() }, stats)));
       updateBackupBanner();
       updateBackupReminder();
+    } else if (json && json.collapsed && json.prev) {
+      // Drive holds more than this phone does and refused the write. Take its
+      // numbers as the record, so the alarm survives the next open as well.
+      _storeSet(KR_BACKUP_GOOD, JSON.stringify(Object.assign({ at: new Date().toISOString() }, json.prev)));
+      _raiseBackupAlarm(json.prev, json.now || stats);
     }
   } catch (e) { /* offline — retried at the next clock-out */ }
   finally { _driveBackupBusy = false; }
 }
-// Pull the newest Drive backup for this person and restore it (new phone flow).
-async function restoreFromDriveBackup() {
+
+// ── ☁️ Restore from Drive: a list to choose from, never "the newest" ──
+// ⭐⭐ 6 Oct 2026: this fetched the newest file by name and offered to restore it.
+// That morning the newest file was the 2-timesheet one, so the recovery button
+// would have handed back the loss, and the real recovery was done by hand in the
+// Drive app. Now it lists the dated backups with what each HOLDS, refuses one
+// that holds a fraction of the one before it, and reads the chosen file's real
+// contents back before anything is overwritten.
+function _backupDayLabel(name) {
+  const m = String(name || '').match(/(\d{4})-(\d{2})-(\d{2})\.json$/);
+  if (!m) return String(name || '');
+  return new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+}
+function _backupHoldsWords(st) {
+  return _fmtN(st.entries) + ' timesheets · ' + _fmtHrs(st.hours) + ' · ' + _fmtN(st.inbox) + ' notes';
+}
+let _driveBackupRows = [];
+async function openDriveBackups() {
+  const body = document.getElementById('drive-backups-body');
+  const url = localStorage.getItem('kr_sheet_url');
+  const here = _backupStatsNow();
+  document.getElementById('drive-backups-here').textContent = 'This phone now holds ' + _backupHoldsWords(here) + '.';
+  _driveBackupRows = [];
+  // The copy kept on this phone needs no signal, so it goes in first.
+  let local = null;
+  try { local = JSON.parse(_storeGet('kr_last_backup') || 'null'); } catch (e) {}
+  if (local && local.data && local.app === 'kaiser-ridge-task-tracker') {
+    const st = _backupStatsOf(local.data);
+    if (st.entries > here.entries || st.inbox > here.inbox) {
+      const d = new Date(local.createdAt);
+      _driveBackupRows.push({ local: true, label: '📱 Kept on this phone', sub: 'Saved ' + d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ' at ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }), stats: st });
+    }
+  }
+  _renderDriveBackups(url ? 'Reading your backups from Drive. The first time can take up to a minute.' : 'Add your Apps Script URL in Settings to see your Drive backups.');
+  openModal('modal-drive-backups');
+  if (!url) return;
+  try {
+    const res = await fetch(url + (url.includes('?') ? '&' : '?') + 'backups=1&who=' + encodeURIComponent(getUserName()), { cache: 'no-store' });
+    const json = await res.json();
+    if (!json || !Array.isArray(json.backups)) {
+      // The Apps Script has not been redeployed yet, so it cannot list. The old
+      // single-file route still works and is checked before it is offered.
+      _renderDriveBackups('');
+      body.insertAdjacentHTML('beforeend', '<div class="settings-note" style="margin:10px 0;">Your Apps Script is an older version and cannot list backups yet. Redeploy it to choose a date.</div>'
+        + '<button class="btn-sync" style="background:var(--green);" onclick="_restoreNewestDriveBackup()">☁️ Check the newest Drive backup</button>');
+      return;
+    }
+    json.backups.forEach(b => _driveBackupRows.push({ name: b.name, label: _backupDayLabel(b.name), sub: _fmtKB(b.size || 0), stats: b.stats || {}, collapsed: !!b.collapsed }));
+    _renderDriveBackups(json.backups.length ? '' : 'No Drive backups found for “' + getUserName() + '”. Check Your Name matches the old phone.');
+  } catch (e) { _renderDriveBackups('Could not reach Drive. Check your connection and try again.'); }
+}
+function _renderDriveBackups(note) {
+  const body = document.getElementById('drive-backups-body');
+  if (!body) return;
+  body.innerHTML = _driveBackupRows.map((r, i) => {
+    const st = r.stats || {};
+    const holds = st.unreadable ? 'Could not be read' : _backupHoldsWords(st) + (st.latest ? '<br>Last day worked ' + _escHtml(st.latest) : '');
+    return '<div onclick="_pickDriveBackup(' + i + ')" style="padding:12px 4px;border-bottom:1px solid var(--border);cursor:pointer;' + (r.collapsed ? 'opacity:0.55;' : '') + '">'
+      + '<div style="display:flex;justify-content:space-between;gap:8px;font-size:15px;font-weight:600;"><span>' + _escHtml(r.label) + '</span><span style="font-size:12px;font-weight:400;color:var(--subtext);">' + _escHtml(r.sub || '') + '</span></div>'
+      + '<div style="font-size:13px;color:var(--subtext);line-height:1.5;margin-top:2px;">' + holds + '</div>'
+      + (r.collapsed ? '<div style="font-size:12px;color:var(--red);font-weight:600;margin-top:3px;">⚠️ Holds far less than the backup before it. Not offered.</div>' : '')
+      + '</div>';
+  }).join('') + (note ? '<div class="settings-note" style="margin:12px 0;">' + _escHtml(note) + '</div>' : '');
+}
+async function _pickDriveBackup(i) {
+  const r = _driveBackupRows[i];
+  if (!r) return;
+  if (r.collapsed) { showToast('That backup holds far less than the one before it. Pick an earlier day.'); return; }
+  if (r.local) {
+    let snap = null;
+    try { snap = JSON.parse(_storeGet('kr_last_backup') || 'null'); } catch (e) {}
+    if (snap) _confirmRestore(snap, 'the copy kept on this phone');
+    return;
+  }
+  const url = localStorage.getItem('kr_sheet_url');
+  showToast('Fetching ' + r.label + '…');
+  try {
+    const res = await fetch(url + (url.includes('?') ? '&' : '?') + 'backup=1&who=' + encodeURIComponent(getUserName()) + '&name=' + encodeURIComponent(r.name), { cache: 'no-store' });
+    const json = await res.json();
+    if (!json || !json.success || !json.json) { showToast((json && json.error) || 'Could not fetch that backup'); return; }
+    if (json.name !== r.name) { showToast('Drive sent back a different file. Nothing was changed.'); return; }
+    _confirmRestore(JSON.parse(json.json), 'the Drive backup from ' + r.label);
+  } catch (e) { showToast('Could not reach Drive. Check your connection.'); }
+}
+// Older Apps Script only: it can return one file, the newest. Fetch it, read what
+// it actually holds, and refuse it if that is a collapse of the last good backup.
+async function _restoreNewestDriveBackup() {
   const url = localStorage.getItem('kr_sheet_url');
   if (!url) { showToast('Add your Apps Script URL in Settings first'); return; }
-  showToast('Fetching latest Drive backup…');
+  showToast('Fetching the newest Drive backup…');
   try {
     const res = await fetch(url + (url.includes('?') ? '&' : '?') + 'backup=1&who=' + encodeURIComponent(getUserName()), { cache: 'no-store' });
     const json = await res.json();
-    if (!json || !json.success || !json.json) { showToast((json && json.error) || 'No Drive backup found — check Your Name matches the old phone'); return; }
+    if (!json || !json.success || !json.json) { showToast((json && json.error) || 'No Drive backup found. Check Your Name matches the old phone.'); return; }
     const snapshot = JSON.parse(json.json);
-    if (!snapshot || !snapshot.data || snapshot.app !== 'kaiser-ridge-task-tracker') { showToast('That Drive file isn’t a valid backup'); return; }
-    const when = json.savedAt ? new Date(json.savedAt).toLocaleString() : new Date(snapshot.createdAt).toLocaleString();
-    if (!confirm('Restore from the Drive backup saved ' + when + '?\n\nThis will overwrite this phone’s data with that backup.')) return;
-    _applyBackupSnapshot(snapshot);
-  } catch (e) { showToast('Could not reach Drive — check connection'); }
+    const good = _backupGood(), st = _backupStatsOf(snapshot && snapshot.data);
+    if (good && _backupCollapsed(good, st)) {
+      alert('The newest Drive backup (' + _backupDayLabel(json.name) + ') holds only ' + _backupHoldsWords(st) + '.\n\nYour last good backup held ' + _backupHoldsWords(good) + ', so this one has not been restored.\n\nRedeploy the Apps Script to choose an earlier day, or pick the dated file by hand in the Drive app.');
+      return;
+    }
+    _confirmRestore(snapshot, 'the Drive backup from ' + _backupDayLabel(json.name));
+  } catch (e) { showToast('Could not reach Drive. Check your connection.'); }
 }
+// ⭐ VERIFY A BACKUP BEFORE RESTORING FROM IT. Every restore route ends here, and
+// the numbers in the question come from the file's real contents, read just now,
+// beside what the phone holds. On 6 Oct that check was done by hand on the Mac.
+function _confirmRestore(snapshot, fromWords) {
+  if (!snapshot || !snapshot.data || snapshot.app !== 'kaiser-ridge-task-tracker') { alert('That is not a Groovework backup. Nothing was changed.'); return false; }
+  const st = _backupStatsOf(snapshot.data), here = _backupStatsNow();
+  const less = st.entries < here.entries || st.inbox < here.inbox;
+  const msg = 'Restore ' + fromWords + '?\n\n'
+    + 'It holds ' + _fmtN(st.entries) + ' timesheets (' + _fmtHrs(st.hours) + ')' + (st.latest ? ', last day worked ' + st.latest : '') + ', and ' + _fmtN(st.inbox) + ' inbox notes.\n\n'
+    + 'This phone now holds ' + _fmtN(here.entries) + ' timesheets and ' + _fmtN(here.inbox) + ' inbox notes. They will be replaced.'
+    + (less ? '\n\n⚠️ That is LESS than this phone holds now. Export a backup first if you are not sure.' : '');
+  if (!confirm(msg)) return false;
+  _applyBackupSnapshot(snapshot);
+  return true;
+}
+function restoreFromDriveBackup() { openDriveBackups(); }
 
 // ── Task Library sharing (multi-device) ──
 // The shared task DEFINITIONS only — never timesheets, projects, clock, or
@@ -11043,6 +11358,10 @@ function _applyBackupSnapshot(snapshot) {
   Object.entries(snapshot.data).forEach(([key, raw]) => {
     _storeSet(key, raw);
   });
+  // What was just restored IS the new record of "good". Without this, choosing an
+  // older, smaller backup on purpose would trip the collapse alarm at the next open.
+  _storeSet(KR_BACKUP_GOOD, JSON.stringify(Object.assign({ at: new Date().toISOString() }, _backupStatsOf(snapshot.data))));
+  _storeRemove(KR_BACKUP_ALARM);
   showToast('Backup restored — reloading…');
   setTimeout(() => location.reload(), 900);
 }
@@ -11058,10 +11377,7 @@ function restoreBackupFromFile(event) {
         alert('This doesn\'t look like a Groovework backup file.');
         return;
       }
-      const count = Object.keys(snapshot.data).length;
-      if (!confirm(`Restore from this backup (made ${new Date(snapshot.createdAt).toLocaleString()})?\n\nThis will overwrite your current jobs, tasks, guides, settings, and entries (${count} items) with what's in the backup.`)) return;
-
-      _applyBackupSnapshot(snapshot);
+      _confirmRestore(snapshot, 'this backup file, made ' + new Date(snapshot.createdAt).toLocaleString());
     } catch (err) {
       console.error('Restore failed:', err);
       alert('Could not read that file — make sure it\'s a Groovework backup JSON file.');
@@ -11073,6 +11389,8 @@ function restoreBackupFromFile(event) {
 
 function confirmClear() {
   if (!confirm('Clear all local data? This cannot be undone.')) return;
+  // A deliberate wipe is not a collapse. Drop the record it would be measured against.
+  _storeRemove(KR_BACKUP_GOOD); _storeRemove(KR_BACKUP_ALARM); updateBackupAlarm();
   entries = [];
   bumpEntriesRev();
   clockState = null;
@@ -17034,7 +17352,50 @@ showScreen = function(id, tab) {
   if (id === 'equipment') renderEquipmentScreen();
 };
 
-function openMoreMenu() { openModal('modal-more-menu'); }
+// ── THE HIDDEN FEATURES REGISTER ─────────────────────────────────────────────
+// Lincoln, 9 Oct 2026: the app has to be usable by a stranger, the Planner and the
+// Clock are the core, and everything else goes to the side. HIDDEN, not deleted, so
+// any of it can come back later by flipping a switch.
+//
+// ⭐ This list IS the record of what has been hidden. To hide something: add a row
+// here and put data-feature="<id>" on its door (the More row, a button, a section).
+// Nothing else changes: the screen, its code and its stored data all stay as they
+// are. Settings → Advanced → Hidden features lists every row with a switch.
+// ⚠️ Before hiding a screen, check what can only be reached THROUGH it and give
+// that its own door first. The Dashboard held the only route to the Times list.
+const KR_HIDDEN_FEATURES = [
+  { id: 'dashboard', name: 'Dashboard', since: 'v365',
+    what: 'Weekly hours, getting faster, slipping past their rhythm, What got done and the hours charts.' },
+];
+function _unhidden() { try { const v = JSON.parse(localStorage.getItem('kr_unhidden') || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+function featureHidden(id) { return KR_HIDDEN_FEATURES.some(f => f.id === id) && !_unhidden().includes(id); }
+function applyHiddenFeatures() {
+  document.querySelectorAll('[data-feature]').forEach(el => { el.style.display = featureHidden(el.dataset.feature) ? 'none' : ''; });
+}
+function setFeatureShown(id, on) {
+  const list = _unhidden().filter(x => x !== id);
+  if (on) list.push(id);
+  _storeSet('kr_unhidden', JSON.stringify(list));
+  applyHiddenFeatures();
+  renderHiddenFeatures();
+}
+function renderHiddenFeatures() {
+  const el = document.getElementById('hidden-features-list'), title = document.getElementById('hidden-features-title');
+  if (!el) return;
+  const shown = _unhidden();
+  const n = KR_HIDDEN_FEATURES.filter(f => !shown.includes(f.id)).length;
+  if (title) title.textContent = 'Hidden features · ' + n + ' of ' + KR_HIDDEN_FEATURES.length + ' hidden';
+  el.innerHTML = KR_HIDDEN_FEATURES.map(f => {
+    const on = shown.includes(f.id);
+    return '<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--border);">'
+      + '<div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:600;color:var(--text);">' + _escHtml(f.name) + '</div>'
+      + '<div style="font-size:12px;color:var(--subtext);line-height:1.45;margin-top:2px;">' + _escHtml(f.what) + ' Hidden since ' + _escHtml(f.since) + '.</div></div>'
+      + '<span onclick="setFeatureShown(\'' + f.id + '\',' + (on ? 'false' : 'true') + ')" style="flex-shrink:0;cursor:pointer;font-size:14px;font-weight:600;padding:6px 12px;border-radius:9px;border:1px solid var(--border);color:' + (on ? 'var(--green)' : 'var(--subtext)') + ';">' + (on ? 'Showing' : 'Hidden') + '</span>'
+      + '</div>';
+  }).join('');
+}
+
+function openMoreMenu() { applyHiddenFeatures(); openModal('modal-more-menu'); }
 function moreMenuGo(id) {
   closeModal('modal-more-menu');
   showScreen(id, null);
