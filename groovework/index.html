@@ -2184,7 +2184,7 @@
     <button onclick="moreMenuGo('equipment')" class="more-row">
       <span style="font-size:22px;width:30px;text-align:center;">🧰</span><span>Equipment</span>
     </button>
-    <button onclick="moreMenuGo('robots')" class="more-row">
+    <button onclick="moreMenuGo('robots')" class="more-row" data-feature="robots">
       <span style="font-size:22px;width:30px;text-align:center;">🤖</span><span>Robots</span><span id="more-robots-count" style="margin-left:auto;font-size:13px;color:var(--green);font-weight:700;"></span>
     </button>
     <button onclick="moreMenuGo('settings')" class="more-row">
@@ -3180,7 +3180,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.365';
+const APP_VERSION = '2026-06-21.366';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -7326,8 +7326,12 @@ function renderTimesheets() {
   updateRestoreEntryBanner();
   const list = document.getElementById('ts-list');
   const searchTerm = (document.getElementById('ts-search')?.value || '').toLowerCase().trim();
+  // With Robots hidden the Mine / Robots / All switch goes too, and the list stays
+  // on "mine". The robot runs themselves are kept, untouched, for when it comes back.
+  const robotsOff = featureHidden('robots');
+  if (robotsOff) _tsWho = 'mine';
   const hasBots = entries.some(e => e.bot);
-  _renderTsWho(hasBots);
+  _renderTsWho(hasBots && !robotsOff);
   let filtered = entries.filter(e => {
     if (hasBots && _tsWho === 'mine'   &&  e.bot) return false;   // hide robots by default
     if (hasBots && _tsWho === 'robots' && !e.bot) return false;   // robots only
@@ -17366,6 +17370,8 @@ showScreen = function(id, tab) {
 const KR_HIDDEN_FEATURES = [
   { id: 'dashboard', name: 'Dashboard', since: 'v365',
     what: 'Weekly hours, getting faster, slipping past their rhythm, What got done and the hours charts.' },
+  { id: 'robots', name: 'Robots', since: 'v366',
+    what: 'Timing unattended machines (Roborock, Lymow One, Claude AI), their run log and the Mine / Robots / All switch on Timesheets.' },
 ];
 function _unhidden() { try { const v = JSON.parse(localStorage.getItem('kr_unhidden') || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
 function featureHidden(id) { return KR_HIDDEN_FEATURES.some(f => f.id === id) && !_unhidden().includes(id); }
@@ -17588,6 +17594,8 @@ function updateRobotBadge() {
   if (!tab) return;
   let b = document.getElementById('more-robot-badge');
   const n = getAgentRuns().length;
+  // Hidden or not, a run that is LIVE keeps its badge: it is the only way left to
+  // reach the screen and stop it. Hiding must never strand something still running.
   if (n > 0) {
     if (!b) {
       b = document.createElement('span'); b.id = 'more-robot-badge';
