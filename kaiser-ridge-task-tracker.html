@@ -1061,7 +1061,7 @@
     </div>
     <div style="display:flex;align-items:center;gap:10px;">
       <div class="header-right" id="ts-header-period"></div>
-      <button onclick="openManualEntry()" style="background:var(--blue);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:14px;font-weight:600;cursor:pointer;">+ Add</button>
+      <button onclick="openManualEntry()" data-feature="ts-add" style="background:var(--blue);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:14px;font-weight:600;cursor:pointer;">+ Add</button>
     </div>
   </div>
 
@@ -1083,9 +1083,9 @@
 
     <!-- Timesheet filter chips -->
     <div id="ts-filter-bar" style="display:flex;gap:8px;padding:8px 12px;overflow-x:auto;background:var(--card);border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch;scrollbar-width:none;">
-      <button id="ts-chip-freq"     onclick="openTsFilter('freq')"     class="dir-chip">Repeats ▾</button>
-      <button id="ts-chip-group"    onclick="openTsFilter('group')"    class="dir-chip">Area ▾</button>
-      <button id="ts-chip-location" onclick="openTsFilter('location')" class="dir-chip">Location ▾</button>
+      <button id="ts-chip-freq"     onclick="openTsFilter('freq')"     class="dir-chip" data-feature="repeats">Repeats ▾</button>
+      <button id="ts-chip-group"    onclick="openTsFilter('group')"    class="dir-chip" data-feature="area">Area ▾</button>
+      <button id="ts-chip-location" onclick="openTsFilter('location')" class="dir-chip" data-feature="location">Location ▾</button>
       <button id="ts-chip-equip"    onclick="openTsFilter('equip')"    class="dir-chip" data-feature="equipment">Equipment ▾</button>
     </div>
 
@@ -3184,7 +3184,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.369';
+const APP_VERSION = '2026-06-21.370';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -7419,7 +7419,7 @@ function renderTimesheets() {
       ${projLabel ? `<div style="font-size:12px;color:var(--blue);margin-top:2px;">📁 ${hl(projLabel)}</div>` : ''}
       ${(e.tool && !featureHidden('equipment')) ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${hl(e.tool)}</div>` : ''}
       ${e.break > 0 ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☕ ${e.break.toFixed(2)}h break${_breakRangesLabel(e.breaks) ? ' · ' + _breakRangesLabel(e.breaks) : ''}</div>` : ''}
-      ${e.pin && e.pin.url ? `<a href="${e.pin.url}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="display:inline-block;font-size:12px;color:var(--blue);text-decoration:none;margin-top:4px;">📍 View location</a>` : ''}
+      ${(e.pin && e.pin.url && !featureHidden('location')) ? `<a href="${e.pin.url}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="display:inline-block;font-size:12px;color:var(--blue);text-decoration:none;margin-top:4px;">📍 View location</a>` : ''}
       ${e.notes ? (() => {
         const { notes, todos, tasks } = _tsNotesSplit(e.notes);
         const head = txt => `<div style="font-size:10px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--subtext);opacity:0.7;margin:8px 0 0;">${txt}</div>`;
@@ -17393,17 +17393,19 @@ const KR_HIDDEN_FEATURES = [
   { id: 'equipment', name: 'Equipment', since: 'v368',
     what: 'The equipment list with its notes, links and guides, the equipment on a job and on a timesheet, and the equipment filters.' },
   { id: 'location', name: 'Locations and GPS', since: 'v369',
-    what: 'The Location on a job, and the GPS position recorded at every clock-in. While hidden the app does not ask for or record location.' },
+    what: 'The Location on a job, the Location filter on Timesheets, and the GPS position recorded at every clock-in. While hidden the app does not ask for or record location.' },
   { id: 'repeats', name: 'Repeats', since: 'v369',
-    what: 'Choosing how often a job repeats (Daily, Weekly, Monthly). New jobs are saved as Weekly underneath.' },
+    what: 'Choosing how often a job repeats (Daily, Weekly, Monthly) and the Frequency filter on Timesheets. New jobs are saved as Weekly underneath.' },
   { id: 'job-reminder', name: 'Remind me on a job', since: 'v369',
     what: 'Setting a reminder from the job form. Reminders already set keep working.' },
   { id: 'area', name: 'Area', since: 'v369',
-    what: 'The Area a job belongs to (Maintenance, Routines, Admin). New jobs are saved as General underneath.' },
+    what: 'The Area a job belongs to (Maintenance, Routines, Admin) and the Group filter on Timesheets. New jobs are saved as General underneath.' },
   { id: 'job-video', name: 'How-to video on a job', since: 'v369',
     what: 'A video link for the whole job. A video on each task is unaffected and is where videos live now.' },
   { id: 'job-links', name: 'Files and links on a job', since: 'v369',
     what: 'Attaching Google Sheets, Dropbox or web links to a job.' },
+  { id: 'ts-add', name: 'Add a timesheet by hand', since: 'v370',
+    what: 'The + Add button on Timesheets, for typing in a timesheet that was never clocked. Tapping a timesheet to edit it still works.' },
 ];
 // Search boxes that offer to search equipment, with the wording for each state.
 const _EQUIP_PLACEHOLDERS = {
@@ -17419,7 +17421,14 @@ function applyHiddenFeatures() {
   const noEquip = featureHidden('equipment');
   Object.keys(_EQUIP_PLACEHOLDERS).forEach(id => { const el = document.getElementById(id); if (el) el.placeholder = _EQUIP_PLACEHOLDERS[id][noEquip ? 1 : 0]; });
   // A filter you can no longer see must not go on filtering.
-  if (noEquip && typeof _tsFilters !== 'undefined' && _tsFilters.equip) _tsFilters.equip = null;
+  // Timesheets: a filter you can no longer see must not go on filtering, and a
+  // chip bar with no chips left in it is an empty white band, so it goes too.
+  if (typeof _tsFilters !== 'undefined') {
+    const tsMap = { equip: 'equipment', location: 'location', freq: 'repeats', group: 'area' };
+    Object.keys(tsMap).forEach(t => { if (_tsFilters[t] && featureHidden(tsMap[t])) _tsFilters[t] = null; });
+    const bar = document.getElementById('ts-filter-bar');
+    if (bar) bar.style.display = Object.values(tsMap).every(f => featureHidden(f)) ? 'none' : 'flex';
+  }
   if (typeof _dirFilters !== 'undefined' && typeof _DIR_FILTER_FEATURE !== 'undefined') {
     Object.keys(_DIR_FILTER_FEATURE).forEach(t => { if (_dirFilters[t] && featureHidden(_DIR_FILTER_FEATURE[t])) _dirFilters[t] = null; });
   }
