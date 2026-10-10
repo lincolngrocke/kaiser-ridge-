@@ -2673,24 +2673,25 @@
     </div>
     <div style="padding:0 0 24px;">
 
-      <div class="form-row" onclick="openLocationPicker()" style="cursor:pointer;">
+      <div class="form-row" onclick="openLocationPicker()" style="cursor:pointer;" data-feature="location">
         <div class="form-label">Location</div>
         <div id="dir-location-display" style="flex:1;text-align:right;font-size:16px;color:var(--subtext);">Select…</div>
         <div style="color:var(--subtext);margin-left:6px;">›</div>
       </div>
 
       <div class="form-row" onclick="openClientPicker()" style="cursor:pointer;">
-        <div class="form-label">For</div>
-        <div id="dir-client-display" style="flex:1;text-align:right;font-size:16px;color:var(--subtext);">Anyone / general</div>
+        <div class="form-label">Group</div>
+        <div id="dir-client-display" style="flex:1;text-align:right;font-size:16px;color:var(--subtext);">No group</div>
         <div style="color:var(--subtext);margin-left:6px;">›</div>
       </div>
 
-      <div class="form-row" onclick="openFrequencyPicker()" style="cursor:pointer;">
+      <div class="form-row" onclick="openFrequencyPicker()" style="cursor:pointer;" data-feature="repeats">
         <div class="form-label">Repeats</div>
         <div id="dir-frequency-display" style="flex:1;text-align:right;font-size:16px;color:var(--subtext);">Select…</div>
         <div style="color:var(--subtext);margin-left:6px;">›</div>
       </div>
 
+      <div data-feature="job-reminder">
       <div class="form-row" onclick="_dirToggleRemind()" style="cursor:pointer;">
         <div class="form-label">🔔 Remind me</div>
         <div id="dir-remind-state" style="flex:1;text-align:right;font-size:16px;color:var(--subtext);">Off</div>
@@ -2706,8 +2707,9 @@
         </div>
         <div style="font-size:12px;color:var(--subtext);margin-top:8px;line-height:1.45;">A banner shows when you open the app — from the date, and after the time if set. Repeat cycles Off → Daily → Weekly → Fortnightly → Monthly; it re-arms that long after you tick it done. Only ever shows if you set it here.</div>
       </div>
+      </div>
 
-      <div class="form-row" onclick="openGroupPicker()" style="cursor:pointer;">
+      <div class="form-row" onclick="openGroupPicker()" style="cursor:pointer;" data-feature="area">
         <div class="form-label">Area</div>
         <div id="dir-group-display" style="flex:1;text-align:right;font-size:16px;color:var(--subtext);">Select…</div>
         <div style="color:var(--subtext);margin-left:6px;">›</div>
@@ -2740,7 +2742,7 @@
         <button onclick="openCopyChecklist()" style="margin-top:8px;background:none;border:1px dashed var(--blue);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">⧉ Copy Tasks to Other Jobs…</button>
       </div>
 
-      <div style="padding:16px 20px 8px;">
+      <div style="padding:16px 20px 8px;" data-feature="job-video">
         <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">🎥 HOW-TO VIDEO</div>
         <input class="form-select" id="dir-video" type="url" placeholder="Paste a YouTube link…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
           inputmode="url" data-lpignore="true" data-1p-ignore oninput="updateDirVideoPreview()"
@@ -2749,7 +2751,7 @@
         <button id="dir-video-watch" onclick="playVideoForTask(document.getElementById('dir-task').value.trim())" style="display:none;margin-top:8px;background:none;border:1px solid var(--blue);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">▶ Watch how-to</button>
       </div>
 
-      <div style="padding:16px 20px 8px;">
+      <div style="padding:16px 20px 8px;" data-feature="job-links">
         <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">🔗 FILES &amp; LINKS</div>
         <div style="font-size:12px;color:var(--subtext);margin-bottom:10px;">Paste a Google Sheet, Dropbox, web or email link for this job — tap to open it from here.</div>
         <div id="dir-link-savefirst" style="display:none;font-size:13px;color:var(--subtext);padding:4px 0 2px;">Save the job first, then you can attach links.</div>
@@ -2847,7 +2849,7 @@
   <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:85vh;display:flex;flex-direction:column;">
     <div style="display:flex;align-items:center;padding:16px 20px 8px;">
       <button onclick="closeModal('modal-client-picker')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:0;margin-right:12px;">‹ Back</button>
-      <span style="font-size:17px;font-weight:600;flex:1;text-align:center;">Who is this job for?</span>
+      <span style="font-size:17px;font-weight:600;flex:1;text-align:center;">Group</span>
       <span style="width:60px;"></span>
     </div>
     <div style="padding:8px 16px 12px;">
@@ -3182,7 +3184,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.368';
+const APP_VERSION = '2026-06-21.369';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4275,6 +4277,11 @@ function startClock(taskInfo) {
 // hyperlink column (no backend change).
 function captureClockInLocation() {
   if (!clockState || !clockState.running) return;
+  // ⭐ Lincoln, 10 Oct 2026: no sharing of locations, it complicates the terms of
+  // service. With Locations hidden the app does not ask for or record GPS at all.
+  // Hiding the label while still stamping coordinates on every clock-in would be
+  // the worst of both: collected, and invisible.
+  if (featureHidden('location')) return;
   if (clockState.pin && clockState.pin.url) return;        // already pinned (manual)
   if (!navigator.geolocation) return;
   clockState._pinPending = true;
@@ -11713,7 +11720,7 @@ let _dirFilterType = null;
 
 function openDirFilter(type) {
   _dirFilterType = type;
-  const titles = { freq: 'Frequency', group: 'Area', location: 'Location', equip: 'Equipment', client: 'For', horizon: 'Horizon' };
+  const titles = { freq: 'Frequency', group: 'Area', location: 'Location', equip: 'Equipment', client: 'Group', horizon: 'Horizon' };
   document.getElementById('dir-filter-title').textContent = titles[type];
 
   // Build option list from current DIRECTORY
@@ -11770,15 +11777,17 @@ const _DIR_FILTER_DIMS = [
   { type: 'horizon', label: 'Horizon' },
   { type: 'freq', label: 'Repeats' },
   { type: 'group', label: 'Area' },
-  { type: 'client', label: 'For' },
+  { type: 'client', label: 'Group' },
   { type: 'location', label: 'Location' },
   { type: 'equip', label: 'Equipment' },
 ];
+// Which hidden feature takes a Jobs filter with it.
+const _DIR_FILTER_FEATURE = { equip: 'equipment', location: 'location', freq: 'repeats', group: 'area' };
 function openDirFilters() { renderDirFiltersSheet(); openModal('modal-dir-filters'); }
 function renderDirFiltersSheet() {
   const active = Object.values(_dirFilters).filter(Boolean).length;
   const clr = document.getElementById('dir-filters-clear'); if (clr) clr.style.display = active ? 'block' : 'none';
-  document.getElementById('dir-filters-list').innerHTML = _DIR_FILTER_DIMS.filter(d => !(d.type === 'equip' && featureHidden('equipment'))).map(d => {
+  document.getElementById('dir-filters-list').innerHTML = _DIR_FILTER_DIMS.filter(d => !featureHidden(_DIR_FILTER_FEATURE[d.type] || '')).map(d => {
     const val = _dirFilters[d.type];
     return `<div onclick="openDirFilter('${d.type}')" style="display:flex;align-items:center;gap:10px;padding:14px 2px;border-bottom:1px solid var(--border);cursor:pointer;">
       <span style="flex:1;min-width:0;font-size:15px;color:var(--text);">${d.label}</span>
@@ -12074,8 +12083,8 @@ function renderDirectory() {
                 ${_dirSort === 'used' && _dirCounts[task] ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔂 Done ${_dirCounts[task]}×</div>` : ''}
                 ${taskAvg[task] ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">⏱ Avg ${fmtMin(taskAvg[task])}</div>` : ''}
                 ${jobHorizon(task) ? `<div style="font-size:12px;color:#5ac8fa;margin-top:2px;">🗓 ${_horizonLabel(jobHorizon(task))}</div>` : ''}
-                ${meta.client ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">👤 For ${_escHtml(meta.client)}</div>` : ''}
-                ${meta.location ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">📍 ${meta.location}</div>` : ''}
+                ${meta.client ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">👥 ${_escHtml(meta.client)}</div>` : ''}
+                ${(meta.location && !featureHidden('location')) ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">📍 ${meta.location}</div>` : ''}
                 ${(equip.length && !featureHidden('equipment')) ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${equip.join(', ')}</div>` : ''}
                 ${checklistHtml}
               </div>
@@ -12423,7 +12432,7 @@ let _selectedClient = '';
 function setClientDisplay(val) {
   _selectedClient = val;
   const d = document.getElementById('dir-client-display');
-  if (d) { d.textContent = val || 'Anyone / general'; d.style.color = val ? 'var(--text)' : 'var(--subtext)'; }
+  if (d) { d.textContent = val || 'No group'; d.style.color = val ? 'var(--text)' : 'var(--subtext)'; }
 }
 function getAllClients() {
   const extras = JSON.parse(localStorage.getItem('kr_extra_clients') || '[]');
@@ -12441,7 +12450,7 @@ function renderClientPickerList() {
   const filtered = ql ? all.filter(c => c.toLowerCase().includes(ql)) : all;
   const list = document.getElementById('client-picker-list');
   let html = `<div onclick="selectClient('')" style="padding:14px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;font-size:16px;color:${_selectedClient ? 'var(--text)' : 'var(--blue)'};">
-      <span>Anyone / general</span>${_selectedClient ? '' : '<span style="color:var(--blue);font-size:18px;">✓</span>'}</div>`;
+      <span>No group</span>${_selectedClient ? '' : '<span style="color:var(--blue);font-size:18px;">✓</span>'}</div>`;
   const exact = all.some(c => c.toLowerCase() === ql);
   if (query && !exact) {
     html += `<div onclick="selectClient(decodeURIComponent('${_encArg(query)}'))" style="padding:12px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:pointer;">
@@ -17116,8 +17125,12 @@ function confirmCopyChecklist() {
 function saveDirTask() {
   const location = _selectedLocation;
   const client = _selectedClient;
-  const freq = _selectedFrequency;
-  const grp  = _selectedGroup;
+  // ⚠️ Repeats and Area are REQUIRED below and are part of a job's identity
+  // (frequency + group + name). With their rows hidden a new job could never be
+  // saved, so it takes the same defaults the first-run setup already gives a job.
+  // An existing job keeps whatever it had: these only fill a blank.
+  const freq = _selectedFrequency || (featureHidden('repeats') ? 'Weekly' : '');
+  const grp  = _selectedGroup || (featureHidden('area') ? 'General' : '');
   const task = document.getElementById('dir-task').value.trim();
   if (!freq)     { showToast('Please select a Frequency'); return; }
   if (!grp)  { showToast('Please select a Group'); return; }
@@ -17379,6 +17392,18 @@ const KR_HIDDEN_FEATURES = [
     what: 'A layer above jobs with its own steps: the Jobs / Projects switch, and the Project and Step fields on a timesheet.' },
   { id: 'equipment', name: 'Equipment', since: 'v368',
     what: 'The equipment list with its notes, links and guides, the equipment on a job and on a timesheet, and the equipment filters.' },
+  { id: 'location', name: 'Locations and GPS', since: 'v369',
+    what: 'The Location on a job, and the GPS position recorded at every clock-in. While hidden the app does not ask for or record location.' },
+  { id: 'repeats', name: 'Repeats', since: 'v369',
+    what: 'Choosing how often a job repeats (Daily, Weekly, Monthly). New jobs are saved as Weekly underneath.' },
+  { id: 'job-reminder', name: 'Remind me on a job', since: 'v369',
+    what: 'Setting a reminder from the job form. Reminders already set keep working.' },
+  { id: 'area', name: 'Area', since: 'v369',
+    what: 'The Area a job belongs to (Maintenance, Routines, Admin). New jobs are saved as General underneath.' },
+  { id: 'job-video', name: 'How-to video on a job', since: 'v369',
+    what: 'A video link for the whole job. A video on each task is unaffected and is where videos live now.' },
+  { id: 'job-links', name: 'Files and links on a job', since: 'v369',
+    what: 'Attaching Google Sheets, Dropbox or web links to a job.' },
 ];
 // Search boxes that offer to search equipment, with the wording for each state.
 const _EQUIP_PLACEHOLDERS = {
@@ -17394,9 +17419,9 @@ function applyHiddenFeatures() {
   const noEquip = featureHidden('equipment');
   Object.keys(_EQUIP_PLACEHOLDERS).forEach(id => { const el = document.getElementById(id); if (el) el.placeholder = _EQUIP_PLACEHOLDERS[id][noEquip ? 1 : 0]; });
   // A filter you can no longer see must not go on filtering.
-  if (noEquip) {
-    if (typeof _dirFilters !== 'undefined' && _dirFilters.equip) { _dirFilters.equip = null; }
-    if (typeof _tsFilters !== 'undefined' && _tsFilters.equip) { _tsFilters.equip = null; }
+  if (noEquip && typeof _tsFilters !== 'undefined' && _tsFilters.equip) _tsFilters.equip = null;
+  if (typeof _dirFilters !== 'undefined' && typeof _DIR_FILTER_FEATURE !== 'undefined') {
+    Object.keys(_DIR_FILTER_FEATURE).forEach(t => { if (_dirFilters[t] && featureHidden(_DIR_FILTER_FEATURE[t])) _dirFilters[t] = null; });
   }
   // Never leave someone standing in a room whose door has just gone.
   if (featureHidden('projects') && typeof _dirMode !== 'undefined' && _dirMode === 'projects') setDirMode('tasks');
