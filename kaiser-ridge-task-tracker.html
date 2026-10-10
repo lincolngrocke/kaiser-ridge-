@@ -3184,7 +3184,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.373';
+const APP_VERSION = '2026-06-21.374';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4533,7 +4533,7 @@ function renderClockState() {
     // ▶ Watch how-to — shown only when this task has a video reference
     const runVidBtn = document.getElementById('run-video-btn');
     if (runVidBtn) {
-      const hasVid = !!(getTaskVideos()[clockState.task] || {}).id;
+      const hasVid = !!(getTaskVideos()[clockState.task] || {}).id && !featureHidden('job-video');
       runVidBtn.style.display = hasVid ? '' : 'none';
     }
     const now = new Date();
@@ -11927,9 +11927,17 @@ function cycleDirSort() {
   // grouped → recent → used → least → grouped. 'least' is the cleanup lens:
   // never-done jobs first, then oldest last-done — eat the list from the top.
   _dirSort = _dirSort === 'grouped' ? 'recent' : (_dirSort === 'recent' ? 'used' : (_dirSort === 'used' ? 'least' : 'grouped'));
+  if (_dirSort === 'grouped' && _dirGroupedOff()) _dirSort = 'recent';   // no Grouped to land on, carry on round
   _storeSet('kr_dir_sort', _dirSort);
   renderDirectory();
 }
+// ⭐ "Grouped" IS the Repeats and Area headings: DAILY / WEEKLY / FORTNIGHTLY
+// sections with a blue Area bar under each. With either of those hidden the view
+// has nothing left to group by, and it was still the DEFAULT sort, so a brand new
+// user landed on headings for two things the app no longer asks them about.
+// While it is off the list falls back to Most used and the sort button skips it.
+// The stored choice is left alone, so unhiding brings a saved Grouped back.
+function _dirGroupedOff() { try { return featureHidden('repeats') || featureHidden('area'); } catch (e) { return false; } }
 function _syncDirSortChip() {
   const c = document.getElementById('chip-dir-sort');
   if (!c) return;
@@ -11940,6 +11948,11 @@ function _syncDirSortChip() {
 function renderDirectory() {
   const list = document.getElementById('dir-list');
   if (!list) return;
+  const _savedSort = _dirSort;
+  if (_dirSort === 'grouped' && _dirGroupedOff()) _dirSort = 'used';
+  try { _renderDirectoryInner(list); } finally { if (_savedSort === 'grouped') _dirSort = _savedSort; }
+}
+function _renderDirectoryInner(list) {
   _syncDirSortChip();
   _syncTodosChip();
 
@@ -12053,9 +12066,9 @@ function renderDirectory() {
             const autoBadge = auto ? `<span style="display:inline-block;background:#5856D6;color:#fff;font-size:9px;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;">AUTO</span>` : '';
             const nPins = (taskNotes[task] || []).length;
             const pinBadge = nPins ? `<span onclick="event.stopPropagation();showPinnedNotesPopup(this)" ontouchstart="event.stopPropagation()" title="View ${nPins} to-do${nPins === 1 ? '' : 's'}" style="display:inline-block;background:#FFD60A;color:#000;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;cursor:pointer;">📌 ${nPins}</span>` : '';
-            const hasVideo = !!(taskVideos[task] || {}).id;
+            const hasVideo = !!(taskVideos[task] || {}).id && !featureHidden('job-video');
             const videoBadge = hasVideo ? `<span onclick="event.stopPropagation();playVideoForTask(decodeURIComponent('${_encArg(task)}'))" ontouchstart="event.stopPropagation()" title="Watch how-to video" style="display:inline-block;background:var(--blue);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;cursor:pointer;">🎥</span>` : '';
-            const nLinks = (jobLinksMap[task] || []).length;
+            const nLinks = featureHidden('job-links') ? 0 : (jobLinksMap[task] || []).length;
             const linkBadge = nLinks ? `<span title="${nLinks} file${nLinks === 1 ? '' : 's'} / link${nLinks === 1 ? '' : 's'}" style="display:inline-block;background:var(--bg);border:1px solid var(--border);color:var(--subtext);font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;">🔗 ${nLinks}</span>` : '';
             const lu = lastUsed[task];
             let usedLine;
@@ -12068,7 +12081,7 @@ function renderDirectory() {
             } else {
               usedLine = `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🗓 Not done yet</div>`;
             }
-            const autoSub = auto ? `<div style="font-size:12px;color:#5856D6;margin-top:2px;">⚙ Auto frequency · every ~${gapDays} day${gapDays === 1 ? '' : 's'}${auto.freq !== origFreq ? ` · was ${origFreq}` : ''}</div>` : '';
+            const autoSub = auto ? `<div style="font-size:12px;color:#5856D6;margin-top:2px;">⚙ Auto frequency · every ~${gapDays} day${gapDays === 1 ? '' : 's'}${(auto.freq !== origFreq && !featureHidden('repeats')) ? ` · was ${origFreq}` : ''}</div>` : '';
             const isFlagged = !!jobFlags[task];
             return `<div class="dir-task-row" data-task="${task}" data-key="${key}" data-flagged="${isFlagged ? '1' : ''}"
               ontouchstart="dirTaskTouchStart(event,this)"
