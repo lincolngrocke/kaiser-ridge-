@@ -1133,7 +1133,7 @@
   <div id="dir-filter-bar" style="display:flex;gap:8px;padding:8px 12px;overflow-x:auto;background:var(--card);border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch;scrollbar-width:none;">
     <button id="chip-reminders" onclick="openRemindersOverview()" class="dir-chip" data-feature="reminders" style="color:var(--blue);font-weight:600;">🔔 Reminders</button>
     <button id="chip-todos" onclick="openTodosOverview()" class="dir-chip" style="color:var(--blue);font-weight:600;">📌 To-dos</button>
-    <button id="chip-horizon" onclick="openHorizonReview()" class="dir-chip" style="color:var(--blue);font-weight:600;">🗓 Horizon</button>
+    <button id="chip-horizon" onclick="openHorizonReview()" class="dir-chip" data-feature="horizon" style="color:var(--blue);font-weight:600;">🗓 Horizon</button>
     <button id="chip-filters" onclick="openDirFilters()" class="dir-chip">⚲ Filter</button>
     <button id="chip-dir-sort" onclick="cycleDirSort()" class="dir-chip">↕ Grouped</button>
   </div>
@@ -3184,7 +3184,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.372';
+const APP_VERSION = '2026-06-21.373';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -11782,7 +11782,7 @@ const _DIR_FILTER_DIMS = [
   { type: 'equip', label: 'Equipment' },
 ];
 // Which hidden feature takes a Jobs filter with it.
-const _DIR_FILTER_FEATURE = { equip: 'equipment', location: 'location', freq: 'repeats', group: 'area' };
+const _DIR_FILTER_FEATURE = { equip: 'equipment', location: 'location', freq: 'repeats', group: 'area', horizon: 'horizon' };
 function openDirFilters() { renderDirFiltersSheet(); openModal('modal-dir-filters'); }
 function renderDirFiltersSheet() {
   const active = Object.values(_dirFilters).filter(Boolean).length;
@@ -12082,7 +12082,7 @@ function renderDirectory() {
                 ${usedLine}
                 ${_dirSort === 'used' && _dirCounts[task] ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔂 Done ${_dirCounts[task]}×</div>` : ''}
                 ${taskAvg[task] ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">⏱ Avg ${fmtMin(taskAvg[task])}</div>` : ''}
-                ${jobHorizon(task) ? `<div style="font-size:12px;color:#5ac8fa;margin-top:2px;">🗓 ${_horizonLabel(jobHorizon(task))}</div>` : ''}
+                ${(jobHorizon(task) && !featureHidden('horizon')) ? `<div style="font-size:12px;color:#5ac8fa;margin-top:2px;">🗓 ${_horizonLabel(jobHorizon(task))}</div>` : ''}
                 ${meta.client ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">👥 ${_escHtml(meta.client)}</div>` : ''}
                 ${(meta.location && !featureHidden('location')) ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">📍 ${meta.location}</div>` : ''}
                 ${(equip.length && !featureHidden('equipment')) ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${equip.join(', ')}</div>` : ''}
@@ -17408,6 +17408,8 @@ const KR_HIDDEN_FEATURES = [
     what: 'A video link for the whole job. A video on each task is unaffected and is where videos live now.' },
   { id: 'job-links', name: 'Files and links on a job', since: 'v369',
     what: 'Attaching Google Sheets, Dropbox or web links to a job.' },
+  { id: 'horizon', name: 'Horizon', since: 'v373',
+    what: 'Sorting jobs into This Week, This Month and later: the Horizon button on the Jobs screen, the line on each job card and the Horizon filter.' },
   { id: 'inbox', name: 'Inbox', since: 'v371',
     what: 'Capturing a thought or photo for later, and the Inbox tab on the bottom bar.' },
   { id: 'ts-add', name: 'Add a timesheet by hand', since: 'v370',
