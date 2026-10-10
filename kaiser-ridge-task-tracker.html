@@ -1131,7 +1131,7 @@
   </div>
   <!-- Filter chips -->
   <div id="dir-filter-bar" style="display:flex;gap:8px;padding:8px 12px;overflow-x:auto;background:var(--card);border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch;scrollbar-width:none;">
-    <button id="chip-reminders" onclick="openRemindersOverview()" class="dir-chip" style="color:var(--blue);font-weight:600;">🔔 Reminders</button>
+    <button id="chip-reminders" onclick="openRemindersOverview()" class="dir-chip" data-feature="reminders" style="color:var(--blue);font-weight:600;">🔔 Reminders</button>
     <button id="chip-todos" onclick="openTodosOverview()" class="dir-chip" style="color:var(--blue);font-weight:600;">📌 To-dos</button>
     <button id="chip-horizon" onclick="openHorizonReview()" class="dir-chip" style="color:var(--blue);font-weight:600;">🗓 Horizon</button>
     <button id="chip-filters" onclick="openDirFilters()" class="dir-chip">⚲ Filter</button>
@@ -2239,7 +2239,7 @@
     <div style="padding:0 20px 8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
       <label style="flex:1;min-width:130px;display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:13px;color:var(--text);cursor:pointer;">📅 <input type="date" id="inbox-date-input" onchange="applyInboxDate(this.value)" style="flex:1;min-width:0;background:none;border:none;color:var(--text);font-size:13px;outline:none;-webkit-appearance:none;"></label>
       <button id="inbox-date-clear" onclick="applyInboxDate('')" style="display:none;background:none;border:none;color:var(--blue);font-size:13px;font-weight:600;cursor:pointer;padding:8px 4px;">Clear</button>
-      <button id="inbox-reminders-btn" onclick="toggleInboxReminders()" style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px;font-size:13px;color:var(--text);cursor:pointer;white-space:nowrap;">🔔 Reminders</button>
+      <button id="inbox-reminders-btn" onclick="toggleInboxReminders()" data-feature="reminders" style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px;font-size:13px;color:var(--text);cursor:pointer;white-space:nowrap;">🔔 Reminders</button>
       <button onclick="jumpToInboxHistory()" style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px;font-size:13px;color:var(--text);cursor:pointer;white-space:nowrap;">📁 History</button>
     </div>
     <div id="inbox-list" style="flex:1;overflow-y:auto;overflow-x:hidden;padding:0 16px 8px;"></div>
@@ -2691,7 +2691,7 @@
         <div style="color:var(--subtext);margin-left:6px;">›</div>
       </div>
 
-      <div data-feature="job-reminder">
+      <div data-feature="reminders">
       <div class="form-row" onclick="_dirToggleRemind()" style="cursor:pointer;">
         <div class="form-label">🔔 Remind me</div>
         <div id="dir-remind-state" style="flex:1;text-align:right;font-size:16px;color:var(--subtext);">Off</div>
@@ -3184,7 +3184,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.371';
+const APP_VERSION = '2026-06-21.372';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -13429,7 +13429,7 @@ function renderDirSubtaskList(items) {
     const _ownGuideHere = !!(_ownGuides && Object.prototype.hasOwnProperty.call(_ownGuides, s));
     if (hasGuide) metaBits.push(_guideGlyph + (_ownGuideHere ? ' 📍' : (_sharedWith > 0 ? ' 🔗' : '')));
     if (_isRep) metaBits.push('<span style="color:#30d158;font-weight:700;">↻</span>');
-    if (_remOn) metaBits.push('🔔');
+    if (_remOn && !featureHidden('reminders')) metaBits.push('🔔');
     const metaLine = metaBits.length ? `<div style="font-size:11px;color:var(--subtext);padding:0 0 3px 2px;">${metaBits.join(' · ')}</div>` : '';
     return `
     <div id="strow-${i}" ontouchstart="stSwipeStart(event,${i})" ontouchmove="stSwipeMove(event)" ontouchend="stSwipeEnd(event)"
@@ -14264,7 +14264,7 @@ function renderTaskActionsSheet() {
     row('guide', (_ag && _ag.url) ? '▶️' : '📋', hasGuide ? 'Guide' : 'Add guide', hasGuide ? ((_ag && _ag.url) ? 'Video ✓' : '✓') : '') +
     (hasOrigin ? row('origin', 'ℹ️', 'History (from Inbox)', '') : '') +
     row('type', isRep ? '↻' : '1×', 'Type', isRep ? 'Repeatable — tap to make once-per-run' : 'Once per run — tap to make repeatable') +
-    row('remind', '🔔', 'Reminder', remOn ? 'On' : 'Off') +
+    (featureHidden('reminders') ? '' : row('remind', '🔔', 'Reminder', remOn ? 'On' : 'Off')) +
     row('flag', '🚩', flagged ? 'Remove flag' : 'Flag to top', '') +
     row('delete', '✕', 'Delete task', '', true);
   return true;
@@ -14990,7 +14990,7 @@ function openInboxActions(id) {
       ${value ? `<span style="font-size:13px;color:var(--subtext);flex-shrink:0;">${value}</span>` : ''}
     </div>`;
   document.getElementById('task-actions-list').innerHTML =
-    row('remind', '🔔', 'Reminder', n.remindOn ? 'On · ' + n.remindOn : 'Off') +
+    (featureHidden('reminders') ? '' : row('remind', '🔔', 'Reminder', n.remindOn ? 'On · ' + n.remindOn : 'Off')) +
     row('edit', '✏️', 'Edit note', '') +
     row('assign', '📂', n.assigned ? 'Move to another job' : 'Add to a job', '') +
     row('delete', '✕', 'Delete note', '', true);
@@ -15212,6 +15212,10 @@ function clearReminder() {
 function updateReminderBanners() {
   const wrap = document.getElementById('reminder-banners');
   if (!wrap) return;
+  // Reminders hidden: no banners at all. Every reminder stays stored exactly as it
+  // was set, dates and repeats included, so switching the feature back on resumes
+  // them. Nothing is marked done or dismissed by being hidden.
+  if (featureHidden('reminders')) { wrap.innerHTML = ''; wrap.style.display = 'none'; return; }
   const active = _activeReminders();
   const jobs = _dueJobs();
   _dueTaskRemCache = _dueTaskReminders();
@@ -17396,8 +17400,8 @@ const KR_HIDDEN_FEATURES = [
     what: 'The Location on a job, the Location filter on Timesheets, and the GPS position recorded at every clock-in. While hidden the app does not ask for or record location.' },
   { id: 'repeats', name: 'Repeats', since: 'v369',
     what: 'Choosing how often a job repeats (Daily, Weekly, Monthly) and the Frequency filter on Timesheets. New jobs are saved as Weekly underneath.' },
-  { id: 'job-reminder', name: 'Remind me on a job', since: 'v369',
-    what: 'Setting a reminder from the job form. Reminders already set keep working.' },
+  { id: 'reminders', name: 'Reminders', since: 'v372',
+    what: 'Reminder banners at the top of the screen, Remind me on a job, a task or a note, and the Reminders list on the Jobs screen. Reminders already set are kept and resume when this is switched on.' },
   { id: 'area', name: 'Area', since: 'v369',
     what: 'The Area a job belongs to (Maintenance, Routines, Admin) and the Group filter on Timesheets. New jobs are saved as General underneath.' },
   { id: 'job-video', name: 'How-to video on a job', since: 'v369',
@@ -17405,7 +17409,7 @@ const KR_HIDDEN_FEATURES = [
   { id: 'job-links', name: 'Files and links on a job', since: 'v369',
     what: 'Attaching Google Sheets, Dropbox or web links to a job.' },
   { id: 'inbox', name: 'Inbox', since: 'v371',
-    what: 'Capturing a thought or photo for later, and the Inbox tab on the bottom bar. Reminders already set on inbox notes keep showing.' },
+    what: 'Capturing a thought or photo for later, and the Inbox tab on the bottom bar.' },
   { id: 'ts-add', name: 'Add a timesheet by hand', since: 'v370',
     what: 'The + Add button on Timesheets, for typing in a timesheet that was never clocked. Tapping a timesheet to edit it still works.' },
 ];
@@ -17442,6 +17446,7 @@ function setFeatureShown(id, on) {
   if (on) list.push(id);
   _storeSet('kr_unhidden', JSON.stringify(list));
   applyHiddenFeatures();
+  if (id === 'reminders') { try { updateReminderBanners(); } catch (e) {} }
   renderHiddenFeatures();
 }
 function renderHiddenFeatures() {
