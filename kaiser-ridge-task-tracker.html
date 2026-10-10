@@ -1086,7 +1086,7 @@
       <button id="ts-chip-freq"     onclick="openTsFilter('freq')"     class="dir-chip">Repeats ▾</button>
       <button id="ts-chip-group"    onclick="openTsFilter('group')"    class="dir-chip">Area ▾</button>
       <button id="ts-chip-location" onclick="openTsFilter('location')" class="dir-chip">Location ▾</button>
-      <button id="ts-chip-equip"    onclick="openTsFilter('equip')"    class="dir-chip">Equipment ▾</button>
+      <button id="ts-chip-equip"    onclick="openTsFilter('equip')"    class="dir-chip" data-feature="equipment">Equipment ▾</button>
     </div>
 
     <div style="padding:0 16px 10px;">
@@ -1728,7 +1728,7 @@
       <button onclick="setChartDimension('group',this)"     class="chart-period-btn active" style="flex:1;">Area</button>
       <button onclick="setChartDimension('frequency',this)" class="chart-period-btn" style="flex:1;">Repeats</button>
       <button onclick="setChartDimension('location',this)"  class="chart-period-btn" style="flex:1;">Location</button>
-      <button onclick="setChartDimension('equipment',this)" class="chart-period-btn" style="flex:1;">Equipment</button>
+      <button onclick="setChartDimension('equipment',this)" class="chart-period-btn" style="flex:1;" data-feature="equipment">Equipment</button>
     </div>
     <!-- Chart fills remaining space -->
     <div style="flex:1;display:flex;flex-direction:column;padding:16px;overflow:hidden;">
@@ -2181,7 +2181,7 @@
     <button onclick="moreMenuGo('directory')" class="more-row">
       <span style="font-size:22px;width:30px;text-align:center;">📁</span><span>Jobs</span>
     </button>
-    <button onclick="moreMenuGo('equipment')" class="more-row">
+    <button onclick="moreMenuGo('equipment')" class="more-row" data-feature="equipment">
       <span style="font-size:22px;width:30px;text-align:center;">🧰</span><span>Equipment</span>
     </button>
     <button onclick="moreMenuGo('robots')" class="more-row" data-feature="robots">
@@ -2597,7 +2597,7 @@
         </select>
         <span class="form-chevron">›</span>
       </div>
-      <div class="form-row equip-row">
+      <div class="form-row equip-row" data-feature="equipment">
         <span class="form-label">Equipment</span>
         <div id="f-tool-list" class="equip-chips"></div>
       </div>
@@ -2720,7 +2720,7 @@
           style="font-size:16px;border:none;width:100%;text-align:right;background:transparent;color:var(--text);">
       </div>
 
-      <div style="padding:16px 20px 8px;">
+      <div style="padding:16px 20px 8px;" data-feature="equipment">
         <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:8px;">EQUIPMENT OPTIONS</div>
         <div id="dir-equipment-list"></div>
         <button onclick="openEquipmentPicker()" style="margin-top:8px;background:none;border:1px dashed var(--border);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">+ Add Equipment</button>
@@ -3182,7 +3182,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.367';
+const APP_VERSION = '2026-06-21.368';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4541,7 +4541,7 @@ function renderClockState() {
     card.style.display = 'block';
     document.getElementById('at-tag').textContent = clockState.location || 'No Location';
     document.getElementById('at-name').textContent = [clockState.group, clockState.task].filter(Boolean).join(' · ');
-    document.getElementById('at-tool').textContent = clockState.tool ? '🔧 ' + clockState.tool : '';
+    document.getElementById('at-tool').textContent = (clockState.tool && !featureHidden('equipment')) ? '🔧 ' + clockState.tool : '';
     document.getElementById('at-note').textContent = clockState.notes || '';
     renderRunChecklist();
     updateAtTimes();
@@ -7410,7 +7410,7 @@ function renderTimesheets() {
       </div>
       <div class="ts-entry-tag" style="margin-top:4px">${hl(tag)}</div>
       ${projLabel ? `<div style="font-size:12px;color:var(--blue);margin-top:2px;">📁 ${hl(projLabel)}</div>` : ''}
-      ${e.tool ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${hl(e.tool)}</div>` : ''}
+      ${(e.tool && !featureHidden('equipment')) ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${hl(e.tool)}</div>` : ''}
       ${e.break > 0 ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☕ ${e.break.toFixed(2)}h break${_breakRangesLabel(e.breaks) ? ' · ' + _breakRangesLabel(e.breaks) : ''}</div>` : ''}
       ${e.pin && e.pin.url ? `<a href="${e.pin.url}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="display:inline-block;font-size:12px;color:var(--blue);text-decoration:none;margin-top:4px;">📍 View location</a>` : ''}
       ${e.notes ? (() => {
@@ -7948,7 +7948,7 @@ function renderCreateTaskList() {
     const isSel = selected && r.task === selected;
     const matchSubs = q ? (SUBTASKS[r.task] || []).filter(s => s.toLowerCase().includes(q)) : [];
     const subsHtml = matchSubs.map(s => `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☑️ ${highlightMatch(s, q)}</div>`).join('');
-    const matchEquip = q ? taskEquipmentList(r.task).filter(e => e.toLowerCase().includes(q)) : [];
+    const matchEquip = (q && !featureHidden('equipment')) ? taskEquipmentList(r.task).filter(e => e.toLowerCase().includes(q)) : [];
     const equipHtml = matchEquip.map(e => `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${highlightMatch(e, q)}</div>`).join('');
     return `<div onclick='selectSearchedTask(${JSON.stringify({frequency:r.frequency,group:r.group,task:r.task})})'
         style="padding:12px 14px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;background:${isSel ? 'rgba(0,122,255,0.08)' : 'transparent'};${i < rows.length - 1 ? 'border-bottom:1px solid var(--border);' : ''}">
@@ -11778,7 +11778,7 @@ function openDirFilters() { renderDirFiltersSheet(); openModal('modal-dir-filter
 function renderDirFiltersSheet() {
   const active = Object.values(_dirFilters).filter(Boolean).length;
   const clr = document.getElementById('dir-filters-clear'); if (clr) clr.style.display = active ? 'block' : 'none';
-  document.getElementById('dir-filters-list').innerHTML = _DIR_FILTER_DIMS.map(d => {
+  document.getElementById('dir-filters-list').innerHTML = _DIR_FILTER_DIMS.filter(d => !(d.type === 'equip' && featureHidden('equipment'))).map(d => {
     const val = _dirFilters[d.type];
     return `<div onclick="openDirFilter('${d.type}')" style="display:flex;align-items:center;gap:10px;padding:14px 2px;border-bottom:1px solid var(--border);cursor:pointer;">
       <span style="flex:1;min-width:0;font-size:15px;color:var(--text);">${d.label}</span>
@@ -12076,7 +12076,7 @@ function renderDirectory() {
                 ${jobHorizon(task) ? `<div style="font-size:12px;color:#5ac8fa;margin-top:2px;">🗓 ${_horizonLabel(jobHorizon(task))}</div>` : ''}
                 ${meta.client ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">👤 For ${_escHtml(meta.client)}</div>` : ''}
                 ${meta.location ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">📍 ${meta.location}</div>` : ''}
-                ${equip.length ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${equip.join(', ')}</div>` : ''}
+                ${(equip.length && !featureHidden('equipment')) ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${equip.join(', ')}</div>` : ''}
                 ${checklistHtml}
               </div>
               <div style="color:var(--subtext);font-size:18px;padding-left:8px;">›</div>
@@ -17377,11 +17377,27 @@ const KR_HIDDEN_FEATURES = [
     what: 'Timing unattended machines (Roborock, Lymow One, Claude AI), their run log and the Mine / Robots / All switch on Timesheets.' },
   { id: 'projects', name: 'Projects', since: 'v367',
     what: 'A layer above jobs with its own steps: the Jobs / Projects switch, and the Project and Step fields on a timesheet.' },
+  { id: 'equipment', name: 'Equipment', since: 'v368',
+    what: 'The equipment list with its notes, links and guides, the equipment on a job and on a timesheet, and the equipment filters.' },
 ];
+// Search boxes that offer to search equipment, with the wording for each state.
+const _EQUIP_PLACEHOLDERS = {
+  'ts-search': ['Search tasks, notes, equipment…', 'Search tasks, notes…'],
+  'dir-search': ['Search jobs, tasks, to-dos, equipment…', 'Search jobs, tasks, to-dos…'],
+  'planner-task-search': ['Search jobs, tasks, equipment…', 'Search jobs, tasks…'],
+  'task-search-input': ['Search jobs, tasks, equipment…', 'Search jobs, tasks…'],
+};
 function _unhidden() { try { const v = JSON.parse(localStorage.getItem('kr_unhidden') || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
 function featureHidden(id) { return KR_HIDDEN_FEATURES.some(f => f.id === id) && !_unhidden().includes(id); }
 function applyHiddenFeatures() {
   document.querySelectorAll('[data-feature]').forEach(el => { el.style.display = featureHidden(el.dataset.feature) ? 'none' : ''; });
+  const noEquip = featureHidden('equipment');
+  Object.keys(_EQUIP_PLACEHOLDERS).forEach(id => { const el = document.getElementById(id); if (el) el.placeholder = _EQUIP_PLACEHOLDERS[id][noEquip ? 1 : 0]; });
+  // A filter you can no longer see must not go on filtering.
+  if (noEquip) {
+    if (typeof _dirFilters !== 'undefined' && _dirFilters.equip) { _dirFilters.equip = null; }
+    if (typeof _tsFilters !== 'undefined' && _tsFilters.equip) { _tsFilters.equip = null; }
+  }
   // Never leave someone standing in a room whose door has just gone.
   if (featureHidden('projects') && typeof _dirMode !== 'undefined' && _dirMode === 'projects') setDirMode('tasks');
 }
@@ -20236,7 +20252,7 @@ function openPlannerDoneDetail(entry) {
      <div style="margin-bottom:6px;">⏱ ${entry.durationHours}h logged${entry.break > 0 ? ` · ☕ ${Math.round(entry.break * 60)}min break` : ''}</div>
      ${entry.group   ? `<div style="margin-bottom:6px;">📂 ${entry.group}</div>`    : ''}
      ${entry.location? `<div style="margin-bottom:6px;">📍 ${entry.location}</div>` : ''}
-     ${entry.tool    ? `<div style="margin-bottom:6px;">🔧 ${entry.tool}</div>`     : ''}
+     ${(entry.tool && !featureHidden('equipment')) ? `<div style="margin-bottom:6px;">🔧 ${entry.tool}</div>`     : ''}
      ${_pinnedNotesHtml(entry.task)}
      ${notesHtml}
      ${checklistHtml}`;
@@ -20510,7 +20526,7 @@ function renderPlannerTaskList() {
     const avgStr = (avg ? ` · ~${fmtMin(avg * 60)}` : '') + (counts[r.task] ? ` · 🔂 ${counts[r.task]}×` : '');
     const isSelected = _plannerAddTask && _plannerAddTask.task === r.task;
     const matchSubs = query ? (SUBTASKS[r.task] || []).filter(s => s.toLowerCase().includes(query)) : [];
-    const matchEquip = query ? taskEquipmentList(r.task).filter(e => e.toLowerCase().includes(query)) : [];
+    const matchEquip = (query && !featureHidden('equipment')) ? taskEquipmentList(r.task).filter(e => e.toLowerCase().includes(query)) : [];
     const equipHtml = matchEquip.map(e => `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${highlightMatch(e, query)}</div>`).join('');
     const subsHtml = matchSubs.map(s => `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☑️ ${highlightMatch(s, query)}</div>`).join('');
     return `<div onclick="selectPlannerTask(decodeURIComponent('${_encArg(r.task)}'))"
