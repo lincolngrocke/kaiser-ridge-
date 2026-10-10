@@ -1114,10 +1114,10 @@
     <button id="dir-add-btn" onclick="dirAddButtonClick()" style="background:var(--blue);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:14px;font-weight:600;cursor:pointer;">+ Add</button>
   </div>
   <!-- Tasks / Projects toggle -->
-  <div style="display:flex;gap:6px;padding:8px 12px 0;background:var(--card);">
+  <div data-feature="projects"><div style="display:flex;gap:6px;padding:8px 12px 0;background:var(--card);">
     <button id="dir-seg-tasks" class="dir-seg active" onclick="setDirMode('tasks')">Jobs</button>
     <button id="dir-seg-projects" class="dir-seg" onclick="setDirMode('projects')">Projects</button>
-  </div>
+  </div></div>
   <!-- Search bar -->
   <div id="dir-search-wrap" style="padding:8px 12px 0;background:var(--card);">
     <div style="position:relative;">
@@ -2601,6 +2601,7 @@
         <span class="form-label">Equipment</span>
         <div id="f-tool-list" class="equip-chips"></div>
       </div>
+      <div data-feature="projects">
       <div class="form-row">
         <span class="form-label">Project</span>
         <select class="form-select" id="f-project" onchange="onProjectChange()">
@@ -2614,6 +2615,7 @@
           <option value="">Whole project</option>
         </select>
         <span class="form-chevron">›</span>
+      </div>
       </div>
     </div>
 
@@ -3180,7 +3182,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.366';
+const APP_VERSION = '2026-06-21.367';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -7219,7 +7221,7 @@ function updateTsChips() {
 
 // "Project · Step" label for a timesheet entry, or '' if not tagged to a project
 function entryProjectLabel(e) {
-  if (!e.projectId) return '';
+  if (!e.projectId || featureHidden('projects')) return '';
   const p = PROJECTS.find(x => x.id === e.projectId);
   if (!p) return '';
   let label = p.name || 'Untitled project';
@@ -17346,6 +17348,7 @@ function deleteDirTask() {
 const _origShowScreen = showScreen;
 showScreen = function(id, tab) {
   _origShowScreen(id, tab);
+  applyHiddenFeatures();
   // Screens that live behind the ☰ More menu keep that tab highlighted
   if (['dashboard', 'directory', 'equipment', 'settings'].includes(id)) {
     const more = document.getElementById('nav-more-tab');
@@ -17372,11 +17375,15 @@ const KR_HIDDEN_FEATURES = [
     what: 'Weekly hours, getting faster, slipping past their rhythm, What got done and the hours charts.' },
   { id: 'robots', name: 'Robots', since: 'v366',
     what: 'Timing unattended machines (Roborock, Lymow One, Claude AI), their run log and the Mine / Robots / All switch on Timesheets.' },
+  { id: 'projects', name: 'Projects', since: 'v367',
+    what: 'A layer above jobs with its own steps: the Jobs / Projects switch, and the Project and Step fields on a timesheet.' },
 ];
 function _unhidden() { try { const v = JSON.parse(localStorage.getItem('kr_unhidden') || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
 function featureHidden(id) { return KR_HIDDEN_FEATURES.some(f => f.id === id) && !_unhidden().includes(id); }
 function applyHiddenFeatures() {
   document.querySelectorAll('[data-feature]').forEach(el => { el.style.display = featureHidden(el.dataset.feature) ? 'none' : ''; });
+  // Never leave someone standing in a room whose door has just gone.
+  if (featureHidden('projects') && typeof _dirMode !== 'undefined' && _dirMode === 'projects') setDirMode('tasks');
 }
 function setFeatureShown(id, on) {
   const list = _unhidden().filter(x => x !== id);
@@ -18048,6 +18055,7 @@ function setDirMode(mode) {
 function populateProjectDropdown(selectedId) {
   const sel = document.getElementById('f-project');
   if (!sel) return;
+  applyHiddenFeatures();   // the form is about to show: its Project and Step rows follow the register
   const cur = selectedId !== undefined ? selectedId : sel.value;
   sel.innerHTML = '<option value="">None</option>';
   PROJECTS.forEach(p => {
