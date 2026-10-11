@@ -2538,6 +2538,7 @@
     </div>
 
     <div id="task-search-wrap" style="padding:14px 16px 0;position:relative;">
+      <div id="ce-pick-back" onclick="_entryPickDone()" style="display:none;font-size:14px;color:var(--blue);font-weight:600;padding:0 2px 12px;cursor:pointer;">‹ Back without changing the job</div>
       <div style="position:relative;">
         <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--subtext);">🔍</span>
         <input id="task-search-input" type="search" placeholder="Search jobs, tasks, equipment…" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
@@ -2559,7 +2560,7 @@
     </div>
 
     <div class="form-section" id="f-sec-pick">
-      <div class="form-row">
+      <div class="form-row" id="f-row-location">
         <span class="form-label">Location</span>
         <select class="form-select" id="f-location" onchange="onLocationChange()">
           <option value="">Select…</option>
@@ -2570,7 +2571,7 @@
         <span class="form-label">Pin</span>
         <button type="button" id="pin-btn" onclick="openPinMap()" style="flex:1;text-align:right;background:none;border:none;color:var(--blue);font-size:15px;font-weight:500;cursor:pointer;">📍 Drop Pin</button>
       </div>
-      <div class="form-row">
+      <div class="form-row" id="f-row-frequency">
         <span class="form-label">Repeats</span>
         <select class="form-select" id="f-frequency" onchange="onFrequencyChange()">
           <option value="">Select…</option>
@@ -2583,18 +2584,19 @@
         </select>
         <span class="form-chevron">›</span>
       </div>
-      <div class="form-row">
+      <div class="form-row" id="f-row-group">
         <span class="form-label">Area</span>
         <select class="form-select" id="f-group" onchange="onGroupChange()">
           <option value="">Select…</option>
         </select>
         <span class="form-chevron">›</span>
       </div>
-      <div class="form-row">
+      <div class="form-row" id="f-row-task" onclick="_entryJobRowTap()">
         <span class="form-label">Job</span>
         <select class="form-select" id="f-task" onchange="onTaskChange()">
           <option value="">Select…</option>
         </select>
+        <div id="f-task-display" style="display:none;flex:1;min-width:0;font-size:16px;color:var(--text);line-height:1.3;cursor:pointer;"></div>
         <span class="form-chevron">›</span>
       </div>
       <div class="form-row equip-row" data-feature="equipment">
@@ -3189,7 +3191,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.379';
+const APP_VERSION = '2026-06-21.380';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -7475,16 +7477,81 @@ function openManualEntry() {
 // need those fields and keep them. The hidden controls still hold their defaults
 // (today, no break, no notes), so saveEntry reads exactly what it always read.
 function _entryFormLean() { return editingId === null && !_creatingManual && featureHidden('entry-manual'); }
+// ⭐ ONE WAY TO CHOOSE A JOB. The Job select only lists jobs under the chosen
+// Repeats and Area, so re-pointing a timesheet meant setting those two first: pick
+// the drawer, pick the folder, then the file. With Repeats or Area hidden nobody
+// could reach their job that way. So on the Edit and Add forms the Job row shows
+// the job as plain text, and tapping it opens the SAME searchable list New Entry
+// uses. Picking a job fills Repeats and Area from the job itself
+// (selectSearchedTask already did that for New Entry).
+// ⚠️ The three selects stay in the page, hidden, and still hold the entry's
+// values. saveEntry reads them exactly as before, so an edit that only changes a
+// time cannot disturb the job.
+function _entryNoCascade() { return featureHidden('repeats') || featureHidden('area'); }
+let _entryPicking = false, _entryPickRestore = null;
 function _syncEntryFormLayout() {
   const lean = _entryFormLean();
   ['f-sec-pick', 'f-sec-when', 'f-sec-notes', 'ce-manual-hint'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = lean ? 'none' : ''; });
   const list = document.getElementById('ce-task-list');
-  if (list) list.style.maxHeight = lean ? 'calc(92vh - 260px)' : '240px';
+  if (list) list.style.maxHeight = (lean || _entryPicking) ? 'calc(92vh - 260px)' : '240px';
+  const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
+  show('f-row-location', !featureHidden('location'));
+  show('f-row-frequency', !featureHidden('repeats'));
+  show('f-row-group', !featureHidden('area'));
+  // Job as text + tap-to-choose whenever the cascade it depended on is hidden.
+  const asText = _entryNoCascade() && !lean;
+  const sel = document.getElementById('f-task'), disp = document.getElementById('f-task-display');
+  if (sel && disp) {
+    sel.style.display = asText ? 'none' : '';
+    disp.style.display = asText ? 'block' : 'none';
+    disp.textContent = sel.value || 'Choose a job';
+    disp.style.color = sel.value ? 'var(--text)' : 'var(--subtext)';
+  }
+  if (asText && !_entryPicking) { const hint = document.getElementById('ce-manual-hint'); if (hint) hint.style.display = 'none'; }
 }
-
+function _entryJobRowTap() { if (_entryNoCascade() && !_entryFormLean() && !_entryPicking) _entryPickStart(); }
+// Swap the form for the job list, then swap back. Nothing is saved by either step.
+function _entryPickStart() {
+  _entryPicking = true;
+  const ids = ['f-sec-pick', 'f-sec-when', 'f-sec-notes', 'f-delete-wrap', 'task-search-wrap'];
+  _entryPickRestore = { title: document.getElementById('modal-task-title').textContent };
+  ids.forEach(id => { const el = document.getElementById(id); if (el) _entryPickRestore[id] = el.style.display; });
+  ['f-sec-pick', 'f-sec-when', 'f-sec-notes', 'f-delete-wrap'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+  document.getElementById('task-search-wrap').style.display = '';
+  document.getElementById('ce-pick-back').style.display = 'block';
+  document.getElementById('ce-manual-hint').style.display = 'none';
+  document.getElementById('modal-task-title').textContent = 'Choose job';
+  const save = document.querySelector('#modal-task .modal-save'); if (save) save.style.visibility = 'hidden';
+  const inp = document.getElementById('task-search-input'); if (inp) inp.value = '';
+  document.getElementById('task-search-clear').style.display = 'none';
+  document.getElementById('ce-task-list').style.maxHeight = 'calc(92vh - 290px)';
+  renderCreateTaskList();
+  const sheet = document.querySelector('#modal-task .modal-sheet'); if (sheet) sheet.scrollTop = 0;
+}
+function _entryPickDone() {
+  if (!_entryPicking) return;
+  _entryPicking = false;
+  const r = _entryPickRestore || {};
+  ['f-sec-pick', 'f-sec-when', 'f-sec-notes', 'f-delete-wrap', 'task-search-wrap'].forEach(id => { const el = document.getElementById(id); if (el && id in r) el.style.display = r[id]; });
+  if (r.title) document.getElementById('modal-task-title').textContent = r.title;
+  document.getElementById('ce-pick-back').style.display = 'none';
+  const save = document.querySelector('#modal-task .modal-save'); if (save) save.style.visibility = '';
+  const inp = document.getElementById('task-search-input'); if (inp) inp.value = '';
+  document.getElementById('task-search-clear').style.display = 'none';
+  _entryPickRestore = null;
+  _syncEntryFormLayout();
+  renderCreateTaskList();
+}
+// Leaving the sheet any other way must not leave it stuck on the job list.
+function _entryPickReset() {
+  _entryPicking = false; _entryPickRestore = null;
+  const back = document.getElementById('ce-pick-back'); if (back) back.style.display = 'none';
+  const save = document.querySelector('#modal-task .modal-save'); if (save) save.style.visibility = '';
+}
 function openCreate() {
   editingId = null;
   _creatingManual = false;
+  _entryPickReset();
   document.getElementById('modal-task-title').textContent = 'New Entry';
   document.getElementById('f-delete-wrap').style.display = 'none';
   document.getElementById('f-time-row').style.display = 'none';
@@ -7531,6 +7598,7 @@ function openEdit(id) {
   if (!e) return;
   editingId = id;
   _creatingManual = false;
+  _entryPickReset();
   document.getElementById('modal-task-title').textContent = 'Edit Entry';
   document.getElementById('f-delete-wrap').style.display = 'block';
   document.getElementById('f-time-row').style.display = 'block';
@@ -7570,6 +7638,7 @@ function openEdit(id) {
   document.getElementById('f-date').value = `${parts[2]}-${parts[1]}-${parts[0]}`;
   document.getElementById('f-clockin').value = e.clockIn || '';
   document.getElementById('f-clockout').value = e.clockOut || '';
+  _syncEntryFormLayout();
 
   openModal('modal-task');
 }
@@ -7578,6 +7647,7 @@ function openEditActive() {
   if (!clockState) return;
   editingId = 'active';
   _creatingManual = false;
+  _entryPickReset();
   document.getElementById('modal-task-title').textContent = 'Edit Active Entry';
   document.getElementById('f-delete-wrap').style.display = 'none';
   document.getElementById('f-time-row').style.display = 'none';
@@ -7608,6 +7678,7 @@ function openEditActive() {
   document.getElementById('f-date').value = todayStr('-');
   document.getElementById('f-clockin').value = clockState.startTime || '';
   document.getElementById('f-clockout').value = '';
+  _syncEntryFormLayout();
 
   openModal('modal-task');
 }
@@ -8065,6 +8136,8 @@ function selectSearchedTask(sel) {
   document.getElementById('task-search-clear').style.display = 'flex';
   renderCreateTaskList();
 
+  if (_entryPicking) { _entryPickDone(); showToast('Job changed to "' + task + '". Tap Save to keep it.'); return; }
+  if (_entryNoCascade()) _syncEntryFormLayout();   // Add Entry: keep the Job text in step
   showToast(`"${task}" loaded`);
 }
 
@@ -8232,7 +8305,7 @@ function closeModal(id) {
   el.style.bottom = '';
   const sheet = el.querySelector('.modal-sheet') || el.firstElementChild;   // also covers the bottom-sheet pickers
   if (sheet && ('kbOrigMax' in sheet.dataset)) { sheet.style.maxHeight = sheet.dataset.kbOrigMax; delete sheet.dataset.kbOrigMax; }
-  if (id === 'modal-task') editingId = null;
+  if (id === 'modal-task') { editingId = null; _entryPickReset(); }
 }
 // Keep bottom-sheet modals above the on-screen keyboard. iOS anchors fixed
 // elements to the layout viewport, which sits *behind* the keyboard, so a
