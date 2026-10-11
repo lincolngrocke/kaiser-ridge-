@@ -1175,7 +1175,7 @@
   </div>
 </div>
 
-<div class="modal-backdrop" id="modal-dir-filter" style="z-index:360;">
+<div class="modal-backdrop" id="modal-dir-filter" style="z-index:360;" onclick="if(event.target===this)closeModal('modal-dir-filter')">
   <div class="modal-sheet" style="padding:16px 0 24px;">
     <div class="modal-handle"></div>
     <div style="display:flex;align-items:center;justify-content:space-between;padding:0 20px 12px;">
@@ -3184,7 +3184,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.374';
+const APP_VERSION = '2026-06-21.375';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -11747,6 +11747,11 @@ function openDirFilter(type) {
   }
 
   const current = _dirFilters[type];
+  if (!options.length && type === 'client') {
+    document.getElementById('dir-filter-list').innerHTML = '<div style="padding:22px 20px;font-size:14px;line-height:1.5;color:var(--subtext);">No groups yet. Open a job and set its Group, and it will appear here.</div>';
+    openModal('modal-dir-filter');
+    return;
+  }
   document.getElementById('dir-filter-list').innerHTML = options.map(o => `
     <div onclick="selectDirFilter(decodeURIComponent('${_encArg(o)}'),this)"
       style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;font-size:15px;">
@@ -11783,11 +11788,21 @@ const _DIR_FILTER_DIMS = [
 ];
 // Which hidden feature takes a Jobs filter with it.
 const _DIR_FILTER_FEATURE = { equip: 'equipment', location: 'location', freq: 'repeats', group: 'area', horizon: 'horizon' };
-function openDirFilters() { renderDirFiltersSheet(); openModal('modal-dir-filters'); }
+// ⭐ ONE FILTER LEFT IS NOT A FILTER SHEET. With Horizon, Repeats, Area, Location
+// and Equipment hidden the sheet opened with a single line in it, so narrowing by
+// group took two taps and an almost empty screen. When exactly one dimension is
+// showing, the button takes that dimension's name and opens its list directly.
+// Two or more showing and it is the Filter sheet again, unchanged.
+function _dirVisibleDims() { return _DIR_FILTER_DIMS.filter(d => !featureHidden(_DIR_FILTER_FEATURE[d.type] || '')); }
+function openDirFilters() {
+  const dims = _dirVisibleDims();
+  if (dims.length === 1) { openDirFilter(dims[0].type); return; }
+  renderDirFiltersSheet(); openModal('modal-dir-filters');
+}
 function renderDirFiltersSheet() {
   const active = Object.values(_dirFilters).filter(Boolean).length;
   const clr = document.getElementById('dir-filters-clear'); if (clr) clr.style.display = active ? 'block' : 'none';
-  document.getElementById('dir-filters-list').innerHTML = _DIR_FILTER_DIMS.filter(d => !featureHidden(_DIR_FILTER_FEATURE[d.type] || '')).map(d => {
+  document.getElementById('dir-filters-list').innerHTML = _dirVisibleDims().map(d => {
     const val = _dirFilters[d.type];
     return `<div onclick="openDirFilter('${d.type}')" style="display:flex;align-items:center;gap:10px;padding:14px 2px;border-bottom:1px solid var(--border);cursor:pointer;">
       <span style="flex:1;min-width:0;font-size:15px;color:var(--text);">${d.label}</span>
@@ -11804,7 +11819,13 @@ function clearAllDirFilters() {
 function updateDirChips() {
   const n = Object.values(_dirFilters).filter(Boolean).length;
   const btn = document.getElementById('chip-filters');
-  if (btn) { btn.textContent = n ? '⚲ Filter · ' + n : '⚲ Filter'; btn.classList.toggle('active', n > 0); }
+  let dims = []; try { dims = _dirVisibleDims(); } catch (e) {}
+  if (btn && dims.length === 1) {
+    // Shows the chosen value in place of the name, so the button says what the list is narrowed to.
+    const val = _dirFilters[dims[0].type];
+    btn.textContent = (dims[0].type === 'client' ? '👥 ' : '⚲ ') + (val || dims[0].label);
+    btn.classList.toggle('active', !!val);
+  } else if (btn) { btn.textContent = n ? '⚲ Filter · ' + n : '⚲ Filter'; btn.classList.toggle('active', n > 0); }
   const sheet = document.getElementById('modal-dir-filters');
   if (sheet && sheet.classList.contains('open')) renderDirFiltersSheet();
 }
@@ -17453,6 +17474,7 @@ function applyHiddenFeatures() {
   if (typeof _dirFilters !== 'undefined' && typeof _DIR_FILTER_FEATURE !== 'undefined') {
     Object.keys(_DIR_FILTER_FEATURE).forEach(t => { if (_dirFilters[t] && featureHidden(_DIR_FILTER_FEATURE[t])) _dirFilters[t] = null; });
   }
+  try { updateDirChips(); } catch (e) {}   // the Jobs filter button is named after what is left to filter by
   // Never leave someone standing in a room whose door has just gone.
   if (featureHidden('projects') && typeof _dirMode !== 'undefined' && _dirMode === 'projects') setDirMode('tasks');
 }
