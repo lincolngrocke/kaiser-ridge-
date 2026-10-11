@@ -3189,7 +3189,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.377';
+const APP_VERSION = '2026-06-21.378';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4525,10 +4525,14 @@ function renderClockState() {
       const parts = [];
       const pin = clockState.pin;
       const locName = clockState.location || '';
-      if (pin && pin.url) parts.push(`<a href="${pin.url}" target="_blank" rel="noopener" class="loc">◉ ${_escHtml(locName || 'Located')}</a>`);
-      else if (locName) parts.push(_escHtml(locName));
-      else if (clockState._pinPending) parts.push('<span style="color:#8b93a7;">◉ Locating…</span>');
-      if (clockState.group) parts.push(_escHtml(clockState.group));
+      // The line under the job name follows the register: no location with Locations
+      // hidden, no Area with Area hidden. What is left is the learned "avg of N".
+      if (!featureHidden('location')) {
+        if (pin && pin.url) parts.push(`<a href="${pin.url}" target="_blank" rel="noopener" class="loc">◉ ${_escHtml(locName || 'Located')}</a>`);
+        else if (locName) parts.push(_escHtml(locName));
+        else if (clockState._pinPending) parts.push('<span style="color:#8b93a7;">◉ Locating…</span>');
+      }
+      if (clockState.group && !featureHidden('area')) parts.push(_escHtml(clockState.group));
       const avg = getTaskAvgDuration(clockState.task);
       if (avg) { const n = entries.filter(e => e.task === clockState.task && e.durationHours > 0).length; parts.push('avg of ' + n); }
       jmEl.innerHTML = parts.join(' <span style="opacity:0.4;">·</span> ');
@@ -7411,7 +7415,7 @@ function renderTimesheets() {
   list.innerHTML = filtered.map(e => {
     const tag = e.bot
       ? (e.botEmoji || '🤖') + ' ' + [e.personnel, e.task].filter(Boolean).join(' · ')
-      : [e.group, e.task].filter(Boolean).join(' · ');
+      : [featureHidden('area') ? '' : e.group, e.task].filter(Boolean).join(' · ');
     const projLabel = entryProjectLabel(e);
     const dateObj = new Date(e.date.split('/').reverse().join('-'));
     const dateStr = dateObj.toLocaleDateString('en-AU', {weekday:'short', day:'numeric', month:'long', year:'numeric'});
@@ -17452,7 +17456,7 @@ const KR_HIDDEN_FEATURES = [
   { id: 'reminders', name: 'Reminders', since: 'v372',
     what: 'Reminder banners at the top of the screen, Remind me on a job, a task or a note, and the Reminders list on the Jobs screen. Reminders already set are kept and resume when this is switched on.' },
   { id: 'area', name: 'Area', since: 'v369',
-    what: 'The Area a job belongs to (Maintenance, Routines, Admin) and the Group filter on Timesheets. New jobs are saved as General underneath.' },
+    what: 'The Area a job belongs to (Maintenance, Routines, Admin): on the job form, in front of each timesheet title, under the job name on the running clock and as the Group filter on Timesheets. New jobs are saved as General underneath.' },
   { id: 'job-video', name: 'How-to video on a job', since: 'v369',
     what: 'A video link for the whole job. A video on each task is unaffected and is where videos live now.' },
   { id: 'job-links', name: 'Files and links on a job', since: 'v369',
