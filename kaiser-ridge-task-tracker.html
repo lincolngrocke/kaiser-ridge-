@@ -2025,7 +2025,7 @@
          Shown only when the sheet was reached by tapping a job in the clock-in list;
          clock-out, breaks and a planner block start use the sheet as it always was. -->
     <div id="time-job-preview" style="display:none;flex:1 1 auto;min-height:0;flex-direction:column;padding:0 20px;">
-      <div onclick="_clockInBackToJobs()" style="font-size:14px;color:var(--blue);font-weight:600;padding:0 0 8px;cursor:pointer;flex-shrink:0;">‹ Jobs</div>
+      <div id="time-job-back" onclick="_clockInBack()" style="font-size:14px;color:var(--blue);font-weight:600;padding:0 0 8px;cursor:pointer;flex-shrink:0;">‹ Jobs</div>
       <div id="time-job-name" style="font-size:20px;font-weight:700;color:var(--text);line-height:1.25;flex-shrink:0;"></div>
       <div id="time-job-sub" style="font-size:13px;color:var(--subtext);margin:3px 0 8px;flex-shrink:0;"></div>
       <div id="time-job-tasks" style="flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;border-top:1px solid var(--border);border-bottom:1px solid var(--border);"></div>
@@ -3201,7 +3201,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.381';
+const APP_VERSION = '2026-06-21.382';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -8468,11 +8468,23 @@ function getDrumValue(wrapperId) {
 // Set by the clock-in job list just before it hands over, so only that route gets
 // the job-and-tasks block. Read once and cleared.
 let _clockInFromPicker = false;
-function _clockInBackToJobs() { closeModal('modal-time'); _pendingTaskInfo = null; openCreate(); }
+// A planner block hands over its plan the same way. ⭐ A BLOCK IS NOT THE WHOLE
+// JOB: it carries its own flagged tasks, its own order and its planned laps (in
+// kr_planner_checklist, keyed by the block id). The preview shows THAT, because
+// that is what the run sheet will hold once the clock starts. Showing all 34 of
+// a job's tasks for a block that flags 6 would be a promise the clock breaks.
+let _clockInFromPlan = null, _clockInBackFn = null;
+function _clockInBack() {
+  const fn = _clockInBackFn; _clockInBackFn = null;
+  closeModal('modal-time'); _pendingTaskInfo = null;
+  if (fn) fn(); else openCreate();
+}
 // The top half of the one-screen clock-in: the job, then its tasks in the order
 // the run will show them, each with when it was last done and its learned time.
 // A PREVIEW: nothing here is tappable, ticking starts once the clock is running.
-function _renderClockInPreview(job) {
+function _renderClockInPreview(job, plan) {
+  document.getElementById('time-job-back').textContent = plan ? '\u2039 Planner' : '\u2039 Jobs';
+  if (plan) { try { if (_renderClockInPlanPreview(job, plan)) return; } catch (e) {} }
   document.getElementById('time-job-name').textContent = job;
   const jobAvg = getTaskAvgDuration(job);
   const nRuns = entries.filter(e => !e.bot && e.task === job && e.durationHours > 0).length;
@@ -8490,17 +8502,48 @@ function _renderClockInPreview(job) {
     el.innerHTML = '<div style="padding:18px 2px;font-size:14px;line-height:1.5;color:var(--subtext);">This job has no tasks yet. You can add them once you are clocked in, or from More, then Jobs.</div>';
     return;
   }
-  el.innerHTML = items.map(t => {
-    const k = _normTaskKey(t), a = est[k];
-    // Same honesty as everywhere else: "avg" was measured, "est" was a guess.
-    const time = (isFinite(a) && a > 0) ? '~' + fmtMin(a) + (_taskIsSeeded(t) ? ' est' : '') : '';
-    const when = lastMap[t] ? _agoWords(lastMap[t]) : '';
-    const meta = [when, time].filter(Boolean).join(' \u00b7 ') || 'not done yet';
-    return '<div style="display:flex;align-items:center;gap:10px;height:35px;border-bottom:1px solid var(--border);">'
-      + '<span style="flex:1;min-width:0;font-size:14px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _escHtml(t) + '</span>'
-      + '<span style="flex-shrink:0;font-size:11.5px;color:var(--subtext);white-space:nowrap;' + (_taskIsSeeded(t) ? 'font-style:italic;opacity:0.8;' : '') + '">' + _escHtml(meta) + '</span></div>';
-  }).join('');
+  // Same honesty as everywhere else: a measured time is plain, a guess says "est".
+  el.innerHTML = items.map(t => _clockInRowHtml(t, lastMap, est, 1)).join('');
   el.scrollTop = 0;
+}
+// One row of the preview. `laps` > 1 shows as ×3, the way the run sheet counts them.
+function _clockInRowHtml(t, lastMap, est, laps) {
+  const k = _normTaskKey(t), a = est[k];
+  const seeded = _taskIsSeeded(t);
+  const time = (isFinite(a) && a > 0) ? '~' + fmtMin(a) + (seeded ? ' est' : '') : '';
+  const when = lastMap[t] ? _agoWords(lastMap[t]) : '';
+  const meta = [when, time].filter(Boolean).join(' \u00b7 ') || 'not done yet';
+  return '<div style="display:flex;align-items:center;gap:10px;height:35px;border-bottom:1px solid var(--border);">'
+    + '<span style="flex:1;min-width:0;font-size:14px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _escHtml(t) + '</span>'
+    + (laps > 1 ? '<span style="flex-shrink:0;font-size:11.5px;font-weight:700;color:#30d158;">\u00d7' + laps + '</span>' : '')
+    + '<span style="flex-shrink:0;font-size:11.5px;color:var(--subtext);white-space:nowrap;' + (seeded ? 'font-style:italic;opacity:0.8;' : '') + '">' + _escHtml(meta) + '</span></div>';
+}
+// The block's own plan: flagged tasks only, in the block's order, with planned
+// laps. Returns false when the block flags nothing, and the caller then shows the
+// whole job, which is also what the clock will show for an unarranged block.
+function _renderClockInPlanPreview(job, plan) {
+  const rec = getPlannerChecklist()[plan.id];
+  const flags = (rec && rec.flags) ? rec.flags : {};
+  if (!Object.keys(flags).length) return false;
+  let order = SUBTASKS[job] || [];
+  try { order = _orgVisibleOrder(job, flags, (rec && Array.isArray(rec.order) && rec.order.length) ? rec.order : undefined) || order; } catch (e) {}
+  const items = order.filter(t => flags[t]);
+  Object.keys(flags).forEach(t => { if (!items.includes(t)) items.push(t); });   // flagged but since renamed or removed from the job: still owed
+  if (!items.length) return false;
+  const reps = _taskRepsPerRunMap();
+  const est = _taskEstMap(), lastMap = _checklistItemLastDone(job);
+  const e = _estimateBlockMins(plan);
+  const bits = ['planned'];
+  if (plan.startTime) bits.push(formatTimeAmPm(plan.startTime));
+  if (e && e.mins) bits.push('~' + fmtMin(e.mins));
+  bits.push(items.length + ' of ' + (SUBTASKS[job] || []).length + ' tasks');
+  if (e && e.missing) bits.push(e.missing + ' not timed yet');
+  document.getElementById('time-job-name').textContent = job;
+  document.getElementById('time-job-sub').textContent = bits.join(' \u00b7 ');
+  const el = document.getElementById('time-job-tasks');
+  el.innerHTML = items.map(t => _clockInRowHtml(t, lastMap, est, _plannedLapsFor(plan, t, reps))).join('');
+  el.scrollTop = 0;
+  return true;
 }
 // Lay the sheet out for the mode. With the preview on it fills the screen, the
 // tasks take whatever the controls leave, and the controls close up to make room.
@@ -8526,10 +8569,16 @@ function _syncTimeModalLayout(preview) {
 function openTimeModal(mode, taskInfo) {
   _timeModalMode = mode;
   _pendingTaskInfo = taskInfo || null;
-  const preview = mode === 'in' && _clockInFromPicker && !!(taskInfo && taskInfo.task);
+  const plan = _clockInFromPlan; _clockInFromPlan = null;
+  try { _hideBackToTop(); } catch (e) {}   // the planner's floating arrow sat on top of Set Earlier Time
+  const preview = mode === 'in' && (_clockInFromPicker || !!plan) && !!(taskInfo && taskInfo.task) && featureHidden('entry-manual');
   _clockInFromPicker = false;
+  // ⚠️ Cleared unless THIS open came from a planner block. Cancelling a block's
+  // clock-in leaves the function behind, and the next clock-in from the job list
+  // would otherwise send its Back link to the planner.
+  if (!preview || !plan) _clockInBackFn = null;
   _syncTimeModalLayout(preview);
-  if (preview) { try { _renderClockInPreview(taskInfo.task); } catch (e) { _syncTimeModalLayout(false); } }
+  if (preview) { try { _renderClockInPreview(taskInfo.task, plan); } catch (e) { _syncTimeModalLayout(false); } }
   const nowBtn = document.getElementById('time-now-btn');
   if (nowBtn) nowBtn.textContent = preview ? 'Clock in now' : 'Now';
   // Seed the native time picker (iOS momentum wheel) with the current time.
@@ -23385,6 +23434,10 @@ function plannerClockIn() {
   closeModal('modal-planner-detail');
   // Now / Earlier picker. The planned block is consumed on confirm (see
   // confirmTime), so cancelling the picker leaves the block in place.
+  // Same one-screen clock-in as the job list, showing this block's own plan.
+  const _backId = _plannerDetailId;
+  _clockInFromPlan = plan;
+  _clockInBackFn = () => { try { openPlannerDetail(_backId); } catch (e) {} };
   openTimeModal('in', {
     task: plan.task,
     group: plan.group,
