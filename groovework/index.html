@@ -2555,10 +2555,10 @@
         <button id="ce-sort-used" onclick="setCreateTaskSort('used')" type="button" style="flex:1;border-radius:8px;padding:7px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--text);">⭐ Most used</button>
       </div>
       <div id="ce-task-list" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;margin-top:8px;"></div>
-      <div style="text-align:center;font-size:12px;color:var(--subtext);padding:10px 0 2px;">— or choose manually below —</div>
+      <div id="ce-manual-hint" style="text-align:center;font-size:12px;color:var(--subtext);padding:10px 0 2px;">— or choose manually below —</div>
     </div>
 
-    <div class="form-section">
+    <div class="form-section" id="f-sec-pick">
       <div class="form-row">
         <span class="form-label">Location</span>
         <select class="form-select" id="f-location" onchange="onLocationChange()">
@@ -2619,7 +2619,7 @@
       </div>
     </div>
 
-    <div class="form-section">
+    <div class="form-section" id="f-sec-when">
       <div id="f-time-row" style="display:none">
         <div class="form-row time-row-pair" style="display:grid; grid-template-columns:1fr 1fr; padding:0; gap:0;">
           <div class="form-row" style="border-right:1px solid var(--border);">
@@ -2651,7 +2651,7 @@
       </div>
     </div>
 
-    <div class="form-section">
+    <div class="form-section" id="f-sec-notes">
       <textarea class="form-textarea" id="f-notes" placeholder="Add notes…" autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true"></textarea>
       <div id="f-comment-photos" style="display:none;margin-top:10px;"></div>
     </div>
@@ -3189,7 +3189,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.378';
+const APP_VERSION = '2026-06-21.379';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -7464,6 +7464,22 @@ function openManualEntry() {
   _creatingManual = true;
   document.getElementById('modal-task-title').textContent = 'Add Entry';
   document.getElementById('f-time-row').style.display = 'block';
+  _syncEntryFormLayout();
+}
+// ⭐ CLOCKING IN IS PICKING A JOB. Lincoln, 11 Oct 2026: the Location / Repeats /
+// Area / Job selects, Break, Date and notes under the job list on New Entry "never
+// get used", and they took the room the list needed (it was capped at 240px, about
+// four jobs). With `entry-manual` hidden, New Entry is the search box and a job
+// list that fills the sheet. Tap a job, tap Save.
+// ⚠️ ONLY New Entry. Add Entry (a timesheet typed in by hand) and both Edit forms
+// need those fields and keep them. The hidden controls still hold their defaults
+// (today, no break, no notes), so saveEntry reads exactly what it always read.
+function _entryFormLean() { return editingId === null && !_creatingManual && featureHidden('entry-manual'); }
+function _syncEntryFormLayout() {
+  const lean = _entryFormLean();
+  ['f-sec-pick', 'f-sec-when', 'f-sec-notes', 'ce-manual-hint'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = lean ? 'none' : ''; });
+  const list = document.getElementById('ce-task-list');
+  if (list) list.style.maxHeight = lean ? 'calc(92vh - 260px)' : '240px';
 }
 
 function openCreate() {
@@ -7494,6 +7510,7 @@ function openCreate() {
   document.getElementById('f-clockout').value = '';
   clearTaskSearch();
   document.getElementById('task-search-wrap').style.display = '';
+  _syncEntryFormLayout();
 
   openModal('modal-task');
 }
@@ -7519,6 +7536,7 @@ function openEdit(id) {
   document.getElementById('f-time-row').style.display = 'block';
   clearTaskSearch();
   document.getElementById('task-search-wrap').style.display = 'none';
+  _syncEntryFormLayout();
 
   document.getElementById('f-location').value = e.location || '';
   document.getElementById('f-frequency').value = e.frequency || '';
@@ -7565,6 +7583,7 @@ function openEditActive() {
   document.getElementById('f-time-row').style.display = 'none';
   clearTaskSearch();
   document.getElementById('task-search-wrap').style.display = 'none';
+  _syncEntryFormLayout();
 
   document.getElementById('f-location').value = clockState.location || '';
   document.getElementById('f-frequency').value = clockState.frequency || '';
@@ -7956,7 +7975,7 @@ function renderCreateTaskList() {
     rows.push(r);
   });
   if (!rows.length) {
-    list.innerHTML = `<div style="padding:14px 16px;font-size:14px;color:var(--subtext);text-align:center;">${q ? 'No matching jobs' : 'No jobs yet — add one below'}</div>`;
+    list.innerHTML = `<div style="padding:14px 16px;font-size:14px;color:var(--subtext);text-align:center;">${q ? 'No matching jobs' : (_entryFormLean() ? 'No jobs yet. Add one from More, then Jobs.' : 'No jobs yet — add one below')}</div>`;
     return;
   }
   const { counts, recent } = _taskUsageMaps();
@@ -7966,7 +7985,9 @@ function renderCreateTaskList() {
   list.innerHTML = rows.map((r, i) => {
     const auto = autoMap[r.task];
     const avg = getTaskAvgDuration(r.task);
-    const sub = [r.group, avg ? '~' + fmtMin(avg * 60) : (auto ? auto.freq : r.frequency), counts[r.task] ? '🔂 ' + counts[r.task] + '×' : ''].filter(Boolean).join(' · ');
+    // Area and the typed Repeats value follow the register. The learned average,
+    // the learned frequency and the done count are the app's own and always show.
+    const sub = [featureHidden('area') ? '' : r.group, avg ? '~' + fmtMin(avg * 60) : (auto ? auto.freq : (featureHidden('repeats') ? '' : r.frequency)), counts[r.task] ? '🔂 ' + counts[r.task] + '×' : ''].filter(Boolean).join(' · ');
     const badge = auto ? ` <span style="display:inline-block;background:#5856D6;color:#fff;font-size:9px;font-weight:700;letter-spacing:0.5px;padding:1px 5px;border-radius:5px;vertical-align:middle;">AUTO</span>` : '';
     const isSel = selected && r.task === selected;
     const matchSubs = q ? (SUBTASKS[r.task] || []).filter(s => s.toLowerCase().includes(q)) : [];
@@ -17467,6 +17488,8 @@ const KR_HIDDEN_FEATURES = [
     what: 'One-off to-dos pinned to a job: the To-dos button and badges on the Jobs screen, the To-dos side of the running clock and the to-dos shown on a planner block.' },
   { id: 'inbox', name: 'Inbox', since: 'v371',
     what: 'Capturing a thought or photo for later, and the Inbox tab on the bottom bar.' },
+  { id: 'entry-manual', name: 'Choosing a job by hand when clocking in', since: 'v379',
+    what: 'The Location, Repeats, Area and Job pickers, Break, Date and notes under the job list on New Entry. Editing a timesheet still has them.' },
   { id: 'ts-add', name: 'Add a timesheet by hand', since: 'v370',
     what: 'The + Add button on Timesheets, for typing in a timesheet that was never clocked. Tapping a timesheet to edit it still works.' },
 ];
