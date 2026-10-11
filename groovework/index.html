@@ -3204,7 +3204,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.385';
+const APP_VERSION = '2026-06-21.386';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4999,13 +4999,107 @@ function _runOutstanding(job, flags, done, lapTargets) {
   return left;
 }
 
+// ═══════════════════════════════════════════════════════
+//  THE LEFTOVER BLOCK (v386, Lincoln 12 Oct 2026)
+//
+//  "If a job is started and isn't finished, and you've clocked out, the balance of
+//  those tasks should be sitting in the job and just waiting on the planner screen
+//  in the holding bay. Then you can grab that job with its block of tasks remaining
+//  and move it into the time block you want."
+//
+//  The app already knew what was left (the run-resume record below) and hid it
+//  behind "Resume This Task" on the finished job. Nothing showed there was work
+//  outstanding and it could not be scheduled. Now the same clock-out that writes
+//  that record also parks a block holding ONLY what is still owing.
+//
+//  ⭐ Three rules he agreed to:
+//   1. Made only when the run had FLAGGED tasks and some are not done. A job dipped
+//      into with nothing flagged leaves nothing behind (56 task Household chores,
+//      5 ticked, must not park 51 every morning).
+//   2. A job with a leftover block does not also offer "Resume This Task": two ways
+//      to pick the same run back up would do the work twice.
+//   3. Clocking into that job from the job list offers to pick the leftover up, and
+//      clears the block either way, so a stale one is never left in the bay.
+//
+//  ⚠️ A leftover block is an ordinary planner block with `leftover: true`. It rolls
+//  over at midnight, drags onto the timeline and starts like any other. Starting it
+//  is a FRESH run of the remaining tasks: the finished ones stay on the timesheet
+//  they were done on and are not carried in as ticks.
+//  ⚠️ It goes in MY planner store by name. _plannerPlans is whichever person's day
+//  the planner is showing, and that can be Ethan's at the moment of clock-out.
+// ═══════════════════════════════════════════════════════
+function _myPlansEdit(fn) {
+  if (typeof _plannerView === 'undefined' || _plannerView === 'me') { fn(_plannerPlans); savePlanner(); return; }
+  let arr = [];
+  try { arr = JSON.parse(localStorage.getItem(_plannerKeyFor('me')) || '[]') || []; } catch (e) {}
+  fn(arr);
+  _storeSet(_plannerKeyFor('me'), JSON.stringify(arr));
+}
+function _myPlans() {
+  if (typeof _plannerView === 'undefined' || _plannerView === 'me') return _plannerPlans;
+  try { return JSON.parse(localStorage.getItem(_plannerKeyFor('me')) || '[]') || []; } catch (e) { return []; }
+}
+function _leftoverFor(job) { return _myPlans().find(p => p && p.leftover && p.task === job) || null; }
+function _leftoverClear(job) {
+  if (!job || !_leftoverFor(job)) return false;
+  const pcm = getPlannerChecklist(); let pcmCh = false;
+  _myPlansEdit(arr => {
+    for (let i = arr.length - 1; i >= 0; i--) {
+      if (arr[i] && arr[i].leftover && arr[i].task === job) {
+        if (pcm[arr[i].id]) { delete pcm[arr[i].id]; pcmCh = true; }
+        arr.splice(i, 1);
+      }
+    }
+  });
+  if (pcmCh) savePlannerChecklist(pcm);
+  return true;
+}
+// What is still owing out of a run: once-off tasks not ticked, and repeat tasks
+// with laps left against their target (the remaining laps become the block's laps).
+function _leftoverRemaining(job, flags, done, lapTargets) {
+  const lt = lapTargets || {}, rem = {}, laps = {};
+  Object.keys(flags || {}).forEach(item => {
+    if (isRepeatTask(job, item)) {
+      const target = lt[item] || 0;
+      const ticks = (done || []).filter(d => d.item === item).length;
+      if (!target) { rem[item] = flags[item]; }
+      else if (ticks < target) { rem[item] = flags[item]; laps[item] = target - ticks; }
+    } else if (!_isTaskDoneNow(job, item, done || [])) rem[item] = flags[item];
+  });
+  return { flags: rem, laps };
+}
+function _leftoverMake(cs, done) {
+  const job = cs.task;
+  const r = _leftoverRemaining(job, cs.flagOverride || {}, done, cs.lapTargets);
+  _leftoverClear(job);                       // one leftover per job: the newest run wins
+  if (!Object.keys(r.flags).length) return null;
+  const id = 'lo' + Date.now();
+  const plan = {
+    id, date: plannerDateStr(new Date()), task: job,
+    group: cs.group || '', frequency: cs.frequency || '', location: cs.location || '', tool: cs.tool || '',
+    startTime: new Date().toTimeString().slice(0, 5), durationHours: 0.5,
+    parked: true, leftover: true, leftoverAt: new Date().toISOString(),
+  };
+  const pcm = getPlannerChecklist();
+  pcm[id] = { flags: r.flags };
+  if (Array.isArray(cs.orderOverride) && cs.orderOverride.length) pcm[id].order = cs.orderOverride.slice();
+  if (Object.keys(r.laps).length) pcm[id].laps = r.laps;
+  savePlannerChecklist(pcm);
+  // Sized from the learned times of what is left, the same way any block is sized.
+  try { const e = _estimateBlockMins(plan); if (e && e.mins > 0) plan.durationHours = Math.max(0.08, Math.round(e.mins / 60 * 100) / 100); } catch (e) {}
+  _myPlansEdit(arr => { arr.push(plan); });
+  return plan;
+}
+
 // Called from clockOut BEFORE the teardown, while clockState still exists.
 function _saveRunResume() {
   if (!clockState || !clockState.task) return;
   const flags = clockState.flagOverride || {};
+  // ⚠️ Nothing flagged leaves any EXISTING leftover alone: dipping into the job for
+  // one task is not the run that leftover belongs to (rule 1 is about making one).
   if (!Object.keys(flags).length) { clearRunResume(clockState.task); return; }   // nothing was arranged
   const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
-  if (!_runOutstanding(clockState.task, flags, done, clockState.lapTargets)) { clearRunResume(clockState.task); return; }   // finished — nothing to resume
+  if (!_runOutstanding(clockState.task, flags, done, clockState.lapTargets)) { clearRunResume(clockState.task); try { _leftoverClear(clockState.task); } catch (e) {} return; }   // finished — nothing to resume
   const _rrAll = _runResumeAll();
   _rrAll[clockState.task] = {
     job: clockState.task,
@@ -5017,9 +5111,15 @@ function _saveRunResume() {
     done: done.map(d => Object.assign({}, d, { carried: true }))
   };
   _saveRunResumeAll(_rrAll);
+  // Park what is left in the holding bay. Never allowed to break a clock-out.
+  try {
+    const made = _leftoverMake(clockState, done);
+    if (made) setTimeout(() => { try { showToast(Object.keys(getPlannerChecklist()[made.id].flags).length + ' unfinished tasks are in the planner holding bay'); } catch (e) {} }, 2600);
+  } catch (e) {}
 }
 
 let _resumeRec = null;
+let _leftoverWasHere = false;   // set for the one _maybeOfferResume call that follows clearing a leftover block
 function _resumeWhenLabel(at) {
   const mins = Math.max(1, Math.round((Date.now() - new Date(at).getTime()) / 60000));
   if (mins < 60) return mins + ' minute' + (mins === 1 ? '' : 's') + ' ago';
@@ -5032,7 +5132,10 @@ function _maybeOfferResume(job) {
   if (!rec || rec.job !== job) return;
   // The OFFER still ages out — an unasked-for prompt about a run from last week is
   // noise. Only the deliberate ↻ Resume ignores age (see plannerResume).
-  if (Date.now() - new Date(rec.at).getTime() > RUN_RESUME_MS) { clearRunResume(job); return; }
+  // ⚠️ Unless its leftover block is still in the holding bay. That block is the
+  // run still being owed, on show, so it is not stale however old it is, and
+  // clearing it without asking would lose the plan silently (rule 3).
+  if (!_leftoverWasHere && Date.now() - new Date(rec.at).getTime() > RUN_RESUME_MS) { clearRunResume(job); return; }
   _resumeRec = rec;
   const left  = _runOutstanding(job, rec.flags, rec.done || [], rec.lapTargets);
   const doneN = (rec.done || []).length;
@@ -5046,6 +5149,7 @@ function _maybeOfferResume(job) {
 function resumeRunYes() {
   const rec = _resumeRec;
   if (!rec || !clockState) { closeModal('modal-resume-run'); return; }
+  try { _leftoverClear(rec.job); } catch (e) {}   // picked up here, so it is no longer waiting in the bay
   clockState.flagOverride = Object.assign({}, rec.flags);
   if (rec.order)      clockState.orderOverride = rec.order.slice();
   if (rec.runOrder)   clockState.runOrder      = rec.runOrder.slice();
@@ -5058,6 +5162,7 @@ function resumeRunYes() {
   showToast('Picked up where you left off');
 }
 function resumeRunNo() {
+  try { if (_resumeRec && _resumeRec.job) _leftoverClear(_resumeRec.job); } catch (e) {}   // declined: the block goes too
   clearRunResume(_resumeRec && _resumeRec.job); _resumeRec = null;
   closeModal('modal-resume-run');
 }
@@ -8607,8 +8712,9 @@ function _renderClockInPlanPreview(job, plan) {
   const reps = _taskRepsPerRunMap();
   const est = _taskEstMap(), lastMap = _checklistItemLastDone(job);
   const e = _estimateBlockMins(plan);
-  const bits = ['planned'];
-  if (plan.startTime) bits.push(formatTimeAmPm(plan.startTime));
+  // A block in the holding bay has no time yet, and a leftover says what it is.
+  const bits = [plan.leftover ? 'left over' : 'planned'];
+  if (plan.startTime && !plan.parked) bits.push(formatTimeAmPm(plan.startTime));
   if (e && e.mins) bits.push('~' + fmtMin(e.mins));
   bits.push(items.length + ' of ' + (SUBTASKS[job] || []).length + ' tasks');
   if (e && e.missing) bits.push(e.missing + ' not timed yet');
@@ -8840,6 +8946,10 @@ function confirmTime(choice) {
       // Nothing arranged by a block? Then a half-finished run of this job may be
       // worth picking up. A block's own arrangement always wins — it's the more
       // deliberate intent, and offering both would be a choice between two plans.
+      // ⭐ Leftover block. Started FROM it: it has just been consumed like any
+      // block, so the run-resume record that mirrors it goes too, or a later
+      // clock-in would offer the same work a second time.
+      try { if (taskInfo._leftover) clearRunResume(clockState.task); } catch (e) {}
       if (!clockState.flagOverride || !Object.keys(clockState.flagOverride).length) _maybeOfferResume(clockState.task);
       // 🎯 The TARGET — what the block said this job would take, used as the STARTING
       // value. As of v278 `targetFromPlan` records provenance only; it no longer freezes
@@ -8857,6 +8967,20 @@ function confirmTime(choice) {
       savePlanner();
       showScreen('clock', document.querySelector(".nav-tab[onclick*=\"'clock'\"]"));
       showToast('Clocked in — ' + clockState.task);
+    } else if (!Array.isArray(taskInfo._resumeCarried)) {
+      // ⭐ Leftover block, rule 3. Clocked into the job from the JOB LIST while its
+      // unfinished tasks sit in the holding bay: offer to pick them up, and take the
+      // block out of the bay whichever way the answer goes (Yes and No both clear
+      // it), so a stale block is never left behind. This route never offered a
+      // resume before; it does now only because the block makes the debt visible.
+      // ⚠️ If the record the offer reads from has gone, the block is LEFT in the bay
+      // and says so. Clearing it without being able to ask would lose the plan.
+      try {
+        if (_leftoverFor(clockState.task)) {
+          if (getRunResume(clockState.task)) { _leftoverWasHere = true; _maybeOfferResume(clockState.task); _leftoverWasHere = false; }
+          else setTimeout(() => showToast('This job still has unfinished tasks in the planner holding bay'), 1200);
+        }
+      } catch (e) { _leftoverWasHere = false; }
     }
     // An ad-hoc run gets NO target here. Clock-in deliberately starts with no flags,
     // so anything computed at this instant falls back to the job's whole-run average
@@ -11957,6 +12081,8 @@ function undoClockOut() {
   if (clockState && clockState.running) { showToast('Clock out of the running job first'); return; }
   // 1. Drop the entry this clock-out created
   if (r.entryId) { entries = entries.filter(e => e.id !== r.entryId); saveEntries(); }
+  // 1b. And the leftover block it parked: the run is back on the clock, so nothing is left over.
+  try { if (r.task) _leftoverClear(r.task); } catch (e) {}
   // 2. Put the job's to-dos back exactly as they were (ticked ones return un-ticked)
   if (r.task && Array.isArray(r.pins)) {
     const tn = getTaskNotes();
@@ -20778,8 +20904,15 @@ function openPlannerDoneDetail(entry) {
   _plannerResumeEntry = entry;
   const resumeBtn = document.getElementById('planner-resume-btn');
   const resumeNote = document.getElementById('planner-resume-note');
-  if (resumeBtn) resumeBtn.style.display = 'block';
-  if (resumeNote) resumeNote.style.display = 'block';
+  // Rule 2: with its unfinished tasks sitting in the holding bay, the block is the
+  // way back in. Offering Resume as well would do the same work twice.
+  const _lo = (() => { try { return _leftoverFor(entry.task); } catch (e) { return null; } })();
+  if (resumeBtn) resumeBtn.style.display = _lo ? 'none' : 'block';
+  if (resumeNote) {
+    resumeNote.style.display = 'block';
+    if (!resumeNote.dataset.orig) resumeNote.dataset.orig = resumeNote.textContent;
+    resumeNote.textContent = _lo ? 'The unfinished tasks from this job are in the holding bay. Drag that block onto the timeline to pick them up.' : resumeNote.dataset.orig;
+  }
 
   openModal('modal-planner-detail');
 }
@@ -23612,6 +23745,7 @@ function plannerClockIn() {
   _clockInFromPlan = plan;
   _clockInBackFn = () => { try { openPlannerDetail(_backId); } catch (e) {} };
   openTimeModal('in', {
+    _leftover: !!plan.leftover,
     task: plan.task,
     group: plan.group,
     frequency: plan.frequency,
@@ -23738,6 +23872,7 @@ function parkPlannerBlock(id) {
   renderPlannerScreen();
   showToast('Parked — drag it back onto the timeline');
 }
+function _leftoverCount(p) { try { return Object.keys((getPlannerChecklist()[p.id] || {}).flags || {}).length; } catch (e) { return 0; } }
 function renderPlannerHolding(dateStr) {
   const col = document.getElementById('planner-holding');
   if (!col) return;
@@ -23753,7 +23888,7 @@ function renderPlannerHolding(dateStr) {
       return `<div data-park-id="${p.id}" ontouchstart="parkedChipTouchStart(event,'${p.id}')" style="position:relative;background:${plannerColorFor(p.task)};color:#fff;border-radius:8px;padding:6px;margin-bottom:6px;font-size:11px;cursor:grab;touch-action:none;">
         <button onclick="event.stopPropagation();removeParkedBlock('${p.id}')" ontouchstart="event.stopPropagation()" title="Remove from holding" style="position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,0.4);color:#fff;border:none;font-size:11px;line-height:1;cursor:pointer;padding:0;">✕</button>
         <div style="font-weight:700;line-height:1.2;padding-right:14px;">${safe}</div>
-        <div style="opacity:0.9;margin-top:2px;">${durStr}</div>
+        <div style="opacity:0.9;margin-top:2px;">${durStr}${p.leftover ? ' \u00b7 ' + _leftoverCount(p) + ' left' : ''}</div>
       </div>`;
     }).join('');
 }
