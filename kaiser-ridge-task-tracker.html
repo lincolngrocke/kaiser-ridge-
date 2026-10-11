@@ -2028,6 +2028,9 @@
       <div id="time-job-back" onclick="_clockInBack()" style="font-size:14px;color:var(--blue);font-weight:600;padding:0 0 8px;cursor:pointer;flex-shrink:0;">‹ Jobs</div>
       <div id="time-job-name" style="font-size:20px;font-weight:700;color:var(--text);line-height:1.25;flex-shrink:0;"></div>
       <div id="time-job-sub" style="font-size:13px;color:var(--subtext);margin:3px 0 8px;flex-shrink:0;"></div>
+      <div id="time-job-tools" style="display:none;flex-shrink:0;justify-content:flex-end;padding:0 0 8px;">
+        <span id="time-job-expand" onclick="_ciToggleAll()" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;">Expand all</span>
+      </div>
       <div id="time-job-tasks" style="flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;border-top:1px solid var(--border);border-bottom:1px solid var(--border);"></div>
     </div>
     <div id="time-controls" style="padding:20px 20px 0;flex-shrink:0;">
@@ -3201,7 +3204,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.382';
+const APP_VERSION = '2026-06-21.383';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -8499,12 +8502,61 @@ function _renderClockInPreview(job, plan) {
   const lastMap = _checklistItemLastDone(job), est = _taskEstMap(), cnt = _taskHistCountMap();
   const el = document.getElementById('time-job-tasks');
   if (!items.length) {
+    _ciCtx = null; const _tl = document.getElementById('time-job-tools'); if (_tl) _tl.style.display = 'none';
     el.innerHTML = '<div style="padding:18px 2px;font-size:14px;line-height:1.5;color:var(--subtext);">This job has no tasks yet. You can add them once you are clocked in, or from More, then Jobs.</div>';
     return;
   }
-  // Same honesty as everywhere else: a measured time is plain, a guess says "est".
-  el.innerHTML = items.map(t => _clockInRowHtml(t, lastMap, est, 1)).join('');
-  el.scrollTop = 0;
+  _ciCtx = { job, items, lapsFor: null }; _ciOpen = {};
+  _ciRenderList(true);
+}
+// ⭐ BATCHES FIRST. Lincoln, 11 Oct 2026: on a 68 task job the preview was a wall
+// of tasks, and the first ten were not the ones that say what the job is. The
+// batches are the shape of the job. They open collapsed, each with its task count
+// and summed time, and expand one at a time or all at once. Same sections the
+// Organise sheet and the run sheet use (_orgSections), so the three cannot drift.
+// A job with no batches has no headings to show and lists its tasks as before.
+let _ciCtx = null, _ciOpen = {};
+function _ciSections() {
+  if (!_ciCtx) return [];
+  let secs = [{ name: null, loose: false, items: _ciCtx.items }];
+  try { secs = _orgSections(_ciCtx.job, _ciCtx.items) || secs; } catch (e) {}
+  return secs.filter(sec => sec.items && sec.items.length);
+}
+function _ciToggle(i) { _ciOpen[i] = !_ciOpen[i]; _ciRenderList(false); }
+function _ciToggleAll() {
+  const secs = _ciSections();
+  const allOpen = secs.length && secs.every((x, i) => _ciOpen[i]);
+  _ciOpen = {}; if (!allOpen) secs.forEach((x, i) => { _ciOpen[i] = true; });
+  _ciRenderList(false);
+}
+function _ciRenderList(resetScroll) {
+  const el = document.getElementById('time-job-tasks'), tools = document.getElementById('time-job-tools');
+  if (!el || !_ciCtx) return;
+  const lastMap = _checklistItemLastDone(_ciCtx.job), est = _taskEstMap();
+  const laps = t => (_ciCtx.lapsFor ? _ciCtx.lapsFor(t) : 1);
+  const secs = _ciSections();
+  const batched = secs.length > 1 || (secs.length === 1 && secs[0].name);
+  if (tools) tools.style.display = batched ? 'flex' : 'none';
+  const keep = el.scrollTop;
+  if (!batched) {
+    // Same honesty as everywhere else: a measured time is plain, a guess says "est".
+    el.innerHTML = _ciCtx.items.map(t => _clockInRowHtml(t, lastMap, est, laps(t))).join('');
+  } else {
+    el.innerHTML = secs.map((sec, i) => {
+      const open = !!_ciOpen[i];
+      let mins = 0, untimed = 0;
+      sec.items.forEach(t => { const a = est[_normTaskKey(t)]; if (isFinite(a) && a > 0) mins += a * laps(t); else untimed++; });
+      const meta = sec.items.length + ' task' + (sec.items.length === 1 ? '' : 's') + (mins > 0 ? ' \u00b7 ~' + fmtMin(mins) : '') + (untimed && mins > 0 ? ' +' : '');
+      return '<div onclick="_ciToggle(' + i + ')" style="display:flex;align-items:center;gap:8px;height:42px;border-bottom:1px solid var(--border);cursor:pointer;-webkit-tap-highlight-color:transparent;">'
+        + '<span style="flex-shrink:0;width:14px;font-size:12px;color:var(--subtext);">' + (open ? '\u25be' : '\u25b8') + '</span>'
+        + '<span style="flex:1;min-width:0;font-size:15px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _escHtml(sec.name || 'Other tasks') + '</span>'
+        + '<span style="flex-shrink:0;font-size:12px;color:var(--subtext);white-space:nowrap;">' + _escHtml(meta) + '</span></div>'
+        + (open ? '<div style="padding-left:22px;">' + sec.items.map(t => _clockInRowHtml(t, lastMap, est, laps(t))).join('') + '</div>' : '');
+    }).join('');
+    const ex = document.getElementById('time-job-expand');
+    if (ex) ex.textContent = secs.every((x, i) => _ciOpen[i]) ? 'Collapse all' : 'Expand all';
+  }
+  el.scrollTop = resetScroll ? 0 : keep;
 }
 // One row of the preview. `laps` > 1 shows as ×3, the way the run sheet counts them.
 function _clockInRowHtml(t, lastMap, est, laps) {
@@ -8540,9 +8592,8 @@ function _renderClockInPlanPreview(job, plan) {
   if (e && e.missing) bits.push(e.missing + ' not timed yet');
   document.getElementById('time-job-name').textContent = job;
   document.getElementById('time-job-sub').textContent = bits.join(' \u00b7 ');
-  const el = document.getElementById('time-job-tasks');
-  el.innerHTML = items.map(t => _clockInRowHtml(t, lastMap, est, _plannedLapsFor(plan, t, reps))).join('');
-  el.scrollTop = 0;
+  _ciCtx = { job, items, lapsFor: t => _plannedLapsFor(plan, t, reps) }; _ciOpen = {};
+  _ciRenderList(true);
   return true;
 }
 // Lay the sheet out for the mode. With the preview on it fills the screen, the
