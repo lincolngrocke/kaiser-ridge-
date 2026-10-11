@@ -3204,7 +3204,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.384';
+const APP_VERSION = '2026-06-21.385';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -12099,7 +12099,12 @@ function openDirFilter(type) {
     openModal('modal-dir-filter');
     return;
   }
-  document.getElementById('dir-filter-list').innerHTML = options.map(o => `
+  document.getElementById('dir-filter-list').innerHTML = options.map(o => type === 'client' ? `
+    <div onclick="selectDirFilter(decodeURIComponent('${_encArg(o)}'),this)"
+      style="padding:8px 12px 8px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;cursor:pointer;font-size:15px;">
+      <span style="flex:1;min-width:0;">${_escHtml(o)} <span style="font-size:12px;color:var(--subtext);">\u00b7 ${_groupJobCount(o)} job${_groupJobCount(o) === 1 ? '' : 's'}</span></span>
+      ${o === current ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}${_groupRowTools(o)}
+    </div>` : `
     <div onclick="selectDirFilter(decodeURIComponent('${_encArg(o)}'),this)"
       style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;font-size:15px;">
       <span>${o}</span>
@@ -12819,6 +12824,66 @@ function getAllClients() {
   const extras = JSON.parse(localStorage.getItem('kr_extra_clients') || '[]');
   return [...new Set([...DIRECTORY.map(r => r.client).filter(Boolean), ...extras])].sort((a, b) => a.toLowerCase() < b.toLowerCase() ? -1 : 1);
 }
+// ⭐ A GROUP COULD BE MADE AND CHOSEN BUT NEVER RENAMED OR REMOVED. Lincoln, 11 Oct
+// 2026. A typo, or a group that is no longer wanted, stayed in the list for good.
+// The group is only a label on each job (r.client) plus a list of spare names
+// (kr_extra_clients), so both actions are a relabel: no job, timesheet or learned
+// time is touched by either.
+function _groupJobCount(name) { return new Set(DIRECTORY.filter(r => r.client === name).map(r => r.task)).size; }
+function _groupAfterChange() {
+  updateDirChips();
+  renderDirectory();
+  if (document.getElementById('modal-client-picker').classList.contains('open')) renderClientPickerList();
+  if (document.getElementById('modal-dir-filter').classList.contains('open') && _dirFilterType === 'client') openDirFilter('client');
+}
+function renameGroupItem(oldName) {
+  const typed = prompt('Rename the group "' + oldName + '" to:', oldName);
+  if (typed == null) return;
+  const newName = typed.trim();
+  if (!newName || newName === oldName) return;
+  // Renaming onto a name that already exists joins the two. Say so first.
+  const clash = getAllClients().find(c => c !== oldName && c.toLowerCase() === newName.toLowerCase());
+  if (clash && !confirm('"' + clash + '" is already a group.\n\nJoin "' + oldName + '" into it? Its ' + _groupJobCount(oldName) + ' jobs move across and "' + oldName + '" goes from the list.')) return;
+  const target = clash || newName;
+  DIRECTORY.forEach(r => { if (r.client === oldName) r.client = target; });
+  _storeSet('kr_directory', JSON.stringify(DIRECTORY));
+  let extras = JSON.parse(localStorage.getItem('kr_extra_clients') || '[]').filter(x => x !== oldName);
+  if (!extras.includes(target) && !DIRECTORY.some(r => r.client === target)) extras.push(target);
+  _storeSet('kr_extra_clients', JSON.stringify(extras));
+  if (_selectedClient === oldName) setClientDisplay(target);
+  if (_dirFilters.client === oldName) _dirFilters.client = target;
+  _groupAfterChange();
+  showToast(clash ? 'Joined into "' + target + '"' : 'Renamed to "' + target + '"');
+}
+function deleteGroupItem(name) {
+  const n = _groupJobCount(name);
+  const msg = n
+    ? 'Remove the group "' + name + '"?\n\nIts ' + n + ' job' + (n === 1 ? '' : 's') + ' are kept, with all their tasks and times. They will simply have no group.'
+    : 'Remove the group "' + name + '"?\n\nNo jobs are in it.';
+  if (!confirm(msg)) return;
+  // Kept for the undo: which jobs carried the label.
+  const had = DIRECTORY.map((r, i) => (r.client === name ? i : -1)).filter(i => i >= 0);
+  const extrasBefore = localStorage.getItem('kr_extra_clients');
+  DIRECTORY.forEach(r => { if (r.client === name) r.client = ''; });
+  _storeSet('kr_directory', JSON.stringify(DIRECTORY));
+  _storeSet('kr_extra_clients', JSON.stringify(JSON.parse(extrasBefore || '[]').filter(x => x !== name)));
+  if (_selectedClient === name) setClientDisplay('');
+  if (_dirFilters.client === name) _dirFilters.client = null;
+  _groupAfterChange();
+  showUndoToast('Group "' + name + '" removed', () => {
+    had.forEach(i => { if (DIRECTORY[i] && !DIRECTORY[i].client) DIRECTORY[i].client = name; });
+    _storeSet('kr_directory', JSON.stringify(DIRECTORY));
+    if (extrasBefore != null) _storeSet('kr_extra_clients', extrasBefore);
+    _groupAfterChange();
+  }, 15000);
+}
+// The pencil and bin on a group row, shared by both lists a group appears in.
+function _groupRowTools(name) {
+  const enc = _encArg(name);
+  const btn = 'background:none;border:none;font-size:17px;cursor:pointer;padding:6px 8px;flex-shrink:0;';
+  return '<button onclick="event.stopPropagation();renameGroupItem(decodeURIComponent(\'' + enc + '\'))" aria-label="Rename group" style="' + btn + 'color:var(--subtext);">\u270e</button>'
+    + '<button onclick="event.stopPropagation();deleteGroupItem(decodeURIComponent(\'' + enc + '\'))" aria-label="Remove group" style="' + btn + 'color:var(--red);">\ud83d\uddd1</button>';
+}
 function openClientPicker() {
   const s = document.getElementById('client-picker-search'); if (s) s.value = '';
   renderClientPickerList();
@@ -12837,8 +12902,8 @@ function renderClientPickerList() {
     html += `<div onclick="selectClient(decodeURIComponent('${_encArg(query)}'))" style="padding:12px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:pointer;">
       <span style="font-size:20px;color:var(--blue);">＋</span><span style="font-size:16px;color:var(--blue);">Add "<strong>${_escHtml(query)}</strong>"</span></div>`;
   }
-  html += filtered.map(c => `<div onclick="selectClient(decodeURIComponent('${_encArg(c)}'))" style="padding:14px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;font-size:16px;">
-      <span>${_escHtml(c)}</span>${c === _selectedClient ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}</div>`).join('');
+  html += filtered.map(c => `<div onclick="selectClient(decodeURIComponent('${_encArg(c)}'))" style="padding:8px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;cursor:pointer;font-size:16px;color:var(--text);">
+      <span style="flex:1;min-width:0;">${_escHtml(c)}</span>${c === _selectedClient ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}${_groupRowTools(c)}</div>`).join('');
   list.innerHTML = html;
 }
 function selectClient(name) {
