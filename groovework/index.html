@@ -3204,7 +3204,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.383';
+const APP_VERSION = '2026-06-21.384';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4173,7 +4173,12 @@ function _initBackToTop() {
     _btTarget = el;
     const b = document.getElementById('back-to-top');
     if (!b) return;
-    b.style.display = (el.scrollTop > 400 && el.offsetParent !== null) ? 'flex' : 'none';
+    // ⚠️ Not while the clock-in screen is up. The planner behind it scrolls itself to
+    // "now" as it renders, which fired this and put the arrow on top of Set Earlier
+    // Time. Hiding it once when the sheet opened was not enough: it came straight back.
+    const _tm = document.getElementById('modal-time');
+    const _covered = !!(_tm && _tm.classList.contains('open'));
+    b.style.display = (!_covered && el.scrollTop > 400 && el.offsetParent !== null) ? 'flex' : 'none';
   }, true);
 }
 function scrollActiveTop() {
@@ -8477,6 +8482,9 @@ let _clockInFromPicker = false;
 // that is what the run sheet will hold once the clock starts. Showing all 34 of
 // a job's tasks for a block that flags 6 would be a promise the clock breaks.
 let _clockInFromPlan = null, _clockInBackFn = null;
+// And a RESUME hands over the run it is picking back up: the flags it had, and
+// which tasks were already ticked, with when and how long each took.
+let _clockInFromResume = null;
 function _clockInBack() {
   const fn = _clockInBackFn; _clockInBackFn = null;
   closeModal('modal-time'); _pendingTaskInfo = null;
@@ -8485,8 +8493,9 @@ function _clockInBack() {
 // The top half of the one-screen clock-in: the job, then its tasks in the order
 // the run will show them, each with when it was last done and its learned time.
 // A PREVIEW: nothing here is tappable, ticking starts once the clock is running.
-function _renderClockInPreview(job, plan) {
-  document.getElementById('time-job-back').textContent = plan ? '\u2039 Planner' : '\u2039 Jobs';
+function _renderClockInPreview(job, plan, resume) {
+  document.getElementById('time-job-back').textContent = (plan || resume) ? '\u2039 Planner' : '\u2039 Jobs';
+  if (resume) { try { if (_renderClockInResumePreview(job, resume)) return; } catch (e) {} }
   if (plan) { try { if (_renderClockInPlanPreview(job, plan)) return; } catch (e) {} }
   document.getElementById('time-job-name').textContent = job;
   const jobAvg = getTaskAvgDuration(job);
@@ -8534,24 +8543,27 @@ function _ciRenderList(resetScroll) {
   if (!el || !_ciCtx) return;
   const lastMap = _checklistItemLastDone(_ciCtx.job), est = _taskEstMap();
   const laps = t => (_ciCtx.lapsFor ? _ciCtx.lapsFor(t) : 1);
+  const doneOf = t => (_ciCtx.done && _ciCtx.done[t]) || null;
   const secs = _ciSections();
   const batched = secs.length > 1 || (secs.length === 1 && secs[0].name);
   if (tools) tools.style.display = batched ? 'flex' : 'none';
   const keep = el.scrollTop;
   if (!batched) {
     // Same honesty as everywhere else: a measured time is plain, a guess says "est".
-    el.innerHTML = _ciCtx.items.map(t => _clockInRowHtml(t, lastMap, est, laps(t))).join('');
+    el.innerHTML = _ciCtx.items.map(t => _clockInRowHtml(t, lastMap, est, laps(t), doneOf(t))).join('');
   } else {
     el.innerHTML = secs.map((sec, i) => {
       const open = !!_ciOpen[i];
-      let mins = 0, untimed = 0;
-      sec.items.forEach(t => { const a = est[_normTaskKey(t)]; if (isFinite(a) && a > 0) mins += a * laps(t); else untimed++; });
-      const meta = sec.items.length + ' task' + (sec.items.length === 1 ? '' : 's') + (mins > 0 ? ' \u00b7 ~' + fmtMin(mins) : '') + (untimed && mins > 0 ? ' +' : '');
+      let mins = 0, untimed = 0, nDone = 0;
+      sec.items.forEach(t => { if (doneOf(t)) { nDone++; return; } const a = est[_normTaskKey(t)]; if (isFinite(a) && a > 0) mins += a * laps(t); else untimed++; });
+      // On a resume the count reads "3 of 7 done" and the time is what is LEFT.
+      const count = _ciCtx.done ? (nDone + ' of ' + sec.items.length + ' done') : (sec.items.length + ' task' + (sec.items.length === 1 ? '' : 's'));
+      const meta = (_ciCtx.done && nDone === sec.items.length) ? ('\u2713 all ' + sec.items.length + ' done') : count + (mins > 0 ? ' \u00b7 ~' + fmtMin(mins) + (_ciCtx.done ? ' left' : '') : '') + (untimed && mins > 0 ? ' +' : '');
       return '<div onclick="_ciToggle(' + i + ')" style="display:flex;align-items:center;gap:8px;height:42px;border-bottom:1px solid var(--border);cursor:pointer;-webkit-tap-highlight-color:transparent;">'
         + '<span style="flex-shrink:0;width:14px;font-size:12px;color:var(--subtext);">' + (open ? '\u25be' : '\u25b8') + '</span>'
         + '<span style="flex:1;min-width:0;font-size:15px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _escHtml(sec.name || 'Other tasks') + '</span>'
         + '<span style="flex-shrink:0;font-size:12px;color:var(--subtext);white-space:nowrap;">' + _escHtml(meta) + '</span></div>'
-        + (open ? '<div style="padding-left:22px;">' + sec.items.map(t => _clockInRowHtml(t, lastMap, est, laps(t))).join('') + '</div>' : '');
+        + (open ? '<div style="padding-left:22px;">' + sec.items.map(t => _clockInRowHtml(t, lastMap, est, laps(t), doneOf(t))).join('') + '</div>' : '');
     }).join('');
     const ex = document.getElementById('time-job-expand');
     if (ex) ex.textContent = secs.every((x, i) => _ciOpen[i]) ? 'Collapse all' : 'Expand all';
@@ -8559,7 +8571,17 @@ function _ciRenderList(resetScroll) {
   el.scrollTop = resetScroll ? 0 : keep;
 }
 // One row of the preview. `laps` > 1 shows as ×3, the way the run sheet counts them.
-function _clockInRowHtml(t, lastMap, est, laps) {
+function _clockInRowHtml(t, lastMap, est, laps, done) {
+  if (done) {
+    // Already ticked in the run being resumed: when, and how long it took THAT time.
+    let at = '';
+    try { const d = new Date(done.at); if (!isNaN(d)) at = formatTimeAmPm(String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')); } catch (e) {}
+    const took = (done.mins != null && isFinite(done.mins)) ? fmtMin(done.mins) : '';
+    return '<div style="display:flex;align-items:center;gap:10px;height:35px;border-bottom:1px solid var(--border);">'
+      + '<span style="flex-shrink:0;font-size:13px;color:#30d158;font-weight:700;">\u2713</span>'
+      + '<span style="flex:1;min-width:0;font-size:14px;color:var(--subtext);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _escHtml(t) + '</span>'
+      + '<span style="flex-shrink:0;font-size:11.5px;color:#30d158;white-space:nowrap;">' + _escHtml(['done', at, took].filter(Boolean).join(' \u00b7 ')) + '</span></div>';
+  }
   const k = _normTaskKey(t), a = est[k];
   const seeded = _taskIsSeeded(t);
   const time = (isFinite(a) && a > 0) ? '~' + fmtMin(a) + (seeded ? ' est' : '') : '';
@@ -8596,6 +8618,37 @@ function _renderClockInPlanPreview(job, plan) {
   _ciRenderList(true);
   return true;
 }
+// A resumed run: the tasks it held, the finished ones ticked. ⚠️ A REPEAT task
+// that was ticked is not shown as done: it may owe more laps, and the clock will
+// keep it on the list, so the preview must not say otherwise.
+function _renderClockInResumePreview(job, r) {
+  const flags = r.flags || {};
+  let order = SUBTASKS[job] || [];
+  let items;
+  if (Object.keys(flags).length) {
+    try { order = _orgVisibleOrder(job, flags) || order; } catch (e) {}
+    items = order.filter(t => flags[t]);
+    Object.keys(flags).forEach(t => { if (!items.includes(t)) items.push(t); });
+  } else {
+    try { order = _orgVisibleOrder(job, {}) || order; } catch (e) {}
+    items = order.slice();
+  }
+  if (!items.length) return false;
+  const done = {};
+  items.forEach(t => { if (r.done && r.done[t] && !isRepeatTask(job, t)) done[t] = r.done[t]; });
+  const est = _taskEstMap();
+  const nDone = Object.keys(done).length;
+  let left = 0;
+  const lapsFor = t => (r.laps && r.laps[t] >= 1 ? r.laps[t] : 1);
+  items.forEach(t => { if (done[t]) return; const a = est[_normTaskKey(t)]; if (isFinite(a) && a > 0) left += a * lapsFor(t); });
+  const bits = ['resuming', nDone + ' of ' + items.length + ' done'];
+  if (left > 0) bits.push('~' + fmtMin(left) + ' left');
+  document.getElementById('time-job-name').textContent = job;
+  document.getElementById('time-job-sub').textContent = bits.join(' \u00b7 ');
+  _ciCtx = { job, items, lapsFor, done }; _ciOpen = {};
+  _ciRenderList(true);
+  return true;
+}
 // Lay the sheet out for the mode. With the preview on it fills the screen, the
 // tasks take whatever the controls leave, and the controls close up to make room.
 function _syncTimeModalLayout(preview) {
@@ -8621,15 +8674,16 @@ function openTimeModal(mode, taskInfo) {
   _timeModalMode = mode;
   _pendingTaskInfo = taskInfo || null;
   const plan = _clockInFromPlan; _clockInFromPlan = null;
+  const resume = _clockInFromResume; _clockInFromResume = null;
   try { _hideBackToTop(); } catch (e) {}   // the planner's floating arrow sat on top of Set Earlier Time
-  const preview = mode === 'in' && (_clockInFromPicker || !!plan) && !!(taskInfo && taskInfo.task) && featureHidden('entry-manual');
+  const preview = mode === 'in' && (_clockInFromPicker || !!plan || !!resume) && !!(taskInfo && taskInfo.task) && featureHidden('entry-manual');
   _clockInFromPicker = false;
   // ⚠️ Cleared unless THIS open came from a planner block. Cancelling a block's
   // clock-in leaves the function behind, and the next clock-in from the job list
   // would otherwise send its Back link to the planner.
-  if (!preview || !plan) _clockInBackFn = null;
+  if (!preview || !(plan || resume)) _clockInBackFn = null;
   _syncTimeModalLayout(preview);
-  if (preview) { try { _renderClockInPreview(taskInfo.task, plan); } catch (e) { _syncTimeModalLayout(false); } }
+  if (preview) { try { _renderClockInPreview(taskInfo.task, plan, resume); } catch (e) { _syncTimeModalLayout(false); } }
   const nowBtn = document.getElementById('time-now-btn');
   if (nowBtn) nowBtn.textContent = preview ? 'Clock in now' : 'Now';
   // Seed the native time picker (iOS momentum wheel) with the current time.
@@ -20751,6 +20805,9 @@ function plannerResume() {
   // Route through the Clock In time picker so a resume can be BACKDATED — you
   // often pick the job back up before you get to your phone (flagged note 10 Jul).
   // _resumeCarried rides on the pending info and is applied once clockState exists.
+  // Same one-screen clock-in, showing this run: what is done and what is still owing.
+  _clockInFromResume = { flags: _rFlags, order: _rOrder, laps: _rLaps, done: carriedInfo, carried: carried.slice() };
+  _clockInBackFn = () => { try { openPlannerDoneDetail(entry); } catch (e) {} };
   openTimeModal('in', {
     location: entry.location, frequency: entry.frequency || '', group: entry.group,
     task: entry.task, subtask: entry.subtask || '', tool: entry.tool || '', notes: '',
