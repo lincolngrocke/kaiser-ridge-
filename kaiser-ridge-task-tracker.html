@@ -1132,7 +1132,7 @@
   <!-- Filter chips -->
   <div id="dir-filter-bar" style="display:flex;gap:8px;padding:8px 12px;overflow-x:auto;background:var(--card);border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch;scrollbar-width:none;">
     <button id="chip-reminders" onclick="openRemindersOverview()" class="dir-chip" data-feature="reminders" style="color:var(--blue);font-weight:600;">🔔 Reminders</button>
-    <button id="chip-todos" onclick="openTodosOverview()" class="dir-chip" style="color:var(--blue);font-weight:600;">📌 To-dos</button>
+    <button id="chip-todos" onclick="openTodosOverview()" class="dir-chip" data-feature="todos" style="color:var(--blue);font-weight:600;">📌 To-dos</button>
     <button id="chip-horizon" onclick="openHorizonReview()" class="dir-chip" data-feature="horizon" style="color:var(--blue);font-weight:600;">🗓 Horizon</button>
     <button id="chip-filters" onclick="openDirFilters()" class="dir-chip">⚲ Filter</button>
     <button id="chip-dir-sort" onclick="cycleDirSort()" class="dir-chip">↕ Grouped</button>
@@ -3189,7 +3189,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.376';
+const APP_VERSION = '2026-06-21.377';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5897,6 +5897,7 @@ function renderRunDone() {
   const titleEl = document.getElementById('run-done-title');
   if (!body || !clockState) return;
   const all = _runDoneAllRows();
+  if (featureHidden('todos')) _runDoneTab = 'tasks';
   const rows = _runDoneTab === 'notes' ? all.notes : all.tasks;
   _runDoneRows = rows;
   // Segmented toggle with per-side counts.
@@ -5904,6 +5905,7 @@ function renderRunDone() {
   if (segT && segN) {
     segT.textContent = 'Tasks · ' + all.tasks.length;
     segN.textContent = 'To-dos · ' + all.notes.length;
+    segN.style.display = featureHidden('todos') ? 'none' : '';
     segT.classList.toggle('on', _runDoneTab === 'tasks');
     segN.classList.toggle('on', _runDoneTab === 'notes');
   }
@@ -6265,12 +6267,17 @@ function renderRunChecklist() {
   // that has content until the user taps a tab, then respect their choice.
   let tab = _runTab;
   if (!_runTabUserSet) tab = (!items.length && pinned.length) ? 'notes' : 'tasks';
+  // To-dos hidden: there is only the Tasks side. Its pill stays because it carries
+  // the "12/39" progress count; the To-dos half and its list are not shown.
+  const _noTodos = featureHidden('todos');
+  if (_noTodos) tab = 'tasks';
   _runTab = tab;
   if (seg) {
     const segT = document.getElementById('run-seg-tasks'), segN = document.getElementById('run-seg-notes');
     seg.style.display = 'flex';
     segT.textContent = 'Tasks · ' + tasksDone + '/' + items.length;
     segN.textContent = 'To-dos · ' + notesDone + '/' + pinned.length;
+    segN.style.display = _noTodos ? 'none' : '';
     segT.classList.toggle('on', tab === 'tasks');
     segN.classList.toggle('on', tab === 'notes');
   }
@@ -11997,7 +12004,7 @@ function _renderDirectoryInner(list) {
     if (_dirFilters.horizon  && _horizonLabel(jobHorizon(r.task)) !== _dirFilters.horizon) return false;
     if (searchTerm) {
       const subs = (SUBTASKS[r.task] || []).join(' ');
-      const todos = (_dirAllNotes[r.task] || []).map(n => n.text).join(' ');   // pinned To-dos are searchable too
+      const todos = featureHidden('todos') ? '' : (_dirAllNotes[r.task] || []).map(n => n.text).join(' ');   // pinned To-dos are searchable too
       const haystack = [r.task, r.group, effFreqOf(r), r.location, r.equipment, subs, todos].join(' ').toLowerCase();
       if (!haystack.includes(searchTerm)) return false;
     }
@@ -12090,7 +12097,7 @@ function _renderDirectoryInner(list) {
             const auto = autoMap[task];
             const gapDays = auto ? Math.max(1, Math.round(auto.avgGap)) : 0;
             const autoBadge = auto ? `<span style="display:inline-block;background:#5856D6;color:#fff;font-size:9px;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;">AUTO</span>` : '';
-            const nPins = (taskNotes[task] || []).length;
+            const nPins = featureHidden('todos') ? 0 : (taskNotes[task] || []).length;
             const pinBadge = nPins ? `<span onclick="event.stopPropagation();showPinnedNotesPopup(this)" ontouchstart="event.stopPropagation()" title="View ${nPins} to-do${nPins === 1 ? '' : 's'}" style="display:inline-block;background:#FFD60A;color:#000;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;cursor:pointer;">📌 ${nPins}</span>` : '';
             const hasVideo = !!(taskVideos[task] || {}).id && !featureHidden('job-video');
             const videoBadge = hasVideo ? `<span onclick="event.stopPropagation();playVideoForTask(decodeURIComponent('${_encArg(task)}'))" ontouchstart="event.stopPropagation()" title="Watch how-to video" style="display:inline-block;background:var(--blue);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;cursor:pointer;">🎥</span>` : '';
@@ -12742,7 +12749,7 @@ function renderMergePickerList() {
   if (!others.length) { list.innerHTML = '<div style="padding:24px 0;color:var(--subtext);text-align:center;">No other tasks to merge in.</div>'; return; }
   const notes = getTaskNotes(), vids = getTaskVideos();
   list.innerHTML = others.map(t => {
-    const nPins = (notes[t] || []).length, nSubs = (SUBTASKS[t] || []).length;
+    const nPins = featureHidden('todos') ? 0 : (notes[t] || []).length, nSubs = (SUBTASKS[t] || []).length;
     const bits = [nPins ? '📌 ' + nPins : '', nSubs ? '☑️ ' + nSubs : '', vids[t] ? '🎥' : ''].filter(Boolean).join(' · ');
     return `<div data-merge-task="${_attr(t)}" onclick="confirmMergeRow(this)" style="padding:14px 8px;border-bottom:1px solid var(--border);cursor:pointer;">
       <div style="font-size:15px;color:var(--text);">${_escTxt(t)}</div>
@@ -15479,7 +15486,7 @@ function _moveGoDest() {
     </label>`;
   const opts = `<div style="border:1px solid var(--border);border-radius:12px;padding:4px 12px;margin-bottom:12px;">
     ${optRow('move-opt-batch', _moveOptBatch, `▣ Put them in a batch named “<b>${_escHtml(_moveSrcJob)}</b>” on the new job`)}
-    ${nTodos ? optRow('move-opt-todos', _moveOptTodos, `📌 Also bring this job's <b>${nTodos} to-do${nTodos === 1 ? '' : 's'}</b> across`) : ''}
+    ${(nTodos && !featureHidden('todos')) ? optRow('move-opt-todos', _moveOptTodos, `📌 Also bring this job's <b>${nTodos} to-do${nTodos === 1 ? '' : 's'}</b> across`) : ''}
   </div>`;
   const list = jobs.length ? jobs.map(j => {
     const jarg = _encArg(j);
@@ -17452,6 +17459,8 @@ const KR_HIDDEN_FEATURES = [
     what: 'Attaching Google Sheets, Dropbox or web links to a job.' },
   { id: 'horizon', name: 'Horizon', since: 'v373',
     what: 'Sorting jobs into This Week, This Month and later: the Horizon button on the Jobs screen, the line on each job card and the Horizon filter.' },
+  { id: 'todos', name: 'To-dos', since: 'v377',
+    what: 'One-off to-dos pinned to a job: the To-dos button and badges on the Jobs screen, the To-dos side of the running clock and the to-dos shown on a planner block.' },
   { id: 'inbox', name: 'Inbox', since: 'v371',
     what: 'Capturing a thought or photo for later, and the Inbox tab on the bottom bar.' },
   { id: 'ts-add', name: 'Add a timesheet by hand', since: 'v370',
@@ -17469,7 +17478,13 @@ function featureHidden(id) { return KR_HIDDEN_FEATURES.some(f => f.id === id) &&
 function applyHiddenFeatures() {
   document.querySelectorAll('[data-feature]').forEach(el => { el.style.display = featureHidden(el.dataset.feature) ? 'none' : ''; });
   const noEquip = featureHidden('equipment');
-  Object.keys(_EQUIP_PLACEHOLDERS).forEach(id => { const el = document.getElementById(id); if (el) el.placeholder = _EQUIP_PLACEHOLDERS[id][noEquip ? 1 : 0]; });
+  const noTodos = featureHidden('todos');
+  Object.keys(_EQUIP_PLACEHOLDERS).forEach(id => {
+    const el = document.getElementById(id); if (!el) return;
+    let ph = _EQUIP_PLACEHOLDERS[id][noEquip ? 1 : 0];
+    if (noTodos) ph = ph.replace(', to-dos', '');
+    el.placeholder = ph;
+  });
   // A filter you can no longer see must not go on filtering.
   // Timesheets: a filter you can no longer see must not go on filtering, and a
   // chip bar with no chips left in it is an empty white band, so it goes too.
@@ -17492,6 +17507,7 @@ function setFeatureShown(id, on) {
   _storeSet('kr_unhidden', JSON.stringify(list));
   applyHiddenFeatures();
   if (id === 'reminders') { try { updateReminderBanners(); } catch (e) {} }
+  if (id === 'todos') { try { renderRunChecklist(); } catch (e) {} }
   renderHiddenFeatures();
 }
 function renderHiddenFeatures() {
@@ -20732,6 +20748,7 @@ function togglePinSort() {
 // compact=true uses smaller thumbnails so rows stay short — used in the
 // full-page Organise view where notes with photos are otherwise hard to drag.
 function _pinnedNotesHtml(task, compact, search) {
+  if (featureHidden('todos')) return '';   // the to-dos block on a planner block and the Organise sheet
   // Hide notes already ticked done this session — no need to organise a completed
   // note (they're folded into the entry at clock-out).
   const pinDone = (clockState && clockState.running && clockState.task === task && clockState.pinDone) ? clockState.pinDone : {};
