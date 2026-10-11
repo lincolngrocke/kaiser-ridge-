@@ -2870,9 +2870,14 @@
     <div class="modal-handle"></div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
       <span id="move-tasks-title" style="font-size:17px;font-weight:600;">Move tasks</span>
-      <button onclick="closeModal('modal-move-tasks')" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Done</button>
+      <button onclick="closeModal('modal-move-tasks')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;">Cancel</button>
     </div>
-    <div id="move-tasks-body" style="overflow-y:auto;margin-top:6px;"></div>
+    <div id="move-tasks-body" style="overflow-y:auto;margin-top:6px;flex:1;min-height:0;"></div>
+    <!-- ⭐ The action lives OUTSIDE the scrolling list. It used to be the last thing
+         in it, so on a 39 task job it sat far below the screen, and the only button
+         in view was a header "Done" that simply closed the sheet. Lincoln, 11 Oct
+         2026, ticked five tasks, pressed Done and reported the move as broken. -->
+    <div id="move-tasks-foot" style="flex-shrink:0;"></div>
   </div>
 </div>
 
@@ -3184,7 +3189,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.375';
+const APP_VERSION = '2026-06-21.376';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -15449,9 +15454,10 @@ function renderMoveTasks() {
     </div>`;
   }).join('');
   const n = _moveSel.size;
-  const footer = `<button onclick="_moveGoDest()" ${n ? '' : 'disabled'} style="width:100%;margin-top:14px;padding:13px;border:none;border-radius:12px;background:${n ? 'var(--blue)' : 'var(--border)'};color:#fff;font-size:15px;font-weight:700;cursor:${n ? 'pointer' : 'default'};">Move ${n || ''} to another job →</button>`;
+  const footer = `<button onclick="_moveGoDest()" ${n ? '' : 'disabled'} style="width:100%;margin-top:14px;padding:13px;border:none;border-radius:12px;background:${n ? 'var(--blue)' : 'var(--border)'};color:#fff;font-size:15px;font-weight:700;cursor:${n ? 'pointer' : 'default'};">${n ? 'Move ' + n + ' to another job →' : 'Tick the tasks to move'}</button>`;
+  document.getElementById('move-tasks-foot').innerHTML = footer;
   document.getElementById('move-tasks-body').innerHTML =
-    `<div style="font-size:12px;color:var(--subtext);padding:2px 2px 10px;line-height:1.45;">Select tasks to move out of <b>${_escHtml(_moveSrcJob)}</b>, then choose where they go. Their steps, timing history, reminder and lap type go with them.</div>` + rows + footer;
+    `<div style="font-size:12px;color:var(--subtext);padding:2px 2px 10px;line-height:1.45;">Select tasks to move out of <b>${_escHtml(_moveSrcJob)}</b>, then choose where they go. Their steps, timing history, reminder and lap type go with them.</div>` + rows;
 }
 let _moveOptBatch = false, _moveOptTodos = false;
 function _moveGoDest() {
@@ -15480,7 +15486,9 @@ function _moveGoDest() {
     return `<div onclick="confirmMoveTo(decodeURIComponent('${jarg}'))" style="display:flex;align-items:center;gap:10px;padding:13px 2px;border-bottom:1px solid var(--border);cursor:pointer;">
       <span style="flex:1;min-width:0;font-size:15px;color:var(--text);">${_escHtml(j)}</span><span style="color:var(--subtext);">›</span></div>`;
   }).join('') : `<div style="padding:24px 8px;text-align:center;color:var(--subtext);">No other jobs yet — create one first.</div>`;
+  document.getElementById('move-tasks-foot').innerHTML = '';   // the next tap is a job in the list
   document.getElementById('move-tasks-body').innerHTML = back + opts + list;
+  document.getElementById('move-tasks-body').scrollTop = 0;
 }
 function _moveOptChanged() {
   const b = document.getElementById('move-opt-batch'); if (b) _moveOptBatch = b.checked;
