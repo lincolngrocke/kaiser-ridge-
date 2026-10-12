@@ -1136,6 +1136,7 @@
     <button id="chip-horizon" onclick="openHorizonReview()" class="dir-chip" data-feature="horizon" style="color:var(--blue);font-weight:600;">🗓 Horizon</button>
     <button id="chip-filters" onclick="openDirFilters()" class="dir-chip">⚲ Filter</button>
     <button id="chip-dir-sort" onclick="cycleDirSort()" class="dir-chip">↕ Grouped</button>
+    <button id="chip-shared-job" onclick="sharedJobAddStart()" class="dir-chip" style="color:var(--blue);font-weight:600;">＋ Shared job</button>
   </div>
   <div class="scroll-area" id="dir-scroll-area">
     <div id="dir-list"></div>
@@ -1202,6 +1203,18 @@
     <div id="repair-history-count" style="font-size:13px;color:var(--blue);font-weight:600;margin:8px 0 2px;"></div>
     <div id="repair-history-body" style="max-height:52vh;overflow-y:auto;"></div>
     <button id="repair-history-go" class="btn-sync" style="background:#5856d6;margin-top:12px;" onclick="applyRepairHistory()">Reconnect</button>
+  </div>
+</div>
+
+<!-- Share one job by code: the sender's code, and the receiver's "Add a shared job". See shareJobStart. -->
+<div class="modal-backdrop" id="modal-shared-job" style="z-index:420;" onclick="if(event.target===this)closeModal('modal-shared-job')">
+  <div class="modal-sheet" style="padding:16px 20px 28px;">
+    <div class="modal-handle"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <span id="shared-job-title" style="font-size:17px;font-weight:600;">Share this job</span>
+      <span onclick="closeModal('modal-shared-job')" style="color:var(--blue);font-size:16px;cursor:pointer;">Close</span>
+    </div>
+    <div id="shared-job-body"></div>
   </div>
 </div>
 
@@ -2786,6 +2799,7 @@
       </div>
 
       <div style="padding:16px 20px 0;" id="dir-duplicate-wrap">
+        <button onclick="shareJobStart()" style="width:100%;padding:14px;margin-bottom:10px;background:var(--blue);border:none;border-radius:12px;color:#fff;font-size:16px;font-weight:600;cursor:pointer;">Share this job</button>
         <button onclick="duplicateDirTask()" style="width:100%;padding:14px;background:none;border:1px solid var(--blue);border-radius:12px;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">⎘ Duplicate Job</button>
       </div>
 
@@ -3204,7 +3218,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.386';
+const APP_VERSION = '2026-06-21.387';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -17950,6 +17964,242 @@ showScreen = function(id, tab) {
   if (id === 'dashboard') renderDashboard();
   if (id === 'equipment') renderEquipmentScreen();
 };
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SHARE ONE JOB BY CODE (v387, Lincoln 12 Oct 2026)
+//
+//  Groovework is single-user. To give someone one of your jobs you send a COPY:
+//  Share this job parks it on the server under a short code (shared_jobs, 009),
+//  they type the code into "＋ Shared job" on their own Jobs screen, and it lands
+//  in their list. Nothing links the two afterwards. Change yours and theirs does
+//  not move; share it again and they choose replace or keep both.
+//
+//  ⭐ A CODE, NOT A LINK. On iOS a web app on the home screen keeps its storage
+//  apart from Safari, so a tapped link would add the job to the wrong copy.
+//
+//  ⭐ THE SENDER'S LEARNED TIMES ARRIVE AS ESTIMATES. They are written to
+//  kr_task_seeds (source 'shared'), so they read "~12m est" in the faint style
+//  and never "avg", they never enter the learned averages, and the receiver's
+//  first real timing replaces them. A seed is refused where the receiver already
+//  has a measurement or a seed of their own: it fills a gap, it never moves a number.
+//
+//  ⚠️ Steps and guides are written as the job's OWN versions (the per-job
+//  override stores), never into the shared-by-task-name stores. The receiver may
+//  already have a task called "Strip the beds" with their own steps, and a job
+//  arriving from someone else must not rewrite it.
+//  ⚠️ Task types go on the wire as [task, type] PAIRS. Their local key holds a
+//  U+0001 separator, which must never travel.
+//  ⚠️ Not sent: timesheets, to-dos, the group, reminders, location, photos
+//  (photos live in the sender's own Drive, which nobody else can open).
+// ═══════════════════════════════════════════════════════════════════════════
+const _SHARE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';   // no 0/O, 1/I/L
+function _shareNewCode() {
+  let c = '';
+  const rnd = new Uint32Array(7);
+  (window.crypto || window.msCrypto).getRandomValues(rnd);
+  for (let i = 0; i < 7; i++) c += _SHARE_ALPHABET[rnd[i] % _SHARE_ALPHABET.length];
+  return c;
+}
+function _shareShow(c) { return c.slice(0, 3) + '-' + c.slice(3); }   // KR7-42MX reads better than KR742MX
+function _shareClean(c) { return String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+function _shareBuildPayload(job) {
+  const tasks = (SUBTASKS[job] || []).slice();
+  const types = [], steps = {}, guides = {}, times = {};
+  const measured = _taskHistAvgMap();
+  tasks.forEach(t => {
+    const ty = getTaskTypes()[_taskTypeKey(job, t)];
+    if (ty) types.push([t, ty]);
+    const st = stepsFor(job, t);
+    if (st && st.length) steps[t] = st;
+    const g = guideFor(job, t);
+    if (_guideHasContent(g)) guides[t] = { instructions: g.instructions || '', url: g.url || '', urlTitle: g.urlTitle || '' };
+    const a = measured[_normTaskKey(t)];
+    if (isFinite(a) && a > 0) times[t] = Math.round(a * 100) / 100;   // MEASURED only: never pass a guess on as if it were knowledge
+  });
+  const rec = _batchRec(job);
+  const batches = (rec && rec.order && rec.order.length)
+    ? { order: rec.order.slice(), items: Object.assign({}, rec.items) } : null;
+  return { v: 1, app: 'groovework', job, from: getUserName() || '', sentAt: new Date().toISOString(), tasks, types, batches, steps, guides, times };
+}
+function _shareBody(html) { document.getElementById('shared-job-body').innerHTML = html; }
+const _shareBtn = 'width:100%;padding:14px;border:none;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;';
+async function shareJobStart() {
+  const job = _dirJobName();
+  if (!job) { showToast('Save the job first, then share it'); return; }
+  document.getElementById('shared-job-title').textContent = 'Share this job';
+  if (!isSignedIn()) {
+    _shareBody('<div class="settings-note" style="margin:6px 0 4px;">Sign in first, in Settings, then you can share a job. Sharing sends a copy through your Groovework account.</div>');
+    openModal('modal-shared-job'); return;
+  }
+  const payload = _shareBuildPayload(job);
+  if (!payload.tasks.length) { showToast('Add a task to this job before sharing it'); return; }
+  _shareBody('<div class="settings-note" style="margin:6px 0 4px;">Getting a code for ' + _escHtml(job) + '…</div>');
+  openModal('modal-shared-job');
+  let code = null;
+  for (let attempt = 0; attempt < 3 && !code; attempt++) {
+    const c = _shareNewCode();
+    const made = await _sb('/rest/v1/shared_jobs', { method: 'POST', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify({ code: c, payload }) });
+    // _sb returns null for a failure AND for a success whose body parses to null,
+    // so the failure flag is what is asked, not the return value.
+    if (made !== null || _sbLastFail === null) code = c;
+    else if (_sbLastCode !== 409) break;   // 409 = that code is taken, try another; anything else will not fix itself
+  }
+  if (!code) {
+    _shareBody('<div class="settings-note" style="margin:6px 0 4px;color:var(--red);">Could not get a code. ' + _escHtml(_sbFailWords()) + '</div>');
+    return;
+  }
+  const n = payload.tasks.length;
+  const msg = 'Here is my Groovework job "' + job + '". In Groovework go to Jobs, tap Shared job and enter this code: ' + _shareShow(code) + '. It works for 7 days.';
+  window._shareLastMsg = msg; window._shareLastCode = _shareShow(code);
+  _shareBody(
+    '<div class="settings-note" style="margin:6px 0 12px;">Send this code to whoever should have <b>' + _escHtml(job) + '</b> (' + n + ' task' + (n === 1 ? '' : 's') + '). They enter it under Jobs, Shared job. It works for 7 days and gives them their own copy.</div>'
+    + '<div id="shared-job-code" style="font-family:ui-monospace,Menlo,monospace;font-size:34px;font-weight:700;letter-spacing:3px;text-align:center;padding:18px 0;border:1px solid var(--border);border-radius:14px;background:var(--card);color:var(--text);margin-bottom:12px;">' + _shareShow(code) + '</div>'
+    + '<button onclick="shareJobSend()" style="' + _shareBtn + 'background:var(--blue);color:#fff;margin-bottom:10px;">Send the code</button>'
+    + '<button onclick="shareJobCopy()" style="' + _shareBtn + 'background:none;border:1px solid var(--border);color:var(--text);">Copy the code</button>');
+}
+function shareJobCopy() {
+  const c = window._shareLastCode || '';
+  const done = () => showToast('Code copied');
+  try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(c).then(done, () => showToast('Could not copy. The code is ' + c)); return; } } catch (e) {}
+  showToast('The code is ' + c);
+}
+function shareJobSend() {
+  const text = window._shareLastMsg || '';
+  if (navigator.share) { navigator.share({ text }).catch(err => { if (err && err.name !== 'AbortError') shareJobCopy(); }); }
+  else shareJobCopy();
+}
+
+// ── The receiving end ──
+let _sharedIncoming = null;
+function sharedJobAddStart() {
+  _sharedIncoming = null;
+  document.getElementById('shared-job-title').textContent = 'Add a shared job';
+  if (!isSignedIn()) {
+    _shareBody('<div class="settings-note" style="margin:6px 0 4px;">Sign in first, in Settings, then you can add a job someone has shared with you.</div>');
+    openModal('modal-shared-job'); return;
+  }
+  _shareBody(
+    '<div class="settings-note" style="margin:6px 0 12px;">Enter the code you were sent. You get your own copy of the job, with its tasks, steps and guides.</div>'
+    + '<input id="shared-job-input" type="text" placeholder="ABC-2DEF" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" onkeydown="if(event.key===\'Enter\'){event.preventDefault();sharedJobFetch();}" style="width:100%;box-sizing:border-box;font-family:ui-monospace,Menlo,monospace;font-size:26px;font-weight:700;letter-spacing:3px;text-align:center;padding:14px;border:1px solid var(--border);border-radius:14px;background:var(--card);color:var(--text);margin-bottom:12px;text-transform:uppercase;">'
+    + '<div id="shared-job-msg" style="font-size:13px;color:var(--red);min-height:18px;margin-bottom:8px;"></div>'
+    + '<button onclick="sharedJobFetch()" style="' + _shareBtn + 'background:var(--blue);color:#fff;">Find the job</button>');
+  openModal('modal-shared-job');
+}
+// What the server said, in words a person can act on.
+function _sharedFailWords(body, status) {
+  const m = String((body && (body.message || body.hint || body.error)) || '');
+  if (/invalid share code/i.test(m)) return 'That code was not found. Check it with whoever sent it.';
+  if (/share code expired/i.test(m)) return 'That code has expired. Ask them to share the job again.';
+  if (/not signed in/i.test(m) || status === 401) return 'You are signed out. Sign in again in Settings, then try the code.';
+  if (status === 404 || /get_shared_job/i.test(m)) return 'Sharing is not switched on at the server yet.';
+  return 'Could not fetch that job (' + (status || 'no connection') + '). Check your connection and try again.';
+}
+function _sharedValid(p) {
+  return !!(p && p.app === 'groovework' && typeof p.job === 'string' && p.job.trim() && Array.isArray(p.tasks) && p.tasks.length
+    && p.tasks.every(t => typeof t === 'string'));
+}
+async function sharedJobFetch() {
+  const inp = document.getElementById('shared-job-input'), msg = document.getElementById('shared-job-msg');
+  const code = _shareClean(inp && inp.value);
+  if (code.length !== 7) { if (msg) msg.textContent = 'A code is 7 letters and numbers, like ABC-2DEF.'; return; }
+  if (msg) { msg.style.color = 'var(--subtext)'; msg.textContent = 'Looking it up…'; }
+  // Direct fetch, not _sb: _sb throws the response body away, and the server's
+  // own message (not found / expired) is the whole answer here. Same reason as claimInvite.
+  let res, body = null;
+  const call = () => fetch(SB_URL + '/rest/v1/rpc/get_shared_job', { method: 'POST',
+    headers: { 'apikey': SB_ANON, 'Authorization': 'Bearer ' + _auth.access_token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ _code: code }) });
+  try {
+    res = await call();
+    if (res.status === 401 && await _authRefresh()) res = await call();
+    body = await res.json().catch(() => null);
+  } catch (e) { if (msg) { msg.style.color = 'var(--red)'; msg.textContent = _sharedFailWords(null, 0); } return; }
+  if (!res.ok) { if (msg) { msg.style.color = 'var(--red)'; msg.textContent = _sharedFailWords(body, res.status); } return; }
+  if (!_sharedValid(body)) { if (msg) { msg.style.color = 'var(--red)'; msg.textContent = 'That code did not hold a Groovework job.'; } return; }
+  _sharedIncoming = body;
+  _sharedPreview();
+}
+function _sharedPreview() {
+  const p = _sharedIncoming; if (!p) return;
+  const name = p.job.trim();
+  const have = DIRECTORY.some(r => r.task === name);
+  const nSteps = Object.keys(p.steps || {}).length, nGuides = Object.keys(p.guides || {}).length, nTimes = Object.keys(p.times || {}).length;
+  const nBatch = (p.batches && p.batches.order) ? p.batches.order.length : 0;
+  const bits = [p.tasks.length + ' task' + (p.tasks.length === 1 ? '' : 's')];
+  if (nBatch) bits.push(nBatch + ' batch' + (nBatch === 1 ? '' : 'es'));
+  if (nSteps) bits.push(nSteps + ' with steps');
+  if (nGuides) bits.push(nGuides + ' with a guide');
+  if (nTimes) bits.push(nTimes + ' with a time estimate');
+  const first = p.tasks.slice(0, 5).map(t => '<div style="font-size:14px;color:var(--text);padding:5px 0;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _escHtml(t) + '</div>').join('')
+    + (p.tasks.length > 5 ? '<div style="font-size:12px;color:var(--subtext);padding:6px 0 0;">and ' + (p.tasks.length - 5) + ' more</div>' : '');
+  const btns = have
+    ? '<div class="settings-note" style="margin:12px 0 10px;">You already have a job called <b>' + _escHtml(name) + '</b>. Replacing swaps its tasks, batches, steps and guides for the shared version. Your timesheets and your own learned times are kept either way.</div>'
+      + '<button onclick="sharedJobApply(\'both\')" style="' + _shareBtn + 'background:var(--blue);color:#fff;margin-bottom:10px;">Keep both</button>'
+      + '<button onclick="sharedJobApply(\'replace\')" style="' + _shareBtn + 'background:none;border:1px solid var(--red);color:var(--red);">Replace mine</button>'
+    : '<button onclick="sharedJobApply(\'add\')" style="' + _shareBtn + 'background:var(--blue);color:#fff;margin-top:14px;">Add to my jobs</button>';
+  _shareBody(
+    '<div style="font-size:20px;font-weight:700;color:var(--text);line-height:1.25;">' + _escHtml(name) + '</div>'
+    + '<div style="font-size:13px;color:var(--subtext);margin:3px 0 10px;">' + (p.from ? 'from ' + _escHtml(p.from) + ' \u00b7 ' : '') + _escHtml(bits.join(' \u00b7 ')) + '</div>'
+    + first + btns);
+}
+// A free name for "keep both": "Job (shared)", then "Job (shared 2)"…
+function _sharedFreeName(name) {
+  const taken = n => DIRECTORY.some(r => r.task === n);
+  let n = name + ' (shared)', i = 2;
+  while (taken(n)) n = name + ' (shared ' + (i++) + ')';
+  return n;
+}
+function sharedJobApply(mode) {
+  const p = _sharedIncoming; if (!p) return;
+  const orig = p.job.trim();
+  const exists = DIRECTORY.some(r => r.task === orig);
+  const name = (mode === 'both' && exists) ? _sharedFreeName(orig) : orig;
+  const tasks = [...new Set(p.tasks.map(t => String(t).trim()).filter(Boolean))];
+  // 1. the job row. A replace keeps the row it has (its group, repeats, area).
+  if (!DIRECTORY.some(r => r.task === name)) DIRECTORY.push({ frequency: 'Weekly', group: 'General', task: name, equipment: '', location: '', client: '' });
+  _storeSet('kr_directory', JSON.stringify(DIRECTORY));
+  // 2. its tasks, in the sender's order
+  SUBTASKS[name] = tasks;
+  _storeSet('kr_subtasks', JSON.stringify(SUBTASKS));
+  // 3. which tasks repeat (rebuilt with the local key; the pairs carried no separator)
+  const types = getTaskTypes();
+  Object.keys(types).forEach(k => { if (k.indexOf(name + '\u0001') === 0) delete types[k]; });
+  (p.types || []).forEach(pair => { if (Array.isArray(pair) && tasks.includes(pair[0]) && typeof pair[1] === 'string') types[_taskTypeKey(name, pair[0])] = pair[1]; });
+  saveTaskTypes(types);
+  // 4. batches
+  const tb = getTaskBatches();
+  if (p.batches && Array.isArray(p.batches.order) && p.batches.items) {
+    const items = {};
+    Object.keys(p.batches.items).forEach(t => { if (tasks.includes(t) && p.batches.order.includes(p.batches.items[t])) items[t] = p.batches.items[t]; });
+    tb[name] = { order: p.batches.order.slice(), items };
+  } else delete tb[name];
+  saveTaskBatches(tb);
+  // 5. steps and guides, as THIS job's own versions only
+  const js = getJobSteps(); js[name] = {};
+  Object.keys(p.steps || {}).forEach(t => { if (tasks.includes(t) && Array.isArray(p.steps[t])) js[name][t] = p.steps[t]; });
+  if (!Object.keys(js[name]).length) delete js[name];
+  saveJobSteps(js);
+  const jg = getJobGuides(); jg[name] = {};
+  Object.keys(p.guides || {}).forEach(t => { const g = p.guides[t]; if (tasks.includes(t) && g && typeof g === 'object') jg[name][t] = { instructions: g.instructions || '', url: String(g.url || ''), urlTitle: String(g.urlTitle || '') }; });
+  if (!Object.keys(jg[name]).length) delete jg[name];
+  saveJobGuides(jg);
+  // 6. the sender's times, as estimates, and only where there is nothing already
+  const seeds = getTaskSeeds(), measured = _taskHistAvgMap(), seedMap = _taskSeedMap();
+  let seeded = 0;
+  Object.keys(p.times || {}).forEach(t => {
+    const mins = Number(p.times[t]), k = _normTaskKey(t);
+    if (!tasks.includes(t) || !isFinite(mins) || mins <= 0 || mins > 1440) return;
+    if (isFinite(measured[k]) && measured[k] > 0) return;   // their own measurement stands
+    if (isFinite(seedMap[k])) return;                        // so does an estimate they already had
+    seeds[t] = { mins, source: 'shared', at: new Date().toISOString() }; seeded++;
+  });
+  if (seeded) saveTaskSeeds(seeds);
+  _sharedIncoming = null;
+  closeModal('modal-shared-job');
+  try { renderDirectory(); } catch (e) {}
+  try { autoBackup(); } catch (e) {}
+  showToast('"' + name + '" added to your jobs \u00b7 ' + tasks.length + ' task' + (tasks.length === 1 ? '' : 's'));
+}
 
 // ── THE HIDDEN FEATURES REGISTER ─────────────────────────────────────────────
 // Lincoln, 9 Oct 2026: the app has to be usable by a stranger, the Planner and the
