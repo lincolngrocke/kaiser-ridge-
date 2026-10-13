@@ -2313,42 +2313,62 @@
 </div>
 
 <!-- ══════════════ PLANNER ADD TASK MODAL ══════════════ -->
+<!-- ⭐ ADD TO PLANNER, SAME SHAPE AS CLOCKING IN (v388). Step one is the job list
+     filling the sheet. Tapping a job is the choice and leads to step two: the job
+     and its batches on top, where it goes underneath. The old sheet stacked the
+     holding bay choice, start time and duration ABOVE the list, which left room for
+     four jobs at the bottom of the screen. -->
 <div class="modal-backdrop" id="modal-planner-add" style="z-index:300;" onclick="if(event.target===this)closeModal('modal-planner-add')">
-  <div class="modal-sheet" style="max-height:85vh;overflow-y:auto;">
+  <div class="modal-sheet" style="height:92vh;max-height:92vh;overflow:hidden;display:flex;flex-direction:column;padding-bottom:calc(10px + env(safe-area-inset-bottom));">
     <div class="modal-handle"></div>
-    <div class="modal-header">
-      <button onclick="closeModal('modal-planner-add')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;">Cancel</button>
-      <span class="modal-title">Add to Planner</span>
-      <button onclick="confirmPlannerAdd()" style="background:none;border:none;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">Add</button>
-    </div>
-    <div style="padding:16px;">
-      <div style="margin-bottom:14px;">
-        <div style="font-size:12px;color:var(--subtext);margin-bottom:6px;">Add to</div>
-        <div style="display:flex;gap:8px;">
-          <button id="pa-dest-hold" onclick="setPlannerAddDest(false)" style="flex:1;border-radius:10px;padding:9px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid var(--blue);background:var(--blue);color:#fff;">📥 Holding bay</button>
-          <button id="pa-dest-time" onclick="setPlannerAddDest(true)" style="flex:1;border-radius:10px;padding:9px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--text);">📌 At start time</button>
-        </div>
-        <div id="pa-dest-hint" style="font-size:11px;color:var(--subtext);margin-top:6px;">Lands in the holding bay to organise — drag it onto the timeline when ready.</div>
+    <!-- step one: pick the job -->
+    <div id="pa-step-pick" style="display:flex;flex-direction:column;flex:1 1 auto;min-height:0;">
+      <div class="modal-header" style="flex-shrink:0;">
+        <button onclick="closeModal('modal-planner-add')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;">Cancel</button>
+        <span class="modal-title">Add to planner</span>
+        <span style="width:54px;"></span>
       </div>
-      <div style="margin-bottom:12px;">
-        <div style="font-size:12px;color:var(--subtext);margin-bottom:4px;">Start Time</div>
-        <input type="time" id="planner-add-time" class="form-input" style="width:100%;" />
-      </div>
-      <div style="margin-bottom:12px;">
-        <div style="font-size:12px;color:var(--subtext);margin-bottom:4px;">Duration (hours) — auto-filled from your history</div>
-        <input type="number" id="planner-add-duration" step="0.25" min="0.25" max="12" class="form-input" style="width:100%;" placeholder="e.g. 1.5" autocomplete="off" />
-        <div id="planner-add-avg-note" style="font-size:11px;color:var(--subtext);margin-top:4px;"></div>
-      </div>
-      <div style="margin-bottom:8px;">
-        <div style="font-size:12px;color:var(--subtext);margin-bottom:6px;">Job</div>
+      <div style="padding:14px 16px 0;flex-shrink:0;">
         <input type="search" id="planner-task-search" placeholder="Search jobs, tasks, equipment…" autocomplete="off" autocorrect="on" autocapitalize="sentences" spellcheck="true"
-          style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:15px;background:var(--bg);color:var(--text);outline:none;margin-bottom:8px;"
+          style="width:100%;box-sizing:border-box;padding:11px 12px;border:1px solid var(--border);border-radius:12px;font-size:15px;background:var(--card);color:var(--text);outline:none;margin-bottom:10px;"
           oninput="renderPlannerTaskList()" />
         <div style="display:flex;gap:8px;margin-bottom:8px;">
           <button id="pa-sort-recent" onclick="setPlannerTaskSort('recent')" style="flex:1;border-radius:8px;padding:7px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--text);">🕘 Recent</button>
           <button id="pa-sort-used" onclick="setPlannerTaskSort('used')" style="flex:1;border-radius:8px;padding:7px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--text);">⭐ Most used</button>
         </div>
-        <div id="planner-task-list" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;"></div>
+      </div>
+      <div style="padding:0 16px;flex:1 1 auto;min-height:0;display:flex;flex-direction:column;">
+        <div id="planner-task-list" style="flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:10px;"></div>
+      </div>
+    </div>
+    <!-- step two: the job, and where it goes -->
+    <div id="pa-step-place" style="display:none;flex-direction:column;flex:1 1 auto;min-height:0;">
+      <div style="display:flex;flex-direction:column;flex:1 1 auto;min-height:0;padding:0 20px;">
+        <div onclick="plannerAddBack()" style="font-size:14px;color:var(--blue);font-weight:600;padding:0 0 8px;cursor:pointer;flex-shrink:0;">‹ Jobs</div>
+        <div id="pa-job-name" style="font-size:20px;font-weight:700;color:var(--text);line-height:1.25;flex-shrink:0;"></div>
+        <div id="pa-job-sub" style="font-size:13px;color:var(--subtext);margin:3px 0 8px;flex-shrink:0;"></div>
+        <div id="pa-job-tools" style="display:none;flex-shrink:0;justify-content:flex-end;padding:0 0 8px;">
+          <span id="pa-job-expand" onclick="_ciToggleAll()" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;">Expand all</span>
+        </div>
+        <div id="pa-job-tasks" style="flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;border-top:1px solid var(--border);border-bottom:1px solid var(--border);"></div>
+      </div>
+      <div style="padding:12px 20px 0;flex-shrink:0;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <span style="font-size:13px;color:var(--subtext);flex-shrink:0;">Block length (hours)</span>
+          <input type="number" id="planner-add-duration" step="0.25" min="0.25" max="12" inputmode="decimal" autocomplete="off" placeholder="1.5"
+            style="width:74px;box-sizing:border-box;padding:7px 8px;border:1px solid var(--border);border-radius:9px;font-size:16px;text-align:center;background:var(--card);color:var(--text);" />
+          <span id="planner-add-avg-note" style="font-size:11.5px;color:var(--subtext);min-width:0;line-height:1.3;"></span>
+        </div>
+        <button onclick="plannerAddGo(false)" style="width:100%;height:52px;border-radius:14px;border:none;background:var(--blue);color:#fff;font-size:17px;font-weight:600;cursor:pointer;margin-bottom:10px;">Add to holding bay</button>
+        <div style="border:1px solid var(--border);border-radius:14px;overflow:hidden;background:var(--card);">
+          <div style="padding:8px 16px;text-align:center;">
+            <input type="time" id="planner-add-time" style="font-size:20px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);-webkit-appearance:none;" />
+          </div>
+          <div style="border-top:1px solid var(--border);padding:8px 16px;">
+            <button onclick="plannerAddGo(true)" style="width:100%;height:46px;border-radius:10px;border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:600;cursor:pointer;">Place at this time</button>
+          </div>
+        </div>
+        <button onclick="closeModal('modal-planner-add')" style="width:100%;height:42px;border-radius:10px;border:none;background:none;color:var(--subtext);font-size:16px;cursor:pointer;margin-top:6px;">Cancel</button>
       </div>
     </div>
   </div>
@@ -3218,7 +3238,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.387';
+const APP_VERSION = '2026-06-21.388';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4190,8 +4210,7 @@ function _initBackToTop() {
     // ⚠️ Not while the clock-in screen is up. The planner behind it scrolls itself to
     // "now" as it renders, which fired this and put the arrow on top of Set Earlier
     // Time. Hiding it once when the sheet opened was not enough: it came straight back.
-    const _tm = document.getElementById('modal-time');
-    const _covered = !!(_tm && _tm.classList.contains('open'));
+    const _covered = !!document.querySelector('.modal-backdrop.open');   // v388: any sheet, not only clock-in
     b.style.display = (!_covered && el.scrollTop > 400 && el.offsetParent !== null) ? 'flex' : 'none';
   }, true);
 }
@@ -8613,6 +8632,7 @@ function _clockInBack() {
 // the run will show them, each with when it was last done and its learned time.
 // A PREVIEW: nothing here is tappable, ticking starts once the clock is running.
 function _renderClockInPreview(job, plan, resume) {
+  _ciHost = 'time-job';
   document.getElementById('time-job-back').textContent = (plan || resume) ? '\u2039 Planner' : '\u2039 Jobs';
   if (resume) { try { if (_renderClockInResumePreview(job, resume)) return; } catch (e) {} }
   if (plan) { try { if (_renderClockInPlanPreview(job, plan)) return; } catch (e) {} }
@@ -8644,6 +8664,9 @@ function _renderClockInPreview(job, plan, resume) {
 // Organise sheet and the run sheet use (_orgSections), so the three cannot drift.
 // A job with no batches has no headings to show and lists its tasks as before.
 let _ciCtx = null, _ciOpen = {};
+// Which sheet the preview is drawing into: 'time-job' (clock-in) or 'pa-job'
+// (add to planner). The three element ids differ only by this prefix.
+let _ciHost = 'time-job';
 function _ciSections() {
   if (!_ciCtx) return [];
   let secs = [{ name: null, loose: false, items: _ciCtx.items }];
@@ -8658,7 +8681,7 @@ function _ciToggleAll() {
   _ciRenderList(false);
 }
 function _ciRenderList(resetScroll) {
-  const el = document.getElementById('time-job-tasks'), tools = document.getElementById('time-job-tools');
+  const el = document.getElementById(_ciHost + '-tasks'), tools = document.getElementById(_ciHost + '-tools');
   if (!el || !_ciCtx) return;
   const lastMap = _checklistItemLastDone(_ciCtx.job), est = _taskEstMap();
   const laps = t => (_ciCtx.lapsFor ? _ciCtx.lapsFor(t) : 1);
@@ -8684,7 +8707,7 @@ function _ciRenderList(resetScroll) {
         + '<span style="flex-shrink:0;font-size:12px;color:var(--subtext);white-space:nowrap;">' + _escHtml(meta) + '</span></div>'
         + (open ? '<div style="padding-left:22px;">' + sec.items.map(t => _clockInRowHtml(t, lastMap, est, laps(t), doneOf(t))).join('') + '</div>' : '');
     }).join('');
-    const ex = document.getElementById('time-job-expand');
+    const ex = document.getElementById(_ciHost + '-expand');
     if (ex) ex.textContent = secs.every((x, i) => _ciOpen[i]) ? 'Collapse all' : 'Expand all';
   }
   el.scrollTop = resetScroll ? 0 : keep;
@@ -21338,19 +21361,20 @@ function _renderLiveForecastGhost(grid, nowMins) {
 let _plannerAddPlace = false;
 function setPlannerAddDest(place) {
   _plannerAddPlace = place;
-  const hold = document.getElementById('pa-dest-hold'), time = document.getElementById('pa-dest-time');
-  const on = b => { b.style.background = 'var(--blue)'; b.style.color = '#fff'; b.style.borderColor = 'var(--blue)'; };
-  const off = b => { b.style.background = 'var(--card)'; b.style.color = 'var(--text)'; b.style.borderColor = 'var(--border)'; };
-  if (hold && time) { (place ? off : on)(hold); (place ? on : off)(time); }
-  const hint = document.getElementById('pa-dest-hint');
-  if (hint) hint.textContent = place
-    ? 'Drops straight onto the timeline at the start time — handy for appointments.'
-    : 'Lands in the holding bay to organise — drag it onto the timeline when ready.';
 }
 
+function _plannerAddStep(place) {
+  document.getElementById('pa-step-pick').style.display = place ? 'none' : 'flex';
+  document.getElementById('pa-step-place').style.display = place ? 'flex' : 'none';
+}
+function plannerAddBack() { _plannerAddTask = null; _plannerAddStep(false); renderPlannerTaskList(); }
+// The two ways out of step two. Each sets where it lands and runs the same add.
+function plannerAddGo(place) { setPlannerAddDest(place); confirmPlannerAdd(); }
 function openPlannerAddTask() {
   if (isWorker()) return;
   _plannerAddTask = null;
+  _plannerAddStep(false);
+  try { _hideBackToTop(); } catch (e) {}
   setPlannerAddDest(false); // default every time: holding bay
   // Default start time: now rounded to nearest 15min, or 8am
   const now = new Date();
@@ -21426,7 +21450,7 @@ function renderPlannerTaskList() {
       style="padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;background:${isSelected ? 'rgba(0,122,255,0.08)' : 'transparent'};">
       <div style="min-width:0;">
         <div style="font-size:15px;color:var(--text);">${query ? highlightMatch(r.task, query) : r.task}</div>
-        <div style="font-size:12px;color:var(--subtext);">${r.group || ''}${avgStr}</div>
+        <div style="font-size:12px;color:var(--subtext);">${[featureHidden('area') ? '' : (r.group || ''), avgStr.replace(/^ · /, '')].filter(Boolean).join(' · ')}</div>
         ${equipHtml}${subsHtml}
       </div>
       ${isSelected ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}
@@ -21442,13 +21466,34 @@ function selectPlannerTask(taskName) {
   const durInput = document.getElementById('planner-add-duration');
   const note = document.getElementById('planner-add-avg-note');
   if (avg) {
-    durInput.value = avg;
-    note.textContent = `Based on average of past entries`;
+    durInput.value = Math.round(avg * 100) / 100;
+    note.textContent = 'from your average';
   } else {
     durInput.value = '1';
-    note.textContent = 'No history yet — defaulting to 1h';
+    note.textContent = 'no history yet, so 1 hour';
   }
-  renderPlannerTaskList();
+  // ⭐ The tap is the choice: straight to step two, the job and where it goes.
+  const nRuns = entries.filter(e => !e.bot && e.task === taskName && e.durationHours > 0).length;
+  const last = _jobLastDone(taskName);
+  let items = SUBTASKS[taskName] || [];
+  try { items = _orgVisibleOrder(taskName, {}) || items; } catch (e) {}
+  const bits = [];
+  if (avg) bits.push('~' + fmtMin(avg * 60) + ' avg');
+  if (nRuns) bits.push('done ' + nRuns + '\u00d7');
+  bits.push(last ? 'last ' + _agoWords(last) : 'not done yet');
+  bits.push(items.length + ' task' + (items.length === 1 ? '' : 's'));
+  document.getElementById('pa-job-name').textContent = taskName;
+  document.getElementById('pa-job-sub').textContent = bits.join(' \u00b7 ');
+  _ciHost = 'pa-job';
+  const listEl = document.getElementById('pa-job-tasks');
+  if (!items.length) {
+    _ciCtx = null; document.getElementById('pa-job-tools').style.display = 'none';
+    listEl.innerHTML = '<div style="padding:18px 2px;font-size:14px;line-height:1.5;color:var(--subtext);">This job has no tasks yet. You can add them from More, then Jobs.</div>';
+  } else {
+    _ciCtx = { job: taskName, items, lapsFor: null }; _ciOpen = {};
+    _ciRenderList(true);
+  }
+  _plannerAddStep(true);
 }
 
 function confirmPlannerAdd() {
