@@ -217,7 +217,31 @@
   .pstep-hours { flex-shrink: 0; font-size: 12px; font-weight: 600; color: var(--blue); white-space: nowrap; }
   .pstep-del { background: none; border: none; color: var(--red); font-size: 18px; cursor: pointer; padding: 0 4px; }
 
-  /* ── RUNNING STATE (dark overlay) ── */
+  /* ── RUNNING STATE ──
+     ⭐ It follows the app's light / dark setting (v394). It was built as a dark
+     "focus" screen with its colours written in by hand, so it stayed dark while
+     everything else was light. Lincoln, 14 Oct 2026: "the only page on the app that
+     is still displayed in dark mode". Every colour here is one of these, so the
+     two themes are one list each, not a hunt through the file. Accents keep their
+     meaning in both (blue = the plan, green = done, orange = over time), with the
+     light versions darkened enough to read on a pale background. */
+  .clock-running-overlay, #modal-run-done {
+    --run-sheet: #0b0f17;
+    --run-bg: radial-gradient(120% 75% at 50% 0%, #17233a 0%, #0a0e17 55%, #05070c 100%);
+    --run-text: #fff; --run-text2: #dfe3ec; --run-sub: #8b93a7; --run-faint: #6d7488;
+    --run-fill1: rgba(255,255,255,0.06); --run-fill2: rgba(255,255,255,0.08);
+    --run-fill3: rgba(255,255,255,0.13); --run-fill4: rgba(255,255,255,0.22);
+    --run-blue: #5ac8fa; --run-green: #30d158; --run-yellow: #ffd60a;
+  }
+  body:not(.dark) .clock-running-overlay, body:not(.dark) #modal-run-done {
+    --run-sheet: var(--bg);
+    --run-bg: var(--bg);
+    --run-text: #1c1c1e; --run-text2: #2c2c2e; --run-sub: #6e6e73; --run-faint: #8e8e93;
+    --run-fill1: rgba(0,0,0,0.04); --run-fill2: rgba(0,0,0,0.06);
+    --run-fill3: #ffffff; --run-fill4: rgba(0,0,0,0.18);
+    --run-blue: #007aff; --run-green: #248a3d; --run-yellow: #9a6b00;
+  }
+  body:not(.dark) .clock-running-overlay .run-seg div.on { box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
   .clock-running-overlay {
     display: none;
     position: fixed;
@@ -225,7 +249,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: radial-gradient(120% 75% at 50% 0%, #17233a 0%, #0a0e17 55%, #05070c 100%);
+    background: var(--run-bg);
     z-index: 40;
     flex-direction: column;
     pointer-events: none;
@@ -242,10 +266,10 @@
     display: flex; justify-content: space-between; align-items: center;
     padding: 14px 22px 2px; flex-shrink: 0; position: relative;
   }
-  .run-week { font-size: 13px; color: #6d7488; font-variant-numeric: tabular-nums; }
+  .run-week { font-size: 13px; color: var(--run-faint); font-variant-numeric: tabular-nums; }
   .run-tools { display: flex; gap: 20px; }
   .run-tools button {
-    background: none; border: none; color: #7c8296; cursor: pointer;
+    background: none; border: none; color: var(--run-faint); cursor: pointer;
     padding: 4px; display: flex; align-items: center;
   }
   .run-hero {
@@ -254,14 +278,14 @@
   }
   .run-ring { position: relative; width: 208px; height: 208px; }
   .run-ring svg { transform: rotate(-90deg); }
-  .run-ring-track { stroke: rgba(255,255,255,0.08); }
+  .run-ring-track { stroke: var(--run-fill2); }
   .run-ring-fg { stroke: url(#run-grad); transition: stroke-dashoffset 0.95s linear; }
   .run-ring.over .run-ring-fg { stroke: #ff9f0a; }
   .run-done-chip {
     position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
     min-width: 34px; height: 30px; border-radius: 15px; padding: 0 10px;
     background: rgba(48,209,88,0.16); border: 1px solid rgba(48,209,88,0.45);
-    color: #30d158; font-size: 14px; font-weight: 700; line-height: 1;
+    color:var(--run-green); font-size: 14px; font-weight: 700; line-height: 1;
     display: flex; align-items: center; justify-content: center; gap: 4px;
     cursor: pointer; -webkit-tap-highlight-color: transparent;
     box-shadow: 0 2px 10px rgba(0,0,0,0.25); z-index: 3;
@@ -276,31 +300,31 @@
   #run-list-top { touch-action: none; }
   .run-grab { display: none; justify-content: center; align-items: center; padding: 8px 0 4px; cursor: grab; }
   .run-grab.on { display: flex; }
-  .run-grab-pill { width: 40px; height: 5px; border-radius: 3px; background: rgba(255,255,255,0.22); }
+  .run-grab-pill { width: 40px; height: 5px; border-radius: 3px; background: var(--run-fill4); }
   .clock-running-overlay.list-expanded .run-grab-pill { background: rgba(90,200,250,0.6); }
   .running-big-timer {
     font-size: 36px; font-weight: 300; letter-spacing: -1px;
-    color: #fff; font-variant-numeric: tabular-nums; line-height: 1.1;
+    color: var(--run-text); font-variant-numeric: tabular-nums; line-height: 1.1;
   }
-  #run-clockedin-text { font-size: 12.5px; color: #8b93a7; margin-top: 3px; }
-  #run-ring-label { font-size: 11px; color: #5ac8fa; font-weight: 600; margin-top: 7px; letter-spacing: 0.2px; }
+  #run-clockedin-text { font-size: 12.5px; color: var(--run-sub); margin-top: 3px; }
+  #run-ring-label { font-size: 11px; color: var(--run-blue); font-weight: 600; margin-top: 7px; letter-spacing: 0.2px; }
   .run-ring.over ~ .run-ring-ctr #run-ring-label { color: #ff9f0a; }
   /* Estimated finish clock-time — the trust hook: learned from YOUR averages */
-  #run-ring-finish { font-size: 13px; color: #30d158; font-weight: 700; margin-top: 4px; letter-spacing: 0.2px; }
-  .run-job-title { font-size: 20px; font-weight: 600; color: #fff; letter-spacing: -0.3px; margin-top: 16px; text-align: center; padding: 0 24px; text-wrap: balance; }
-  .run-job-meta { font-size: 13px; color: #8b93a7; margin-top: 5px; text-align: center; padding: 0 20px; }
-  .run-job-meta .loc { color: #30d158; text-decoration: none; }
-  #run-break-info { font-size: 13px; color: #ffd60a; margin-top: 7px; text-align: center; }
-  .run-undo { font-size: 12.5px; color: #6d7488; cursor: pointer; margin-top: 10px; }
+  #run-ring-finish { font-size: 13px; color:var(--run-green); font-weight: 700; margin-top: 4px; letter-spacing: 0.2px; }
+  .run-job-title { font-size: 20px; font-weight: 600; color: var(--run-text); letter-spacing: -0.3px; margin-top: 16px; text-align: center; padding: 0 24px; text-wrap: balance; }
+  .run-job-meta { font-size: 13px; color: var(--run-sub); margin-top: 5px; text-align: center; padding: 0 20px; }
+  .run-job-meta .loc { color:var(--run-green); text-decoration: none; }
+  #run-break-info { font-size: 13px; color:var(--run-yellow); margin-top: 7px; text-align: center; }
+  .run-undo { font-size: 12.5px; color: var(--run-faint); cursor: pointer; margin-top: 10px; }
   .run-seg {
     display: flex; gap: 6px; margin: 16px 16px 0;
-    background: rgba(255,255,255,0.06); border-radius: 14px; padding: 4px; flex-shrink: 0;
+    background: var(--run-fill1); border-radius: 14px; padding: 4px; flex-shrink: 0;
   }
   .run-seg div {
     flex: 1; text-align: center; padding: 9px 6px; font-size: 14px; font-weight: 600;
-    color: #8b93a7; border-radius: 11px; cursor: pointer; font-variant-numeric: tabular-nums;
+    color: var(--run-sub); border-radius: 11px; cursor: pointer; font-variant-numeric: tabular-nums;
   }
-  .run-seg div.on { background: rgba(255,255,255,0.13); color: #fff; }
+  .run-seg div.on { background: var(--run-fill3); color: var(--run-text); }
   .running-buttons {
     padding: 14px 16px 0;
     display: flex;
@@ -342,7 +366,7 @@
     border-radius: 27px;
     border: 0.5px solid rgba(255,255,255,0.14);
     background: rgba(255,255,255,0.10);
-    color: #ffd60a;
+    color:var(--run-yellow);
     font-size: 16px;
     font-weight: 600;
     cursor: pointer;
@@ -1941,7 +1965,7 @@
       <svg width="208" height="208" viewBox="0 0 208 208">
         <circle class="run-ring-track" cx="104" cy="104" r="92" fill="none" stroke-width="13"/>
         <circle class="run-ring-fg" id="run-ring-fg" cx="104" cy="104" r="92" fill="none" stroke-width="13" stroke-linecap="round" stroke-dasharray="578.05" stroke-dashoffset="578.05"/>
-        <defs><linearGradient id="run-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5ac8fa"/><stop offset="1" stop-color="#30d158"/></linearGradient></defs>
+        <defs><linearGradient id="run-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--run-blue)"/><stop offset="1" stop-color="#30d158"/></linearGradient></defs>
       </svg>
       <div class="run-ring-ctr">
         <div class="running-big-timer" id="run-timer">0:00</div>
@@ -1953,7 +1977,7 @@
     <div class="run-job-title" id="run-job-title"></div>
     <div class="run-job-meta" id="run-job-meta"></div>
     <div id="run-break-info"></div>
-    <button id="run-video-btn" onclick="playVideoForTask(clockState&&clockState.task)" style="display:none;margin-top:12px;background:rgba(255,255,255,0.1);color:#fff;border:0.5px solid rgba(255,255,255,0.15);border-radius:20px;padding:8px 16px;font-size:14px;font-weight:600;cursor:pointer;">▶ Watch how-to</button>
+    <button id="run-video-btn" onclick="playVideoForTask(clockState&&clockState.task)" style="display:none;margin-top:12px;background:var(--run-fill2);color:var(--run-text);border:0.5px solid rgba(255,255,255,0.15);border-radius:20px;padding:8px 16px;font-size:14px;font-weight:600;cursor:pointer;">▶ Watch how-to</button>
     <span class="run-undo" id="run-undo" onclick="undoClockIn()">Undo clock-in</span>
   </div>
   <div id="run-list-top" ontouchstart="runGrabStart(event)" ontouchmove="runGrabMove(event)" ontouchend="runGrabEnd(event)">
@@ -2561,10 +2585,10 @@
 
 <!-- ══════════════ COMPLETED THIS SESSION (full page) ══════════════ -->
 <div class="modal-backdrop" id="modal-run-done" style="z-index:360;">
-  <div class="modal-sheet" style="height:85vh;max-height:85vh;display:flex;flex-direction:column;background:#0b0f17;padding:0;">
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 10px 14px 20px;border-bottom:0.5px solid rgba(255,255,255,0.08);flex-shrink:0;">
-      <span id="run-done-title" style="font-size:17px;font-weight:600;color:#fff;">Completed this session</span>
-      <button onclick="closeModal('modal-run-done')" style="background:none;border:none;color:#5ac8fa;font-size:16px;font-weight:600;cursor:pointer;padding:8px 14px;margin:-8px 0;">Done</button>
+  <div class="modal-sheet" style="height:85vh;max-height:85vh;display:flex;flex-direction:column;background:var(--run-sheet);padding:0;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 10px 14px 20px;border-bottom:0.5px solid var(--run-fill2);flex-shrink:0;">
+      <span id="run-done-title" style="font-size:17px;font-weight:600;color:var(--run-text);">Completed this session</span>
+      <button onclick="closeModal('modal-run-done')" style="background:none;border:none;color:var(--run-blue);font-size:16px;font-weight:600;cursor:pointer;padding:8px 14px;margin:-8px 0;">Done</button>
     </div>
     <div class="run-seg" id="run-done-seg" style="margin:14px 20px 0;">
       <div id="run-done-seg-tasks" onclick="setRunDoneTab('tasks')">Tasks</div>
@@ -3239,7 +3263,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.393';
+const APP_VERSION = '2026-06-21.394';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4584,7 +4608,7 @@ function renderClockState() {
       if (!featureHidden('location')) {
         if (pin && pin.url) parts.push(`<a href="${pin.url}" target="_blank" rel="noopener" class="loc">◉ ${_escHtml(locName || 'Located')}</a>`);
         else if (locName) parts.push(_escHtml(locName));
-        else if (clockState._pinPending) parts.push('<span style="color:#8b93a7;">◉ Locating…</span>');
+        else if (clockState._pinPending) parts.push('<span style="color:var(--run-sub);">◉ Locating…</span>');
       }
       if (clockState.group && !featureHidden('area')) parts.push(_escHtml(clockState.group));
       const avg = getTaskAvgDuration(clockState.task);
@@ -6074,25 +6098,25 @@ function renderRunDone() {
   }
   if (titleEl) titleEl.textContent = (_runDoneTab === 'notes' ? 'To-dos' : 'Tasks') + ' completed this session';
   if (!rows.length) {
-    body.innerHTML = `<div style="padding:44px 0;text-align:center;color:#616a7e;font-size:15px;">No ${_runDoneTab === 'notes' ? 'to-dos' : 'tasks'} ticked off yet.<br><span style="font-size:13px;">Tap the other tab above, or tick one on the clock.</span></div>`;
+    body.innerHTML = `<div style="padding:44px 0;text-align:center;color:var(--run-faint);font-size:15px;">No ${_runDoneTab === 'notes' ? 'to-dos' : 'tasks'} ticked off yet.<br><span style="font-size:13px;">Tap the other tab above, or tick one on the clock.</span></div>`;
     return;
   }
   body.innerHTML = rows.map((r, i) => {
     const time = r.at ? _inboxStamp(r.at) : '';
-    const durStr = (r.dur != null) ? `<span style="font-size:13px;color:#30d158;font-weight:600;white-space:nowrap;flex-shrink:0;">${fmtMin(r.dur)}</span>` : '';
+    const durStr = (r.dur != null) ? `<span style="font-size:13px;color:var(--run-green);font-weight:600;white-space:nowrap;flex-shrink:0;">${fmtMin(r.dur)}</span>` : '';
     const tag = r.kind === 'task' ? 'Task' : 'To-do';
     let stepInfo = '';
     if (r.kind === 'task') {
       const _ri = r.item || r.text;   // raw item — the display text may carry a "Lap N · " prefix
       const total = stepsFor(clockState.task, _ri).length;
-      if (total) { const dn = (clockState.stepDone || []).filter(x => x.item === _ri).length; stepInfo = `<div style="font-size:12px;color:#30d158;margin-top:3px;">✓ ${dn}/${total} steps done</div>`; }
+      if (total) { const dn = (clockState.stepDone || []).filter(x => x.item === _ri).length; stepInfo = `<div style="font-size:12px;color:var(--run-green);margin-top:3px;">✓ ${dn}/${total} steps done</div>`; }
     }
     const tick = `<span onclick="reviveDoneItem(${i})" title="Tap to un-tick" style="width:24px;height:24px;border-radius:${r.kind === 'task' ? '50%' : '7px'};background:#30d158;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#05070c;font-size:14px;cursor:pointer;margin-top:1px;">✓</span>`;
-    return `<div style="display:flex;gap:12px;padding:14px 0;border-top:0.5px solid rgba(255,255,255,0.08);">
+    return `<div style="display:flex;gap:12px;padding:14px 0;border-top:0.5px solid var(--run-fill2);">
       ${tick}
       <div style="flex:1;min-width:0;">
-        <div style="font-size:15px;line-height:1.4;color:#8b93a7;text-decoration:line-through;">${_escHtml(r.text)}</div>
-        <div style="font-size:12px;color:#616a7e;margin-top:4px;">${tag}${time ? ' · ' + time : ''} · tap ✓ to bring back</div>
+        <div style="font-size:15px;line-height:1.4;color:var(--run-sub);text-decoration:line-through;">${_escHtml(r.text)}</div>
+        <div style="font-size:12px;color:var(--run-faint);margin-top:4px;">${tag}${time ? ' · ' + time : ''} · tap ✓ to bring back</div>
         ${stepInfo}
       </div>
       ${durStr}
@@ -6356,7 +6380,7 @@ function updateRunRing(netElapsedSec) {
   if (!est || elapsed == null) {
     fg.style.strokeDashoffset = C;                      // empty ring — faint track only
     ring.classList.remove('over');
-    if (label) { label.textContent = 'building your average'; label.style.color = '#8b93a7'; }
+    if (label) { label.textContent = 'building your average'; label.style.color = 'var(--run-sub)'; }
     if (finishEl) finishEl.textContent = '';
     return;
   }
@@ -6367,7 +6391,7 @@ function updateRunRing(netElapsedSec) {
   const over = frac >= 1;
   ring.classList.toggle('over', over);
   if (label) {
-    label.style.color = over ? '#ff9f0a' : '#5ac8fa';
+    label.style.color = over ? '#ff9f0a' : 'var(--run-blue)';
     const _flagCue = _runEstCache.basis === 'flagged' ? ' 🚩' : '';   // estimate comes from the flagged tasks
     label.textContent = (live
       ? (Math.round(frac * 100) + '% of ~' + fmtEstHours(est / 3600))
@@ -6477,7 +6501,7 @@ function renderRunChecklist() {
     const clFlags = _sessionOrGlobalFlags(clockState.task);
     // Always available while there are tasks — Organise is where ordering, flags
     // AND batch moves live now, so it shouldn't hide behind having flagged two first.
-    if (items.length) organiseLink = `<span onclick="openChecklistOrganise(event)" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">⤢ Organise</span>`;
+    if (items.length) organiseLink = `<span onclick="openChecklistOrganise(event)" style="color:var(--run-blue);cursor:pointer;font-weight:600;font-size:13px;">⤢ Organise</span>`;
     const _expandableTasks = items.filter(s => !_isTaskDoneNow(clockState.task, s, done) && (stepsOf(s).length > 0 || s.length > 55));
     // Batch sections count as expandable too — a job whose tasks have no sub-steps still
     // has batches worth opening, and the link used to hide entirely in that case.
@@ -6486,13 +6510,13 @@ function renderRunChecklist() {
       const _groupsOpen = _groupKeys.length > 0 && _groupKeys.every(k => _runGroupCollapsed[k] === false);
       const _stepsOpen = _expandableTasks.length > 0 && _expandableTasks.every(s => _expandedChecklistItems.has(s));
       const _allExp = (_groupKeys.length ? _groupsOpen : true) && (_expandableTasks.length ? _stepsOpen : true);
-      expandLink = `<span onclick="toggleAllTasksExpanded()" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">${_allExp ? '⤡ Collapse all' : '⤢ Expand all'}</span>`;
+      expandLink = `<span onclick="toggleAllTasksExpanded()" style="color:var(--run-blue);cursor:pointer;font-weight:600;font-size:13px;">${_allExp ? '⤡ Collapse all' : '⤢ Expand all'}</span>`;
     }
     // View toggle — Batches vs Flagged, only when the job has batches (last-done
     // recency now lives INSIDE each batch, so the separate lens + label are gone).
     const _hasBatches = _jobHasBatches(clockState.task);
     if (_hasBatches) {
-      const _gopt = (k, label) => `<span onclick="setRunGroupBy('${k}')" style="padding:5px 12px;border-radius:14px;font-size:12px;font-weight:600;cursor:pointer;${_runGroupBy === k ? 'background:rgba(90,200,250,0.18);color:#5ac8fa;' : 'color:#8b93a7;'}">${label}</span>`;
+      const _gopt = (k, label) => `<span onclick="setRunGroupBy('${k}')" style="padding:5px 12px;border-radius:14px;font-size:12px;font-weight:600;cursor:pointer;${_runGroupBy === k ? 'background:rgba(90,200,250,0.18);color:var(--run-blue);' : 'color:var(--run-sub);'}">${label}</span>`;
       // ⚠️ These are SORT ORDERS, not filters. "Flagged" read as "show only flagged",
       // so when a run came back with its flags lost the view showed all 52 tasks and
       // looked broken rather than empty. "Flagged first" says what it does.
@@ -6501,7 +6525,7 @@ function renderRunChecklist() {
     // ↺ Reset reps — subtle, shown once any repeatable task has reps on this run.
     if (jobHasReps(clockState.task)) {
       rows += `<div style="display:flex;justify-content:flex-end;padding:2px 0 6px;">
-        <span onclick="finishRunPrompt()" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:12px;">↺ Reset reps</span>
+        <span onclick="finishRunPrompt()" style="color:var(--run-sub);cursor:pointer;font-weight:600;font-size:12px;">↺ Reset reps</span>
       </div>`;
     }
     const buildTaskRow = (s) => {
@@ -6520,32 +6544,32 @@ function renderRunChecklist() {
         const _cTime = _ci && _ci.at ? _timeShort(_ci.at) : '';
         const _cMins = _ci && typeof _ci.mins === 'number' && isFinite(_ci.mins) && _ci.mins > 0 ? fmtMin(_ci.mins) : '';
         const _cLabel = _cTime ? (_cTime + (_cMins ? ' · ' + _cMins : '')) : 'earlier';
-        return `<div style="display:flex;align-items:center;gap:12px;padding:13px 0;border-top:0.5px solid rgba(255,255,255,0.08);opacity:0.5;">
+        return `<div style="display:flex;align-items:center;gap:12px;padding:13px 0;border-top:0.5px solid var(--run-fill2);opacity:0.5;">
           <span style="width:24px;height:24px;border-radius:50%;background:#30d158;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#05070c;font-size:14px;">✓</span>
-          <span style="flex:1;font-size:16px;color:#8b93a7;text-decoration:line-through;">${_escHtml(s)}</span>
-          <span style="font-size:12px;color:#616a7e;white-space:nowrap;">${_cLabel}</span></div>`;
+          <span style="flex:1;font-size:16px;color:var(--run-sub);text-decoration:line-through;">${_escHtml(s)}</span>
+          <span style="font-size:12px;color:var(--run-faint);white-space:nowrap;">${_cLabel}</span></div>`;
       }
       const steps = stepsOf(s);
       const expanded = _expandedChecklistItems.has(s);
       const checkedCount = steps.filter(st => stepChecks[s] && stepChecks[s][st]).length;
       const flagged = !!clFlags[s];
-      const circle = `<span onclick="markChecklistItemDone(decodeURIComponent('${enc}'))" title="${_isRep ? 'Add a rep' : ''}" style="width:24px;height:24px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;${isDone ? 'background:#30d158;' : (_isRep && _reps ? 'border:2px solid rgba(48,209,88,0.6);' : 'border:2px solid rgba(255,255,255,0.28);')}">${isDone ? '<span style="color:#05070c;font-size:14px;">✓</span>' : (_isRep ? '<span style="color:#30d158;font-size:19px;font-weight:700;line-height:1;">+</span>' : '')}</span>`;
+      const circle = `<span onclick="markChecklistItemDone(decodeURIComponent('${enc}'))" title="${_isRep ? 'Add a rep' : ''}" style="width:24px;height:24px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;${isDone ? 'background:#30d158;' : (_isRep && _reps ? 'border:2px solid rgba(48,209,88,0.6);' : 'border:2px solid rgba(255,255,255,0.28);')}">${isDone ? '<span style="color:#05070c;font-size:14px;">✓</span>' : (_isRep ? '<span style="color:var(--run-green);font-size:19px;font-weight:700;line-height:1;">+</span>' : '')}</span>`;
       // Long tasks (or tasks with steps) clamp to 2 lines and expand on tap — same
       // as to-dos. Short tasks keep tap-the-text-to-complete. The circle always completes.
       const _longish = s.length > 55;
       const _expandable = steps.length > 0 || _longish;
       const textTap = _expandable ? `toggleChecklistExpand(decodeURIComponent('${enc}'))` : `markChecklistItemDone(decodeURIComponent('${enc}'))`;
-      const stepBadge = steps.length ? ` <span style="color:#616a7e;font-size:13px;">(${checkedCount}/${steps.length})</span>` : '';
+      const stepBadge = steps.length ? ` <span style="color:var(--run-faint);font-size:13px;">(${checkedCount}/${steps.length})</span>` : '';
       const _clamp = (_expandable && !expanded) ? 'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;' : '';
-      const textSpan = `<span onclick="${textTap}" style="flex:1;min-width:0;font-size:16px;cursor:pointer;${_clamp}${isDone ? 'color:#616a7e;text-decoration:line-through;' : 'color:#e7eaf0;'}">${flagged ? '🚩 ' : ''}${_escHtml(s)}${stepBadge}</span>`;
+      const textSpan = `<span onclick="${textTap}" style="flex:1;min-width:0;font-size:16px;cursor:pointer;${_clamp}${isDone ? 'color:var(--run-faint);text-decoration:line-through;' : 'color:var(--run-text2);'}">${flagged ? '🚩 ' : ''}${_escHtml(s)}${stepBadge}</span>`;
       const _avgMin = itemAvg[s.trim().replace(/\s+/g, ' ').toLowerCase()];
       const right = isDone
-        ? `<span style="font-size:13px;color:#30d158;font-weight:600;white-space:nowrap;">${fmtMin(dur[s])}</span>`
-        : (_expandable ? `<span onclick="toggleChecklistExpand(decodeURIComponent('${enc}'))" style="color:#8b93a7;font-size:14px;cursor:pointer;padding:0 4px;flex-shrink:0;">${expanded ? '▾' : '▸'}</span>` : '');
+        ? `<span style="font-size:13px;color:var(--run-green);font-weight:600;white-space:nowrap;">${fmtMin(dur[s])}</span>`
+        : (_expandable ? `<span onclick="toggleChecklistExpand(decodeURIComponent('${enc}'))" style="color:var(--run-sub);font-size:14px;cursor:pointer;padding:0 4px;flex-shrink:0;">${expanded ? '▾' : '▸'}</span>` : '');
       const clFlagAttr = (flagged && !isDone) ? '1' : '';
       const clRowBg = (flagged && !isDone) ? 'background:rgba(255,214,10,0.08);' : '';
-      const editIcon = `<span onclick="event.stopPropagation();openRunEdit('tasks',decodeURIComponent('${enc}'))" style="flex-shrink:0;color:#9aa3b7;font-size:23px;line-height:1;cursor:pointer;padding:10px 14px 10px 12px;">✎</span>`;
-      let html = `<div class="cl-row" data-cl-item="${_attr(s)}" data-cl-task="${taskAttr}" data-cl-flagged="${clFlagAttr}" ontouchstart="clSwipeStart(event)" ontouchmove="clSwipeMove(event)" ontouchend="clSwipeEnd(event)" style="display:flex;align-items:center;gap:12px;padding:13px 0;border-top:0.5px solid rgba(255,255,255,0.08);${clRowBg}">${circle}${textSpan}${editIcon}${right}</div>`;
+      const editIcon = `<span onclick="event.stopPropagation();openRunEdit('tasks',decodeURIComponent('${enc}'))" style="flex-shrink:0;color:var(--run-sub);font-size:23px;line-height:1;cursor:pointer;padding:10px 14px 10px 12px;">✎</span>`;
+      let html = `<div class="cl-row" data-cl-item="${_attr(s)}" data-cl-task="${taskAttr}" data-cl-flagged="${clFlagAttr}" ontouchstart="clSwipeStart(event)" ontouchmove="clSwipeMove(event)" ontouchend="clSwipeEnd(event)" style="display:flex;align-items:center;gap:12px;padding:13px 0;border-top:0.5px solid var(--run-fill2);${clRowBg}">${circle}${textSpan}${editIcon}${right}</div>`;
       // Meta line under the text — last done, learned average, and the 🔁 rep chip
       // all live here now so the task text keeps the full row width.
       const _la = itemLastDone[s];
@@ -6578,7 +6602,7 @@ function renderRunChecklist() {
           _chipOn = _reps > 0;
           _chipTitle = `${_reps} done — tap to undo last`;
         }
-        const _chip = `<span onclick="event.stopPropagation();undoTaskRep(decodeURIComponent('${enc}'))" title="${_chipTitle}" style="display:inline-flex;align-items:center;padding:1px 8px;border-radius:9px;font-weight:700;cursor:pointer;background:${_chipOn ? 'rgba(48,209,88,0.22)' : 'transparent'};border:1px solid ${_chipOn ? 'rgba(48,209,88,0.6)' : 'rgba(255,255,255,0.22)'};color:${_chipOn ? '#30d158' : '#8b93a7'};">${_chipTxt}</span>`;
+        const _chip = `<span onclick="event.stopPropagation();undoTaskRep(decodeURIComponent('${enc}'))" title="${_chipTitle}" style="display:inline-flex;align-items:center;padding:1px 8px;border-radius:9px;font-weight:700;cursor:pointer;background:${_chipOn ? 'rgba(48,209,88,0.22)' : 'transparent'};border:1px solid ${_chipOn ? 'rgba(48,209,88,0.6)' : 'var(--run-fill4)'};color:${_chipOn ? '#30d158' : 'var(--run-sub)'};">${_chipTxt}</span>`;
         // ⭐ − / + add and remove a PLANNED lap, the same control as the Organise
         // sheet's 🔁 pill and the same function underneath, put here because this is
         // where you are when you realise you need another lap. It had lived only on
@@ -6592,7 +6616,7 @@ function renderRunChecklist() {
         // onclick sweep still owed on the older handlers on this row).
         if (flagged) {
           const _le = encodeURIComponent(s).replace(/'/g, '%27');
-          const _stepBtn = (d, glyph, tip) => `<span onclick="event.stopPropagation();_clSessionLapAdj(decodeURIComponent('${_le}'), ${d})" title="${tip}" style="font-size:16px;font-weight:700;color:#8b93a7;cursor:pointer;padding:0 6px;line-height:1;">${glyph}</span>`;
+          const _stepBtn = (d, glyph, tip) => `<span onclick="event.stopPropagation();_clSessionLapAdj(decodeURIComponent('${_le}'), ${d})" title="${tip}" style="font-size:16px;font-weight:700;color:var(--run-sub);cursor:pointer;padding:0 6px;line-height:1;">${glyph}</span>`;
           _metaBits.push(`<span style="display:inline-flex;align-items:center;">${_stepBtn(-1, '&minus;', 'one less planned lap')}${_chip}${_stepBtn(1, '+', 'one more planned lap')}</span>`);
         } else {
           _metaBits.push(_chip);
@@ -6613,12 +6637,12 @@ function renderRunChecklist() {
         // holds its own, and nothing when nobody else shares the task.
         const _ownHere = !!(_ownGuidesRun && Object.prototype.hasOwnProperty.call(_ownGuidesRun, s));
         const _sharedVid = !_ownHere && (_taskJobCountRun[s] || 0) > 1;
-        _metaBits.push(`<span onclick="event.stopPropagation();viewSubtaskGuide(decodeURIComponent('${enc}'), (clockState&&clockState.task)||null)" style="color:#5ac8fa;cursor:pointer;font-weight:600;">${_escHtml(_label)}${_sharedVid ? ' 🔗' : ''}</span>`);
+        _metaBits.push(`<span onclick="event.stopPropagation();viewSubtaskGuide(decodeURIComponent('${enc}'), (clockState&&clockState.task)||null)" style="color:var(--run-blue);cursor:pointer;font-weight:600;">${_escHtml(_label)}${_sharedVid ? ' 🔗' : ''}</span>`);
       }
-      if (_metaBits.length) html += `<div style="font-size:11px;color:#616a7e;padding:1px 0 7px 36px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${_metaBits.join('<span style="opacity:0.6;">·</span>')}</div>`;
+      if (_metaBits.length) html += `<div style="font-size:11px;color:var(--run-faint);padding:1px 0 7px 36px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${_metaBits.join('<span style="opacity:0.6;">·</span>')}</div>`;
       // 💬 Session comments attached to this task (fold into the entry at clock-out)
       const _cmts = (clockState.itemComments && clockState.itemComments[s]) || [];
-      if (_cmts.length) html += _cmts.map(c => `<div style="font-size:12px;color:#9aa3b7;padding:0 14px 6px 36px;line-height:1.4;">💬 ${_escHtml(c.text)} <span style="color:#616a7e;white-space:nowrap;">· ${_timeShort(c.at)}</span></div>`).join('');
+      if (_cmts.length) html += _cmts.map(c => `<div style="font-size:12px;color:var(--run-sub);padding:0 14px 6px 36px;line-height:1.4;">💬 ${_escHtml(c.text)} <span style="color:var(--run-faint);white-space:nowrap;">· ${_timeShort(c.at)}</span></div>`).join('');
       const refPhotos = subPhotos[s] || [];
       if (refPhotos.length) html += `<div style="padding:0 0 10px 36px;" onclick="event.stopPropagation();">${_photosHtml({ photos: refPhotos }, 64)}</div>`;   // reference photo
       if (expanded && steps.length && !isDone) {
@@ -6632,13 +6656,13 @@ function renderRunChecklist() {
           const _uItem = encodeURIComponent(s).replace(/'/g, '%27');
           const checked = !!(stepChecks[s] && stepChecks[s][st]);
           const _sdur = checked ? stepDur[s + '~|~' + st] : null;
-          const _stime = _sdur ? `<span style="font-size:12px;color:#30d158;font-weight:600;white-space:nowrap;flex-shrink:0;">${fmtMin(_sdur)}</span>` : '';
+          const _stime = _sdur ? `<span style="font-size:12px;color:var(--run-green);font-weight:600;white-space:nowrap;flex-shrink:0;">${fmtMin(_sdur)}</span>` : '';
           return `<div onclick="toggleChecklistStep(decodeURIComponent('${_uItem}'),decodeURIComponent('${_uStep}'))" style="display:flex;align-items:center;gap:12px;padding:10px 0 10px 36px;cursor:pointer;">
-            <span style="font-size:20px;flex-shrink:0;color:${checked ? '#30d158' : '#616a7e'};">${checked ? '☑' : '☐'}</span>
-            <span style="flex:1;font-size:15px;${checked ? 'color:#616a7e;text-decoration:line-through;' : 'color:#c7ccd8;'}">${_escHtml(st)}</span>${_stime}</div>`;
+            <span style="font-size:20px;flex-shrink:0;color:${checked ? '#30d158' : 'var(--run-faint)'};">${checked ? '☑' : '☐'}</span>
+            <span style="flex:1;font-size:15px;${checked ? 'color:var(--run-faint);text-decoration:line-through;' : 'color:var(--run-text2);'}">${_escHtml(st)}</span>${_stime}</div>`;
         }).join('');
         // Steps are editable mid-run — saved globally, so the jobs page gets them too.
-        html += `<div onclick="event.stopPropagation();openSubtaskStepsEditor(decodeURIComponent('${enc}'), (clockState&&clockState.task)||null)" style="padding:9px 0 9px 36px;color:#5ac8fa;font-size:13px;font-weight:600;cursor:pointer;">＋ Add step</div>`;
+        html += `<div onclick="event.stopPropagation();openSubtaskStepsEditor(decodeURIComponent('${enc}'), (clockState&&clockState.task)||null)" style="padding:9px 0 9px 36px;color:var(--run-blue);font-size:13px;font-weight:600;cursor:pointer;">＋ Add step</div>`;
       }
       return html;
     };
@@ -6682,9 +6706,9 @@ function renderRunChecklist() {
         const hd = `<div data-batch-sec="1" data-batch-name="${_attr(_gName)}" data-batch-task="${_attr(clockState.task)}"
           ontouchstart="clBatchSwipeStart(event)" ontouchmove="clBatchSwipeMove(event)" ontouchend="clBatchSwipeEnd(event)"
           onclick="toggleRunGroup(decodeURIComponent('${encodeURIComponent(g.key).replace(/'/g, '%27')}'), ${col})" style="display:flex;align-items:center;gap:8px;padding:15px 0 6px;cursor:pointer;">
-          <span style="color:#8b93a7;font-size:13px;">${col ? '▸' : '▾'}</span>
-          <span style="font-size:13px;font-weight:700;letter-spacing:0.3px;color:${g.loose ? '#8b93a7' : (allDone ? '#30d158' : '#dfe3ec')};">${fl ? '🚩 ' : ''}${allDone ? '✓ ' : ''}${_escHtml(g.name)}</span>
-          <span style="font-size:11px;color:#616a7e;background:rgba(255,255,255,0.06);border-radius:9px;padding:1px 7px;">${doneN}/${g.members.length}${est ? ' · ~' + fmtMin(est) : ''}</span>
+          <span style="color:var(--run-sub);font-size:13px;">${col ? '▸' : '▾'}</span>
+          <span style="font-size:13px;font-weight:700;letter-spacing:0.3px;color:${g.loose ? 'var(--run-sub)' : (allDone ? '#30d158' : 'var(--run-text2)')};">${fl ? '🚩 ' : ''}${allDone ? '✓ ' : ''}${_escHtml(g.name)}</span>
+          <span style="font-size:11px;color:var(--run-faint);background:var(--run-fill1);border-radius:9px;padding:1px 7px;">${doneN}/${g.members.length}${est ? ' · ~' + fmtMin(est) : ''}</span>
           <span style="flex:1;"></span></div>`;
         return hd + (col ? '' : _batchBody(g.members));
       }).join('');
@@ -6693,11 +6717,11 @@ function renderRunChecklist() {
     }
   } else {
     const pinTaskAttr = _attr(clockState.task);
-    if (pinned.length > 1) organiseLink = `<span onclick="openPinOrganise(event)" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">⤢ Organise</span>`;
+    if (pinned.length > 1) organiseLink = `<span onclick="openPinOrganise(event)" style="color:var(--run-blue);cursor:pointer;font-weight:600;font-size:13px;">⤢ Organise</span>`;
     const _visPins = pinned.filter(p => !pinDone[p.id]);
     if (_visPins.length >= 2) {
       const _allExp = _visPins.every(p => _expandedNotes.has(p.id));
-      expandLink = `<span onclick="toggleAllPinsExpanded()" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">${_allExp ? '⤡ Collapse all' : '⤢ Expand all'}</span>`;
+      expandLink = `<span onclick="toggleAllPinsExpanded()" style="color:var(--run-blue);cursor:pointer;font-weight:600;font-size:13px;">${_allExp ? '⤡ Collapse all' : '⤢ Expand all'}</span>`;
     }
     const buildPinRow = (p) => {
       const isDone = !!pinDone[p.id];
@@ -6711,15 +6735,15 @@ function renderRunChecklist() {
       const thumb = expanded ? _photoThumbHtml(p, 80) : '';
       const clamp = expanded ? '' : 'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;';
       const box = `<span onclick="togglePinnedNote('${p.id}')" style="width:22px;height:22px;border-radius:7px;flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;cursor:pointer;${isDone ? 'background:#30d158;' : 'border:1.5px solid rgba(255,255,255,0.28);'}">${isDone ? '<span style="color:#05070c;font-size:13px;">✓</span>' : ''}</span>`;
-      const durStr = (isDone && dur['pin:' + p.id] != null) ? `<span style="font-size:13px;color:#30d158;font-weight:600;white-space:nowrap;flex-shrink:0;">${fmtMin(dur['pin:' + p.id])}</span>` : '';
-      return `<div class="pin-row" data-pin-id="${p.id}" data-pin-task="${pinTaskAttr}" data-pin-flagged="${p.flagged && !isDone ? '1' : ''}" ontouchstart="pinSwipeStart(event)" ontouchmove="pinSwipeMove(event)" ontouchend="pinSwipeEnd(event)" style="display:flex;gap:12px;padding:14px 0;border-top:0.5px solid rgba(255,255,255,0.08);${p.flagged && !isDone ? 'background:rgba(255,214,10,0.06);' : ''}${isDone ? 'opacity:0.55;' : ''}">
+      const durStr = (isDone && dur['pin:' + p.id] != null) ? `<span style="font-size:13px;color:var(--run-green);font-weight:600;white-space:nowrap;flex-shrink:0;">${fmtMin(dur['pin:' + p.id])}</span>` : '';
+      return `<div class="pin-row" data-pin-id="${p.id}" data-pin-task="${pinTaskAttr}" data-pin-flagged="${p.flagged && !isDone ? '1' : ''}" ontouchstart="pinSwipeStart(event)" ontouchmove="pinSwipeMove(event)" ontouchend="pinSwipeEnd(event)" style="display:flex;gap:12px;padding:14px 0;border-top:0.5px solid var(--run-fill2);${p.flagged && !isDone ? 'background:rgba(255,214,10,0.06);' : ''}${isDone ? 'opacity:0.55;' : ''}">
         ${box}
         <div onclick="toggleNoteExpand('${p.id}')" style="flex:1;min-width:0;cursor:pointer;">
-          <div style="font-size:15px;line-height:1.4;white-space:pre-line;${isDone ? 'color:#616a7e;text-decoration:line-through;' : 'color:#dfe3ec;'}${clamp}">${p.flagged ? '🚩 ' : ''}${safe}</div>
-          <div style="font-size:12px;color:#616a7e;margin-top:5px;">${shortDate}${fullMeta}</div>
+          <div style="font-size:15px;line-height:1.4;white-space:pre-line;${isDone ? 'color:var(--run-faint);text-decoration:line-through;' : 'color:var(--run-text2);'}${clamp}">${p.flagged ? '🚩 ' : ''}${safe}</div>
+          <div style="font-size:12px;color:var(--run-faint);margin-top:5px;">${shortDate}${fullMeta}</div>
           ${thumb}
         </div>
-        <span onclick="event.stopPropagation();openRunEdit('notes','${p.id}')" style="flex-shrink:0;color:#9aa3b7;font-size:23px;line-height:1;cursor:pointer;padding:10px 14px 10px 12px;align-self:flex-start;">✎</span>
+        <span onclick="event.stopPropagation();openRunEdit('notes','${p.id}')" style="flex-shrink:0;color:var(--run-sub);font-size:23px;line-height:1;cursor:pointer;padding:10px 14px 10px 12px;align-self:flex-start;">✎</span>
         ${durStr}
       </div>`;
     };
@@ -6739,9 +6763,9 @@ function renderRunChecklist() {
         const fl = _gHasFlag(g);
         const col = (g.key in _runGroupCollapsed) ? !!_runGroupCollapsed[g.key] : !fl;
         const hd = `<div onclick="toggleRunGroup(decodeURIComponent('${encodeURIComponent(g.key).replace(/'/g, '%27')}'), ${col})" style="display:flex;align-items:center;gap:8px;padding:15px 0 6px;cursor:pointer;">
-          <span style="color:#8b93a7;font-size:13px;">${col ? '▸' : '▾'}</span>
-          <span style="font-size:13px;font-weight:700;letter-spacing:0.3px;color:${g.loose ? '#8b93a7' : '#dfe3ec'};">${fl ? '🚩 ' : ''}${_escHtml(g.name)}</span>
-          <span style="font-size:11px;color:#616a7e;background:rgba(255,255,255,0.06);border-radius:9px;padding:1px 7px;">${g.members.length}</span>
+          <span style="color:var(--run-sub);font-size:13px;">${col ? '▸' : '▾'}</span>
+          <span style="font-size:13px;font-weight:700;letter-spacing:0.3px;color:${g.loose ? 'var(--run-sub)' : 'var(--run-text2)'};">${fl ? '🚩 ' : ''}${_escHtml(g.name)}</span>
+          <span style="font-size:11px;color:var(--run-faint);background:var(--run-fill1);border-radius:9px;padding:1px 7px;">${g.members.length}</span>
           <span style="flex:1;"></span></div>`;
         return hd + (col ? '' : g.members.map(buildPinRow).join(''));
       }).join('');
@@ -6756,16 +6780,16 @@ function renderRunChecklist() {
     const msg = allDone
       ? (tab === 'tasks' ? 'All tasks done 🎉 — tap ✓ to review.' : 'All to-dos done 🎉 — tap ✓ to review.')
       : (tab === 'tasks' ? 'No tasks yet — tap “+ Add task”.' : 'No to-dos yet — tap “+ Add to-do”.');
-    rows = `<div style="padding:22px 0;text-align:center;color:#616a7e;font-size:14px;">${msg}</div>`;
+    rows = `<div style="padding:22px 0;text-align:center;color:var(--run-faint);font-size:14px;">${msg}</div>`;
   }
-  const addLink = `<span onclick="openRunAdd('${tab}')" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">+ Add ${tab === 'tasks' ? 'task' : 'to-do'}</span>`;
+  const addLink = `<span onclick="openRunAdd('${tab}')" style="color:var(--run-blue);cursor:pointer;font-weight:600;font-size:13px;">+ Add ${tab === 'tasks' ? 'task' : 'to-do'}</span>`;
   const headerHtml = `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:2px 0 6px;">${addLink}${expandLink || '<span></span>'}${organiseLink || '<span></span>'}</div>`;
   // 📋 Run sheet — its own full-width row rather than a fourth link in the header
   // (four of them don't fit a phone). Tasks tab only, and only once something is
   // flagged, since flagged work is all the sheet lists.
   let runSheetHtml = '';
   if (tab === 'tasks' && clockState && clockState.running && Object.keys(_sessionOrGlobalFlags(clockState.task)).length) {
-    runSheetHtml = `<div onclick="openRunSheet()" style="display:flex;align-items:center;justify-content:center;gap:7px;margin:0 0 8px;padding:9px 12px;border-radius:10px;border:1px solid rgba(90,200,250,0.4);background:rgba(90,200,250,0.1);color:#5ac8fa;font-size:13px;font-weight:600;cursor:pointer;">📋 Run sheet — what finishes when</div>`;
+    runSheetHtml = `<div onclick="openRunSheet()" style="display:flex;align-items:center;justify-content:center;gap:7px;margin:0 0 8px;padding:9px 12px;border-radius:10px;border:1px solid rgba(90,200,250,0.4);background:rgba(90,200,250,0.1);color:var(--run-blue);font-size:13px;font-weight:600;cursor:pointer;">📋 Run sheet — what finishes when</div>`;
   }
   const prevScroll = (document.getElementById('run-checklist-scroll') || {}).scrollTop || 0;
   el.innerHTML = headerHtml + runSheetHtml + `<div id="run-checklist-scroll" onscroll="runListInteract()" style="flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;">${rows}</div>`;
