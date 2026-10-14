@@ -1070,6 +1070,7 @@
     <div class="ts-summary">
       <div id="ts-range-bar" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
         <div id="ts-range-sizes" style="display:inline-flex;"></div>
+        <button id="ts-group-btn" onclick="openTsGroup()" class="dir-chip" style="flex-shrink:0;">👥 Group</button>
         <div id="ts-range-nav" style="display:flex;align-items:center;gap:2px;"></div>
       </div>
       <div class="ts-summary-top">
@@ -3238,7 +3239,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.390';
+const APP_VERSION = '2026-06-21.391';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -7434,6 +7435,16 @@ function _entryDateTimeKey(e) {
 // Timesheet who-filter: Mine (default, hides robots) / Robots / All. The toggle
 // only appears once there are any robot-logged entries.
 let _tsWho = 'mine';
+// Timesheets narrowed to one Group, chosen from the same list as the Jobs screen.
+// Works together with the search box: pick the group, then refine with words.
+let _tsGroup = null;
+function openTsGroup() { openDirFilter('tsclient'); }
+function _syncTsGroupBtn() {
+  const b = document.getElementById('ts-group-btn'); if (!b) return;
+  if (_tsGroup && !getAllClients().includes(_tsGroup)) _tsGroup = null;   // renamed or removed meanwhile
+  b.textContent = '👥 ' + (_tsGroup || 'Group');
+  b.classList.toggle('active', !!_tsGroup);
+}
 function setTsWho(w) { _tsWho = w; renderTimesheets(); }
 // ── Timesheet date-range window ──────────────────────────────────────────────
 // _tsRangeSize: 0 = all time; else an N-day block that STARTS on the day at
@@ -7515,6 +7526,12 @@ function renderTimesheets() {
   if (robotsOff) _tsWho = 'mine';
   const hasBots = entries.some(e => e.bot);
   _renderTsWho(hasBots && !robotsOff);
+  // 👥 Group (v391): a timesheet belongs to the group its JOB is in today. The
+  // group lives on the job, never on the timesheet, so renaming or regrouping a
+  // job moves its history with it, which is what a filter by group should show.
+  const _tsGroupOf = {};
+  if (_tsGroup) DIRECTORY.forEach(r => { if (r.task && r.client) _tsGroupOf[r.task] = r.client; });
+  _syncTsGroupBtn();
   let filtered = entries.filter(e => {
     if (hasBots && _tsWho === 'mine'   &&  e.bot) return false;   // hide robots by default
     if (hasBots && _tsWho === 'robots' && !e.bot) return false;   // robots only
@@ -7522,6 +7539,7 @@ function renderTimesheets() {
     if (_tsFilters.group    && e.group     !== _tsFilters.group)    return false;
     if (_tsFilters.location && e.location  !== _tsFilters.location) return false;
     if (_tsFilters.equip    && e.tool      !== _tsFilters.equip)    return false;
+    if (_tsGroup && _tsGroupOf[e.task] !== _tsGroup) return false;
     return true;
   });
   if (_tsRangeSize) {   // limit to the chosen date window (N-day block from the start day)
@@ -12232,6 +12250,10 @@ let _dirFilterType = null;
 
 function openDirFilter(type) {
   _dirFilterType = type;
+  // Timesheets borrow this list for their Group button: same groups, same rows,
+  // but the choice narrows the timesheets, not the jobs.
+  const _forTs = type === 'tsclient';
+  if (_forTs) type = 'client';
   const titles = { freq: 'Frequency', group: 'Area', location: 'Location', equip: 'Equipment', client: 'Group', horizon: 'Horizon' };
   document.getElementById('dir-filter-title').textContent = titles[type];
 
@@ -12258,7 +12280,7 @@ function openDirFilter(type) {
     options = _HORIZONS.filter(h => used.has(h.key)).map(h => h.label);
   }
 
-  const current = _dirFilters[type];
+  const current = _forTs ? _tsGroup : _dirFilters[type];
   if (!options.length && type === 'client') {
     document.getElementById('dir-filter-list').innerHTML = '<div style="padding:22px 20px;font-size:14px;line-height:1.5;color:var(--subtext);">No groups yet. Open a job and set its Group, and it will appear here.</div>';
     openModal('modal-dir-filter');
@@ -12280,6 +12302,7 @@ function openDirFilter(type) {
 }
 
 function selectDirFilter(value) {
+  if (_dirFilterType === 'tsclient') { _tsGroup = value; closeModal('modal-dir-filter'); renderTimesheets(); return; }
   _dirFilters[_dirFilterType] = value;
   updateDirChips();
   closeModal('modal-dir-filter');
@@ -12287,6 +12310,7 @@ function selectDirFilter(value) {
 }
 
 function clearDirFilter() {
+  if (_dirFilterType === 'tsclient') { _tsGroup = null; closeModal('modal-dir-filter'); renderTimesheets(); return; }
   _dirFilters[_dirFilterType] = null;
   updateDirChips();
   closeModal('modal-dir-filter');
@@ -12999,7 +13023,8 @@ function _groupAfterChange() {
   updateDirChips();
   renderDirectory();
   if (document.getElementById('modal-client-picker').classList.contains('open')) renderClientPickerList();
-  if (document.getElementById('modal-dir-filter').classList.contains('open') && _dirFilterType === 'client') openDirFilter('client');
+  if (document.getElementById('modal-dir-filter').classList.contains('open') && (_dirFilterType === 'client' || _dirFilterType === 'tsclient')) openDirFilter(_dirFilterType);
+  if (_dirFilterType === 'tsclient' && _tsGroup) { try { renderTimesheets(); } catch (e) {} }
 }
 function renameGroupItem(oldName) {
   const typed = prompt('Rename the group "' + oldName + '" to:', oldName);
@@ -13017,6 +13042,7 @@ function renameGroupItem(oldName) {
   _storeSet('kr_extra_clients', JSON.stringify(extras));
   if (_selectedClient === oldName) setClientDisplay(target);
   if (_dirFilters.client === oldName) _dirFilters.client = target;
+  if (_tsGroup === oldName) _tsGroup = target;
   _groupAfterChange();
   showToast(clash ? 'Joined into "' + target + '"' : 'Renamed to "' + target + '"');
 }
@@ -13034,6 +13060,7 @@ function deleteGroupItem(name) {
   _storeSet('kr_extra_clients', JSON.stringify(JSON.parse(extrasBefore || '[]').filter(x => x !== name)));
   if (_selectedClient === name) setClientDisplay('');
   if (_dirFilters.client === name) _dirFilters.client = null;
+  if (_tsGroup === name) _tsGroup = null;
   _groupAfterChange();
   showUndoToast('Group "' + name + '" removed', () => {
     had.forEach(i => { if (DIRECTORY[i] && !DIRECTORY[i].client) DIRECTORY[i].client = name; });
