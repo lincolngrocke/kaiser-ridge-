@@ -3239,7 +3239,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.392';
+const APP_VERSION = '2026-06-21.393';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -7441,8 +7441,8 @@ let _tsGroup = null;
 function openTsGroup() { openDirFilter('tsclient'); }
 function _syncTsGroupBtn() {
   const b = document.getElementById('ts-group-btn'); if (!b) return;
-  if (_tsGroup && !getAllClients().includes(_tsGroup)) _tsGroup = null;   // renamed or removed meanwhile
-  b.textContent = '👥 ' + (_tsGroup || 'Group');
+  if (_tsGroup && _tsGroup !== NO_GROUP && !getAllClients().includes(_tsGroup)) _tsGroup = null;   // renamed or removed meanwhile
+  b.textContent = '👥 ' + (_tsGroup ? _groupLabel(_tsGroup) : 'Group');
   b.classList.toggle('active', !!_tsGroup);
 }
 function setTsWho(w) { _tsWho = w; renderTimesheets(); }
@@ -7539,7 +7539,7 @@ function renderTimesheets() {
     if (_tsFilters.group    && e.group     !== _tsFilters.group)    return false;
     if (_tsFilters.location && e.location  !== _tsFilters.location) return false;
     if (_tsFilters.equip    && e.tool      !== _tsFilters.equip)    return false;
-    if (_tsGroup && _tsGroupOf[e.task] !== _tsGroup) return false;
+    if (_tsGroup && (_tsGroupOf[e.task] || NO_GROUP) !== _tsGroup) return false;
     return true;
   });
   if (_tsRangeSize) {   // limit to the chosen date window (N-day block from the start day)
@@ -12281,7 +12281,8 @@ function openDirFilter(type) {
   }
 
   const current = _forTs ? _tsGroup : _dirFilters[type];
-  if (!options.length && type === 'client') {
+  const _nNoGroup = type === 'client' ? _noGroupJobCount() : 0;
+  if (!options.length && type === 'client' && !_nNoGroup) {
     document.getElementById('dir-filter-list').innerHTML = '<div style="padding:22px 20px;font-size:14px;line-height:1.5;color:var(--subtext);">No groups yet. Open a job and set its Group, and it will appear here.</div>';
     openModal('modal-dir-filter');
     return;
@@ -12297,6 +12298,14 @@ function openDirFilter(type) {
       <span>${o}</span>
       ${o === current ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}
     </div>`).join('');
+  // Jobs with no group, as one row at the end. Not a real group, so no pencil or bin.
+  if (type === 'client' && _nNoGroup) {
+    document.getElementById('dir-filter-list').insertAdjacentHTML('beforeend', `
+    <div onclick="selectDirFilter(NO_GROUP)" style="padding:8px 12px 8px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;cursor:pointer;font-size:15px;min-height:40px;">
+      <span style="flex:1;min-width:0;color:var(--subtext);">No group <span style="font-size:12px;">\u00b7 ${_nNoGroup} job${_nNoGroup === 1 ? '' : 's'}</span></span>
+      ${current === NO_GROUP ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}
+    </div>`);
+  }
 
   openModal('modal-dir-filter');
 }
@@ -12364,7 +12373,7 @@ function updateDirChips() {
   if (btn && dims.length === 1) {
     // Shows the chosen value in place of the name, so the button says what the list is narrowed to.
     const val = _dirFilters[dims[0].type];
-    btn.textContent = (dims[0].type === 'client' ? '👥 ' : '⚲ ') + (val || dims[0].label);
+    btn.textContent = (dims[0].type === 'client' ? '👥 ' : '⚲ ') + (val ? _groupLabel(val) : dims[0].label);
     btn.classList.toggle('active', !!val);
   } else if (btn) { btn.textContent = n ? '⚲ Filter · ' + n : '⚲ Filter'; btn.classList.toggle('active', n > 0); }
   const sheet = document.getElementById('modal-dir-filters');
@@ -12529,7 +12538,7 @@ function _renderDirectoryInner(list) {
     if (_dirFilters.group    && r.group     !== _dirFilters.group)    return false;
     if (_dirFilters.location && r.location  !== _dirFilters.location) return false;
     if (_dirFilters.equip    && r.equipment !== _dirFilters.equip)    return false;
-    if (_dirFilters.client   && (r.client || '') !== _dirFilters.client) return false;
+    if (_dirFilters.client   && (r.client || '') !== (_dirFilters.client === NO_GROUP ? '' : _dirFilters.client)) return false;
     if (_dirFilters.horizon  && _horizonLabel(jobHorizon(r.task)) !== _dirFilters.horizon) return false;
     if (searchTerm) {
       const subs = (SUBTASKS[r.task] || []).join(' ');
@@ -13018,6 +13027,12 @@ function getAllClients() {
 // The group is only a label on each job (r.client) plus a list of spare names
 // (kr_extra_clients), so both actions are a relabel: no job, timesheet or learned
 // time is touched by either.
+// ⭐ "No group" (v393): every job without a group, gathered as if it were one.
+// It is not stored anywhere. It is the absence of a group, so it cannot be renamed
+// or removed, and it is the same words the job form already uses for an empty Group.
+const NO_GROUP = '__nogroup__';
+function _groupLabel(v) { return v === NO_GROUP ? 'No group' : v; }
+function _noGroupJobCount() { return new Set(DIRECTORY.filter(r => r.task && !r.client).map(r => r.task)).size; }
 function _groupJobCount(name) { return new Set(DIRECTORY.filter(r => r.client === name).map(r => r.task)).size; }
 function _groupAfterChange() {
   updateDirChips();
