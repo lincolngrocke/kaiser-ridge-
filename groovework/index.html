@@ -1300,14 +1300,14 @@
     <button id="planner-mode-btn" onclick="togglePlannerMode()" title="Switch between day and week view" style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px;font-size:14px;color:var(--blue);cursor:pointer;white-space:nowrap;text-align:center;">📅 Week</button>
   </div>
   <!-- Manager only: switch between own day and the worker's planned day -->
-  <div id="planner-view-switch" style="display:none;padding:0 16px 8px;gap:8px;">
+  <div data-feature="team"><div id="planner-view-switch" style="display:none;padding:0 16px 8px;gap:8px;">
     <!-- Rendered from the org's members — one chip per person, not two hardcoded
          buttons. See renderPlannerViewSwitch(). -->
     <div id="pv-chips" style="display:flex;gap:6px;flex:1;overflow-x:auto;-webkit-overflow-scrolling:touch;"></div>
-  </div>
-  <div id="planner-send-row" style="display:none;padding:0 16px 8px;">
+  </div></div>
+  <div data-feature="team"><div id="planner-send-row" style="display:none;padding:0 16px 8px;">
     <button id="planner-send-btn" onclick="sendPlannerToMember()" style="width:100%;background:var(--green);color:#fff;border:none;border-radius:12px;padding:11px;font-size:15px;font-weight:700;cursor:pointer;">📤 Send this day</button>
-  </div>
+  </div></div>
   <!-- Worker only: banner when the manager has planned tasks for today -->
   <div class="update-banner" id="assign-banner" onclick="ackAssignmentBanner()" style="display:none;background:var(--green);margin:0 16px 8px;"></div>
   <!-- All-day events (guest bookings etc.) — banner bars above the timed grid -->
@@ -1388,7 +1388,7 @@
     </div>
 
     <!-- ══════ TEAM (M1/S2b) — real members, not one hardcoded name ══════ -->
-    <div class="settings-section" id="team-section" style="margin-top:16px;display:none;">
+    <div data-feature="team"><div class="settings-section" id="team-section" style="margin-top:16px;display:none;">
       <div class="settings-row" style="justify-content:space-between;align-items:center;">
         <div class="settings-label" style="font-weight:600;">Team</div>
         <span id="team-rename-org" onclick="renameOrg()" style="color:#5ac8fa;font-size:14px;cursor:pointer;display:none;">Rename org</span>
@@ -1414,7 +1414,7 @@
       </div>
 
       <div class="settings-note" id="team-note" style="margin-top:8px"></div>
-    </div>
+    </div></div>
 
     <div class="settings-section" style="margin-top:16px;">
       <div class="settings-row" style="justify-content:space-between;align-items:center;">
@@ -1440,7 +1440,7 @@
       This name will be used as the default Personnel on every new entry.
     </div>
 
-    <div class="settings-section" style="margin-top:16px;">
+    <div data-feature="team"><div class="settings-section" style="margin-top:16px;">
       <div class="settings-row" style="justify-content:space-between;align-items:center;">
         <div class="settings-label" style="font-weight:600;">Team features</div>
         <label style="position:relative;display:inline-block;width:51px;height:31px;flex-shrink:0;">
@@ -1453,7 +1453,7 @@
       <div class="settings-note" style="margin-top:8px">
         Turn on if someone else works from their own device. Adds a Manager/Worker role and lets you plan and pin jobs to their phone. Leave off if it's just you.
       </div>
-    </div>
+    </div></div>
 
     <div class="settings-section" style="margin-top:16px;display:none;" id="settings-role-section">
       <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
@@ -3239,7 +3239,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.391';
+const APP_VERSION = '2026-06-21.392';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -18358,6 +18358,8 @@ const KR_HIDDEN_FEATURES = [
     what: 'Attaching Google Sheets, Dropbox or web links to a job.' },
   { id: 'horizon', name: 'Horizon', since: 'v373',
     what: 'Sorting jobs into This Week, This Month and later: the Horizon button on the Jobs screen, the line on each job card and the Horizon filter.' },
+  { id: 'team', name: 'Team', since: 'v392',
+    what: 'Working as a team: the Team features switch, the Team section with invites and join codes, and the My Day / person switch and Send button on the planner. Share a single job instead.' },
   { id: 'todos', name: 'To-dos', since: 'v377',
     what: 'One-off to-dos pinned to a job: the To-dos button and badges on the Jobs screen, the To-dos side of the running clock and the to-dos shown on a planner block.' },
   { id: 'inbox', name: 'Inbox', since: 'v371',
@@ -18399,6 +18401,8 @@ function applyHiddenFeatures() {
     Object.keys(_DIR_FILTER_FEATURE).forEach(t => { if (_dirFilters[t] && featureHidden(_DIR_FILTER_FEATURE[t])) _dirFilters[t] = null; });
   }
   try { updateDirChips(); } catch (e) {}   // the Jobs filter button is named after what is left to filter by
+  // With Team hidden there is no way back from someone else's day, so the planner returns to mine.
+  try { if (featureHidden('team') && _plannerView !== 'me') switchPlannerView('me'); } catch (e) {}
   // Never leave someone standing in a room whose door has just gone.
   if (featureHidden('projects') && typeof _dirMode !== 'undefined' && _dirMode === 'projects') setDirMode('tasks');
 }
