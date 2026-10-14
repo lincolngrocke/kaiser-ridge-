@@ -2778,7 +2778,7 @@
 
       <div style="padding:16px 20px 8px;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;">
-          <span style="font-size:13px;font-weight:600;color:var(--subtext);">TASKS</span>
+          <span style="font-size:13px;font-weight:600;color:var(--subtext);">TASKS <span id="dir-batch-tools" onclick="dirBatchToggleAll()" style="display:none;margin-left:6px;color:var(--blue);font-weight:600;cursor:pointer;">Collapse all</span></span>
           <span style="display:flex;gap:14px;">
             <span onclick="openBatchManager()" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;">▣ Batches</span>
             <span onclick="openMoveTasks()" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;">⇄ Move</span>
@@ -3238,7 +3238,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.389';
+const APP_VERSION = '2026-06-21.390';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -14064,21 +14064,71 @@ function renderDirSubtaskList(items) {
   // their true index into _subtaskItems, so edit/delete/drag/flag are unaffected.
   const _bRec = _jn && _batchRec(_jn);
   let _listHtml;
+  // ⭐ BATCHES OPEN AND CLOSE HERE TOO (v390). Lincoln, 14 Oct 2026: on a long job
+  // you want the batches collapsed, then open one to see its tasks, and moving a
+  // task is easier with them collapsed so you can drop it straight into a batch.
+  // A heading is a tap target (open / close) and a DROP target: let go of a
+  // dragged task on a heading and it joins that batch ("Unbatched" takes it out).
+  // Open/closed is remembered while this job stays open, and every heading starts
+  // open, so nothing about the editor changes until a heading is tapped.
+  if (_dirBatchJob !== _jn) { _dirBatchJob = _jn; _dirBatchShut = {}; }
+  const _bTools = document.getElementById('dir-batch-tools');
   if (_bRec && _bRec.order.length) {
     const _used = new Set();
-    const _secHd = (label, n, muted) => `<div style="font-size:12px;font-weight:700;color:var(--subtext);${muted ? 'opacity:0.7;' : ''}padding:12px 0 2px;">▣ ${_escTxt(label)} · ${n}</div>`;
+    const _secHd = (label, key, n, muted) => {
+      const shut = !!_dirBatchShut[key];
+      return `<div data-batch-hd="${_attr(key)}" onclick="dirBatchToggle(decodeURIComponent('${_encArg(key)}'))"
+        style="display:flex;align-items:center;gap:7px;font-size:13px;font-weight:700;color:var(--subtext);${muted ? 'opacity:0.75;' : ''}padding:12px 4px 6px 0;cursor:pointer;-webkit-tap-highlight-color:transparent;border-radius:8px;">
+        <span style="width:12px;font-size:11px;">${shut ? '▸' : '▾'}</span><span style="flex:1;min-width:0;">▣ ${_escTxt(label)} · ${n}</span></div>`;
+    };
     _listHtml = _bRec.order.map(bn => {
       const ps = _display.filter(p => _bRec.items[p.s] === bn);
       ps.forEach(p => _used.add(p.i));
-      return ps.length ? _secHd(bn, ps.length) + ps.map(_rowFor).join('') : '';
+      return ps.length ? _secHd(bn, bn, ps.length, false) + (_dirBatchShut[bn] ? '' : ps.map(_rowFor).join('')) : '';
     }).join('');
     const _rest = _display.filter(p => !_used.has(p.i));
-    if (_rest.length) _listHtml += _secHd('Unbatched', _rest.length, true) + _rest.map(_rowFor).join('');
+    if (_rest.length) _listHtml += _secHd('Unbatched', '__unbatched__', _rest.length, true) + (_dirBatchShut['__unbatched__'] ? '' : _rest.map(_rowFor).join(''));
+    if (_bTools) {
+      _bTools.style.display = 'block';
+      const keys = _bRec.order.filter(bn => _display.some(p => _bRec.items[p.s] === bn)).concat(_rest.length ? ['__unbatched__'] : []);
+      _bTools.textContent = keys.length && keys.every(k => _dirBatchShut[k]) ? 'Expand all' : 'Collapse all';
+    }
   } else {
+    if (_bTools) _bTools.style.display = 'none';
     _listHtml = _display.map(_rowFor).join('');
   }
   document.getElementById('dir-subtask-list').innerHTML = _listHtml;
   _sizeDirSubtaskInputs();
+}
+let _dirBatchJob = null, _dirBatchShut = {};
+function dirBatchToggle(key) { _dirBatchShut[key] = !_dirBatchShut[key]; renderDirSubtaskList(); }
+function dirBatchToggleAll() {
+  const el = document.getElementById('dir-batch-tools');
+  const shutAll = !(el && el.textContent === 'Expand all');
+  _dirBatchShut = {};
+  if (shutAll) document.querySelectorAll('#dir-subtask-list [data-batch-hd]').forEach(h => { _dirBatchShut[h.dataset.batchHd] = true; });
+  renderDirSubtaskList();
+}
+// Put a task into a batch (or take it out, for the Unbatched heading), and move
+// it to the end of that batch in the job's order so it lands where it was dropped.
+function _dirMoveTaskToBatch(srcIdx, key) {
+  const job = _dirJobName(); if (!job) return false;
+  const task = _subtaskItems[srcIdx]; if (task == null) return false;
+  const tb = getTaskBatches();
+  const rec = tb[job] || (tb[job] = { order: [], items: {} });
+  rec.items = rec.items || {};
+  const unbatch = key === '__unbatched__';
+  if (!unbatch && !rec.order.includes(key)) return false;
+  if ((unbatch && rec.items[task] == null) || rec.items[task] === key) return false;   // already there
+  if (unbatch) delete rec.items[task]; else rec.items[task] = key;
+  saveTaskBatches(tb);
+  // Position: after the last task already in that batch, so the job's order agrees.
+  const [moved] = _subtaskItems.splice(srcIdx, 1);
+  let at = -1;
+  _subtaskItems.forEach((t, i) => { if (unbatch ? rec.items[t] == null : rec.items[t] === key) at = i; });
+  _subtaskItems.splice(at >= 0 ? at + 1 : Math.min(srcIdx, _subtaskItems.length), 0, moved);
+  showToast(unbatch ? 'Moved out of its batch' : 'Moved into ' + key);
+  return true;
 }
 // Size each item box to its full wrapped text so long items are fully visible.
 // Guarded: when the editor is still hidden, scrollHeight is 0 — don't collapse
@@ -14204,6 +14254,16 @@ function stTouchMove(event) {
   }
   event.preventDefault();
   if (_stClone) _stClone.style.top = (fingerY - 24) + 'px';
+  _stHoverHd(fingerY);
+}
+// The batch heading the finger is over while dragging, lit so it reads as a target.
+function _stHdAt(y) {
+  return [...document.querySelectorAll('#dir-subtask-list [data-batch-hd]')].find(h => { const r = h.getBoundingClientRect(); return y >= r.top && y <= r.bottom; }) || null;
+}
+function _stHoverHd(y) {
+  document.querySelectorAll('#dir-subtask-list [data-batch-hd]').forEach(h => { h.style.background = ''; h.style.color = ''; });
+  const h = _stHdAt(y);
+  if (h) { h.style.background = 'rgba(0,122,255,0.14)'; h.style.color = 'var(--blue)'; }
 }
 
 function stTouchCancel() {
@@ -14221,16 +14281,27 @@ function stTouchEnd(event) {
   if (_stClone) { _stClone.remove(); _stClone = null; }
   const row = document.getElementById('strow-' + _stSrcIdx);
   if (row) row.style.opacity = '';
+  // Let go on a batch heading: the task joins that batch.
+  const hd = _stHdAt(fingerY);
+  if (hd) {
+    _dirMoveTaskToBatch(_stSrcIdx, hd.dataset.batchHd);
+    _stSrcIdx = null; _stDragging = false; _stRects = [];
+    renderDirSubtaskList();
+    return;
+  }
   let targetIdx = _stSrcIdx;
   for (let i = 0; i < _stRects.length; i++) {
     const rect = _stRects[i];
     if (!rect) continue;
     if (fingerY >= rect.top && fingerY <= rect.bottom) { targetIdx = i; break; }
   }
-  if (_stRects.length > 0) {
-    if (fingerY < _stRects[0].top) targetIdx = 0;
-    const last = _stRects[_stRects.length - 1];
-    if (last && fingerY > last.bottom) targetIdx = _stRects.length - 1;
+  // ⚠️ First and last VISIBLE rows. With batches collapsed most rows are not on
+  // screen and their rect is null; the old code read _stRects[0].top and threw.
+  const _vis = _stRects.map((r, i) => (r ? i : -1)).filter(i => i >= 0);
+  if (_vis.length) {
+    const f = _vis[0], l = _vis[_vis.length - 1];
+    if (fingerY < _stRects[f].top) targetIdx = f;
+    if (fingerY > _stRects[l].bottom) targetIdx = l;
   }
   if (targetIdx !== _stSrcIdx) {
     const [moved] = _subtaskItems.splice(_stSrcIdx, 1);
