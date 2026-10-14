@@ -3238,7 +3238,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.388';
+const APP_VERSION = '2026-06-21.389';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -8220,7 +8220,9 @@ function renderCreateTaskList() {
     // Area and the typed Repeats value follow the register. The learned average,
     // the learned frequency and the done count are the app's own and always show.
     const sub = [featureHidden('area') ? '' : r.group, avg ? '~' + fmtMin(avg * 60) : (auto ? auto.freq : (featureHidden('repeats') ? '' : r.frequency)), counts[r.task] ? '🔂 ' + counts[r.task] + '×' : ''].filter(Boolean).join(' · ');
-    const badge = auto ? ` <span style="display:inline-block;background:#5856D6;color:#fff;font-size:9px;font-weight:700;letter-spacing:0.5px;padding:1px 5px;border-radius:5px;vertical-align:middle;">AUTO</span>` : '';
+    // ⭐ SAY WHAT WAS LEARNED, NOT THAT SOMETHING WAS. Lincoln, 14 Oct 2026: "auto tells
+    // you nothing". The badge stood in for a rhythm it never showed on this list.
+    const badge = _autoRhythmHtml(auto);
     const isSel = selected && r.task === selected;
     const matchSubs = q ? (SUBTASKS[r.task] || []).filter(s => s.toLowerCase().includes(q)) : [];
     const subsHtml = matchSubs.map(s => `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☑️ ${highlightMatch(s, q)}</div>`).join('');
@@ -21410,6 +21412,13 @@ function _taskSortCmp(mode, counts, recent) {
   };
 }
 
+// The learned rhythm in words, in the same purple the job cards use for it:
+// " · every ~5 days". Empty for a job without enough history to learn from.
+function _autoRhythmHtml(auto) {
+  if (!auto || !isFinite(auto.avgGap)) return '';
+  const d = Math.max(1, Math.round(auto.avgGap));
+  return ' \u00b7 <span style="color:#5856D6;">every ~' + d + ' day' + (d === 1 ? '' : 's') + '</span>';
+}
 // Task list ordering in the Add-to-Planner search: 'recent' (last done) or 'used' (most often).
 let _plannerTaskSort = localStorage.getItem('kr_planner_task_sort') || 'recent';
 function setPlannerTaskSort(mode) {
@@ -21434,6 +21443,7 @@ function renderPlannerTaskList() {
   const { counts, recent } = _taskUsageMaps();
   filtered = filtered.slice().sort(_taskSortCmp(_plannerTaskSort, counts, recent));
   const list = document.getElementById('planner-task-list');
+  const autoMap = computeAutoFrequencies();
   if (!filtered.length) {
     list.innerHTML = '<div style="padding:16px;color:var(--subtext);text-align:center;font-size:14px;">No tasks found</div>';
     return;
@@ -21450,7 +21460,7 @@ function renderPlannerTaskList() {
       style="padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;background:${isSelected ? 'rgba(0,122,255,0.08)' : 'transparent'};">
       <div style="min-width:0;">
         <div style="font-size:15px;color:var(--text);">${query ? highlightMatch(r.task, query) : r.task}</div>
-        <div style="font-size:12px;color:var(--subtext);">${[featureHidden('area') ? '' : (r.group || ''), avgStr.replace(/^ · /, '')].filter(Boolean).join(' · ')}</div>
+        <div style="font-size:12px;color:var(--subtext);">${[featureHidden('area') ? '' : (r.group || ''), avgStr.replace(/^ · /, '')].filter(Boolean).join(' · ')}${_autoRhythmHtml(autoMap[r.task])}</div>
         ${equipHtml}${subsHtml}
       </div>
       ${isSelected ? '<span style="color:var(--blue);font-size:18px;">✓</span>' : ''}
