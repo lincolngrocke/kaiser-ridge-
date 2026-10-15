@@ -3263,7 +3263,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.394';
+const APP_VERSION = '2026-06-21.395';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -9889,6 +9889,17 @@ function _idbDel(key) { if (_idbOk && !_kvUnread) { try { _idb.transaction('kv',
 
 // Never leaves the device. Each exclusion has a reason; keep them written down.
 const KR_SYNC_NEVER = [
+  // ⭐⭐ v395, found from Lincoln's screenshot 16 Oct 2026: a leftover block in his
+  // holding bay read "0 left". The arrangement of every planner block (its flags,
+  // order, laps, breaks) lives in kr_planner_checklist, ONE blob for the whole
+  // store, and it was synced as an org-wide kv row while the blocks themselves
+  // (kr_planner) have been never-sync since v317. So another phone's copy, which
+  // does not hold this phone's block ids, could win last-write-wins and wipe every
+  // arrangement here: a planned block arriving at the clock with nothing flagged,
+  // a leftover with nothing left. Same shape as v317 and v342: a store that every
+  // screen reads as MINE must not sync as the org's. The blocks never travel, so
+  // their arrangements must not either. Still in the Drive backup.
+  'kr_planner_checklist',
   // The live session. Invariant #5 — and the codebase already drew this line:
   // KR_BACKUP_KEYS excludes kr_clock by name.
   'kr_clock', 'kr_clock_trash', 'kr_clockout_undo', 'kr_run_resume',
@@ -9971,7 +9982,7 @@ const KR_SYNC_KEYS = [
   // carries no one's real timings.
   'kr_task_seeds',
   // Planning + assignment (per-member keys are added dynamically below)
-  'kr_planner_checklist',
+  // ⛔ kr_planner_checklist moved to KR_SYNC_NEVER in v395. See there.
   // Org config + robots
   'kr_sheet_url', 'kr_gmaps_key', 'kr_agents', 'kr_agent_runs',
   // Shared "when was this last done" map. Last-write-wins can lose a newer mark
@@ -10104,6 +10115,10 @@ async function _syncPush() {
   const org = currentOrg();
   if (!org || !org.id) return 0;
   const q = _syncOutbox();
+  // ⚠️ A key queued BEFORE it was made never-sync (kr_planner_checklist, v395) would
+  // otherwise still go up once from the old queue. Drop anything no longer eligible.
+  const stale = Object.keys(q).filter(k => !_syncEligible(k));
+  if (stale.length) { stale.forEach(k => delete q[k]); _syncWrite(KR_SYNC_OUTBOX, q); }
   const keys = Object.keys(q);
   if (!keys.length) return 0;
   const uid = (currentUser() || {}).id || null;
@@ -18397,6 +18412,8 @@ const KR_HIDDEN_FEATURES = [
     what: 'Attaching Google Sheets, Dropbox or web links to a job.' },
   { id: 'horizon', name: 'Horizon', since: 'v373',
     what: 'Sorting jobs into This Week, This Month and later: the Horizon button on the Jobs screen, the line on each job card and the Horizon filter.' },
+  { id: 'allday', name: 'All-day and bookings', since: 'v395',
+    what: 'The bars across the top of the planner for guest bookings and all-day items, and "+ All-day / booking". Bookings still import underneath.' },
   { id: 'team', name: 'Team', since: 'v392',
     what: 'Working as a team: the Team features switch, the Team section with invites and join codes, and the My Day / person switch and Send button on the planner. Share a single job instead.' },
   { id: 'todos', name: 'To-dos', since: 'v377',
@@ -18452,6 +18469,7 @@ function setFeatureShown(id, on) {
   applyHiddenFeatures();
   if (id === 'reminders') { try { updateReminderBanners(); } catch (e) {} }
   if (id === 'todos') { try { renderRunChecklist(); } catch (e) {} }
+  if (id === 'allday') { try { renderAllDayStrip(); } catch (e) {} }
   renderHiddenFeatures();
 }
 function renderHiddenFeatures() {
@@ -20269,6 +20287,9 @@ function renderAllDayStrip() {
   const el = document.getElementById('planner-allday-strip');
   if (!el) return;
   if (_plannerMode === 'week') { el.style.display = 'none'; return; }
+  // Hidden: the bars and "+ All-day / booking" both go. Bookings keep importing
+  // underneath, so switching it back on shows today's bookings straight away.
+  if (featureHidden('allday')) { el.style.display = 'none'; el.innerHTML = ''; return; }
   const evs = _allDayEventsFor(plannerDateStr(_plannerDate));
   // Bookings belong to My Day — no add affordance for workers or on Ethan's view.
   const canAdd = !isWorker() && _plannerView === 'me';
@@ -24334,7 +24355,7 @@ function renderPlannerHolding(dateStr) {
       return `<div data-park-id="${p.id}" ontouchstart="parkedChipTouchStart(event,'${p.id}')" style="position:relative;background:${plannerColorFor(p.task)};color:#fff;border-radius:8px;padding:6px;margin-bottom:6px;font-size:11px;cursor:grab;touch-action:none;">
         <button onclick="event.stopPropagation();removeParkedBlock('${p.id}')" ontouchstart="event.stopPropagation()" title="Remove from holding" style="position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,0.4);color:#fff;border:none;font-size:11px;line-height:1;cursor:pointer;padding:0;">✕</button>
         <div style="font-weight:700;line-height:1.2;padding-right:14px;">${safe}</div>
-        <div style="opacity:0.9;margin-top:2px;">${durStr}${p.leftover ? ' \u00b7 ' + _leftoverCount(p) + ' left' : ''}</div>
+        <div style="opacity:0.9;margin-top:2px;">${durStr}${(p.leftover && _leftoverCount(p)) ? ' \u00b7 ' + _leftoverCount(p) + ' left' : ''}</div>
       </div>`;
     }).join('');
 }
