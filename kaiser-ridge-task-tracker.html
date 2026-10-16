@@ -3263,7 +3263,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.395';
+const APP_VERSION = '2026-06-21.396';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -18414,6 +18414,8 @@ const KR_HIDDEN_FEATURES = [
     what: 'Sorting jobs into This Week, This Month and later: the Horizon button on the Jobs screen, the line on each job card and the Horizon filter.' },
   { id: 'allday', name: 'All-day and bookings', since: 'v395',
     what: 'The bars across the top of the planner for guest bookings and all-day items, and "+ All-day / booking". Bookings still import underneath.' },
+  { id: 'caldone', name: 'Finished jobs on Google Calendar', since: 'v396',
+    what: 'The ✓ finished jobs and the ▶ running job copied onto your Google Calendar. Planned blocks still go to the calendar; your times stay in Timesheets.' },
   { id: 'team', name: 'Team', since: 'v392',
     what: 'Working as a team: the Team features switch, the Team section with invites and join codes, and the My Day / person switch and Send button on the planner. Share a single job instead.' },
   { id: 'todos', name: 'To-dos', since: 'v377',
@@ -18470,6 +18472,8 @@ function setFeatureShown(id, on) {
   if (id === 'reminders') { try { updateReminderBanners(); } catch (e) {} }
   if (id === 'todos') { try { renderRunChecklist(); } catch (e) {} }
   if (id === 'allday') { try { renderAllDayStrip(); } catch (e) {} }
+  // Re-push today so its ✓ / ▶ events go (or come back) without waiting for an edit.
+  if (id === 'caldone') { try { scheduleCalendarAutoPush(plannerDateStr(new Date()), 5000); } catch (e) {} }
   renderHiddenFeatures();
 }
 function renderHiddenFeatures() {
@@ -24509,8 +24513,14 @@ async function syncCalendarForDate(dateStr, opts) {
     id: 'plan:' + p.id, task: p.task, startDate: p.date, endDate: p.endDate || p.date,
   }));
 
+  // 2 and 3 are behind the 'caldone' register row (hidden v396, Lincoln 16 Oct): his
+  // calendar was buried under ✓ copies of every lap. Hidden, they are simply not sent,
+  // and the script's per-day reconciliation deletes the ones already there for any day
+  // that gets pushed. The ▶ goes with the ✓: on its own it would vanish at clock-out.
+  const _calDone = !featureHidden('caldone');
+
   // 2. Completed timesheet entries for this day (✓ prefix)
-  entries.filter(e => e.date === dateStr && e.clockIn && e.clockOut).forEach(e => {
+  if (_calDone) entries.filter(e => e.date === dateStr && e.clockIn && e.clockOut).forEach(e => {
     items.push({
       id: 'entry:' + e.id, task: '✓ ' + e.task,
       group: e.group || '', frequency: e.frequency || '',
@@ -24520,7 +24530,7 @@ async function syncCalendarForDate(dateStr, opts) {
   });
 
   // 3. The currently running task (▶ prefix) — only when viewing today
-  if (clockState && clockState.running && clockState.startTime && dateStr === plannerDateStr(new Date())) {
+  if (_calDone && clockState && clockState.running && clockState.startTime && dateStr === plannerDateStr(new Date())) {
     const durSoFar = clockState.startMs ? (Date.now() - clockState.startMs) / 3600000 : 0.5;
     items.push({
       id: 'live:current', task: '▶ ' + clockState.task,
