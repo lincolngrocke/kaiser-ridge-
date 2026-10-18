@@ -1086,6 +1086,7 @@
     <div style="display:flex;align-items:center;gap:10px;">
       <div class="header-right" id="ts-header-period"></div>
       <button onclick="openManualEntry()" data-feature="ts-add" style="background:var(--blue);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:14px;font-weight:600;cursor:pointer;">+ Add</button>
+      <button onclick="exportTimesheetsPdf()" style="background:var(--blue);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:14px;font-weight:600;cursor:pointer;">📄 PDF</button>
     </div>
   </div>
 
@@ -3263,7 +3264,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.396';
+const APP_VERSION = '2026-06-21.397';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -7540,22 +7541,14 @@ function _tsNotesSplit(notes) {
   });
   return out;
 }
-function renderTimesheets() {
-  updateRestoreEntryBanner();
-  const list = document.getElementById('ts-list');
+// The timesheets the screen is showing right now: who, group, the old chips, the
+// date window and the search box. ONE copy, shared by the list and the PDF, so
+// "save what I'm looking at" can never drift from what is on the screen.
+function _tsFilteredEntries() {
   const searchTerm = (document.getElementById('ts-search')?.value || '').toLowerCase().trim();
-  // With Robots hidden the Mine / Robots / All switch goes too, and the list stays
-  // on "mine". The robot runs themselves are kept, untouched, for when it comes back.
-  const robotsOff = featureHidden('robots');
-  if (robotsOff) _tsWho = 'mine';
   const hasBots = entries.some(e => e.bot);
-  _renderTsWho(hasBots && !robotsOff);
-  // 👥 Group (v391): a timesheet belongs to the group its JOB is in today. The
-  // group lives on the job, never on the timesheet, so renaming or regrouping a
-  // job moves its history with it, which is what a filter by group should show.
   const _tsGroupOf = {};
   if (_tsGroup) DIRECTORY.forEach(r => { if (r.task && r.client) _tsGroupOf[r.task] = r.client; });
-  _syncTsGroupBtn();
   let filtered = entries.filter(e => {
     if (hasBots && _tsWho === 'mine'   &&  e.bot) return false;   // hide robots by default
     if (hasBots && _tsWho === 'robots' && !e.bot) return false;   // robots only
@@ -7581,6 +7574,23 @@ function renderTimesheets() {
       [e.task, e.personnel, e.group, e.notes, e.tool, e.location, e.frequency, entryProjectLabel(e)].some(f => f && f.toLowerCase().includes(searchTerm))
     );
   }
+  return filtered;
+}
+function renderTimesheets() {
+  updateRestoreEntryBanner();
+  const list = document.getElementById('ts-list');
+  const searchTerm = (document.getElementById('ts-search')?.value || '').toLowerCase().trim();
+  // With Robots hidden the Mine / Robots / All switch goes too, and the list stays
+  // on "mine". The robot runs themselves are kept, untouched, for when it comes back.
+  const robotsOff = featureHidden('robots');
+  if (robotsOff) _tsWho = 'mine';
+  const hasBots = entries.some(e => e.bot);
+  _renderTsWho(hasBots && !robotsOff);
+  // 👥 Group (v391): a timesheet belongs to the group its JOB is in today. The
+  // group lives on the job, never on the timesheet, so renaming or regrouping a
+  // job moves its history with it, which is what a filter by group should show.
+  _syncTsGroupBtn();
+  const filtered = _tsFilteredEntries();
 
   const countEl = document.getElementById('ts-count');
   if (countEl) {
@@ -7650,6 +7660,275 @@ function renderTimesheets() {
   // other photo surface calls it after rendering, so timesheet comment photos sat
   // as invisible 1px placeholders forever (only inline {data} ones ever showed).
   _loadPhotoThumbs();
+}
+
+// ── 📄 Timesheets as a PDF (v397) ────────────────────────────────────────────
+// Lincoln, 18 Oct 2026: narrow the Timesheets screen (date window, Group, search),
+// tap 📄 PDF, and save exactly those. The share sheet hands it to Files, Mail or
+// Print. Each timesheet's notes, to-dos and tasks print under it, as on the screen.
+// The PDF is written here by hand, no library: a third-party script loaded into
+// this page could read the sign-in tokens beside it.
+// ⭐ EMOJI STAY IN (his ask). The two fonts every PDF reader carries only know
+// Western characters, so anything else (emoji, or any other script) is drawn by
+// the phone's own font onto a small canvas and placed in the PDF as a picture at
+// the same size, sitting on the line. One picture per different character, reused.
+const _PDF_W = {   // Helvetica / Helvetica-Bold widths per 1000, characters 32–126
+  r: [278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584],
+  b: [278,333,474,556,556,889,722,238,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,333,333,584,584,584,611,975,722,722,722,722,667,611,778,722,278,556,722,611,833,722,778,667,778,722,667,611,722,667,944,667,667,611,333,278,333,584,556,333,556,611,556,611,556,333,611,611,278,278,556,278,889,611,611,611,611,389,556,333,611,556,778,556,556,500,389,280,389,584],
+};
+// Characters outside plain ASCII that WinAnsi (the fonts' encoding) does carry.
+const _PDF_EXTRA = { '–': 0x96, '—': 0x97, '‘': 0x91, '’': 0x92, '“': 0x93, '”': 0x94, '•': 0x95, '…': 0x85, '€': 0x80 };
+const _pdfSeg = (typeof Intl !== 'undefined' && Intl.Segmenter) ? new Intl.Segmenter('en', { granularity: 'grapheme' }) : null;
+function _pdfGraphemes(s) { s = String(s == null ? '' : s).normalize('NFC'); return _pdfSeg ? Array.from(_pdfSeg.segment(s), x => x.segment) : Array.from(s); }
+function _pdfByte(g) {   // the one WinAnsi byte for a character, '' to drop it, null = draw it as a picture
+  if (g === '\t' || g === '\n' || g === ' ') return ' ';
+  if (g.length === 1 || (g.codePointAt(0) < 0x10000 && g.length === 1)) {
+    const c = g.charCodeAt(0);
+    if (c >= 32 && c <= 126) return g;
+    if (_PDF_EXTRA[g]) return String.fromCharCode(_PDF_EXTRA[g]);
+    if (c >= 0xA0 && c <= 0xFF) return g;
+    if (c < 32 || (c >= 0x7F && c < 0xA0) || c === 0x200D || (c >= 0xFE00 && c <= 0xFE0F)) return '';   // controls, joiners, variation selectors
+  }
+  return null;
+}
+// A string → runs of plain text (already one byte per char) and pictured characters.
+function _pdfRuns(raw) {
+  const runs = []; let cur = '';
+  _pdfGraphemes(raw).forEach(g => {
+    const b = _pdfByte(g);
+    if (b === null) { if (cur) { runs.push({ s: cur }); cur = ''; } runs.push({ g }); }
+    else cur += b;
+  });
+  if (cur) runs.push({ s: cur });
+  return runs;
+}
+// Pictured characters, drawn once per build at 50px on a 64px-tall canvas with the
+// baseline 50px down; scaled to the text size when placed.
+let _pdfGlyphs = new Map();
+const _PDF_GPX = 50, _PDF_GH = 64;
+function _pdfGlyph(g, bold, grey) {
+  const key = (bold ? 'b' : 'r') + (grey ? 'g' : 'k') + g;
+  let gl = _pdfGlyphs.get(key);
+  if (gl) return gl;
+  const font = (bold ? 'bold ' : '') + _PDF_GPX + 'px -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif';
+  const cv = document.createElement('canvas');
+  let ctx = cv.getContext('2d'); ctx.font = font;
+  const adv = Math.max(1, ctx.measureText(g).width);
+  cv.width = Math.ceil(adv) + 2; cv.height = _PDF_GH;
+  ctx = cv.getContext('2d'); ctx.font = font; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = grey ? '#666666' : '#000000';
+  ctx.fillText(g, 1, _PDF_GPX);
+  const px = ctx.getImageData(0, 0, cv.width, cv.height).data;   // straight (not premultiplied) RGBA
+  let rgb = '', a = '';
+  for (let i = 0; i < px.length; i += 4) { rgb += String.fromCharCode(px[i], px[i + 1], px[i + 2]); a += String.fromCharCode(px[i + 3]); }
+  gl = { key, adv, w: cv.width, rgb, a, name: 'Im' + (_pdfGlyphs.size + 1) };
+  _pdfGlyphs.set(key, gl);
+  return gl;
+}
+function _pdfWidth(raw, size, bold) {
+  const w = bold ? _PDF_W.b : _PDF_W.r; let sum = 0;
+  _pdfRuns(raw).forEach(r => {
+    if (r.g) { sum += _pdfGlyph(r.g, bold, false).adv * 1000 / _PDF_GPX; return; }
+    for (let i = 0; i < r.s.length; i++) { const c = r.s.charCodeAt(i); sum += (c >= 32 && c <= 126) ? w[c - 32] : 556; }
+  });
+  return sum * size / 1000;
+}
+function _pdfFit(raw, size, bold, maxW) {   // trim with … so a long job name can't run into Start
+  if (_pdfWidth(raw, size, bold) <= maxW) return raw;
+  let gs = _pdfGraphemes(raw);
+  while (gs.length > 1 && _pdfWidth(gs.join('') + '…', size, bold) > maxW) gs.pop();
+  return gs.join('').trimEnd() + '…';
+}
+function _pdfWrap(raw, size, bold, maxW) {   // word wrap; a word longer than the line is cut by character
+  const out = []; let line = '';
+  String(raw).split(/\s+/).filter(Boolean).forEach(word => {
+    const tryLine = line ? line + ' ' + word : word;
+    if (_pdfWidth(tryLine, size, bold) <= maxW) { line = tryLine; return; }
+    if (line) out.push(line);
+    line = '';
+    let gs = _pdfGraphemes(word);
+    while (_pdfWidth(gs.join(''), size, bold) > maxW && gs.length > 1) {
+      let n = gs.length; while (n > 1 && _pdfWidth(gs.slice(0, n).join(''), size, bold) > maxW) n--;
+      out.push(gs.slice(0, n).join('')); gs = gs.slice(n);
+    }
+    line = gs.join('');
+  });
+  if (line) out.push(line);
+  return out.length ? out : [''];
+}
+// pages: arrays of ops {t:'text', x, y, size, bold, s, align, grey} | {t:'rect', x, y, w, h, g} | {t:'line', x1, y1, x2, y2}
+// y is measured from the TOP of the page here and flipped on the way out. `s` is the
+// raw string; it is split into text and pictures only here.
+function _pdfBytes(pages, W, H) {
+  const esc = t => t.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+  const f2 = n => n.toFixed(2);
+  const used = new Map();   // pictures actually placed, by key
+  const streams = pages.map(ops => {
+    let c = '';
+    ops.forEach(o => {
+      if (o.t === 'rect') { c += `${o.g} g ${f2(o.x)} ${f2(H - o.y - o.h)} ${f2(o.w)} ${f2(o.h)} re f 0 g\n`; return; }
+      if (o.t === 'line') { c += `0.75 G 0.5 w ${f2(o.x1)} ${f2(H - o.y1)} m ${f2(o.x2)} ${f2(H - o.y2)} l S 0 G\n`; return; }
+      let x = o.x; const w = _pdfWidth(o.s, o.size, o.bold);
+      if (o.align === 'right') x -= w; else if (o.align === 'center') x -= w / 2;
+      const base = H - o.y, k = o.size / _PDF_GPX, wt = o.bold ? _PDF_W.b : _PDF_W.r;
+      _pdfRuns(o.s).forEach(r => {
+        if (r.g) {
+          const gl = _pdfGlyph(r.g, o.bold, o.grey); used.set(gl.key, gl);
+          c += `q ${f2(gl.w * k)} 0 0 ${f2(_PDF_GH * k)} ${f2(x - k)} ${f2(base - (_PDF_GH - _PDF_GPX) * k)} cm /${gl.name} Do Q\n`;
+          x += gl.adv * k; return;
+        }
+        c += `BT ${o.grey ? '0.4 g ' : ''}/${o.bold ? 'F2' : 'F1'} ${o.size} Tf ${f2(x)} ${f2(base)} Td (${esc(r.s)}) Tj ET${o.grey ? ' 0 g' : ''}\n`;
+        for (let i = 0; i < r.s.length; i++) { const ch = r.s.charCodeAt(i); x += ((ch >= 32 && ch <= 126) ? wt[ch - 32] : 556) * o.size / 1000; }
+      });
+    });
+    return c;
+  });
+  const objs = [];   // index + 1 = object number
+  const add = body => { objs.push(body); return objs.length; };
+  const catalogNo = add(null), pagesNo = add(null);
+  const f1n = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+  const f2n = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+  let xo = '';
+  used.forEach(gl => {
+    const sm = add(`<< /Type /XObject /Subtype /Image /Width ${gl.w} /Height ${_PDF_GH} /ColorSpace /DeviceGray /BitsPerComponent 8 /Length ${gl.a.length} >>\nstream\n${gl.a}\nendstream`);
+    const im = add(`<< /Type /XObject /Subtype /Image /Width ${gl.w} /Height ${_PDF_GH} /ColorSpace /DeviceRGB /BitsPerComponent 8 /SMask ${sm} 0 R /Length ${gl.rgb.length} >>\nstream\n${gl.rgb}\nendstream`);
+    xo += `/${gl.name} ${im} 0 R `;
+  });
+  const res = `<< /Font << /F1 ${f1n} 0 R /F2 ${f2n} 0 R >>${xo ? ' /XObject << ' + xo + '>>' : ''} >>`;
+  const kids = streams.map(c => {
+    const cs = add(`<< /Length ${c.length} >>\nstream\n${c}endstream`);
+    return add(`<< /Type /Page /Parent ${pagesNo} 0 R /MediaBox [0 0 ${W} ${H}] /Resources ${res} /Contents ${cs} 0 R >>`);
+  });
+  objs[catalogNo - 1] = `<< /Type /Catalog /Pages ${pagesNo} 0 R >>`;
+  objs[pagesNo - 1] = `<< /Type /Pages /Kids [${kids.map(k => k + ' 0 R').join(' ')}] /Count ${kids.length} >>`;
+  let out = '%PDF-1.4\n%\xE2\xE3\xCF\xD3\n';
+  const offs = [];
+  objs.forEach((body, i) => { offs.push(out.length); out += `${i + 1} 0 obj\n${body}\nendobj\n`; });
+  const xref = out.length;
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n` + offs.map(o => String(o).padStart(10, '0') + ' 00000 n \n').join('');
+  out += `trailer\n<< /Size ${objs.length + 1} /Root ${catalogNo} 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  const bytes = new Uint8Array(out.length);   // every char is one byte by construction
+  for (let i = 0; i < out.length; i++) bytes[i] = out.charCodeAt(i) & 0xFF;
+  return bytes;
+}
+function _tsPdfBuild(list) {
+  _pdfGlyphs = new Map();
+  const W = 595, H = 842, L = 40, R = W - 40, BOTTOM = H - 50;
+  const rows = list.slice().sort((a, b) => _entryDateTimeKey(a) - _entryDateTimeKey(b));   // paper reads oldest first
+  const total = rows.reduce((s, e) => s + (e.durationHours || 0), 0);
+  const fmtD = (d, o) => d.toLocaleDateString('en-AU', o);
+  // What was chosen, said in words at the top, so the paper explains itself.
+  let rangeLab;
+  if (_tsRangeSize) {
+    const a = new Date(_tsRangeStartDay()), b = new Date(_tsRangeStartDay() + (_tsRangeSize - 1) * 86400000);
+    rangeLab = fmtD(a, { day: 'numeric', month: 'short', year: 'numeric' }) + ' – ' + fmtD(b, { day: 'numeric', month: 'short', year: 'numeric' });
+  } else {
+    const ds = rows.map(e => _parseEntryDate(e.date)).filter(Boolean);
+    rangeLab = ds.length ? 'All time (' + fmtD(ds[0], { day: 'numeric', month: 'short', year: 'numeric' }) + ' – ' + fmtD(ds[ds.length - 1], { day: 'numeric', month: 'short', year: 'numeric' }) + ')' : 'All time';
+  }
+  const search = (document.getElementById('ts-search')?.value || '').trim();
+  const who = (currentUser() || {}).name || '';
+  const sub = [who, rangeLab, _tsGroup ? 'Group: ' + _groupLabel(_tsGroup) : '', search ? 'Search: "' + search + '"' : ''].filter(Boolean).join('  ·  ');
+  const cols = { job: L + 8, start: 360, finish: 420, brk: 497, hours: R };   // Break and Hours right-aligned
+  const pages = []; let ops, y;
+  const head = () => {
+    ops.push({ t: 'text', x: L + 8, y, size: 8, bold: true, grey: true, s: 'JOB' },
+             { t: 'text', x: cols.start, y, size: 8, bold: true, grey: true, s: 'START' },
+             { t: 'text', x: cols.finish, y, size: 8, bold: true, grey: true, s: 'FINISH' },
+             { t: 'text', x: cols.brk, y, size: 8, bold: true, grey: true, s: 'BREAK', align: 'right' },
+             { t: 'text', x: cols.hours, y, size: 8, bold: true, grey: true, s: 'HOURS', align: 'right' });
+    y += 6; ops.push({ t: 'line', x1: L, y1: y, x2: R, y2: y }); y += 14;
+  };
+  const newPage = () => {
+    ops = []; pages.push(ops); y = 50;
+    if (pages.length === 1) {
+      ops.push({ t: 'text', x: L, y, size: 18, bold: true, s: 'Timesheets' });
+      ops.push({ t: 'text', x: R, y, size: 18, bold: true, s: formatHours(total), align: 'right' });
+      y += 18; ops.push({ t: 'text', x: L, y, size: 10, s: _pdfFit(sub, 10, false, R - L - 120) });
+      ops.push({ t: 'text', x: R, y, size: 10, grey: true, s: rows.length + ' timesheet' + (rows.length === 1 ? '' : 's'), align: 'right' });
+      y += 26;
+    }
+    head();
+  };
+  newPage();
+  // Notes under a timesheet: the same three headings the screen uses, smaller and
+  // grey, indented under the job and wrapped across the full width.
+  const NOTE_X = cols.job + 10, NOTE_W = R - NOTE_X, NOTE_SZ = 8.5, NOTE_LH = 11;
+  const noteBlocks = e => {
+    if (!e.notes) return [];
+    const { notes, todos, tasks } = _tsNotesSplit(e.notes);
+    const out = [];
+    [[notes, 'NOTES'], [todos, 'TO-DOS'], [tasks, 'TASKS']].forEach(([arr, lab]) => {
+      if (!arr.length) return;
+      out.push({ head: lab });
+      arr.forEach(l => _pdfWrap(l.trim(), NOTE_SZ, false, NOTE_W).forEach(w => out.push({ s: w })));
+    });
+    return out;
+  };
+  // One grey band per day with the day's total, then that day's timesheets.
+  const days = [];
+  rows.forEach(e => { const last = days[days.length - 1]; if (last && last.date === e.date) last.rows.push(e); else days.push({ date: e.date, rows: [e] }); });
+  days.forEach(d => {
+    if (y + 20 + 15 > BOTTOM) newPage();   // never strand a day band at the foot of a page
+    const dt = _parseEntryDate(d.date);
+    const dayTot = d.rows.reduce((s, e) => s + (e.durationHours || 0), 0);
+    ops.push({ t: 'rect', x: L, y: y - 11, w: R - L, h: 16, g: 0.93 });
+    ops.push({ t: 'text', x: L + 4, y, size: 9.5, bold: true, s: dt ? fmtD(dt, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : String(d.date) });
+    ops.push({ t: 'text', x: R - 4, y, size: 9.5, bold: true, s: formatHours(dayTot), align: 'right' });
+    y += 18;
+    d.rows.forEach(e => {
+      if (y > BOTTOM) newPage();
+      ops.push({ t: 'text', x: cols.job, y, size: 9.5, s: _pdfFit(e.task || '', 9.5, false, cols.start - cols.job - 10) });
+      ops.push({ t: 'text', x: cols.start, y, size: 9.5, s: e.clockIn ? formatTimeAmPm(e.clockIn) : '–' });
+      ops.push({ t: 'text', x: cols.finish, y, size: 9.5, s: e.clockOut ? formatTimeAmPm(e.clockOut) : '–' });
+      if (e.break > 0) ops.push({ t: 'text', x: cols.brk, y, size: 9.5, s: Math.round(e.break * 60) + 'm', align: 'right' });
+      ops.push({ t: 'text', x: cols.hours, y, size: 9.5, s: formatHours(e.durationHours || 0), align: 'right' });
+      y += 15;
+      const nb = noteBlocks(e);
+      if (nb.length) {
+        y -= 3;
+        nb.forEach((n, i) => {
+          if (y > BOTTOM) newPage();
+          if (n.head) { ops.push({ t: 'text', x: NOTE_X, y: y + (i ? 3 : 0), size: 6.5, bold: true, grey: true, s: n.head }); y += i ? 12 : 9; }
+          else { ops.push({ t: 'text', x: NOTE_X, y, size: NOTE_SZ, grey: true, s: n.s }); y += NOTE_LH; }
+        });
+        y += 5;
+      }
+    });
+    y += 4;
+  });
+  // The total again at the end, where a reader adding up the column looks for it.
+  if (y + 24 > BOTTOM) newPage();
+  ops.push({ t: 'line', x1: L, y1: y - 6, x2: R, y2: y - 6 });
+  y += 8;
+  ops.push({ t: 'text', x: L + 4, y, size: 11, bold: true, s: 'Total' }, { t: 'text', x: R, y, size: 11, bold: true, s: formatHours(total), align: 'right' });
+  const made = 'Groovework  ·  made ' + fmtD(new Date(), { day: 'numeric', month: 'short', year: 'numeric' });
+  pages.forEach((p, i) => {
+    p.push({ t: 'text', x: L, y: H - 26, size: 8, grey: true, s: made });
+    p.push({ t: 'text', x: R, y: H - 26, size: 8, grey: true, s: 'Page ' + (i + 1) + ' of ' + pages.length, align: 'right' });
+  });
+  return _pdfBytes(pages, W, H);
+}
+function exportTimesheetsPdf() {
+  const list = _tsFilteredEntries();
+  if (!list.length) { showToast('No timesheets showing to save'); return; }
+  let bytes;
+  try { bytes = _tsPdfBuild(list); } catch (err) { showToast('Could not make the PDF: ' + (err && err.message || err)); return; }
+  const ds = list.map(e => _parseEntryDate(e.date)).filter(Boolean).sort((a, b) => a - b);
+  const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const filename = 'timesheets-' + (ds.length ? ymd(ds[0]) + (ymd(ds[0]) !== ymd(ds[ds.length - 1]) ? '-to-' + ymd(ds[ds.length - 1]) : '') : ymd(new Date())) + '.pdf';
+  const file = new File([bytes], filename, { type: 'application/pdf' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    // File only, no text, for the same reason as exportBackup: two items split the share.
+    navigator.share({ files: [file], title: filename })
+      .catch(err => { if (err.name !== 'AbortError') showToast('Could not share the PDF'); });
+  } else {
+    const url = URL.createObjectURL(file);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
 }
 
 // ════════════════════════════════
