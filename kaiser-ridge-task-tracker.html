@@ -3275,7 +3275,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.399';
+const APP_VERSION = '2026-06-21.400';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5246,8 +5246,8 @@ function _agoWords(ts) {
                          - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
   return days <= 0 ? 'today' : days === 1 ? 'yesterday' : days + ' days ago';
 }
-// When this JOB was last clocked. Reads the timesheets and folds in kr_lastdone,
-// the shared map, so a job Ethan did counts as done.
+// When this JOB was last clocked, from this phone's own timesheets (v400: the
+// shared kr_lastdone map is no longer folded in; see the note in the Jobs list).
 function _jobLastDone(job) {
   let best = 0;
   (entries || []).forEach(e => {
@@ -5256,10 +5256,6 @@ function _jobLastDone(job) {
     const ms = t ? t.getTime() : (e.createdAt ? new Date(e.createdAt).getTime() : 0);
     if (ms > best) best = ms;
   });
-  try {
-    const shared = JSON.parse(localStorage.getItem('kr_lastdone') || '{}');
-    if (typeof shared[job] === 'number' && shared[job] > best) best = shared[job];
-  } catch (e) {}
   return best;
 }
 
@@ -9953,8 +9949,6 @@ function renderDashBrief() {
   const autoMap = computeAutoFrequencies();
   const lastUsed = {};
   human.forEach(e => { const d = _parseEntryDate(e.date); if (d) { const ts = d.getTime(); if (!lastUsed[e.task] || ts > lastUsed[e.task]) lastUsed[e.task] = ts; } });
-  const sharedLastDone = JSON.parse(localStorage.getItem('kr_lastdone') || '{}');
-  Object.keys(sharedLastDone).forEach(task => { const ts = sharedLastDone[task]; if (typeof ts === 'number' && (!lastUsed[task] || ts > lastUsed[task])) lastUsed[task] = ts; });
   const liveJobs = new Set(DIRECTORY.map(r => r.task).filter(Boolean));
   const slipping = [];
   Object.keys(autoMap).forEach(job => {
@@ -12933,12 +12927,12 @@ function _renderDirectoryInner(list) {
   });
   const taskAvg = {};   // task → average minutes
   Object.keys(_avgAgg).forEach(t => { taskAvg[t] = (_avgAgg[t].tot / _avgAgg[t].n) * 60; });
-  // Merge the shared map (both people's history) pulled from the sheet.
-  const sharedLastDone = JSON.parse(localStorage.getItem('kr_lastdone') || '{}');
-  Object.keys(sharedLastDone).forEach(task => {
-    const ts = sharedLastDone[task];
-    if (typeof ts === 'number' && (!lastUsed[task] || ts > lastUsed[task])) lastUsed[task] = ts;
-  });
+  // ⭐ v400, Lincoln 18 Oct 2026: "it says the job was last done, but I think that's
+  // copying from the time I did it." kr_lastdone was the team's shared map (built
+  // from the sheet, synced across the account), so on Ethan's phone it carried
+  // LINCOLN's dates and made jobs Ethan never did read "Last done". Groovework is
+  // single-user: Last done is THIS phone's own timesheets, full stop. The map is
+  // no longer read or fetched; the key stays in storage and backups, untouched.
 
   const jobFlags = getJobFlags();
   const _dirCounts = _taskUsageMaps().counts;   // times each job was clocked — the ⭐ Most used sort + row line
@@ -13001,7 +12995,9 @@ function _renderDirectoryInner(list) {
                 ${(equip.length && !featureHidden('equipment')) ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${equip.join(', ')}</div>` : ''}
                 ${checklistHtml}
               </div>
-              ${_dirSelecting
+              ${(_dirSelecting && _dirHasTimes(task))
+                ? `<div style="flex-shrink:0;margin-left:10px;font-size:11px;font-weight:700;color:#FF9F0A;border:1px solid #FF9F0A;border-radius:8px;padding:3px 7px;white-space:nowrap;">⏱ ${_dirHasTimes(task)} timesheet${_dirHasTimes(task) === 1 ? '' : 's'}</div>`
+                : _dirSelecting
                 ? `<div class="dir-sel-dot" style="flex-shrink:0;width:24px;height:24px;border-radius:50%;margin-left:10px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;${_dirSel.has(task) ? 'background:var(--blue);border:2px solid var(--blue);color:#fff;' : 'border:2px solid var(--subtext);color:transparent;'}">✓</div>`
                 : `<div style="color:var(--subtext);font-size:18px;padding-left:8px;">›</div>`}
             </div>`;
@@ -18420,13 +18416,23 @@ function _purgeJobData(task) {
 var _dirSelecting = false;
 var _dirSel = new Set();
 function _dirTaskOfRow(row) { const k = decodeURIComponent(row.dataset.key || ''); return k.split('||').slice(2).join('||'); }
+// ⭐ v400, Lincoln 18 Oct 2026: "I just don't want to delete something that Ethan
+// already has times allocated to." A job with timesheets on THIS phone shows its
+// count in orange while selecting and cannot be ticked, so no bulk delete (All,
+// Never done or a stray tap) can take one. To remove such a job on purpose, open
+// it and use its own Delete, which asks twice.
+var _dirTimesCache = null;
+function _dirHasTimes(task) {
+  if (!_dirTimesCache) {
+    _dirTimesCache = {};
+    entries.forEach(e => { if (e && e.task && !e.bot) _dirTimesCache[e.task] = (_dirTimesCache[e.task] || 0) + 1; });
+  }
+  return _dirTimesCache[task] || 0;
+}
 function _dirShownTasks() {
   return [...new Set([...document.querySelectorAll('#dir-list .dir-task-row')].map(_dirTaskOfRow).filter(Boolean))];
 }
-function _dirNeverDoneShown() {
-  const done = new Set(entries.filter(e => e && e.task && !e.bot).map(e => e.task));
-  return _dirShownTasks().filter(t => !done.has(t));
-}
+function _dirNeverDoneShown() { return _dirShownTasks().filter(t => !_dirHasTimes(t)); }
 function _dirSelectSync() {
   const n = _dirSel.size;
   const del = document.getElementById('dir-sel-delete');
@@ -18444,7 +18450,7 @@ function _dirSelectSync() {
 }
 function dirSelectStart() {
   if (isWorker()) { showToast('Jobs are managed on the manager device'); return; }
-  _dirSelecting = true; _dirSel.clear();
+  _dirSelecting = true; _dirSel.clear(); _dirTimesCache = null;
   const fb = document.getElementById('dir-filter-bar'), sb = document.getElementById('dir-select-bar');
   if (fb) fb.style.display = 'none';
   if (sb) sb.style.display = 'flex';
@@ -18452,7 +18458,7 @@ function dirSelectStart() {
   showToast('Tap jobs to select them');
 }
 function dirSelectEnd() {
-  _dirSelecting = false; _dirSel.clear();
+  _dirSelecting = false; _dirSel.clear(); _dirTimesCache = null;
   const fb = document.getElementById('dir-filter-bar'), sb = document.getElementById('dir-select-bar');
   if (fb) fb.style.display = 'flex';
   if (sb) sb.style.display = 'none';
@@ -18470,6 +18476,7 @@ function _dirPaintSel(task) {
 }
 function dirSelectToggle(row) {
   const t = _dirTaskOfRow(row); if (!t) return;
+  if (_dirHasTimes(t)) { showToast('This job has your timesheets, so it stays. To remove it, open it and tap Delete.'); return; }
   if (_dirSel.has(t)) _dirSel.delete(t); else _dirSel.add(t);
   _dirPaintSel(t); _dirSelectSync();
 }
@@ -18483,12 +18490,11 @@ function dirSelectNeverDone() {
   if (!nd.length) { showToast('Every job shown has been done at least once'); return; }
   _dirSelectBulk(nd);
 }
-function dirSelectAllShown() { _dirSelectBulk(_dirShownTasks()); }
+function dirSelectAllShown() { _dirSelectBulk(_dirShownTasks().filter(t => !_dirHasTimes(t))); }
 function dirSelectDelete() {
   const names = [..._dirSel];
   if (!names.length) { showToast('Tap jobs to select them first'); return; }
-  const doneN = new Set(entries.filter(e => e && e.task && !e.bot).map(e => e.task));
-  const withTime = names.filter(t => doneN.has(t)).length;
+  const withTime = names.filter(t => _dirHasTimes(t)).length;   // 0 by construction since v400; kept as a belt-and-braces check
   const notes = getTaskNotes();
   const todoN = featureHidden('todos') ? 0 : names.reduce((s, t) => s + (notes[t] || []).length, 0);
   const msg = 'Delete ' + names.length + ' job' + (names.length === 1 ? '' : 's') + '?'
@@ -20458,6 +20464,7 @@ async function pullPins() {
 // cached locally so the Task Directory shows the true most-recent completion.
 let _lastSharedFetch = 0;
 async function fetchSharedLastDone(force) {
+  return;   // v400: single-user, the map is not read any more. Kept, not deleted, in case a team mode returns.
   const url = localStorage.getItem('kr_sheet_url');
   if (!url) return;
   if (!force && Date.now() - _lastSharedFetch < 60000) return;   // throttle
