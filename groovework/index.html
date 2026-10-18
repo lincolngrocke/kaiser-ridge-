@@ -1163,6 +1163,17 @@
     <button id="chip-filters" onclick="openDirFilters()" class="dir-chip">⚲ Filter</button>
     <button id="chip-dir-sort" onclick="cycleDirSort()" class="dir-chip">↕ Grouped</button>
     <button id="chip-shared-job" onclick="sharedJobAddStart()" class="dir-chip" style="color:var(--blue);font-weight:600;">＋ Shared job</button>
+    <button id="chip-dir-select" onclick="dirSelectStart()" class="dir-chip">☑ Select</button>
+  </div>
+  <!-- Select jobs to delete several at once (v398). Replaces the chip line while on. -->
+  <!-- ⚠️ Delete sits OUTSIDE the scrolling part, so it can never be pushed off a narrow screen. -->
+  <div id="dir-select-bar" style="display:none;gap:8px;padding:8px 12px;background:var(--card);border-bottom:1px solid var(--border);align-items:center;">
+    <div style="display:flex;gap:8px;flex:1;min-width:0;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;">
+      <button onclick="dirSelectEnd()" class="dir-chip">Cancel</button>
+      <button id="dir-sel-never" onclick="dirSelectNeverDone()" class="dir-chip">🧹 Never done</button>
+      <button id="dir-sel-all" onclick="dirSelectAllShown()" class="dir-chip">All</button>
+    </div>
+    <button id="dir-sel-delete" onclick="dirSelectDelete()" class="dir-chip" style="flex-shrink:0;background:var(--red);border-color:var(--red);color:#fff;font-weight:600;opacity:0.4;">Delete</button>
   </div>
   <div class="scroll-area" id="dir-scroll-area">
     <div id="dir-list"></div>
@@ -3264,7 +3275,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.397';
+const APP_VERSION = '2026-06-21.398';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -12990,7 +13001,9 @@ function _renderDirectoryInner(list) {
                 ${(equip.length && !featureHidden('equipment')) ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${equip.join(', ')}</div>` : ''}
                 ${checklistHtml}
               </div>
-              <div style="color:var(--subtext);font-size:18px;padding-left:8px;">›</div>
+              ${_dirSelecting
+                ? `<div class="dir-sel-dot" style="flex-shrink:0;width:24px;height:24px;border-radius:50%;margin-left:10px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;${_dirSel.has(task) ? 'background:var(--blue);border:2px solid var(--blue);color:#fff;' : 'border:2px solid var(--subtext);color:transparent;'}">✓</div>`
+                : `<div style="color:var(--subtext);font-size:18px;padding-left:8px;">›</div>`}
             </div>`;
   };
 
@@ -18351,6 +18364,155 @@ function saveDirTask() {
   showToast('Task saved');
 }
 
+// Everything a job owns besides its DIRECTORY row: its task list, video, links,
+// flags, reminders, task types, runs, batches, to-dos, horizon and merge records.
+// Call it only once no DIRECTORY row carries the name. Shared by deleting one job
+// (deleteDirTask) and deleting many at once (dirSelectDelete), so the two can
+// never leave different leftovers behind. SUBTASKS is saved by the caller.
+// ⚠️ Timesheets are NOT touched, and neither are steps and guides, which are keyed
+// by task name and shared with every other job that has a task of that name.
+function _purgeJobData(task) {
+  delete SUBTASKS[task];
+  const tvids = getTaskVideos();
+  if (tvids[task]) { delete tvids[task]; saveTaskVideos(tvids); }
+  const jlinks = getJobLinks();
+  if (jlinks[task]) { delete jlinks[task]; saveJobLinks(jlinks); }
+  const cflags = getChecklistFlags();
+  if (cflags[task]) { delete cflags[task]; saveChecklistFlags(cflags); }
+  const jrem = getJobReminders();
+  if (jrem[task]) { delete jrem[task]; saveJobReminders(jrem); }
+  const trem = getTaskReminders(); let tremCh = false;
+  Object.keys(trem).forEach(k => { if (trem[k] && trem[k].job === task) { delete trem[k]; tremCh = true; } });
+  if (tremCh) saveTaskReminders(trem);
+  const tty = getTaskTypes(); let ttyCh = false;
+  Object.keys(tty).forEach(k => { const sep = k.indexOf('\u0001'); if (sep > 0 && k.slice(0, sep) === task) { delete tty[k]; ttyCh = true; } });
+  if (ttyCh) saveTaskTypes(tty);
+  const runs = getJobRuns();
+  if (runs[task]) { delete runs[task]; saveJobRuns(runs); }
+  const jflags = getJobFlags();
+  if (jflags[task]) { delete jflags[task]; saveJobFlags(jflags); }
+  const tbat = getTaskBatches();
+  if (tbat[task]) { delete tbat[task]; saveTaskBatches(tbat); }
+  // To-dos die with the job (the caller warns) — orphaned notes under a dead job
+  // name were invisible forever; deleting honestly beats losing them silently.
+  const tnDel = getTaskNotes();
+  if (tnDel[task]) { delete tnDel[task]; saveTaskNotes(tnDel); }
+  const jhz = getJobHorizons();
+  if (jhz[task]) { delete jhz[task]; saveJobHorizons(jhz); }
+  // Drop any merge records for this (now-gone) task — can't un-merge into it
+  const mg = getTaskMerges();
+  const kept = mg.filter(m => m.primary !== task && m.secondary !== task);
+  if (kept.length !== mg.length) saveTaskMerges(kept);
+}
+// ═══ Select several jobs and delete them at once (v398) ═════════════════════
+// Lincoln, 18 Oct 2026, after Ethan went onto his own account with a copy of all
+// of Lincoln's jobs: "Is there an easier way for him to delete those jobs, the
+// ones that he'll never use?" ☑ Select sits on the existing chip line. Tap jobs to
+// tick them; 🧹 Never done ticks every shown job with no timesheet on THIS phone,
+// which for Ethan is exactly Lincoln's jobs he has never worked. Search and the
+// group filter still narrow the list while selecting, and All shown ticks what
+// they leave. One confirmation with the count, a fresh local backup first.
+// ⚠️ "Never done" counts this phone's own timesheets only, never kr_lastdone: that
+// map came through sync from the old shared account and holds the OTHER person's
+// dates, so it would make Lincoln's jobs look done on Ethan's phone.
+// var, not let: the Jobs list can render before this line has run, and a let
+// read there would throw instead of reading false.
+var _dirSelecting = false;
+var _dirSel = new Set();
+function _dirTaskOfRow(row) { const k = decodeURIComponent(row.dataset.key || ''); return k.split('||').slice(2).join('||'); }
+function _dirShownTasks() {
+  return [...new Set([...document.querySelectorAll('#dir-list .dir-task-row')].map(_dirTaskOfRow).filter(Boolean))];
+}
+function _dirNeverDoneShown() {
+  const done = new Set(entries.filter(e => e && e.task && !e.bot).map(e => e.task));
+  return _dirShownTasks().filter(t => !done.has(t));
+}
+function _dirSelectSync() {
+  const n = _dirSel.size;
+  const del = document.getElementById('dir-sel-delete');
+  if (del) { del.textContent = n ? 'Delete ' + n : 'Delete'; del.style.opacity = n ? '1' : '0.4'; }
+  const nd = _dirNeverDoneShown();
+  const nev = document.getElementById('dir-sel-never');
+  if (nev) {
+    const allOn = nd.length && nd.every(t => _dirSel.has(t));
+    nev.textContent = '🧹 Never done (' + nd.length + ')';
+    nev.classList.toggle('active', !!allOn);
+  }
+  const shown = _dirShownTasks();
+  const all = document.getElementById('dir-sel-all');
+  if (all) all.classList.toggle('active', !!(shown.length && shown.every(t => _dirSel.has(t))));
+}
+function dirSelectStart() {
+  if (isWorker()) { showToast('Jobs are managed on the manager device'); return; }
+  _dirSelecting = true; _dirSel.clear();
+  const fb = document.getElementById('dir-filter-bar'), sb = document.getElementById('dir-select-bar');
+  if (fb) fb.style.display = 'none';
+  if (sb) sb.style.display = 'flex';
+  renderDirectory(); _dirSelectSync();
+  showToast('Tap jobs to select them');
+}
+function dirSelectEnd() {
+  _dirSelecting = false; _dirSel.clear();
+  const fb = document.getElementById('dir-filter-bar'), sb = document.getElementById('dir-select-bar');
+  if (fb) fb.style.display = 'flex';
+  if (sb) sb.style.display = 'none';
+  renderDirectory();
+}
+function _dirPaintSel(task) {
+  document.querySelectorAll('#dir-list .dir-task-row').forEach(row => {
+    if (_dirTaskOfRow(row) !== task) return;
+    const dot = row.querySelector('.dir-sel-dot'); if (!dot) return;
+    const on = _dirSel.has(task);
+    dot.style.background = on ? 'var(--blue)' : 'none';
+    dot.style.border = '2px solid ' + (on ? 'var(--blue)' : 'var(--subtext)');
+    dot.style.color = on ? '#fff' : 'transparent';
+  });
+}
+function dirSelectToggle(row) {
+  const t = _dirTaskOfRow(row); if (!t) return;
+  if (_dirSel.has(t)) _dirSel.delete(t); else _dirSel.add(t);
+  _dirPaintSel(t); _dirSelectSync();
+}
+function _dirSelectBulk(list) {   // all on → all off; otherwise tick them all
+  const allOn = list.length && list.every(t => _dirSel.has(t));
+  list.forEach(t => { if (allOn) _dirSel.delete(t); else _dirSel.add(t); _dirPaintSel(t); });
+  _dirSelectSync();
+}
+function dirSelectNeverDone() {
+  const nd = _dirNeverDoneShown();
+  if (!nd.length) { showToast('Every job shown has been done at least once'); return; }
+  _dirSelectBulk(nd);
+}
+function dirSelectAllShown() { _dirSelectBulk(_dirShownTasks()); }
+function dirSelectDelete() {
+  const names = [..._dirSel];
+  if (!names.length) { showToast('Tap jobs to select them first'); return; }
+  const doneN = new Set(entries.filter(e => e && e.task && !e.bot).map(e => e.task));
+  const withTime = names.filter(t => doneN.has(t)).length;
+  const notes = getTaskNotes();
+  const todoN = featureHidden('todos') ? 0 : names.reduce((s, t) => s + (notes[t] || []).length, 0);
+  const msg = 'Delete ' + names.length + ' job' + (names.length === 1 ? '' : 's') + '?'
+    + '\n\nTheir task lists go with them.'
+    + (withTime ? '\n\n' + withTime + ' of them ' + (withTime === 1 ? 'has' : 'have') + ' timesheets. The timesheets are kept.' : ' Your timesheets are kept.')
+    + (todoN ? '\n\n⚠️ ' + todoN + ' to-do' + (todoN === 1 ? '' : 's') + ' on them will be deleted too.' : '')
+    + '\n\nThis can\'t be undone from the app.';
+  if (!confirm(msg)) return;
+  try { autoBackup(true); } catch (e) {}   // a snapshot of the list as it was, before it goes
+  const gone = new Set(names);
+  DIRECTORY = DIRECTORY.filter(r => !gone.has(r.task));
+  names.forEach(t => _purgeJobData(t));
+  // Their slots in the hand-arranged orders go too, or they linger as dead names.
+  try {
+    const order = JSON.parse(localStorage.getItem('kr_task_order') || '{}'); let ch = false;
+    Object.keys(order).forEach(k => { if (Array.isArray(order[k])) { const f = order[k].filter(t => !gone.has(t)); if (f.length !== order[k].length) { order[k] = f; ch = true; } } });
+    if (ch) _storeSet('kr_task_order', JSON.stringify(order));
+  } catch (e) {}
+  _storeSet('kr_directory', JSON.stringify(DIRECTORY));
+  _storeSet('kr_subtasks', JSON.stringify(SUBTASKS));
+  dirSelectEnd();
+  autoBackup();
+  showToast(names.length + ' job' + (names.length === 1 ? '' : 's') + ' deleted');
+}
 function deleteDirTask() {
   if (!_dirEditingKey) return;
   const [freq, grp, task] = _dirEditingKey.split('||');
@@ -18365,39 +18527,7 @@ function deleteDirTask() {
   if (!confirm('Are you sure? "' + task + '" will be permanently deleted.')) return;
   DIRECTORY = DIRECTORY.filter(r => !_dirKeyMatches(r, freq, grp, task));
   // Only drop the checklist / video if no other task still uses this name
-  if (!DIRECTORY.some(r => r.task === task)) {
-    delete SUBTASKS[task];
-    const tvids = getTaskVideos();
-    if (tvids[task]) { delete tvids[task]; saveTaskVideos(tvids); }
-    const jlinks = getJobLinks();
-    if (jlinks[task]) { delete jlinks[task]; saveJobLinks(jlinks); }
-    const cflags = getChecklistFlags();
-    if (cflags[task]) { delete cflags[task]; saveChecklistFlags(cflags); }
-    const jrem = getJobReminders();
-    if (jrem[task]) { delete jrem[task]; saveJobReminders(jrem); }
-    const trem = getTaskReminders(); let tremCh = false;
-    Object.keys(trem).forEach(k => { if (trem[k] && trem[k].job === task) { delete trem[k]; tremCh = true; } });
-    if (tremCh) saveTaskReminders(trem);
-    const tty = getTaskTypes(); let ttyCh = false;
-    Object.keys(tty).forEach(k => { const sep = k.indexOf('\u0001'); if (sep > 0 && k.slice(0, sep) === task) { delete tty[k]; ttyCh = true; } });
-    if (ttyCh) saveTaskTypes(tty);
-    const runs = getJobRuns();
-    if (runs[task]) { delete runs[task]; saveJobRuns(runs); }
-    const jflags = getJobFlags();
-    if (jflags[task]) { delete jflags[task]; saveJobFlags(jflags); }
-    const tbat = getTaskBatches();
-    if (tbat[task]) { delete tbat[task]; saveTaskBatches(tbat); }
-    // To-dos die with the job (warned above) — orphaned notes under a dead job
-    // name were invisible forever; deleting honestly beats losing them silently.
-    const tnDel = getTaskNotes();
-    if (tnDel[task]) { delete tnDel[task]; saveTaskNotes(tnDel); }
-    const jhz = getJobHorizons();
-    if (jhz[task]) { delete jhz[task]; saveJobHorizons(jhz); }
-    // Drop any merge records for this (now-gone) task — can't un-merge into it
-    const mg = getTaskMerges();
-    const kept = mg.filter(m => m.primary !== task && m.secondary !== task);
-    if (kept.length !== mg.length) saveTaskMerges(kept);
-  }
+  if (!DIRECTORY.some(r => r.task === task)) _purgeJobData(task);
   _storeSet('kr_directory', JSON.stringify(DIRECTORY));
   _storeSet('kr_subtasks', JSON.stringify(SUBTASKS));
   closeModal('modal-dir-task');
@@ -18409,6 +18539,7 @@ function deleteDirTask() {
 // Render directory when switching to that screen
 const _origShowScreen = showScreen;
 showScreen = function(id, tab) {
+  if (id !== 'directory' && _dirSelecting) dirSelectEnd();   // leaving Jobs ends selecting
   _origShowScreen(id, tab);
   applyHiddenFeatures();
   // Screens that live behind the ☰ More menu keep that tab highlighted
@@ -18458,6 +18589,18 @@ function _shareNewCode() {
 }
 function _shareShow(c) { return c.slice(0, 3) + '-' + c.slice(3); }   // KR7-42MX reads better than KR742MX
 function _shareClean(c) { return String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+// The code from whatever was pasted: the 7 letters alone, "ABC-2DEF", or the
+// whole message the sender's app wrote. A bare 7 is taken as typed. Otherwise the
+// LAST "XXX-XXXX" in the text wins (the code comes after the job name), checked
+// against the code alphabet so a hyphenated word in a job name can't pass as one.
+function _shareFindCode(text) {
+  const all = _shareClean(text);
+  if (all.length === 7) return all;
+  const ok = c => [...c].every(ch => _SHARE_ALPHABET.includes(ch));
+  const hits = [...String(text || '').toUpperCase().matchAll(/(?:^|[^A-Z0-9])([A-Z0-9]{3})-([A-Z0-9]{4})(?![A-Z0-9])/g)]
+    .map(m => m[1] + m[2]).filter(ok);
+  return hits.length ? hits[hits.length - 1] : '';
+}
 function _shareBuildPayload(job) {
   const tasks = (SUBTASKS[job] || []).slice();
   const types = [], steps = {}, guides = {}, times = {};
@@ -18505,17 +18648,22 @@ async function shareJobStart() {
     return;
   }
   const n = payload.tasks.length;
-  const msg = 'Here is my Groovework job "' + job + '". In Groovework go to Jobs, tap Shared job and enter this code: ' + _shareShow(code) + '. It works for 7 days.';
+  // The code sits on its own line so a long-press can pick out just the code, and
+  // the receiving box finds it inside the whole message anyway (_shareFindCode).
+  const msg = 'Here is my Groovework job "' + job + '". In Groovework go to Jobs, tap Shared job and paste this code (it works for 7 days):\n\n' + _shareShow(code);
   window._shareLastMsg = msg; window._shareLastCode = _shareShow(code);
   _shareBody(
     '<div class="settings-note" style="margin:6px 0 12px;">Send this code to whoever should have <b>' + _escHtml(job) + '</b> (' + n + ' task' + (n === 1 ? '' : 's') + '). They enter it under Jobs, Shared job. It works for 7 days and gives them their own copy.</div>'
     + '<div id="shared-job-code" style="font-family:ui-monospace,Menlo,monospace;font-size:34px;font-weight:700;letter-spacing:3px;text-align:center;padding:18px 0;border:1px solid var(--border);border-radius:14px;background:var(--card);color:var(--text);margin-bottom:12px;">' + _shareShow(code) + '</div>'
-    + '<button onclick="shareJobSend()" style="' + _shareBtn + 'background:var(--blue);color:#fff;margin-bottom:10px;">Send the code</button>'
-    + '<button onclick="shareJobCopy()" style="' + _shareBtn + 'background:none;border:1px solid var(--border);color:var(--text);">Copy the code</button>');
+    // ⭐ Lincoln, 18 Oct 2026: "you should be able to just copy the code and paste
+    // the code." Copy (just the 7 letters) is the main button now; sending the
+    // whole message is the second choice.
+    + '<button onclick="shareJobCopy()" style="' + _shareBtn + 'background:var(--blue);color:#fff;margin-bottom:10px;">Copy the code</button>'
+    + '<button onclick="shareJobSend()" style="' + _shareBtn + 'background:none;border:1px solid var(--border);color:var(--text);">Send it in a message</button>');
 }
 function shareJobCopy() {
   const c = window._shareLastCode || '';
-  const done = () => showToast('Code copied');
+  const done = () => showToast('Code copied. Paste it to them in a message.');
   try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(c).then(done, () => showToast('Could not copy. The code is ' + c)); return; } } catch (e) {}
   showToast('The code is ' + c);
 }
@@ -18535,11 +18683,37 @@ function sharedJobAddStart() {
     openModal('modal-shared-job'); return;
   }
   _shareBody(
-    '<div class="settings-note" style="margin:6px 0 12px;">Enter the code you were sent. You get your own copy of the job, with its tasks, steps and guides.</div>'
-    + '<input id="shared-job-input" type="text" placeholder="ABC-2DEF" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" onkeydown="if(event.key===\'Enter\'){event.preventDefault();sharedJobFetch();}" style="width:100%;box-sizing:border-box;font-family:ui-monospace,Menlo,monospace;font-size:26px;font-weight:700;letter-spacing:3px;text-align:center;padding:14px;border:1px solid var(--border);border-radius:14px;background:var(--card);color:var(--text);margin-bottom:12px;text-transform:uppercase;">'
+    '<div class="settings-note" style="margin:6px 0 12px;">Copy the code you were sent, then tap Paste. You get your own copy of the job, with its tasks, steps and guides.</div>'
+    + '<button onclick="sharedJobPaste()" style="' + _shareBtn + 'background:var(--blue);color:#fff;margin-bottom:12px;">Paste the code</button>'
+    + '<input id="shared-job-input" type="text" placeholder="or type it: ABC-2DEF" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" oninput="sharedJobInputChanged(this)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();sharedJobFetch();}" style="width:100%;box-sizing:border-box;font-family:ui-monospace,Menlo,monospace;font-size:26px;font-weight:700;letter-spacing:3px;text-align:center;padding:14px;border:1px solid var(--border);border-radius:14px;background:var(--card);color:var(--text);margin-bottom:12px;text-transform:uppercase;">'
     + '<div id="shared-job-msg" style="font-size:13px;color:var(--red);min-height:18px;margin-bottom:8px;"></div>'
-    + '<button onclick="sharedJobFetch()" style="' + _shareBtn + 'background:var(--blue);color:#fff;">Find the job</button>');
+    + '<button onclick="sharedJobFetch()" style="' + _shareBtn + 'background:none;border:1px solid var(--border);color:var(--text);">Find the job</button>');
   openModal('modal-shared-job');
+}
+// Paste: read the clipboard (iOS shows its own small "Paste" bubble to allow it),
+// pull the code out of whatever is there and go straight to the job.
+async function sharedJobPaste() {
+  const inp = document.getElementById('shared-job-input'), msg = document.getElementById('shared-job-msg');
+  let text = '';
+  try { if (navigator.clipboard && navigator.clipboard.readText) text = await navigator.clipboard.readText(); } catch (e) {}
+  if (!text) {
+    if (msg) { msg.style.color = 'var(--subtext)'; msg.textContent = 'Could not read the clipboard. Hold in the box below and choose Paste.'; }
+    if (inp) inp.focus();
+    return;
+  }
+  if (inp) inp.value = text;
+  sharedJobInputChanged(inp);
+  if (!_shareFindCode(text) && msg) { msg.style.color = 'var(--red)'; msg.textContent = 'There is no code in what you copied. Copy the code again and tap Paste.'; }
+}
+// Pasting a whole message into the box tidies it down to the code and looks it up.
+function sharedJobInputChanged(inp) {
+  if (!inp) return;
+  const code = _shareFindCode(inp.value);
+  if (code && (inp.value.length > 8 || _shareClean(inp.value).length === 7)) {
+    const shown = _shareShow(code);
+    if (inp.value !== shown) inp.value = shown;
+    sharedJobFetch();
+  }
 }
 // What the server said, in words a person can act on.
 function _sharedFailWords(body, status) {
@@ -18556,8 +18730,10 @@ function _sharedValid(p) {
 }
 async function sharedJobFetch() {
   const inp = document.getElementById('shared-job-input'), msg = document.getElementById('shared-job-msg');
-  const code = _shareClean(inp && inp.value);
-  if (code.length !== 7) { if (msg) msg.textContent = 'A code is 7 letters and numbers, like ABC-2DEF.'; return; }
+  const code = _shareFindCode(inp && inp.value);
+  if (code.length !== 7) { if (msg) { msg.style.color = 'var(--red)'; msg.textContent = 'A code is 7 letters and numbers, like ABC-2DEF.'; } return; }
+  if (window._sharedFetching === code) return;   // a paste and an Enter can both ask; one lookup is enough
+  window._sharedFetching = code; setTimeout(() => { if (window._sharedFetching === code) window._sharedFetching = null; }, 4000);
   if (msg) { msg.style.color = 'var(--subtext)'; msg.textContent = 'Looking it up…'; }
   // Direct fetch, not _sb: _sb throws the response body away, and the server's
   // own message (not found / expired) is the whole answer here. Same reason as claimInvite.
@@ -18569,7 +18745,8 @@ async function sharedJobFetch() {
     res = await call();
     if (res.status === 401 && await _authRefresh()) res = await call();
     body = await res.json().catch(() => null);
-  } catch (e) { if (msg) { msg.style.color = 'var(--red)'; msg.textContent = _sharedFailWords(null, 0); } return; }
+  } catch (e) { window._sharedFetching = null; if (msg) { msg.style.color = 'var(--red)'; msg.textContent = _sharedFailWords(null, 0); } return; }
+  window._sharedFetching = null;
   if (!res.ok) { if (msg) { msg.style.color = 'var(--red)'; msg.textContent = _sharedFailWords(body, res.status); } return; }
   if (!_sharedValid(body)) { if (msg) { msg.style.color = 'var(--red)'; msg.textContent = 'That code did not hold a Groovework job.'; } return; }
   _sharedIncoming = body;
@@ -19704,6 +19881,7 @@ function dirSwipeEnd(e) {
 }
 
 function dirTaskTouchStart(e, row) {
+  if (_dirSelecting) { _dirSwipe = null; return; }   // selecting: a tap ticks, no swipe-to-flag, no hold-to-drag
   _dirSwipe = { row, task: row.dataset.task, x: e.touches[0].clientX, y: e.touches[0].clientY, moved: false };
   if (isWorker()) return; // no drag-reorder in worker mode
   _dtDragging = false;
@@ -19736,6 +19914,7 @@ function _dtCancelLong() {
 }
 
 function dirTaskClick(e, row) {
+  if (_dirSelecting) { e.stopPropagation(); dirSelectToggle(row); return; }
   if (_dtDragging) { e.stopPropagation(); return; }
   if (Date.now() < _dirSwipeBlockClickUntil) { e.stopPropagation(); return; }   // a swipe just happened — not a tap
   const key = row.dataset.key;
