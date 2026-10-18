@@ -3275,7 +3275,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.398';
+const APP_VERSION = '2026-06-21.399';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -18576,7 +18576,10 @@ showScreen = function(id, tab) {
 //  arriving from someone else must not rewrite it.
 //  ⚠️ Task types go on the wire as [task, type] PAIRS. Their local key holds a
 //  U+0001 separator, which must never travel.
-//  ⚠️ Not sent: timesheets, to-dos, the group, reminders, location, photos
+//  ⭐ THE GROUP TRAVELS (v399, Lincoln 18 Oct: "the groups aren't coming across").
+//  It arrives as the job's group and joins the receiver's group list. On a
+//  replace it only fills a job that has no group; a group they chose stays.
+//  ⚠️ Not sent: timesheets, to-dos, reminders, location, photos
 //  (photos live in the sender's own Drive, which nobody else can open).
 // ═══════════════════════════════════════════════════════════════════════════
 const _SHARE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';   // no 0/O, 1/I/L
@@ -18618,7 +18621,8 @@ function _shareBuildPayload(job) {
   const rec = _batchRec(job);
   const batches = (rec && rec.order && rec.order.length)
     ? { order: rec.order.slice(), items: Object.assign({}, rec.items) } : null;
-  return { v: 1, app: 'groovework', job, from: getUserName() || '', sentAt: new Date().toISOString(), tasks, types, batches, steps, guides, times };
+  const group = (DIRECTORY.find(r => r.task === job && r.client) || {}).client || '';
+  return { v: 1, app: 'groovework', job, group, from: getUserName() || '', sentAt: new Date().toISOString(), tasks, types, batches, steps, guides, times };
 }
 function _shareBody(html) { document.getElementById('shared-job-body').innerHTML = html; }
 const _shareBtn = 'width:100%;padding:14px;border:none;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;';
@@ -18759,6 +18763,8 @@ function _sharedPreview() {
   const nSteps = Object.keys(p.steps || {}).length, nGuides = Object.keys(p.guides || {}).length, nTimes = Object.keys(p.times || {}).length;
   const nBatch = (p.batches && p.batches.order) ? p.batches.order.length : 0;
   const bits = [p.tasks.length + ' task' + (p.tasks.length === 1 ? '' : 's')];
+  const grpIn = (typeof p.group === 'string') ? p.group.trim() : '';
+  if (grpIn) bits.unshift('group ' + grpIn);
   if (nBatch) bits.push(nBatch + ' batch' + (nBatch === 1 ? '' : 'es'));
   if (nSteps) bits.push(nSteps + ' with steps');
   if (nGuides) bits.push(nGuides + ' with a guide');
@@ -18788,8 +18794,12 @@ function sharedJobApply(mode) {
   const exists = DIRECTORY.some(r => r.task === orig);
   const name = (mode === 'both' && exists) ? _sharedFreeName(orig) : orig;
   const tasks = [...new Set(p.tasks.map(t => String(t).trim()).filter(Boolean))];
-  // 1. the job row. A replace keeps the row it has (its group, repeats, area).
-  if (!DIRECTORY.some(r => r.task === name)) DIRECTORY.push({ frequency: 'Weekly', group: 'General', task: name, equipment: '', location: '', client: '' });
+  // 1. the job row, in the sender's group. A replace keeps the row it has (its
+  // repeats, area and any group already chosen); the sender's group only fills a
+  // row that has none. A payload from before v399 carries no group: no change.
+  const grp = (typeof p.group === 'string') ? p.group.trim().slice(0, 80) : '';
+  if (!DIRECTORY.some(r => r.task === name)) DIRECTORY.push({ frequency: 'Weekly', group: 'General', task: name, equipment: '', location: '', client: grp });
+  else if (grp) DIRECTORY.forEach(r => { if (r.task === name && !r.client) r.client = grp; });
   _storeSet('kr_directory', JSON.stringify(DIRECTORY));
   // 2. its tasks, in the sender's order
   SUBTASKS[name] = tasks;
