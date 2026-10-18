@@ -1404,7 +1404,7 @@
         </div>
         <button id="account-btn" onclick="accountAction()" style="flex-shrink:0;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 14px;cursor:pointer;color:var(--text);font-size:15px;font-weight:600;">Sign in</button>
       </div>
-      <div class="settings-note" id="account-note" style="margin-top:8px">Your work is saved on this device. Signing in is what will let it reach your other devices and your team.</div>
+      <div class="settings-note" id="account-note" style="margin-top:8px">Your work is saved on this device. Signing in backs it up and lets it reach your other devices.</div>
     </div>
 
     <!-- ══════ SYNC (M1/S3) — kv mirror, outbox, delta pull ══════ -->
@@ -1416,10 +1416,10 @@
         </div>
         <button onclick="syncNow(false)" style="flex-shrink:0;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 14px;cursor:pointer;color:var(--text);font-size:15px;font-weight:600;">Sync now</button>
       </div>
-      <div class="settings-row" style="justify-content:space-between;align-items:center;margin-top:6px;">
+      <div data-feature="sync-apply"><div class="settings-row" style="justify-content:space-between;align-items:center;margin-top:6px;">
         <div class="settings-label" style="font-size:14px;">Apply changes from other devices</div>
         <span id="sync-hydrate-toggle" onclick="toggleSyncHydrate()" style="color:#5ac8fa;font-size:14px;cursor:pointer;">Off</span>
-      </div>
+      </div></div>
       <div class="settings-note" id="sync-note" style="margin-top:8px"></div>
     </div>
 
@@ -1491,6 +1491,8 @@
       </div>
     </div></div>
 
+    <!-- Wrapped, not tagged: it has its own show/hide (teamEnabled). Team mode is hidden (v392). -->
+    <div data-feature="team">
     <div class="settings-section" style="margin-top:16px;display:none;" id="settings-role-section">
       <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
         <div class="settings-label" style="font-weight:600;">Device Role</div>
@@ -1505,7 +1507,9 @@
         </div>
       </div>
     </div>
+    </div>
 
+    <div data-feature="clock-settings">
     <!-- collapsed by default: everyday things stay in the open, the rest is one tap away -->
     <div style="margin-top:16px;">
       <div onclick="toggleSetGroup('clock')" style="display:flex;align-items:center;gap:10px;padding:15px 16px;background:var(--card);border:1px solid var(--border);border-radius:14px;cursor:pointer;">
@@ -1549,13 +1553,15 @@
       </div>
     </div>
 
+    </div><!-- /clock-settings -->
+
     <!-- collapsed by default: everyday things stay in the open, the rest is one tap away -->
     <div style="margin-top:16px;">
       <div onclick="toggleSetGroup('conn')" style="display:flex;align-items:center;gap:10px;padding:15px 16px;background:var(--card);border:1px solid var(--border);border-radius:14px;cursor:pointer;">
         <span style="font-size:18px;">🔌</span>
         <div style="flex:1;min-width:0;">
           <div style="font-size:15px;font-weight:600;color:var(--text);">Connections</div>
-          <div style="font-size:12px;color:var(--subtext);margin-top:2px;">Google Sheet and Maps. Optional.</div>
+          <div style="font-size:12px;color:var(--subtext);margin-top:2px;">Your Google Sheet link. Optional.</div>
         </div>
         <span id="setgrp-conn-chev" style="color:var(--subtext);font-size:17px;">›</span>
       </div>
@@ -1573,6 +1579,7 @@
       See the setup guide below. Once deployed, paste the URL above.
     </div>
 
+    <div data-feature="maps-key">
     <div class="settings-section" style="margin-top:16px">
       <div class="settings-row">
         <div class="settings-label">Google Maps API key</div>
@@ -1584,9 +1591,11 @@
     <div class="settings-note">
       Optional — lets you tap a spot on a Google Map when dropping a pin. Create a Maps JavaScript API key in Google Cloud and restrict it to your Pages URL. Without a key, Drop Pin just uses your current GPS location.
     </div>
+    </div><!-- /maps-key -->
 
     <button class="btn-sync" onclick="syncToSheet()">⬆ Sync Now</button>
     <div class="settings-note" style="margin-top:6px;">Entries sync automatically about 5 minutes after clock-out — tap this only to push them straight away.</div>
+    <div data-feature="old-tools">
     <button class="btn-sync" style="background:#FF9500; margin-top:8px;" onclick="repushMissingEntries()">♺ Re-push Missing Entries</button>
     <div class="settings-note" style="margin-top:6px;">Finds any entries that never made it into the sheet and pushes just those — won't duplicate rows that are already there.</div>
     <button class="btn-sync" style="background:#5856D6; margin-top:8px;" onclick="importFromSheet()">⬇ Import from Sheet</button>
@@ -1595,6 +1604,7 @@
     <div class="settings-note" style="margin-top:6px;">Reads upcoming guest bookings from the booking sheet and puts them on the planner as all-day bars, so a stay is never typed in twice. Happens on its own when you open the planner. Imported bookings are kept off your Google Calendar on purpose — the booking sheet already puts them there. <span id="bookings-status" style="opacity:.75;"></span></div>
     <button class="btn-sync" style="background:#FF3B30; margin-top:8px;" onclick="removeOthersEntries()">🧹 Remove Others' Entries</button>
     <div class="settings-note" style="margin-top:6px;">Cleanup: removes any timesheets on this phone that belong to someone else (wrong name). Keeps all of your own. Doesn't touch the sheet.</div>
+    </div><!-- /old-tools -->
     <button class="btn-sync" style="background:#34C759; margin-top:8px;" onclick="forceAppUpdate()">⟳ Force Update App</button>
     <div id="version-status" style="font-size:13px; color:var(--subtext); margin-top:8px; text-align:center; cursor:pointer;" onclick="checkForUpdate(true)">Checking version…</div>
 
@@ -1607,13 +1617,14 @@
         <span style="font-size:18px;">💾</span>
         <div style="flex:1;min-width:0;">
           <div style="font-size:15px;font-weight:600;color:var(--text);">Your data</div>
-          <div style="font-size:12px;color:var(--subtext);margin-top:2px;">Backup, restore, storage and recovery</div>
+          <div style="font-size:12px;color:var(--subtext);margin-top:2px;">Backup, restore and recovery</div>
         </div>
         <span id="setgrp-data-chev" style="color:var(--subtext);font-size:17px;">›</span>
       </div>
       <div id="setgrp-data" style="display:none;">
     <!-- ↩ Put this FIRST in Your data: it is the one thing on this screen that can be
          actively wrong right now, and the person who needs it is looking for it. -->
+    <div data-feature="old-tools">
     <div class="settings-section" style="margin-top:16px">
       <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
         <div class="settings-label" style="font-weight:600;">↩ Whose hours are these?</div>
@@ -1626,6 +1637,7 @@
         <div onclick="_renderWhoseHours()" style="font-size:12px;color:#5ac8fa;cursor:pointer;">↻ Refresh</div>
       </div>
     </div>
+    </div><!-- /old-tools -->
     <div class="settings-section" style="margin-top:16px">
       <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
         <div class="settings-label" style="font-weight:600;">Backup &amp; Restore</div>
@@ -1657,6 +1669,7 @@
       rebuilt exactly. Sign-in tokens and keys are stripped out. Send it with what went wrong.
     </div>
 
+    <div data-feature="storage">
     <div class="settings-section" style="margin-top:16px">
       <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
         <div class="settings-label" style="font-weight:600;">Storage</div>
@@ -1669,6 +1682,7 @@
       </div>
     </div>
     <button class="btn-sync" style="background:var(--blue); margin-top:8px;" onclick="movePhotosToDrive()" id="btn-move-photos">⬆️ Move On-Device Photos to Drive</button>
+    </div><!-- /storage -->
 
       </div>
     </div>
@@ -1679,11 +1693,13 @@
         <span style="font-size:18px;">🔧</span>
         <div style="flex:1;min-width:0;">
           <div style="font-size:15px;font-weight:600;color:var(--text);">Advanced</div>
-          <div style="font-size:12px;color:var(--subtext);margin-top:2px;">Sharing your library, totals, setup guide, hidden features</div>
+          <div id="setgrp-adv-sub" style="font-size:12px;color:var(--subtext);margin-top:2px;">Totals</div>
         </div>
         <span id="setgrp-adv-chev" style="color:var(--subtext);font-size:17px;">›</span>
       </div>
       <div id="setgrp-adv" style="display:none;">
+    <!-- ⭐ OWNER ONLY (v401). See _krOwnerCheck. -->
+    <div data-owner-only style="display:none;">
     <div class="settings-section" style="margin-top:16px">
       <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
         <div class="settings-label" style="font-weight:600;" id="hidden-features-title">Hidden features</div>
@@ -1694,6 +1710,8 @@
         <div id="hidden-features-list" style="width:100%;"></div>
       </div>
     </div>
+    </div><!-- /owner-only -->
+    <div data-feature="lib-share">
     <div class="settings-section" style="margin-top:16px">
       <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
         <div class="settings-label" style="font-weight:600;">Share Job Library</div>
@@ -1708,6 +1726,7 @@
     <button class="btn-sync" style="background:var(--blue); margin-top:8px;" onclick="exportTaskLibrary()">📤 Export Job Library (file)</button>
     <button class="btn-sync" style="background:var(--subtext); margin-top:8px;" onclick="triggerImportTaskLibrary()">📥 Import Job Library (file)</button>
     <input type="file" id="library-file-input" accept="application/json,.json" style="display:none;" onchange="importTaskLibraryFromFile(event)">
+    </div><!-- /lib-share -->
 
 
     <div class="settings-section" style="margin-top:16px">
@@ -1725,6 +1744,7 @@
       </div>
     </div>
 
+    <div data-feature="script-guide">
     <div class="settings-section" style="margin-top:16px">
       <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
         <div class="settings-label" style="font-weight:600;">Google Apps Script Setup</div>
@@ -1737,11 +1757,12 @@
         </div>
       </div>
     </div>
+    </div><!-- /script-guide -->
 
       </div>
     </div>
 
-    <button class="btn-danger" onclick="confirmClear()">🗑 Clear All Local Data</button>
+    <div data-feature="clear-all"><button class="btn-danger" onclick="confirmClear()">🗑 Clear All Local Data</button></div>
     <div style="height:20px"></div>
   </div>
 </div>
@@ -3275,7 +3296,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.400';
+const APP_VERSION = '2026-06-21.401';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -18886,6 +18907,22 @@ const KR_HIDDEN_FEATURES = [
     what: 'Sorting jobs into This Week, This Month and later: the Horizon button on the Jobs screen, the line on each job card and the Horizon filter.' },
   { id: 'allday', name: 'All-day and bookings', since: 'v395',
     what: 'The bars across the top of the planner for guest bookings and all-day items, and "+ All-day / booking". Bookings still import underneath.' },
+  { id: 'clock-settings', name: 'How the clock works (Settings)', since: 'v401',
+    what: 'Weekly hours target, task order on the running clock and where a new flag sits. Each stays at its current setting.' },
+  { id: 'sync-apply', name: 'Apply changes from other devices', since: 'v401',
+    what: 'The switch under Sync in Settings. One person per account, so there are no other devices to take changes from. It stays as it is.' },
+  { id: 'maps-key', name: 'Google Maps API key', since: 'v401',
+    what: 'The Maps key box in Settings, Connections. Only the hidden Location features used it.' },
+  { id: 'old-tools', name: 'Old repair tools', since: 'v401',
+    what: 'Re-push Missing Entries, Import from Sheet, Import Bookings, Remove Others\' Entries and Whose hours are these?. One-off fixes from the team days. Bookings still import on their own.' },
+  { id: 'storage', name: 'Storage and photo move', since: 'v401',
+    what: 'The Storage note and Move On-Device Photos to Drive, in Settings, Your data.' },
+  { id: 'lib-share', name: 'Job library sharing', since: 'v401',
+    what: 'Publish Job Library to Sheet and Export or Import Job Library (file). Replaced by Share this job.' },
+  { id: 'script-guide', name: 'Apps Script setup guide', since: 'v401',
+    what: 'The steps for connecting your own Google Sheet, in Settings, Advanced.' },
+  { id: 'clear-all', name: 'Clear All Local Data', since: 'v401',
+    what: 'The red button at the foot of Settings that wipes everything on the phone.' },
   { id: 'caldone', name: 'Finished jobs on Google Calendar', since: 'v396',
     what: 'The ✓ finished jobs and the ▶ running job copied onto your Google Calendar. Planned blocks still go to the calendar; your times stay in Timesheets.' },
   { id: 'team', name: 'Team', since: 'v392',
@@ -18908,8 +18945,35 @@ const _EQUIP_PLACEHOLDERS = {
 };
 function _unhidden() { try { const v = JSON.parse(localStorage.getItem('kr_unhidden') || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
 function featureHidden(id) { return KR_HIDDEN_FEATURES.some(f => f.id === id) && !_unhidden().includes(id); }
+// ⭐ THE REGISTER IS LINCOLN'S ALONE (v401). Lincoln, 18 Oct 2026: "I really don't
+// want them to see anything that's hidden. It'd just be me ... so Ethan shouldn't
+// be able to see it either." Anything marked data-owner-only (the Hidden features
+// list) shows only when the signed-in account is the app owner's. Everyone else,
+// including someone signed out, sees no trace of it: no list, no count, no switch.
+// The owner is recognised by a SHA-256 of the account email, so the email itself
+// is not written into this public file.
+// ⚠️ Hiding, not security: it keeps the clutter away from users. Nothing here
+// protects data, and nothing needs to.
+const KR_OWNER_EMAIL_SHA256 = 'aaadcf2af948081b8544c5a3923930ba44e81bc38cb62d448fd86b84b7f90b99';
+var _krOwner = false, _krOwnerFor = null;
+async function _krOwnerCheck() {
+  const email = String((currentUser() || {}).email || '').trim().toLowerCase();
+  if (email === _krOwnerFor) return;
+  _krOwnerFor = email;
+  let owner = false;
+  try {
+    if (email && window.crypto && crypto.subtle) {
+      const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(email));
+      owner = [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('') === KR_OWNER_EMAIL_SHA256;
+    }
+  } catch (e) { owner = false; }
+  if (owner !== _krOwner) { _krOwner = owner; applyHiddenFeatures(); }
+}
 function applyHiddenFeatures() {
   document.querySelectorAll('[data-feature]').forEach(el => { el.style.display = featureHidden(el.dataset.feature) ? 'none' : ''; });
+  document.querySelectorAll('[data-owner-only]').forEach(el => { el.style.display = _krOwner ? '' : 'none'; });
+  const advSub = document.getElementById('setgrp-adv-sub');
+  if (advSub) advSub.textContent = _krOwner ? 'Totals, hidden features' : 'Totals';
   const noEquip = featureHidden('equipment');
   const noTodos = featureHidden('todos');
   Object.keys(_EQUIP_PLACEHOLDERS).forEach(id => {
@@ -19460,6 +19524,7 @@ function setRole(role) {
 // ── Account block in Settings (M1/S2) ──
 function accountAction() { if (isSignedIn()) signOut(); else openModal('modal-signin'); }
 function renderAccountUI() {
+  _krOwnerCheck();   // signing in or out changes who may see the Hidden features list
   const st = document.getElementById('account-state');
   const btn = document.getElementById('account-btn');
   const note = document.getElementById('account-note');
@@ -19474,7 +19539,7 @@ function renderAccountUI() {
   } else {
     st.textContent = 'Not signed in';
     btn.textContent = 'Sign in';
-    if (note) note.textContent = 'Your work is saved on this device. Signing in is what will let it reach your other devices and your team.';
+    if (note) note.textContent = 'Your work is saved on this device. Signing in backs it up and lets it reach your other devices.';
   }
   renderTeamUI();
   renderSyncUI();
