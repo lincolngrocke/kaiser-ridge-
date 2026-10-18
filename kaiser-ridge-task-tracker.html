@@ -501,6 +501,8 @@
     overflow-x: hidden;
     animation: slideUp 0.28s ease;
   }
+  /* A picker sheet that takes the whole screen (v402): see _sizeEntryList. */
+  .modal-sheet.sheet-full { min-height: calc(100vh - env(safe-area-inset-top) - 12px); }
   @keyframes slideUp {
     from { transform: translateY(100%); }
     to { transform: translateY(0); }
@@ -3296,7 +3298,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.401';
+const APP_VERSION = '2026-06-21.402';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -7999,6 +8001,7 @@ function _syncEntryFormLayout() {
   ['f-sec-pick', 'f-sec-when', 'f-sec-notes', 'ce-manual-hint'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = lean ? 'none' : ''; });
   const list = document.getElementById('ce-task-list');
   if (list) list.style.maxHeight = (lean || _entryPicking) ? 'calc(92vh - 260px)' : '240px';
+  _sizeEntryList();
   const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
   show('f-row-location', !featureHidden('location'));
   show('f-row-frequency', !featureHidden('repeats'));
@@ -8019,6 +8022,37 @@ function _syncEntryFormLayout() {
   const save = document.querySelector('#modal-task .modal-save');
   if (save) save.style.visibility = (lean || _entryPicking) ? 'hidden' : '';
 }
+// ⭐ THE JOB PICKER TAKES THE WHOLE SCREEN (v402). Lincoln, 18 Oct 2026, with a
+// search typed and the keyboard up: "When you do a search, you lose everything.
+// You can't see half the page. It needs to be a full real estate view." The sheet
+// sized itself to its content, so three results made a short sheet sitting on the
+// keyboard with the keyboard's own bar over the rows. Now, whenever the sheet is
+// the job list (Clock in, or Choose job from an edit), it fills the screen from
+// the top: the search box sits high and the list runs down to the keyboard, or
+// to the foot of the screen when the keyboard is down.
+// ⚠️ min-height alone would fight the keyboard fit (a min-height beats a
+// max-height), so _fitModalsToKeyboard sets BOTH to the visible height while the
+// keyboard is up, and this measures the list against whatever the sheet now is.
+function _sizeEntryList(visH) {
+  const sheet = document.querySelector('#modal-task .modal-sheet');
+  const list = document.getElementById('ce-task-list');
+  if (!sheet || !list) return;
+  const full = _entryFormLean() || _entryPicking;
+  sheet.classList.toggle('sheet-full', full);
+  if (!full) return;
+  const fit = () => {
+    const vv = window.visualViewport;
+    const h = visH || (vv ? vv.height : window.innerHeight);
+    const sTop = sheet.getBoundingClientRect().top;
+    const lTop = list.getBoundingClientRect().top - sTop + sheet.scrollTop;
+    // The sheet is at most the visible height; the list gets what is left under
+    // the search box and sort buttons, less the sheet's bottom padding.
+    const sheetH = Math.min(sheet.clientHeight || h, h);
+    list.style.maxHeight = Math.max(140, Math.floor(sheetH - lTop - 44)) + 'px';
+  };
+  fit();                                  // measuring forces layout, so this is exact now
+  if (!visH) setTimeout(fit, 320);        // and again once the slide-up has settled
+}
 function _entryJobRowTap() { if (_entryNoCascade() && !_entryFormLean() && !_entryPicking) _entryPickStart(); }
 // Swap the form for the job list, then swap back. Nothing is saved by either step.
 function _entryPickStart() {
@@ -8035,6 +8069,7 @@ function _entryPickStart() {
   const inp = document.getElementById('task-search-input'); if (inp) inp.value = '';
   document.getElementById('task-search-clear').style.display = 'none';
   document.getElementById('ce-task-list').style.maxHeight = 'calc(92vh - 290px)';
+  _sizeEntryList();
   renderCreateTaskList();
   const sheet = document.querySelector('#modal-task .modal-sheet'); if (sheet) sheet.scrollTop = 0;
 }
@@ -8055,6 +8090,7 @@ function _entryPickDone() {
 // Leaving the sheet any other way must not leave it stuck on the job list.
 function _entryPickReset() {
   _entryPicking = false; _entryPickRestore = null;
+  const sh = document.querySelector('#modal-task .modal-sheet'); if (sh) { sh.classList.remove('sheet-full'); sh.style.minHeight = ''; }
   const back = document.getElementById('ce-pick-back'); if (back) back.style.display = 'none';
   const save = document.querySelector('#modal-task .modal-save'); if (save) save.style.visibility = '';
 }
@@ -8841,10 +8877,14 @@ function _fitModalsToKeyboard() {
       // Subtract the top safe-area inset so a raised sheet's header (Back/Manage)
       // stays below the status bar instead of sliding under it (untappable).
       sheet.style.maxHeight = 'calc(' + (vv.height - 6) + 'px - env(safe-area-inset-top))';
+      // A full-screen picker fills what the keyboard leaves, not just its content (v402).
+      sheet.style.minHeight = sheet.classList.contains('sheet-full') ? sheet.style.maxHeight : '';
     } else if ('kbOrigMax' in sheet.dataset) {
       sheet.style.maxHeight = sheet.dataset.kbOrigMax;
+      sheet.style.minHeight = '';
       delete sheet.dataset.kbOrigMax;
     }
+    if (b.id === 'modal-task' && sheet.classList.contains('sheet-full')) _sizeEntryList();
   });
 }
 if (window.visualViewport) {
