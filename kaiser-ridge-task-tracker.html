@@ -3298,7 +3298,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.404';
+const APP_VERSION = '2026-06-21.405';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -10317,7 +10317,7 @@ const KR_SYNC_NEVER = [
   // device that has NOT run it skips that migration there, permanently.
   'kr_planner_legacy_migrated', 'kr_inbox_assigned_migrated',
   'kr_inbox_pinnedtasks_backfilled', 'kr_lib_applied_version', 'kr_lib_synced',
-  'kr_onboarded', 'kr_cal_used',
+  'kr_onboarded', 'kr_cal_used', 'kr_calplan_swept',
   // View preferences. A phone and a desktop should not fight over sort order.
   'kr_dark_mode', 'kr_checklist_order', 'kr_flag_new_pos', 'kr_pin_sort', 'kr_unhidden',
   'kr_dir_sort', 'kr_planner_task_sort', 'kr_create_task_sort',
@@ -18984,6 +18984,8 @@ const KR_HIDDEN_FEATURES = [
     what: 'The steps for connecting your own Google Sheet, in Settings, Advanced.' },
   { id: 'clear-all', name: 'Clear All Local Data', since: 'v401',
     what: 'The red button at the foot of Settings that wipes everything on the phone.' },
+  { id: 'calplan', name: 'Planner on Google Calendar', since: 'v405',
+    what: 'Planned blocks copied onto your Google Calendar. Hiding it also took the copies already there back off. Guest bookings and anything made in Google Calendar itself are never touched.' },
   { id: 'caldone', name: 'Finished jobs on Google Calendar', since: 'v396',
     what: 'The ✓ finished jobs and the ▶ running job copied onto your Google Calendar. Planned blocks still go to the calendar; your times stay in Timesheets.' },
   { id: 'team', name: 'Team', since: 'v392',
@@ -19071,6 +19073,7 @@ function setFeatureShown(id, on) {
   if (id === 'allday') { try { renderAllDayStrip(); } catch (e) {} }
   // Re-push today so its ✓ / ▶ events go (or come back) without waiting for an edit.
   if (id === 'caldone') { try { scheduleCalendarAutoPush(plannerDateStr(new Date()), 5000); } catch (e) {} }
+  if (id === 'calplan') { try { if (on) scheduleCalendarAutoPush(plannerDateStr(new Date()), 5000); else _calSweepPlanned(); } catch (e) {} }
   renderHiddenFeatures();
 }
 function renderHiddenFeatures() {
@@ -25096,7 +25099,13 @@ async function syncCalendarForDate(dateStr, opts) {
 
   // 1. Planned blocks (id prefixed so completed/live can coexist). Parked tasks
   // sit in the holding bay — not yet scheduled, so they're kept off the calendar.
-  _plannerPlans.filter(p => p.date === dateStr && !p.parked && !p.allDay).forEach(p => {
+  // ⭐ v405, Lincoln 20 Oct 2026: "None of those should be coming across now to my
+  // Google Calendar." Behind the 'calplan' row, planned blocks (and hand-made
+  // all-day bars) are not sent. A day pushed with nothing in it is how the script
+  // takes the app's events OFF that day, so hiding this also clears what is there
+  // (see _calSweepPlanned). Nothing in the planner itself changes.
+  const _calPlan = !featureHidden('calplan');
+  if (_calPlan) _plannerPlans.filter(p => p.date === dateStr && !p.parked && !p.allDay).forEach(p => {
     items.push({
       id: 'plan:' + p.id, task: p.task,
       group: p.group || '', frequency: p.frequency || '',
@@ -25114,7 +25123,7 @@ async function syncCalendarForDate(dateStr, opts) {
   // event here is what made every guest show up twice on the week view. Anything
   // added by hand still mirrors as before. The script's per-day reconciliation
   // then deletes the event the app used to push, so the duplicate clears itself.
-  const adItems = _allDayEventsFor(dateStr).filter(p => !p.bookingId).map(p => ({
+  const adItems = !_calPlan ? [] : _allDayEventsFor(dateStr).filter(p => !p.bookingId).map(p => ({
     id: 'plan:' + p.id, task: p.task, startDate: p.date, endDate: p.endDate || p.date,
   }));
 
@@ -25435,6 +25444,45 @@ function _calRearmDirty(quick) {
   _calDirtyDates().forEach(d => scheduleCalendarAutoPush(d, quick ? 5000 : undefined));
 }
 setTimeout(() => _calRearmDirty(false), 12000);   // app start — after boot settles
+
+// ⭐ Taking the planner's copies back OFF Google Calendar (v405). Every planned
+// block that reached the calendar kept its event id (calEventId). While 'calplan'
+// is hidden, each day that still has one is pushed again with nothing in it: the
+// script deletes every event the APP made on that day (tagged krApp, so guest
+// bookings and anything typed into Google Calendar by hand are never touched),
+// then the ids are cleared here, for today and later days only. Self-healing: it
+// runs at start-up while any upcoming id is
+// left, one day at a time, so a dropped connection just means it finishes later.
+let _calSweeping = false;
+async function _calSweepPlanned() {
+  if (_calSweeping || !featureHidden('calplan')) return;
+  if (isWorker() || _plannerView !== 'me' || !localStorage.getItem('kr_sheet_url')) return;
+  // TODAY ONWARDS only. Past days hold months of calendar history (planned blocks
+  // and ✓ finished jobs back to June); clearing those is a separate choice for
+  // Lincoln to make, not a side effect of this one.
+  const t0 = new Date(); t0.setHours(0, 0, 0, 0);
+  const upcoming = d => { const x = _parseEntryDate(d); return !!x && x.getTime() >= t0.getTime(); };
+  // The FIRST sweep also covers every upcoming day with a planned block, id or not:
+  // a block whose push landed but whose reply was lost has an event and no id.
+  const firstPass = localStorage.getItem('kr_calplan_swept') !== '1';
+  const dates = [...new Set(_plannerPlans.filter(p => p.date && upcoming(p.date) && (p.calEventId || (firstPass && !p.parked))).map(p => p.date))];
+  if (!dates.length) { if (firstPass) _storeSet('kr_calplan_swept', '1'); return; }
+  let finished = true;
+  _calSweeping = true;
+  try {
+    for (const d of dates) {
+      if (_plannerView !== 'me' || !featureHidden('calplan')) { finished = false; break; }
+      const ok = await syncCalendarForDate(d, { silent: true });
+      if (!ok) { finished = false; break; }   // offline or the script refused: try again next start
+      let ch = false;
+      _plannerPlans.forEach(p => { if (p.date === d && p.calEventId) { p.calEventId = ''; ch = true; } });
+      if (ch) savePlanner();
+      _calClearDirty(d);
+    }
+    if (finished && firstPass) _storeSet('kr_calplan_swept', '1');
+  } finally { _calSweeping = false; }
+}
+setTimeout(() => { try { _calSweepPlanned(); } catch (e) {} }, 15000);   // after the dirty-day re-arm
 
 // Planner renders when showScreen('planner') is called — hooked via showScreen's existing id check
 </script>
