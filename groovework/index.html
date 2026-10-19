@@ -3298,7 +3298,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.403';
+const APP_VERSION = '2026-06-21.404';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -24341,7 +24341,8 @@ function _renderClOrganiseBody() {
     // an automatic sort would silently undo a drag the moment the list redrew. So
     // this is a button: it reorders once, saves the result as the arranged order,
     // and everything stays draggable afterwards.
-    + `<div style="text-align:right;margin:-2px 0 8px;"><span onclick="_clSortByLastDone()" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;">🗓 Sort by last done</span></div>`;
+    ;
+  const sortCtl = `<span onclick="_clSortByLastDone()" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;white-space:nowrap;">🗓 Sort by last done</span>`;
   // 🔁 Planned-laps stepper — on flagged repeat tasks, the estimate counts these
   // once per lap. Two homes, one control: a planner BLOCK (edits the block's laps,
   // re-sizing it on the timeline) and the RUNNING CLOCK (edits this session's lap
@@ -24415,8 +24416,11 @@ function _renderClOrganiseBody() {
   if (_hasBatches) {
     const names = _bRec.order.concat(['Unbatched']);
     const allCol = names.every(n => _clOrgCollapsed[n] || !ordered.some(s => (n === 'Unbatched') ? !(_bRec.items[s] && _bRec.order.includes(_bRec.items[s])) : _bRec.items[s] === n));
-    collapseAllCtl = `<div style="display:flex;justify-content:flex-end;padding:2px 0 2px;"><span onclick="_clSetAllBatchesCollapsed(${allCol ? 'false' : 'true'})" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;">${allCol ? '⤢ Expand all batches' : '⤡ Collapse all batches'}</span></div>`;
+    collapseAllCtl = `<span onclick="_clSetAllBatchesCollapsed(${allCol ? 'false' : 'true'})" style="color:#5ac8fa;cursor:pointer;font-weight:600;font-size:13px;white-space:nowrap;">${allCol ? '⤢ Expand all batches' : '⤡ Collapse all batches'}</span>`;
   }
+  // One row (v404, Lincoln 20 Oct 2026: "Expand all batches should sit to the left,
+  // not underneath. Sort by last done."): expand on the left, sort on the right.
+  const toolsRow = `<div style="display:flex;justify-content:${collapseAllCtl ? 'space-between' : 'flex-end'};align-items:center;gap:12px;margin:-2px 0 8px;">${collapseAllCtl}${sortCtl}</div>`;
   // 📋 Run sheet from a planner BLOCK — so the job can be laid out step by step,
   // with a finish time against each one, before it's even started. The order set
   // there rides onto the clock at clock-in (see the _planId carry in clockIn).
@@ -24424,7 +24428,7 @@ function _renderClOrganiseBody() {
   if (pid && _plannerPlans.some(p => p.id === pid) && Object.keys(flags).length) {
     rsCtl = `<div onclick="openRunSheet('${_attr(pid)}')" style="display:flex;align-items:center;justify-content:center;gap:7px;margin:8px 0 2px;padding:9px 12px;border-radius:10px;border:1px solid rgba(90,200,250,0.4);background:rgba(90,200,250,0.1);color:#5ac8fa;font-size:13px;font-weight:600;cursor:pointer;">📋 Run sheet — what finishes when</div>`;
   }
-  body.innerHTML = '<div class="cl-sticky-top">' + scopeToggle + estLine + rsCtl + intro + collapseAllCtl + '</div>' + bodyHtml;
+  body.innerHTML = '<div class="cl-sticky-top">' + scopeToggle + estLine + rsCtl + intro + toolsRow + '</div>' + bodyHtml;
 }
 
 function openPlannerDetail(planId) {
