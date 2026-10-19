@@ -2101,8 +2101,8 @@
       <div id="time-job-back" onclick="_clockInBack()" style="font-size:14px;color:var(--blue);font-weight:600;padding:0 0 8px;cursor:pointer;flex-shrink:0;">‹ Jobs</div>
       <div id="time-job-name" style="font-size:20px;font-weight:700;color:var(--text);line-height:1.25;flex-shrink:0;"></div>
       <div id="time-job-sub" style="font-size:13px;color:var(--subtext);margin:3px 0 8px;flex-shrink:0;"></div>
-      <div id="time-job-tools" style="display:none;flex-shrink:0;justify-content:flex-end;padding:0 0 8px;">
-        <span id="time-job-expand" onclick="_ciToggleAll()" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;">Expand all</span>
+      <div id="time-job-tools" style="display:none;flex-shrink:0;justify-content:flex-end;gap:8px;padding:0 0 8px;">
+        <span id="time-job-expand" onclick="_ciSetMode('open')" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;border:1px solid var(--blue);border-radius:14px;padding:4px 12px;">Expand</span><span id="time-job-full" onclick="_ciSetMode('full')" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;border:1px solid var(--blue);border-radius:14px;padding:4px 12px;">Expand all</span>
       </div>
       <div id="time-job-tasks" style="flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;border-top:1px solid var(--border);border-bottom:1px solid var(--border);"></div>
     </div>
@@ -2407,8 +2407,8 @@
         <div onclick="plannerAddBack()" style="font-size:14px;color:var(--blue);font-weight:600;padding:0 0 8px;cursor:pointer;flex-shrink:0;">‹ Jobs</div>
         <div id="pa-job-name" style="font-size:20px;font-weight:700;color:var(--text);line-height:1.25;flex-shrink:0;"></div>
         <div id="pa-job-sub" style="font-size:13px;color:var(--subtext);margin:3px 0 8px;flex-shrink:0;"></div>
-        <div id="pa-job-tools" style="display:none;flex-shrink:0;justify-content:flex-end;padding:0 0 8px;">
-          <span id="pa-job-expand" onclick="_ciToggleAll()" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;">Expand all</span>
+        <div id="pa-job-tools" style="display:none;flex-shrink:0;justify-content:flex-end;gap:8px;padding:0 0 8px;">
+          <span id="pa-job-expand" onclick="_ciSetMode('open')" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;border:1px solid var(--blue);border-radius:14px;padding:4px 12px;">Expand</span><span id="pa-job-full" onclick="_ciSetMode('full')" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;border:1px solid var(--blue);border-radius:14px;padding:4px 12px;">Expand all</span>
         </div>
         <div id="pa-job-tasks" style="flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;border-top:1px solid var(--border);border-bottom:1px solid var(--border);"></div>
       </div>
@@ -3298,7 +3298,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.402';
+const APP_VERSION = '2026-06-21.403';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -9045,7 +9045,7 @@ function _renderClockInPreview(job, plan, resume) {
     el.innerHTML = '<div style="padding:18px 2px;font-size:14px;line-height:1.5;color:var(--subtext);">This job has no tasks yet. You can add them once you are clocked in, or from More, then Jobs.</div>';
     return;
   }
-  _ciCtx = { job, items, lapsFor: null }; _ciOpen = {};
+  _ciCtx = { job, items, lapsFor: null }; _ciOpen = {}; _ciWrap = false;
   _ciRenderList(true);
 }
 // ⭐ BATCHES FIRST. Lincoln, 11 Oct 2026: on a 68 task job the preview was a wall
@@ -9055,6 +9055,13 @@ function _renderClockInPreview(job, plan, resume) {
 // Organise sheet and the run sheet use (_orgSections), so the three cannot drift.
 // A job with no batches has no headings to show and lists its tasks as before.
 let _ciCtx = null, _ciOpen = {};
+// ⭐ TWO PILLS (v403, Lincoln 19 Oct 2026): "Expand opens up like Expand All does
+// now, and then Expand All opens up all the tasks with all the text visible on
+// that task (multiple lines if needed)." Expand = every batch open, one line per
+// task. Expand all = every batch open AND each task's whole name, wrapped. The lit
+// pill is the one in force; tapping it again closes everything. A job with no
+// batches has nothing to open, so it shows Expand all alone, for the full text.
+let _ciWrap = false;
 // Which sheet the preview is drawing into: 'time-job' (clock-in) or 'pa-job'
 // (add to planner). The three element ids differ only by this prefix.
 let _ciHost = 'time-job';
@@ -9065,10 +9072,12 @@ function _ciSections() {
   return secs.filter(sec => sec.items && sec.items.length);
 }
 function _ciToggle(i) { _ciOpen[i] = !_ciOpen[i]; _ciRenderList(false); }
-function _ciToggleAll() {
+function _ciSetMode(mode) {
   const secs = _ciSections();
   const allOpen = secs.length && secs.every((x, i) => _ciOpen[i]);
-  _ciOpen = {}; if (!allOpen) secs.forEach((x, i) => { _ciOpen[i] = true; });
+  const current = allOpen ? (_ciWrap ? 'full' : 'open') : (_ciWrap ? 'full' : 'closed');
+  if (current === mode) { _ciOpen = {}; _ciWrap = false; }                 // the lit pill again: close it all
+  else { _ciOpen = {}; secs.forEach((x, i) => { _ciOpen[i] = true; }); _ciWrap = mode === 'full'; }
   _ciRenderList(false);
 }
 function _ciRenderList(resetScroll) {
@@ -9079,11 +9088,17 @@ function _ciRenderList(resetScroll) {
   const doneOf = t => (_ciCtx.done && _ciCtx.done[t]) || null;
   const secs = _ciSections();
   const batched = secs.length > 1 || (secs.length === 1 && secs[0].name);
-  if (tools) tools.style.display = batched ? 'flex' : 'none';
+  if (tools) tools.style.display = (batched || _ciCtx.items.length) ? 'flex' : 'none';
+  const exBtn = document.getElementById(_ciHost + '-expand'), fullBtn = document.getElementById(_ciHost + '-full');
+  if (exBtn) exBtn.style.display = batched ? '' : 'none';
+  const _allOpenNow = !batched || secs.every((x, i) => _ciOpen[i]);
+  const lit = (b, on) => { if (b) { b.style.background = on ? 'var(--blue)' : 'none'; b.style.color = on ? '#fff' : 'var(--blue)'; } };
+  lit(exBtn, batched && _allOpenNow && !_ciWrap);
+  lit(fullBtn, _ciWrap);
   const keep = el.scrollTop;
   if (!batched) {
     // Same honesty as everywhere else: a measured time is plain, a guess says "est".
-    el.innerHTML = _ciCtx.items.map(t => _clockInRowHtml(t, lastMap, est, laps(t), doneOf(t))).join('');
+    el.innerHTML = _ciCtx.items.map(t => _clockInRowHtml(t, lastMap, est, laps(t), doneOf(t), _ciWrap)).join('');
   } else {
     el.innerHTML = secs.map((sec, i) => {
       const open = !!_ciOpen[i];
@@ -9092,27 +9107,33 @@ function _ciRenderList(resetScroll) {
       // On a resume the count reads "3 of 7 done" and the time is what is LEFT.
       const count = _ciCtx.done ? (nDone + ' of ' + sec.items.length + ' done') : (sec.items.length + ' task' + (sec.items.length === 1 ? '' : 's'));
       const meta = (_ciCtx.done && nDone === sec.items.length) ? ('\u2713 all ' + sec.items.length + ' done') : count + (mins > 0 ? ' \u00b7 ~' + fmtMin(mins) + (_ciCtx.done ? ' left' : '') : '') + (untimed && mins > 0 ? ' +' : '');
-      return '<div onclick="_ciToggle(' + i + ')" style="display:flex;align-items:center;gap:8px;height:42px;border-bottom:1px solid var(--border);cursor:pointer;-webkit-tap-highlight-color:transparent;">'
+      // Expand all shows the whole batch name too, over two lines if it needs them.
+      const hRow = _ciWrap ? 'align-items:flex-start;min-height:42px;padding:11px 0;box-sizing:border-box;' : 'align-items:center;height:42px;';
+      const hName = _ciWrap ? 'white-space:normal;overflow-wrap:anywhere;line-height:1.3;' : 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+      return '<div onclick="_ciToggle(' + i + ')" style="display:flex;' + hRow + 'gap:8px;border-bottom:1px solid var(--border);cursor:pointer;-webkit-tap-highlight-color:transparent;">'
         + '<span style="flex-shrink:0;width:14px;font-size:12px;color:var(--subtext);">' + (open ? '\u25be' : '\u25b8') + '</span>'
-        + '<span style="flex:1;min-width:0;font-size:15px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _escHtml(sec.name || 'Other tasks') + '</span>'
+        + '<span style="flex:1;min-width:0;font-size:15px;font-weight:700;color:var(--text);' + hName + '">' + _escHtml(sec.name || 'Other tasks') + '</span>'
         + '<span style="flex-shrink:0;font-size:12px;color:var(--subtext);white-space:nowrap;">' + _escHtml(meta) + '</span></div>'
-        + (open ? '<div style="padding-left:22px;">' + sec.items.map(t => _clockInRowHtml(t, lastMap, est, laps(t), doneOf(t))).join('') + '</div>' : '');
+        + (open ? '<div style="padding-left:22px;">' + sec.items.map(t => _clockInRowHtml(t, lastMap, est, laps(t), doneOf(t), _ciWrap)).join('') + '</div>' : '');
     }).join('');
-    const ex = document.getElementById(_ciHost + '-expand');
-    if (ex) ex.textContent = secs.every((x, i) => _ciOpen[i]) ? 'Collapse all' : 'Expand all';
   }
   el.scrollTop = resetScroll ? 0 : keep;
 }
 // One row of the preview. `laps` > 1 shows as ×3, the way the run sheet counts them.
-function _clockInRowHtml(t, lastMap, est, laps, done) {
+function _clockInRowHtml(t, lastMap, est, laps, done, wrap) {
+  // wrap (Expand all): the row grows to show the whole task name over as many
+  // lines as it needs; the time stays top-right beside the first line.
+  const rowCss = wrap ? 'display:flex;align-items:flex-start;gap:10px;min-height:35px;padding:8px 0;box-sizing:border-box;border-bottom:1px solid var(--border);'
+                      : 'display:flex;align-items:center;gap:10px;height:35px;border-bottom:1px solid var(--border);';
+  const nameCss = wrap ? 'white-space:normal;overflow-wrap:anywhere;line-height:1.35;' : 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
   if (done) {
     // Already ticked in the run being resumed: when, and how long it took THAT time.
     let at = '';
     try { const d = new Date(done.at); if (!isNaN(d)) at = formatTimeAmPm(String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')); } catch (e) {}
     const took = (done.mins != null && isFinite(done.mins)) ? fmtMin(done.mins) : '';
-    return '<div style="display:flex;align-items:center;gap:10px;height:35px;border-bottom:1px solid var(--border);">'
+    return '<div style="' + rowCss + '">'
       + '<span style="flex-shrink:0;font-size:13px;color:#30d158;font-weight:700;">\u2713</span>'
-      + '<span style="flex:1;min-width:0;font-size:14px;color:var(--subtext);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _escHtml(t) + '</span>'
+      + '<span style="flex:1;min-width:0;font-size:14px;color:var(--subtext);' + nameCss + '">' + _escHtml(t) + '</span>'
       + '<span style="flex-shrink:0;font-size:11.5px;color:#30d158;white-space:nowrap;">' + _escHtml(['done', at, took].filter(Boolean).join(' \u00b7 ')) + '</span></div>';
   }
   const k = _normTaskKey(t), a = est[k];
@@ -9120,8 +9141,8 @@ function _clockInRowHtml(t, lastMap, est, laps, done) {
   const time = (isFinite(a) && a > 0) ? '~' + fmtMin(a) + (seeded ? ' est' : '') : '';
   const when = lastMap[t] ? _agoWords(lastMap[t]) : '';
   const meta = [when, time].filter(Boolean).join(' \u00b7 ') || 'not done yet';
-  return '<div style="display:flex;align-items:center;gap:10px;height:35px;border-bottom:1px solid var(--border);">'
-    + '<span style="flex:1;min-width:0;font-size:14px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _escHtml(t) + '</span>'
+  return '<div style="' + rowCss + '">'
+    + '<span style="flex:1;min-width:0;font-size:14px;color:var(--text);' + nameCss + '">' + _escHtml(t) + '</span>'
     + (laps > 1 ? '<span style="flex-shrink:0;font-size:11.5px;font-weight:700;color:#30d158;">\u00d7' + laps + '</span>' : '')
     + '<span style="flex-shrink:0;font-size:11.5px;color:var(--subtext);white-space:nowrap;' + (seeded ? 'font-style:italic;opacity:0.8;' : '') + '">' + _escHtml(meta) + '</span></div>';
 }
@@ -9148,7 +9169,7 @@ function _renderClockInPlanPreview(job, plan) {
   if (e && e.missing) bits.push(e.missing + ' not timed yet');
   document.getElementById('time-job-name').textContent = job;
   document.getElementById('time-job-sub').textContent = bits.join(' \u00b7 ');
-  _ciCtx = { job, items, lapsFor: t => _plannedLapsFor(plan, t, reps) }; _ciOpen = {};
+  _ciCtx = { job, items, lapsFor: t => _plannedLapsFor(plan, t, reps) }; _ciOpen = {}; _ciWrap = false;
   _ciRenderList(true);
   return true;
 }
@@ -9179,7 +9200,7 @@ function _renderClockInResumePreview(job, r) {
   if (left > 0) bits.push('~' + fmtMin(left) + ' left');
   document.getElementById('time-job-name').textContent = job;
   document.getElementById('time-job-sub').textContent = bits.join(' \u00b7 ');
-  _ciCtx = { job, items, lapsFor, done }; _ciOpen = {};
+  _ciCtx = { job, items, lapsFor, done }; _ciOpen = {}; _ciWrap = false;
   _ciRenderList(true);
   return true;
 }
@@ -22246,7 +22267,7 @@ function selectPlannerTask(taskName) {
     _ciCtx = null; document.getElementById('pa-job-tools').style.display = 'none';
     listEl.innerHTML = '<div style="padding:18px 2px;font-size:14px;line-height:1.5;color:var(--subtext);">This job has no tasks yet. You can add them from More, then Jobs.</div>';
   } else {
-    _ciCtx = { job: taskName, items, lapsFor: null }; _ciOpen = {};
+    _ciCtx = { job: taskName, items, lapsFor: null }; _ciOpen = {}; _ciWrap = false;
     _ciRenderList(true);
   }
   _plannerAddStep(true);
