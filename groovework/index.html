@@ -3298,7 +3298,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.406';
+const APP_VERSION = '2026-06-21.407';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -24809,20 +24809,28 @@ function deletePlannerCalendarEvent(plan) {
   }).catch(() => {});
 }
 
-function plannerClockIn() {
-  const plan = _plannerPlans.find(p => p.id === _plannerDetailId);
+function plannerClockIn() { _plannerStartPlan(_plannerDetailId, false); }
+// ⭐ TAP A HOLDING-BAY CHIP TO START IT (v407). Lincoln, 20 Oct 2026: "It would be
+// great to have the option to tap on a job that sits in the holding bay and then
+// be able to start it from there, rather than have to drag it across onto the
+// calendar to start it." A tap opens the same one-screen clock-in a placed block
+// opens (its own tasks, laps, leftover), and ‹ Planner just closes it again. Drag
+// to place and hold for the move picker are unchanged.
+function plannerStartParked(id) { _plannerStartPlan(id, true); }
+function _plannerStartPlan(id, fromBay) {
+  const plan = _plannerPlans.find(p => p.id === id);
   if (!plan) return;
   if (clockState && clockState.running) {
     alert('You’re already clocked into “' + clockState.task + '”.\n\nClock out of that task first, then clock into this one.');
     return;
   }
-  closeModal('modal-planner-detail');
+  if (!fromBay) closeModal('modal-planner-detail');
   // Now / Earlier picker. The planned block is consumed on confirm (see
   // confirmTime), so cancelling the picker leaves the block in place.
   // Same one-screen clock-in as the job list, showing this block's own plan.
-  const _backId = _plannerDetailId;
+  const _backId = id;
   _clockInFromPlan = plan;
-  _clockInBackFn = () => { try { openPlannerDetail(_backId); } catch (e) {} };
+  _clockInBackFn = fromBay ? () => {} : () => { try { openPlannerDetail(_backId); } catch (e) {} };
   openTimeModal('in', {
     _leftover: !!plan.leftover,
     task: plan.task,
@@ -24833,7 +24841,7 @@ function plannerClockIn() {
     notes: '',
     subtask: '',
     pin: null,
-    _planId: _plannerDetailId,
+    _planId: id,
   });
 }
 
@@ -24964,7 +24972,7 @@ function renderPlannerHolding(dateStr) {
       const dur = Number(p.durationHours) || 1;
       const durStr = dur >= 1 ? (Math.round(dur * 10) / 10) + 'h' : Math.round(dur * 60) + 'm';
       const safe = String(p.task || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
-      return `<div data-park-id="${p.id}" ontouchstart="parkedChipTouchStart(event,'${p.id}')" style="position:relative;background:${plannerColorFor(p.task)};color:#fff;border-radius:8px;padding:6px;margin-bottom:6px;font-size:11px;cursor:grab;touch-action:none;">
+      return `<div data-park-id="${p.id}" ontouchstart="parkedChipTouchStart(event,'${p.id}')" onclick="plannerStartParked('${p.id}')" style="position:relative;background:${plannerColorFor(p.task)};color:#fff;border-radius:8px;padding:6px;margin-bottom:6px;font-size:11px;cursor:pointer;touch-action:none;">
         <button onclick="event.stopPropagation();removeParkedBlock('${p.id}')" ontouchstart="event.stopPropagation()" title="Remove from holding" style="position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,0.4);color:#fff;border:none;font-size:11px;line-height:1;cursor:pointer;padding:0;">✕</button>
         <div style="font-weight:700;line-height:1.2;padding-right:14px;">${safe}</div>
         <div style="opacity:0.9;margin-top:2px;">${durStr}${(p.leftover && _leftoverCount(p)) ? ' \u00b7 ' + _leftoverCount(p) + ' left' : ''}</div>
@@ -24991,7 +24999,7 @@ function removeParkedBlock(id) {
     showToast('Restored to holding');
   });
 }
-let _parkDragId = null, _parkClone = null;
+let _parkDragId = null, _parkClone = null, _parkTap = null;   // _parkTap: where and when the touch began, to tell a tap from a drag
 function _moveParkClone(x, y) {
   if (!_parkClone) return;
   _parkClone.style.left = (x - _parkClone.offsetWidth / 2) + 'px';
@@ -25010,6 +25018,7 @@ function parkedChipTouchStart(e, id) {
   e.preventDefault();
   _parkDragId = id;
   const touch = e.touches[0];
+  _parkTap = { x: touch.clientX, y: touch.clientY, at: Date.now() };
   _armLongPress(id, touch.clientX, touch.clientY);
   const chip = e.currentTarget;
   _parkClone = chip.cloneNode(true);
@@ -25045,6 +25054,9 @@ function _parkDragEnd(e) {
   const t = (e.changedTouches && e.changedTouches[0]);
   const plan = _plannerPlans.find(p => p.id === id);
   if (!plan || !t) return;
+  // A TAP (barely moved, quickly lifted) starts the job. Anything more is a drag.
+  const tap = _parkTap; _parkTap = null;
+  if (tap && Math.hypot(t.clientX - tap.x, t.clientY - tap.y) < 10 && Date.now() - tap.at < 450) { plannerStartParked(id); return; }
   const grid = document.getElementById('planner-grid');
   const r = grid.getBoundingClientRect();
   if (t.clientX < r.right && t.clientY > r.top - 30) {   // dropped on the timeline
