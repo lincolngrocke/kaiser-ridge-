@@ -3298,7 +3298,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.405';
+const APP_VERSION = '2026-06-21.406';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -10317,7 +10317,7 @@ const KR_SYNC_NEVER = [
   // device that has NOT run it skips that migration there, permanently.
   'kr_planner_legacy_migrated', 'kr_inbox_assigned_migrated',
   'kr_inbox_pinnedtasks_backfilled', 'kr_lib_applied_version', 'kr_lib_synced',
-  'kr_onboarded', 'kr_cal_used', 'kr_calplan_swept',
+  'kr_onboarded', 'kr_cal_used', 'kr_calplan_swept', 'kr_calplan_past_swept', 'kr_calplan_past_upto',
   // View preferences. A phone and a desktop should not fight over sort order.
   'kr_dark_mode', 'kr_checklist_order', 'kr_flag_new_pos', 'kr_pin_sort', 'kr_unhidden',
   'kr_dir_sort', 'kr_planner_task_sort', 'kr_create_task_sort',
@@ -18985,7 +18985,7 @@ const KR_HIDDEN_FEATURES = [
   { id: 'clear-all', name: 'Clear All Local Data', since: 'v401',
     what: 'The red button at the foot of Settings that wipes everything on the phone.' },
   { id: 'calplan', name: 'Planner on Google Calendar', since: 'v405',
-    what: 'Planned blocks copied onto your Google Calendar. Hiding it also took the copies already there back off. Guest bookings and anything made in Google Calendar itself are never touched.' },
+    what: 'Planned blocks copied onto your Google Calendar. Hiding it also took every copy already there back off, past days included. Guest bookings and anything made in Google Calendar itself are never touched.' },
   { id: 'caldone', name: 'Finished jobs on Google Calendar', since: 'v396',
     what: 'The ✓ finished jobs and the ▶ running job copied onto your Google Calendar. Planned blocks still go to the calendar; your times stay in Timesheets.' },
   { id: 'team', name: 'Team', since: 'v392',
@@ -19073,7 +19073,7 @@ function setFeatureShown(id, on) {
   if (id === 'allday') { try { renderAllDayStrip(); } catch (e) {} }
   // Re-push today so its ✓ / ▶ events go (or come back) without waiting for an edit.
   if (id === 'caldone') { try { scheduleCalendarAutoPush(plannerDateStr(new Date()), 5000); } catch (e) {} }
-  if (id === 'calplan') { try { if (on) scheduleCalendarAutoPush(plannerDateStr(new Date()), 5000); else _calSweepPlanned(); } catch (e) {} }
+  if (id === 'calplan') { try { if (on) scheduleCalendarAutoPush(plannerDateStr(new Date()), 5000); else _calSweepPlanned().then(_calSweepPast); } catch (e) {} }
   renderHiddenFeatures();
 }
 function renderHiddenFeatures() {
@@ -25482,7 +25482,52 @@ async function _calSweepPlanned() {
     if (finished && firstPass) _storeSet('kr_calplan_swept', '1');
   } finally { _calSweeping = false; }
 }
-setTimeout(() => { try { _calSweepPlanned(); } catch (e) {} }, 15000);   // after the dirty-day re-arm
+// ⭐ PAST DAYS TOO (v406). Lincoln, 20 Oct 2026, after checking his calendar: "the
+// past ones are still there. Can they be hidden as well?" Same mechanism, run over
+// every past day that could hold an app event: from the first day the app ever put
+// a planned block on the calendar up to yesterday, each day that has a planned
+// block or a finished timesheet (those are the only days a push ever touched).
+// Oldest first, one call per day, and the last day done is remembered
+// (kr_calplan_past_upto), so closing the app part way just resumes next start.
+// Only events the app made are deleted; bookings and hand-made events stay.
+let _calPastSweeping = false;
+function _calDayMs(d) { const x = _parseEntryDate(d); return x ? x.getTime() : NaN; }
+async function _calSweepPast() {
+  if (_calPastSweeping || !featureHidden('calplan')) return;
+  if (isWorker() || _plannerView !== 'me' || !localStorage.getItem('kr_sheet_url')) return;
+  if (localStorage.getItem('kr_calplan_past_swept') === '1') return;
+  const t0 = new Date(); t0.setHours(0, 0, 0, 0);
+  const today = t0.getTime();
+  // The first day the app ever pushed: the oldest planned block that got an event id.
+  const pushed = _plannerPlans.filter(p => p.calEventId).map(p => _calDayMs(p.date)).filter(isFinite);
+  const allPlans = _plannerPlans.filter(p => !p.parked).map(p => _calDayMs(p.date)).filter(isFinite);
+  const start = pushed.length ? Math.min(...pushed) : (allPlans.length ? Math.min(...allPlans) : NaN);
+  if (!isFinite(start)) { _storeSet('kr_calplan_past_swept', '1'); return; }
+  const upto = Number(localStorage.getItem('kr_calplan_past_upto') || 0);
+  const days = new Map();
+  _plannerPlans.forEach(p => { if (!p.parked) { const m = _calDayMs(p.date); if (isFinite(m)) days.set(m, p.date); } });
+  (entries || []).forEach(e => { if (e && !e.bot && e.clockIn && e.clockOut) { const m = _calDayMs(e.date); if (isFinite(m)) days.set(m, e.date); } });
+  const todo = [...days.keys()].filter(m => m >= start && m < today && m > upto).sort((a, b) => a - b);
+  _calPastSweeping = true;
+  let done = 0, finished = true;
+  try {
+    for (const m of todo) {
+      if (_plannerView !== 'me' || !featureHidden('calplan')) { finished = false; break; }
+      const ok = await syncCalendarForDate(days.get(m), { silent: true });
+      if (!ok) { finished = false; break; }
+      _storeSet('kr_calplan_past_upto', String(m));
+      let ch = false;
+      _plannerPlans.forEach(p => { if (p.calEventId && _calDayMs(p.date) === m) { p.calEventId = ''; ch = true; } });
+      if (ch) savePlanner();
+      done++;
+    }
+    if (finished) {
+      _storeSet('kr_calplan_past_swept', '1');
+      if (done) showToast('Old Groovework entries taken off your Google Calendar (' + done + ' day' + (done === 1 ? '' : 's') + ')');
+    }
+  } finally { _calPastSweeping = false; }
+}
+setTimeout(async () => { try { await _calSweepPlanned(); await _calSweepPast(); } catch (e) {} }, 15000);   // after the dirty-day re-arm
 
 // Planner renders when showScreen('planner') is called — hooked via showScreen's existing id check
 </script>
