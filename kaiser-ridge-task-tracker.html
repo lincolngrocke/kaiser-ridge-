@@ -3298,7 +3298,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.407';
+const APP_VERSION = '2026-06-21.408';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -23590,15 +23590,17 @@ function _rsRender() {
   // ⭐ Lead with the ⠿ tap, not the drag. On a 44-step sheet the drag is the thing
   // that does not work, so naming it first taught the wrong habit.
   const hint = planning
-    ? 'Tap ⠿ on a row, then tap the gap where it goes. Every time below re-forecasts. Hold &amp; drag still works for a short nudge. This order carries onto the clock when you start the job.'
-    : 'Tap ⠿ on a row, then tap the gap where it goes. Every time below re-forecasts. Hold &amp; drag still works for a short nudge. Tap a row to tick it off.';
+    ? 'Tap ⠿ on a row (or on several), then tap the gap where they go. Every time below re-forecasts. Hold &amp; drag still works for a short nudge. This order carries onto the clock when you start the job.'
+    : 'Tap ⠿ on a row (or on several), then tap the gap where they go. Every time below re-forecasts. Hold &amp; drag still works for a short nudge. Tap a row to tick it off.';
   const head = `<div class="cl-sticky-top">
     <div style="margin:10px 0 4px;padding:9px 12px;border-radius:10px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.35);font-size:13px;color:var(--text);">
       ${summary}${bankedNote}</div>
     <div style="font-size:11px;color:var(--subtext);margin:0 0 8px;">${hint}</div>
     ${_rsMoveKey ? `<div style="margin:0 0 8px;padding:9px 12px;border-radius:10px;background:rgba(90,200,250,0.12);border:1px solid rgba(90,200,250,0.5);font-size:13px;color:var(--text);">
-      ⤴ Moving <b>${_escHtml(_rsMoveLabel())}</b><div style="font-size:11px;color:var(--subtext);margin-top:2px;">Tap a <b>⤵ move here</b> gap to drop it in. Scroll as far as you like first.</div>
-      <div onclick="_rsMoveKey=null;_rsRender()" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:12px;margin-top:5px;">✕ cancel</div></div>` : ''}
+      ⤴ Moving <b>${_escHtml(_rsMoveLabel())}</b><div style="font-size:11px;color:var(--subtext);margin-top:2px;">${_rsMoveSet.length > 1
+        ? 'Tap a <b>⤵ move here</b> gap to drop them all in, in the order they are in now. Tap ⠿ on another row to add it, or on a blue one to put it back.'
+        : 'Tap a <b>⤵ move here</b> gap to drop it in, or tap ⠿ on more rows to move several together. Scroll as far as you like first.'}</div>
+      <div onclick="_rsMoveClear();_rsRender()" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:12px;margin-top:5px;">✕ cancel</div></div>` : ''}
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:0 0 2px;">
       <span>${(ctx.order && !_rsMoveKey && !_rsPlacing)
         ? `<span onclick="_rsResetOrder()" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:13px;">↺ Back to the learned order</span>`
@@ -23723,7 +23725,7 @@ function _rsRender() {
       : '';
     // Blue means "this is the one": in your hand while placing, and for 3 seconds
     // after you drop it so you can see where it landed.
-    const _lifted = _rsMoveKey === key || _rsJustMoved === key;
+    const _lifted = _rsMoveSet.includes(key) || _rsJustMoved.includes(key);
     const border = _lifted ? 'rgba(90,200,250,0.9)' : (r.isNow ? 'rgba(90,200,250,0.75)' : (r.tappable ? 'rgba(48,209,88,0.45)' : 'var(--border)'));
     const bg = _lifted ? 'rgba(90,200,250,0.16)' : (r.isDone ? 'transparent' : (r.isNow ? 'rgba(90,200,250,0.10)' : 'var(--card)'));
     // The .rs-row is a WRAPPER holding the header line and, when open, its steps —
@@ -23948,8 +23950,17 @@ function _rsDragEnd2(e) {
 // TAPPING the gap you want it in rather than by dragging one down from the bottom —
 // on a 27-row straw run that drag was the exact pain the lap fix had just removed.
 let _rsPlacing = false;
-let _rsMoveKey = null;              // the row picked up and waiting to be placed
-let _rsJustMoved = null, _rsJustMovedTimer = null;   // the row you just dropped, held blue so you can see where it went
+// ⭐ SEVERAL AT ONCE (v408). Lincoln, 21 Oct 2026: "I want to be able to select
+// multiple tasks at a time and then move all those tasks to a particular spot on
+// the run sheet ... you tap multiple jobs and then move multiple jobs." Tapping ⠿
+// on a second row while one is held ADDS it (it used to swap); tapping a held
+// row's ⠿ puts just that one back. One gap tap drops the whole set in, keeping
+// the order they had on the sheet. _rsMoveKey stays the "something is held" flag
+// (the first row held) so every existing check keeps working.
+let _rsMoveKey = null;              // the first row picked up; truthy = the sheet is in placing mode
+let _rsMoveSet = [];                // every row picked up, in the order they were tapped
+let _rsJustMoved = [], _rsJustMovedTimer = null;   // the rows you just dropped, held blue so you can see where they went
+function _rsMoveClear() { _rsMoveKey = null; _rsMoveSet = []; }
 // ⭐ KEEP YOUR PLACE. Picking a row up inserts a gap bar above every row plus the
 // banner up top, so the list grows by hundreds of pixels and everything below the
 // touch slides down the screen. Re-rendering then leaves you somewhere else in a
@@ -23993,6 +24004,7 @@ function _rsRenderKeeping(key, prevTop) {
 // The name of what you're holding, for the banner. A break has no task name.
 function _rsMoveLabel() {
   if (!_rsMoveKey) return '';
+  if (_rsMoveSet.length > 1) return _rsMoveSet.length + (_rsMoveSet.some(k => k.indexOf(_RS_BRK) === 0) ? ' rows' : ' tasks');
   if (_rsMoveKey.indexOf(_RS_BRK) === 0) return 'the break';
   const i = _rsMoveKey.lastIndexOf(_RS_SEP);
   return i > 0 ? _rsMoveKey.slice(0, i) : _rsMoveKey;
@@ -24011,41 +24023,48 @@ function _rsPickUp(key) {
   if (Date.now() < _clSwipeBlockClickUntil) return;   // a real drag just finished elsewhere
   _rsPlacing = false;                                  // the two modes are exclusive
   const top = _rsRowTop(key);                          // where it sits right now, before the gaps appear
-  _rsMoveKey = (_rsMoveKey === key) ? null : key;      // tapping the same handle puts it back down
+  // A held row's handle puts that one back down; any other row joins the set.
+  if (_rsMoveSet.includes(key)) _rsMoveSet = _rsMoveSet.filter(k => k !== key);
+  else _rsMoveSet.push(key);
+  _rsMoveKey = _rsMoveSet.length ? _rsMoveSet[0] : null;
   _rsRenderKeeping(key, top);
 }
 // Drop it in. The gap index counts the CURRENT rendering, which still includes the
 // row being moved, so removing it first shifts every later gap down by one.
 function _rsMoveTo(idx, gapEl) {
-  const key = _rsMoveKey;
   const ctx = _rsCtx();
-  // Where the gap you tapped sits on screen. The row lands there, so holding that
+  // Where the gap you tapped sits on screen. The rows land there, so holding that
   // spot still is what "it stays where I put it" actually means.
   const gapTop = gapEl && gapEl.getBoundingClientRect ? gapEl.getBoundingClientRect().top : null;
-  if (!key || !ctx) { _rsMoveKey = null; _rsRender(); return; }
+  if (!_rsMoveSet.length || !ctx) { _rsMoveClear(); _rsRender(); return; }
   const keys = _rsOrdered(ctx).map(x => _rsInstKey(x));
-  const from = keys.indexOf(key);
-  if (from < 0) { _rsMoveKey = null; _rsRender(); return; }
-  keys.splice(from, 1);
-  const to = Math.max(0, Math.min(from < idx ? idx - 1 : idx, keys.length));
-  if (to === from) { _rsMoveKey = null; _rsRenderKeeping(key, gapTop); return; }   // dropped where it already was
-  keys.splice(to, 0, key);
-  ctx.saveOrder(keys);
-  _rsMoveKey = null;
+  const held = new Set(_rsMoveSet.filter(k => keys.includes(k)));
+  if (!held.size) { _rsMoveClear(); _rsRender(); return; }
+  // The gap index counts the CURRENT rendering, held rows included. Everything not
+  // held keeps its order; the held rows go in, in their sheet order, after as many
+  // un-held rows as sat above the gap.
+  const moving = keys.filter(k => held.has(k));
+  const rest = keys.filter(k => !held.has(k));
+  const before = keys.slice(0, idx).filter(k => !held.has(k)).length;
+  const next = rest.slice(0, before).concat(moving, rest.slice(before));
+  const key = moving[0];
+  _rsMoveClear();
+  if (next.every((k, i) => k === keys[i])) { _rsRenderKeeping(key, gapTop); return; }   // dropped where they already were
+  ctx.saveOrder(next);
   // ⭐ Hold it blue for 3 seconds. On a 44 step sheet the row you just placed is
   // one of forty identical looking rows, and without the marker you have to read
   // the list back to find it. The colour is the receipt.
-  _rsJustMoved = key;
+  _rsJustMoved = moving;
   clearTimeout(_rsJustMovedTimer);
   _rsJustMovedTimer = setTimeout(() => {
-    _rsJustMoved = null;
+    _rsJustMoved = [];
     const sc = document.getElementById('run-sheet-body');
     const keep = sc ? sc.scrollTop : null;      // colour only: nothing reflows, so hold the exact position
     _rsRender();
     if (sc && isFinite(keep)) sc.scrollTop = keep;
   }, 3000);
   _rsRenderKeeping(key, gapTop);
-  showToast('⤵ Moved');
+  showToast(moving.length > 1 ? '⤵ Moved ' + moving.length + (moving.some(k => k.indexOf(_RS_BRK) === 0) ? ' rows' : ' tasks') : '⤵ Moved');
 }
 // ↺ Back to the learned order. A block dragged into a mess had no way out short of
 // dragging every row back. Clearing the saved order returns it to the order the app
@@ -24058,7 +24077,7 @@ function _rsResetOrder() {
   if (!ctx || !ctx.order) return;
   if (!confirm('Put this run sheet back to the order you ticked these off last time you did this job?\n\nYour hand-arranged order for this one is discarded. Planned breaks stay where they are.')) return;
   ctx.saveOrder(null);
-  _rsMoveKey = null; _rsPlacing = false;
+  _rsMoveClear(); _rsPlacing = false;
   _rsRender();
   showToast('↺ Back to the learned order');
 }
@@ -24148,7 +24167,7 @@ function _rsBrkStart(id) {
   applyBreakStart(String(n.getHours()).padStart(2, '0') + ':' + String(n.getMinutes()).padStart(2, '0'));
   _rsRender(); updateRunRing();
 }
-function closeRunSheet() { closeModal('modal-run-sheet'); _rsPlanId = null; _rsPlacing = false; _rsMoveKey = null; _rsJustMoved = null; clearTimeout(_rsJustMovedTimer); }
+function closeRunSheet() { closeModal('modal-run-sheet'); _rsPlanId = null; _rsPlacing = false; _rsMoveClear(); _rsJustMoved = []; clearTimeout(_rsJustMovedTimer); }
 function toggleChecklistFlag(task, item) {
   const pid = _clTargetPlanId();
   if (pid) {   // flagging within a planner block's arrangement
