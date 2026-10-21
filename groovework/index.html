@@ -3298,7 +3298,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.409';
+const APP_VERSION = '2026-06-21.410';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -6546,7 +6546,9 @@ function renderRunChecklist() {
     // View toggle — Batches vs Flagged, only when the job has batches (last-done
     // recency now lives INSIDE each batch, so the separate lens + label are gone).
     const _hasBatches = _jobHasBatches(clockState.task);
-    if (_hasBatches) {
+    // Hidden (v410), a job with batches stays in Batches: _runGroupBy is set per job
+    // at the start of each run, so nobody is left stuck in the other order.
+    if (_hasBatches && !featureHidden('run-view')) {
       const _gopt = (k, label) => `<span onclick="setRunGroupBy('${k}')" style="padding:5px 12px;border-radius:14px;font-size:12px;font-weight:600;cursor:pointer;${_runGroupBy === k ? 'background:rgba(90,200,250,0.18);color:var(--run-blue);' : 'color:var(--run-sub);'}">${label}</span>`;
       // ⚠️ These are SORT ORDERS, not filters. "Flagged" read as "show only flagged",
       // so when a run came back with its flags lost the view showed all 52 tasks and
@@ -6554,7 +6556,7 @@ function renderRunChecklist() {
       rows += `<div style="display:flex;gap:5px;align-items:center;padding:2px 0 8px;">${_gopt('batch', 'Batches')}${_gopt('flag', 'Flagged first')}</div>`;
     }
     // ↺ Reset reps — subtle, shown once any repeatable task has reps on this run.
-    if (jobHasReps(clockState.task)) {
+    if (jobHasReps(clockState.task) && !featureHidden('reset-reps')) {
       rows += `<div style="display:flex;justify-content:flex-end;padding:2px 0 6px;">
         <span onclick="finishRunPrompt()" style="color:var(--run-sub);cursor:pointer;font-weight:600;font-size:12px;">↺ Reset reps</span>
       </div>`;
@@ -19093,6 +19095,10 @@ const KR_HIDDEN_FEATURES = [
     what: 'The old New Entry form: its title and Save button, and the Location, Repeats, Area and Job pickers, Break, Date and notes under the job list. Hidden, clocking in is tap a job, then Clock in now.' },
   { id: 'ts-add', name: 'Add a timesheet by hand', since: 'v370',
     what: 'The + Add button on Timesheets, for typing in a timesheet that was never clocked. Tapping a timesheet to edit it still works.' },
+  { id: 'run-view', name: 'Batches or Flagged first (running clock)', since: 'v410',
+    what: 'The two pills above the task list on the running clock. A job with batches always opens in Batches, as it already did each time.' },
+  { id: 'reset-reps', name: 'Reset reps (running clock)', since: 'v410',
+    what: '↺ Reset reps above the task list on the running clock. A planned block still starts its laps from zero on its own, and if laps done earlier ever leave the run sheet empty, the run sheet offers the reset right there.' },
 ];
 // Search boxes that offer to search equipment, with the wording for each state.
 const _EQUIP_PLACEHOLDERS = {
@@ -19164,7 +19170,7 @@ function setFeatureShown(id, on) {
   _storeSet('kr_unhidden', JSON.stringify(list));
   applyHiddenFeatures();
   if (id === 'reminders') { try { updateReminderBanners(); } catch (e) {} }
-  if (id === 'todos') { try { renderRunChecklist(); } catch (e) {} }
+  if (id === 'todos' || id === 'run-view' || id === 'reset-reps') { try { renderRunChecklist(); } catch (e) {} }
   if (id === 'allday') { try { renderAllDayStrip(); } catch (e) {} }
   // Re-push today so its ✓ / ▶ events go (or come back) without waiting for an edit.
   if (id === 'caldone') { try { scheduleCalendarAutoPush(plannerDateStr(new Date()), 5000); } catch (e) {} }
@@ -23645,14 +23651,21 @@ function _rsRender() {
       if (isRepeatTask(ctx.job, item) && ctx.repsBefore(item) > 0) banked++;
     });
   }
+  // ⭐ The remedy is a tap HERE (v410), not a pointer to the clock's ↺ Reset reps,
+  // which can be hidden. A note that sends you to a button that isn't there is a
+  // dead end. Only offered while this job is the one running, since the reset acts on
+  // the running clock.
+  const _rsReset = (clockState && clockState.task === ctx.job)
+    ? `<span onclick="finishRunPrompt();setTimeout(()=>{try{_rsRender()}catch(e){}},50)" style="color:var(--blue);font-weight:700;cursor:pointer;">↺ Reset reps</span>`
+    : '<b>↺ Reset reps</b>';
   const bankedNote = banked
-    ? `<div style="font-size:11px;color:var(--subtext);margin-top:4px;">🔁 ${banked} of those finished earlier in this run, so ${banked === 1 ? 'it is' : 'they are'} not listed below. Tap <b>↺ Reset reps</b> on the clock to do ${banked === 1 ? 'it' : 'them'} again.</div>`
+    ? `<div style="font-size:11px;color:var(--subtext);margin-top:4px;">🔁 ${banked} of those finished earlier in this run, so ${banked === 1 ? 'it is' : 'they are'} not listed below. Tap ${_rsReset} to do ${banked === 1 ? 'it' : 'them'} again.</div>`
     : '';
   if (!rows.length) {
     if (titleEl) titleEl.textContent = ctx.job;
     body.innerHTML = banked
       ? `<div style="padding:34px 6px;text-align:center;color:var(--subtext);font-size:15px;line-height:1.55;">Every flagged task is already done this run.<br>
-         <span style="font-size:13px;">🔁 ${banked} task${banked === 1 ? '' : 's'} banked ${banked === 1 ? 'its' : 'their'} planned laps in an earlier session. Tap <b>↺ Reset reps</b> on the clock to run ${banked === 1 ? 'it' : 'them'} again, or flag something else.</span></div>`
+         <span style="font-size:13px;">🔁 ${banked} task${banked === 1 ? '' : 's'} banked ${banked === 1 ? 'its' : 'their'} planned laps in an earlier session. Tap ${_rsReset} to run ${banked === 1 ? 'it' : 'them'} again, or flag something else.</span></div>`
       : `<div style="padding:38px 6px;text-align:center;color:var(--subtext);font-size:15px;line-height:1.55;">Nothing flagged yet.<br>
          <span style="font-size:13px;">Swipe a task right to 🚩 flag it${planning ? ' on this block' : ' in ⤢ Organise'}. Flagged tasks are the ones you plan to do, and they are what this sheet lists.</span></div>`;
     return;
