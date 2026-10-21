@@ -3298,7 +3298,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.408';
+const APP_VERSION = '2026-06-21.409';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -10091,6 +10091,11 @@ const KR_IDB_KEYS = ['kr_inbox', 'kr_task_notes', 'kr_entries', 'kr_last_backup'
 let _kv = {}, _idb = null, _idbOk = false;
 // True when the big store exists on this phone but could not be READ this launch.
 let _kvUnread = false;
+// ⭐⭐ True once the big store has been READ this launch (or the phone has no
+// IndexedDB at all and runs on localStorage). Until then `entries`, the inbox and
+// every big key read as EMPTY stand-ins, and anything written from them replaces
+// the real data on disk. See the 21 Oct 2026 note at _storeSet.
+let _kvHydrated = false;
 // Resolves once hydration+migration are done. Background jobs that write the
 // big stores (pin pulls, auto-sync) await this so they can never race the
 // boot and write against half-loaded data.
@@ -10573,6 +10578,10 @@ async function _syncPull() {
 // changed, or we'd pull a stale value over a fresh local one.
 async function syncNow(quiet) {
   if (_syncBusy) return null;
+  // ⭐⭐ The pull merges into what the phone holds, so it must never run before the
+  // phone has READ what it holds. This is the 21 Oct 2026 collapse (see _storeSet).
+  // A phone whose store could not be read (_kvUnread) never gets here at all.
+  if (!_kvHydrated) { if (!quiet) showToast('Still opening your saved work. Try again in a moment.'); return null; }
   if (!isSignedIn() || !currentOrg()) { if (!quiet) showToast('Sign in first — Settings → Account'); return null; }
   _syncBusy = true;
   try {
@@ -10796,11 +10805,17 @@ function _recScan(name) {
     });
     // Gone from the list → a tombstone, never a silent absence. A row that simply
     // vanishes can never be seen by a delta pull, so the delete would not travel.
-    Object.keys(prev).forEach(id => {
-      if (next[id] === undefined) {
-        mine[id] = { op: 'del', at: Date.now(), cols: prevCols[id] || null };
-        changed = true;
-      }
+    // ⭐⭐ Unless MOST of the store vanished at once (v409): from 20 or more, losing
+    // over half is a collapse, not a clean-out, and sending it would delete the
+    // history from the server too. Those ids stay in the shadow and send nothing.
+    // The way out for a clean-out you meant is "This is right" (_recRebaseShadows).
+    const prevIds = Object.keys(prev);
+    const gone = prevIds.filter(id => next[id] === undefined);
+    const collapsed = prevIds.length >= 20 && gone.length > prevIds.length / 2;
+    gone.forEach(id => {
+      if (collapsed) { next[id] = prev[id]; if (prevCols[id]) nextCols[id] = prevCols[id]; return; }
+      mine[id] = { op: 'del', at: Date.now(), cols: prevCols[id] || null };
+      changed = true;
     });
 
     shadowAll[name] = next;
@@ -10940,10 +10955,17 @@ async function _recPull(name) {
     offset += _SYNC_PAGE;
   }
 
+  let shrunk = false;
   if (hydrate && incoming.length) {
     _syncApplying = true;
     try {
       const list = (desc.read() || []).slice();
+      // ⭐⭐ SECOND LOCK on the 21 Oct 2026 collapse. The shadow remembers how many
+      // records this store held at its last save. If it now reads under half of
+      // that (from 20 or more), the store is not what it was, so merge nothing,
+      // advance nothing, and say so. Same rule as the backup collapse guard.
+      const had = Object.keys(_recRead(KR_REC_SHADOW, '{}')[name] || {}).length;
+      if (had >= 20 && list.length < had / 2) { shrunk = true; throw new Error('store reads ' + list.length + ' of ' + had); }
       const pos = {};
       list.forEach((r, i) => { const id = desc.idOf(r); if (id) pos[id] = i; });
       let touched = false;
@@ -10967,7 +10989,10 @@ async function _recPull(name) {
         touched = true; applied++;
       });
       if (touched) desc.write(list);
-    } catch (e) { failed = true; } finally { _syncApplying = false; }
+    } catch (e) {
+      failed = true;
+      if (shrunk) _syncSetState({ lastError: 'Sync paused: this phone holds far fewer ' + (name === 'entries' ? 'timesheets' : name === 'inbox' ? 'inbox notes' : 'to-dos') + ' than it did. Nothing was changed.' });
+    } finally { _syncApplying = false; }
     // The store just changed underneath the shadow. Re-fingerprint WITHOUT
     // enqueuing, or every pulled record bounces straight back as a local edit.
     if (!failed) {
@@ -10996,6 +11021,25 @@ async function _recSyncAll() {
 
 // First run on a device that already holds records: fingerprint everything as
 // NEW so the whole store is uploaded once, then diffed from then on.
+// The way out of both collapse locks for a clean-out you MEANT (v409). "This is
+// right, back up as it is" re-takes every record table's shadow from what the
+// phone holds now. The removed records are not sent as deletions, so the server
+// copy stays as a backup; sync then carries on from the smaller store.
+function _recRebaseShadows() {
+  try {
+    const shadowAll = _recRead(KR_REC_SHADOW, '{}');
+    Object.keys(KR_REC_TABLES).forEach(name => {
+      const desc = KR_REC_TABLES[name], next = {}, cols = {};
+      (desc.read() || []).forEach(rec => {
+        const id = desc.idOf(rec); if (!id) return;
+        next[id] = _recFingerprint(JSON.stringify(rec));
+        if (desc.colsOf) cols[id] = desc.colsOf(rec);
+      });
+      shadowAll[name] = next; if (desc.colsOf) shadowAll[name + ':cols'] = cols;
+    });
+    _recWrite(KR_REC_SHADOW, shadowAll);
+  } catch (e) {}
+}
 function _recBoot() {
   try {
     const shadowAll = _recRead(KR_REC_SHADOW, '{}');
@@ -11298,12 +11342,20 @@ function _syncBoot() {
   try {
     _syncAuditKeys();
     window.addEventListener('online', () => _syncSchedule(500));
-    _recBoot();
-    const _rb = _rescueBotEntries();   // before the purge, so nothing can be swept twice
-    if (_rb) setTimeout(() => showToast('🤖 Put ' + _rb + ' robot run' + (_rb === 1 ? '' : 's') + ' back'), 2600);
-    const _pf = _purgeForeignEntries();
-    if (_pf) setTimeout(() => showToast('↩ Moved ' + _pf + ' timesheet' + (_pf === 1 ? '' : 's') + " that weren't yours out of your hours"), 1500);
-    if (isSignedIn()) _syncSchedule(4000);   // after auth/org bootstrap has had a moment
+    // ⭐⭐ Everything below reads `entries` or the inbox, so it waits for the big
+    // store to be read (v409). This used to run at script load, when both were
+    // still empty stand-ins, and the first sync went 4 seconds later whether the
+    // read had finished or not. That is the 21 Oct 2026 collapse (see _storeSet).
+    _kvReady.then(() => {
+      try {
+        _recBoot();
+        const _rb = _rescueBotEntries();   // before the purge, so nothing can be swept twice
+        if (_rb) setTimeout(() => showToast('🤖 Put ' + _rb + ' robot run' + (_rb === 1 ? '' : 's') + ' back'), 2600);
+        const _pf = _purgeForeignEntries();
+        if (_pf) setTimeout(() => showToast('↩ Moved ' + _pf + ' timesheet' + (_pf === 1 ? '' : 's') + " that weren't yours out of your hours"), 1500);
+        if (isSignedIn()) _syncSchedule(4000);   // after auth/org bootstrap has had a moment
+      } catch (e) {}
+    });
   } catch (e) {}
 }
 
@@ -11359,12 +11411,24 @@ function toggleSyncHydrate() {
 // initialiser in the STATE section — it must stay raw, and is re-hydrated from
 // _storeGet in _krdbBoot once IndexedDB is up).
 function _storeGet(key) { return (key in _kv) ? _kv[key] : localStorage.getItem(key); }
+// ⭐⭐ NOTHING WRITES A BIG STORE BEFORE IT HAS BEEN READ (v409). 21 Oct 2026, the
+// third collapse and very likely the 6 Oct one too: the cloud sync fired 4 seconds
+// after start, while a ~20 MB big store was still being read. `entries` and the
+// inbox were still their empty stand-ins, so the pull merged its 2 re-sent rows
+// into NOTHING and saved that. The write queued behind the read, so the read still
+// filled the screen with the full history and the app looked perfect all day; the
+// disk held 2 timesheets and 1 note, and the next fresh start showed it.
+// The v365 read guard could not see this: the read did not fail, it was just late.
+// So a big key is refused here until _krdbBoot says the read is done. A value built
+// from an empty stand-in can only ever be wrong, so it is dropped, not deferred.
+function _kvEarlyRefuse(key) { try { console.warn('[store] refused ' + key + ': the big store has not been read yet'); } catch (e) {} return false; }
 function _storeSet(key, val) {
+  if (!_kvHydrated && KR_IDB_KEYS.includes(key)) return _kvEarlyRefuse(key);
   _syncEnqueue(key, 'set');   // M1/S3 — queue for the cloud mirror. Never throws, never blocks.
   if (_idbOk && KR_IDB_KEYS.includes(key)) { _kv[key] = val; _idbSet(key, val); return true; }
   return _safeSetItem(key, val);
 }
-function _storeRemove(key) { _syncEnqueue(key, 'del'); delete _kv[key]; _idbDel(key); localStorage.removeItem(key); }
+function _storeRemove(key) { if (!_kvHydrated && KR_IDB_KEYS.includes(key)) return _kvEarlyRefuse(key); _syncEnqueue(key, 'del'); delete _kv[key]; _idbDel(key); localStorage.removeItem(key); }
 // ⭐⭐ A STORE IS NOT EMPTY UNTIL THE READ SAYS IT IS. The mirror of the v277 rule
 // for writes, and found on 6 Oct 2026 by reading this function after Lincoln's
 // timesheets went from 1,229 to 2.
@@ -11415,7 +11479,7 @@ async function _krdbBoot() {
     _idbOk = true;
   } catch (e) {
     if (usedBefore) { _kvUnread = true; _showUnreadAlarm(); return; }
-    _kvReadyResolve(); return;   // no IndexedDB on this device at all → localStorage as before
+    _kvHydrated = true; _kvReadyResolve(); return;   // no IndexedDB on this device at all → localStorage as before
   }
   // Ask the OS to protect this app's storage from cleanup eviction.
   if (navigator.storage && navigator.storage.persist) { try { navigator.storage.persist(); } catch (e) {} }
@@ -11442,6 +11506,7 @@ async function _krdbBoot() {
     });
   }
   // Re-read the globals now the real data is in the cache, and repaint.
+  _kvHydrated = true;
   entries = JSON.parse(_storeGet('kr_entries') || '[]');
   bumpEntriesRev();
   _kvReadyResolve();
@@ -11952,9 +12017,34 @@ function _backupCheck() {
 }
 // Same instrument as the NOT SAVED bar and for the same reason: a toast is gone in
 // three seconds, and this is a thing to act on before the next clock-in.
+// ⭐⭐ THE ALARM MUST NEVER TRAP YOU (v409). 21 Oct 2026, mid-job: the bar sat over
+// the top of every sheet, so the run sheet's Done (and every other header) was
+// under it, and Lincoln was locked on one screen with the clock running and no way
+// to clock out. An alarm that blocks the way to safety is worse than none. It now
+// has "Hide for now", which folds it to a small red tab on the right edge (tap the
+// tab to open it again). Hidden only until the app is next opened: the alarm still
+// comes back every start until the work is restored.
+function _backupAlarmHidden() { try { return sessionStorage.getItem('kr_backup_alarm_min') === '1'; } catch (e) { return false; } }
+function hideBackupAlarm(on) { try { if (on) sessionStorage.setItem('kr_backup_alarm_min', '1'); else sessionStorage.removeItem('kr_backup_alarm_min'); } catch (e) {} updateBackupAlarm(); }
 function updateBackupAlarm() {
   let el = document.getElementById('backup-alarm');
-  if (!_backupAlarm()) { if (el) el.remove(); return; }
+  let tab = document.getElementById('backup-alarm-tab');
+  if (!_backupAlarm()) { if (el) el.remove(); if (tab) tab.remove(); return; }
+  if (_backupAlarmHidden()) {
+    if (el) el.remove();
+    if (!tab) {
+      tab = document.createElement('div');
+      tab.id = 'backup-alarm-tab';
+      tab.onclick = () => hideBackupAlarm(false);
+      tab.style.cssText = 'position:fixed;right:0;top:42%;z-index:99998;padding:10px 8px 10px 10px;border-radius:12px 0 0 12px;'
+        + 'background:#B3261E;color:#fff;font-size:12px;font-weight:800;line-height:1.2;text-align:center;'
+        + 'box-shadow:0 2px 10px rgba(0,0,0,0.5);cursor:pointer;-webkit-tap-highlight-color:transparent;';
+      tab.innerHTML = '🛑<br>Backup<br>stopped';
+      document.body.appendChild(tab);
+    }
+    return;
+  }
+  if (tab) tab.remove();
   if (!el) {
     el = document.createElement('div');
     el.id = 'backup-alarm';
@@ -11969,6 +12059,10 @@ function updateBackupAlarm() {
   el.innerHTML = '🛑 BACKUP STOPPED. ' + _backupAlarmWords() + '<br>'
     + '<span style="font-weight:600;">Your Drive backups have not been touched. Do not clock in.</span> '
     + '<span style="font-weight:400;">Tap here to get your work back.</span><br>'
+    + '<span onclick="event.stopPropagation();hideBackupAlarm(true)" '
+    + 'style="display:inline-block;margin-top:7px;margin-right:8px;padding:5px 12px;border-radius:8px;'
+    + 'background:#fff;color:#B3261E;font-weight:800;">'
+    + 'Hide for now</span>'
     + '<span onclick="event.stopPropagation();confirmBackupAsIs()" '
     + 'style="display:inline-block;margin-top:7px;padding:5px 12px;border-radius:8px;'
     + 'background:rgba(255,255,255,0.22);border:1px solid rgba(255,255,255,0.5);font-weight:700;">'
@@ -11980,6 +12074,7 @@ function confirmBackupAsIs() {
   if (!confirm('Back up this phone as it is now?\n\nIt holds ' + _fmtN(now.entries) + ' timesheets and ' + _fmtN(now.inbox) + ' inbox notes.\n\nOnly say OK if you meant to remove the rest. Your older Drive backups are kept either way.')) return;
   _storeSet(KR_BACKUP_GOOD, JSON.stringify(Object.assign({ at: new Date().toISOString() }, now)));
   _clearBackupAlarm();
+  _recRebaseShadows();   // so the sync collapse locks accept the smaller store too
   autoBackupToDrive(true);
 }
 
