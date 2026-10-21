@@ -3298,7 +3298,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.410';
+const APP_VERSION = '2026-06-21.411';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -23927,7 +23927,8 @@ function _rsUntick(task) {
 // Minimal drag for a FLAT list — no batches, no flag groups, every row eligible.
 // Commits from DOM order, which is how the Organise drag does it too.
 // ── Swipe a row right to take it off the run sheet ──────────────────────────
-// It doesn't delete anything: it unflags the task, so the row disappears and the task
+// A lap row loses just that lap (_rsSwipeOff, v411). A task's only row, or a once-off,
+// comes off whole. It doesn't delete anything: it unflags the task, so the row disappears and the task
 // drops back into the unflagged pool on the Organise sheet, ready to be flagged again.
 // ⚠️ Scoped by the SHEET, not by _clTargetPlanId(). That helper reads whether the
 // ORGANISE modal is open, which it isn't when you're looking at the run sheet — using
@@ -23967,6 +23968,72 @@ function _rsUnflag(task) {
     const st2 = _rsFlagStore(); if (!st2) return;
     st2.get()[task] = was; st2.save(); _rsRender();
     showToast('↺ Back on the run sheet');
+  }, 3000);
+}
+// ⭐ A SWIPE ON A LAP ROW TAKES OFF THAT ONE LAP (v411). The sheet draws one row per
+// lap, so a swipe reads as "not this one". It used to unflag the whole task, and on
+// a five-lap haul that took all five trips off when Lincoln meant only the last one.
+// Now a repeat task loses one planned lap, and the task only comes off the sheet
+// when the row swiped is its only row. The swiped row's own SLOT goes: the arranged
+// order drops its key and the later laps of that task close up behind it, so a lap
+// arranged at 1:50pm disappears from 1:50pm, not from wherever the last lap sat.
+// A ✓ lap is a record, not a plan, so it stays (tap it to bring it back instead).
+function _rsSwipeOff(task, n) {
+  const ctx = _rsCtx(); if (!ctx) return;
+  if (!isRepeatTask(ctx.job, task) || !(n > 0)) { _rsUnflag(task); return; }
+  const mine = _rsInstances(ctx).filter(x => !x.brk && x.t === task);
+  const me = mine.find(x => x.n === n);
+  if (!me) return;
+  if (me.doneAt) { showToast('That lap is done, so it stays. Tap it to bring it back.'); return; }
+  if (mine.length <= 1) { _rsUnflag(task); return; }
+  const last = mine[mine.length - 1].n;           // the run's total laps, banked ones included
+  const prevOrder = Array.isArray(ctx.order) ? ctx.order.slice() : null;
+  if (prevOrder) {
+    const gone = _rsKey(task, n);
+    ctx.saveOrder(prevOrder.filter(k => k !== gone).map(k => {
+      const i = k.lastIndexOf(_RS_SEP);
+      if (i <= 0 || k.slice(0, i) !== task) return k;
+      const m = Number(k.slice(i + 1));
+      return m > n ? _rsKey(task, m - 1) : k;
+    }));
+  }
+  let undoLaps;
+  if (ctx.kind === 'plan') {
+    const pid = _rsPlanId;
+    const m = getPlannerChecklist(); const rec = m[pid] || (m[pid] = { flags: {} });
+    const laps = rec.laps || (rec.laps = {});
+    const had = Object.prototype.hasOwnProperty.call(laps, task) ? laps[task] : undefined;
+    laps[task] = last - 1;
+    savePlannerChecklist(m); _applyBlockEstimate(pid);
+    if (typeof renderPlannerScreen === 'function') renderPlannerScreen();
+    undoLaps = () => {
+      const m2 = getPlannerChecklist(); const r2 = m2[pid]; if (!r2) return;
+      const l2 = r2.laps || (r2.laps = {});
+      if (had === undefined) delete l2[task]; else l2[task] = had;
+      if (prevOrder) r2.runOrder = prevOrder;
+      savePlannerChecklist(m2); _applyBlockEstimate(pid);
+      if (typeof renderPlannerScreen === 'function') renderPlannerScreen();
+    };
+  } else {
+    const lt = clockState.lapTargets || (clockState.lapTargets = {});
+    const had = Object.prototype.hasOwnProperty.call(lt, task) ? lt[task] : undefined;
+    lt[task] = last - 1;
+    _storeSet('kr_clock', JSON.stringify(clockState));
+    renderRunChecklist(); updateRunRing();
+    undoLaps = () => {
+      if (!clockState || clockState.task !== ctx.job) return;
+      const l2 = clockState.lapTargets || (clockState.lapTargets = {});
+      if (had === undefined) delete l2[task]; else l2[task] = had;
+      if (prevOrder) clockState.runOrder = prevOrder;
+      _storeSet('kr_clock', JSON.stringify(clockState));
+      renderRunChecklist(); updateRunRing();
+    };
+  }
+  _rsRender();
+  const left = mine.filter(x => !x.doneAt).length - 1;
+  const _short = task.length > 24 ? task.slice(0, 24).trimEnd() + '…' : task;
+  showUndoToast('One lap off: ' + _short + ' · ' + left + ' to go', () => {
+    undoLaps(); _rsRender(); showToast('↺ Lap back on the run sheet');
   }, 3000);
 }
 function _rsDragStart(e) {
@@ -24029,7 +24096,7 @@ function _rsDragEnd2(e) {
       // A ☕ break has its own ✕ and no flag to remove — leave it to that.
       if (k.indexOf(_RS_BRK) !== 0) {
         const i = k.lastIndexOf(_RS_SEP);
-        if (i > 0) _rsUnflag(k.slice(0, i));
+        if (i > 0) _rsSwipeOff(k.slice(0, i), Number(k.slice(i + 1)) || 0);
       }
     }
     return;
