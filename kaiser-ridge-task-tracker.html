@@ -3298,7 +3298,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.412';
+const APP_VERSION = '2026-06-21.413';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4900,6 +4900,53 @@ function _orgVisibleOrder(task, flags, orderArg) {
 }
 // Per-task checklist-item flags — { task: { itemText: flaggedAtMs } }. Device-local
 // (like pinned-note flags), never written to SUBTASKS or synced.
+// 🙈 HIDDEN TASKS (v413). Lincoln, 23 Oct 2026: jobs carry tasks he rarely does, and
+// a 51-task list is hard to read. Swipe a task LEFT on the clock (or in Organise) to
+// hide it from this job's list. Hiding is a VIEW, never a deletion: the task stays in
+// SUBTASKS, its times, steps, guide and learned order are untouched, and it comes
+// back from the "Hidden" section at the foot of ⤢ Organise. Per job, so hiding
+// "Planning job" on Household chores leaves it showing on every other job.
+// Device-local like the flags (KR_SYNC_NEVER), and in the Drive backup.
+const KR_HIDDEN_TASKS = 'kr_hidden_tasks';
+function getHiddenTasks() { try { return JSON.parse(localStorage.getItem(KR_HIDDEN_TASKS) || '{}') || {}; } catch (e) { return {}; } }
+function saveHiddenTasks(o) { return _storeSet(KR_HIDDEN_TASKS, JSON.stringify(o)); }
+function _shownTasks(job, items) {
+  const l = getHiddenTasks()[job];
+  return (l && l.length) ? (items || []).filter(s => l.indexOf(s) < 0) : (items || []);
+}
+function hideTask(job, item) {
+  if (!job || !item) return;
+  const all = getHiddenTasks(); const l = all[job] || (all[job] = []);
+  if (l.indexOf(item) < 0) l.push(item);
+  saveHiddenTasks(all);
+  // A hidden task is not planned work, so its flag comes off too (the job's, and the
+  // running session's). Otherwise it would still cost time on the ring and the run
+  // sheet while being nowhere on the list. Undo puts the flags back.
+  const gf = getChecklistFlags();
+  const hadG = gf[job] ? gf[job][item] : undefined;
+  if (hadG !== undefined) { delete gf[job][item]; if (!Object.keys(gf[job]).length) delete gf[job]; saveChecklistFlags(gf); }
+  const sess = !!(clockState && clockState.running && clockState.task === job && clockState.flagOverride);
+  const hadS = sess ? clockState.flagOverride[item] : undefined;
+  if (hadS !== undefined) { delete clockState.flagOverride[item]; _storeSet('kr_clock', JSON.stringify(clockState)); }
+  _refreshChecklistSurfaces(job);
+  const _short = item.length > 24 ? item.slice(0, 24).trimEnd() + '…' : item;
+  showUndoToast('🙈 Hidden: ' + _short + '. It is under Hidden in ⤢ Organise.', () => {
+    const a2 = getHiddenTasks(); if (a2[job]) { a2[job] = a2[job].filter(x => x !== item); if (!a2[job].length) delete a2[job]; saveHiddenTasks(a2); }
+    if (hadG !== undefined) { const g2 = getChecklistFlags(); (g2[job] || (g2[job] = {}))[item] = hadG; saveChecklistFlags(g2); }
+    if (hadS !== undefined && clockState && clockState.task === job) { (clockState.flagOverride || (clockState.flagOverride = {}))[item] = hadS; _storeSet('kr_clock', JSON.stringify(clockState)); }
+    _refreshChecklistSurfaces(job);
+    showToast('↺ Back on the list');
+  }, 5000);
+}
+function unhideTask(job, item) {
+  const all = getHiddenTasks();
+  if (!all[job]) return;
+  all[job] = all[job].filter(x => x !== item);
+  if (!all[job].length) delete all[job];
+  saveHiddenTasks(all);
+  _refreshChecklistSurfaces(job);
+  showToast('👁 Back on the list');
+}
 function getChecklistFlags() { return JSON.parse(localStorage.getItem('kr_checklist_flags') || '{}'); }
 function saveChecklistFlags(o) { return _storeSet('kr_checklist_flags', JSON.stringify(o)); }
 // Where a freshly-swiped flag sits within the flagged group, everywhere you can
@@ -5780,6 +5827,12 @@ async function confirmRunEdit() {
 // history with it. Refining a task's wording over time is normal use — it must
 // never cost the learning that makes the app worth using.
 function _migrateItemHistory(oldName, newName) {
+  // 🙈 A hidden task stays hidden under its new name, on every job that hid it.
+  try {
+    const _hid = getHiddenTasks(); let _hCh = false;
+    Object.keys(_hid).forEach(j => { const i = _hid[j].indexOf(oldName); if (i >= 0) { _hid[j][i] = newName; _hCh = true; } });
+    if (_hCh) saveHiddenTasks(_hid);
+  } catch (e) {}
   const SEP = '\u0001';   // the job\u0001item and runOrder key separator (same byte as _RS_SEP / _taskTypeKey)
   // 1) Historical entries — the source of every learned average. Rewrite the item
   //    text in past checklists and step logs. The entries' notes TEXT keeps the old
@@ -6228,7 +6281,7 @@ function toggleAllPinsExpanded() {
 function _clGroupKeys(job) {
   const rec = _batchRec(job);
   if (!rec || !rec.order || !rec.order.length) return [];
-  const subs = SUBTASKS[job] || [];
+  const subs = _shownTasks(job, SUBTASKS[job]);
   const keys = rec.order.filter(n => subs.some(s => rec.items[s] === n)).map(n => 'b:' + n);
   if (subs.some(s => !(rec.items[s] && rec.order.includes(rec.items[s])))) keys.push('b:~loose');
   return keys;
@@ -6242,7 +6295,7 @@ function toggleAllTasksExpanded() {
   const job = clockState.task;
   const stepsOf = stepsResolver(job);
   const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
-  const items = (SUBTASKS[job] || []).filter(s => !_isTaskDoneNow(job, s, done) && (stepsOf(s).length > 0 || s.length > 55));
+  const items = _shownTasks(job, SUBTASKS[job]).filter(s => !_isTaskDoneNow(job, s, done) && (stepsOf(s).length > 0 || s.length > 55));
   const inBatchView = _runGroupBy === 'batch' && _jobHasBatches(job);
   const keys = inBatchView ? _clGroupKeys(job) : [];
   // "Everything is open" only counts a section as open once it's been explicitly
@@ -6458,7 +6511,7 @@ function renderRunChecklist() {
   const seg = document.getElementById('run-seg');
   if (!el) return;
   const running = clockState && clockState.running;
-  const items = (running && SUBTASKS[clockState.task]) ? _orderedChecklistItems(clockState.task, SUBTASKS[clockState.task]) : [];
+  const items = (running && SUBTASKS[clockState.task]) ? _orderedChecklistItems(clockState.task, _shownTasks(clockState.task, SUBTASKS[clockState.task])) : [];
   const pinned = _sortPins((running && getTaskNotes()[clockState.task]) || [], running ? clockState.task : null); // 🚩 flagged on top
 
   // Hide the whole panel only when NOT clocked in (while running it always shows,
@@ -9047,7 +9100,7 @@ function _renderClockInPreview(job, plan, resume) {
     el.innerHTML = '<div style="padding:18px 2px;font-size:14px;line-height:1.5;color:var(--subtext);">This job has no tasks yet. You can add them once you are clocked in, or from More, then Jobs.</div>';
     return;
   }
-  _ciCtx = { job, items, lapsFor: null }; _ciOpen = {}; _ciWrap = false;
+  _ciCtx = { job, items: _shownTasks(job, items), lapsFor: null }; _ciOpen = {}; _ciWrap = false;
   _ciRenderList(true);
 }
 // ⭐ BATCHES FIRST. Lincoln, 11 Oct 2026: on a 68 task job the preview was a wall
@@ -9171,7 +9224,7 @@ function _renderClockInPlanPreview(job, plan) {
   if (e && e.missing) bits.push(e.missing + ' not timed yet');
   document.getElementById('time-job-name').textContent = job;
   document.getElementById('time-job-sub').textContent = bits.join(' \u00b7 ');
-  _ciCtx = { job, items, lapsFor: t => _plannedLapsFor(plan, t, reps) }; _ciOpen = {}; _ciWrap = false;
+  _ciCtx = { job, items: _shownTasks(job, items), lapsFor: t => _plannedLapsFor(plan, t, reps) }; _ciOpen = {}; _ciWrap = false;
   _ciRenderList(true);
   return true;
 }
@@ -9202,7 +9255,7 @@ function _renderClockInResumePreview(job, r) {
   if (left > 0) bits.push('~' + fmtMin(left) + ' left');
   document.getElementById('time-job-name').textContent = job;
   document.getElementById('time-job-sub').textContent = bits.join(' \u00b7 ');
-  _ciCtx = { job, items, lapsFor, done }; _ciOpen = {}; _ciWrap = false;
+  _ciCtx = { job, items: _shownTasks(job, items), lapsFor, done }; _ciOpen = {}; _ciWrap = false;
   _ciRenderList(true);
   return true;
 }
@@ -10279,6 +10332,9 @@ const KR_SYNC_NEVER = [
   // A per-RUN arrangement, cleared at clock-out. Ethan's flags landing on
   // Lincoln's phone would rearrange his list under him mid-job.
   'kr_checklist_flags',
+  // 🙈 What this phone has tidied out of view (v413). A view preference, same as the
+  // flags: someone else's hidden list must never empty a job on another phone.
+  'kr_hidden_tasks',
   // ⭐⭐ MY OWN DAY IS NOT THE ORG'S DAY. Found 2026-08-28, one toggle before it did
   // damage, the first time two real phones were ever in the same org.
   // `_plannerKeyFor('me')` is the literal string 'kr_planner', so EVERY member's own
@@ -11564,7 +11620,7 @@ const KR_BACKUP_KEYS = [
   'kr_task_order', 'kr_entries', 'kr_user_name', 'kr_weekly_target',
   'kr_sheet_url', 'kr_gmaps_key', 'kr_dark_mode',
   'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
-  'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_task_videos', 'kr_checklist_flags', 'kr_task_merges', 'kr_subtask_origin', 'kr_pins_applied',
+  'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_task_videos', 'kr_checklist_flags', 'kr_hidden_tasks', 'kr_task_merges', 'kr_subtask_origin', 'kr_pins_applied',
   'kr_agents', 'kr_agent_runs', 'kr_planner_checklist', 'kr_pin_order', 'kr_subtask_photos', 'kr_job_reminders', 'kr_task_reminders',
   'kr_task_types', 'kr_job_runs', 'kr_job_flags', 'kr_task_moves', 'kr_job_horizon', 'kr_job_links', 'kr_task_batches', 'kr_time_excl',
   // Added v219 — these were silently LOST on restore (Lincoln's icon re-add restore
@@ -18435,6 +18491,8 @@ function saveDirTask() {
         }
       });
       if (tremCh) saveTaskReminders(trem);
+      // 🙈 Hidden tasks follow the job to its new name
+      { const _hid = getHiddenTasks(); if (_hid[oldTask]) { _hid[task] = _hid[oldTask]; delete _hid[oldTask]; saveHiddenTasks(_hid); } }
       // Task types (job + task) — re-key onto the new job name
       const tty = getTaskTypes(); let ttyCh = false;
       Object.keys(tty).forEach(k => {
@@ -18564,6 +18622,8 @@ function _purgeJobData(task) {
   if (jlinks[task]) { delete jlinks[task]; saveJobLinks(jlinks); }
   const cflags = getChecklistFlags();
   if (cflags[task]) { delete cflags[task]; saveChecklistFlags(cflags); }
+  const _hid = getHiddenTasks();
+  if (_hid[task]) { delete _hid[task]; saveHiddenTasks(_hid); }
   const jrem = getJobReminders();
   if (jrem[task]) { delete jrem[task]; saveJobReminders(jrem); }
   const trem = getTaskReminders(); let tremCh = false;
@@ -22381,7 +22441,7 @@ function selectPlannerTask(taskName) {
     _ciCtx = null; document.getElementById('pa-job-tools').style.display = 'none';
     listEl.innerHTML = '<div style="padding:18px 2px;font-size:14px;line-height:1.5;color:var(--subtext);">This job has no tasks yet. You can add them from More, then Jobs.</div>';
   } else {
-    _ciCtx = { job: taskName, items, lapsFor: null }; _ciOpen = {}; _ciWrap = false;
+    _ciCtx = { job: taskName, items: _shownTasks(taskName, items), lapsFor: null }; _ciOpen = {}; _ciWrap = false;
     _ciRenderList(true);
   }
   _plannerAddStep(true);
@@ -22744,6 +22804,7 @@ function showPinnedNotesPopupTask(task) {
 
 // ── Checklist-item flagging (mirror of the pinned-note gestures) ──
 //   • Swipe right            → 🚩 flag the item to the top
+//   • Swipe left             → 🙈 hide it from this job's list (v413, see hideTask)
 //   • Press-and-hold + drag  → reorder among the 🚩 flagged items (flagged only)
 // Flags are device-local (kr_checklist_flags), never touch SUBTASKS or sync.
 let _clSwipe = null, _clSwipeBlockClickUntil = 0, _clLongPressTimer = null, _clDrag = null;
@@ -22766,13 +22827,14 @@ function clSwipeMove(e) {
   if (!_clSwipe) return;
   const dx = e.touches[0].clientX - _clSwipe.x, dy = e.touches[0].clientY - _clSwipe.y;
   if (_clLongPressTimer && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) { clearTimeout(_clLongPressTimer); _clLongPressTimer = null; }
-  if (!_clSwipe.moved && !_clLongPressTimer && (Math.abs(dy) > Math.abs(dx) || dx < 0)) { _clSwipe = null; return; } // vertical scroll / left-swipe → let it be
-  if (dx > 6) {
+  if (!_clSwipe.moved && !_clLongPressTimer && Math.abs(dy) > Math.abs(dx)) { _clSwipe = null; return; } // vertical scroll → let it be
+  // Right flags, left hides (v413). The row follows the finger either way.
+  if (Math.abs(dx) > 6) {
     _clSwipe.moved = true;
     e.preventDefault();
     _clSwipe.row.style.transition = 'none';
-    _clSwipe.row.style.transform = 'translateX(' + Math.min(dx, 90) + 'px)';
-    _clSwipe.row.style.opacity = String(Math.max(0.45, 1 - dx / 220));
+    _clSwipe.row.style.transform = 'translateX(' + Math.max(-90, Math.min(dx, 90)) + 'px)';
+    _clSwipe.row.style.opacity = String(Math.max(0.45, 1 - Math.abs(dx) / 220));
   }
 }
 function clSwipeEnd(e) {
@@ -22785,6 +22847,7 @@ function clSwipeEnd(e) {
   s.row.style.transform = ''; s.row.style.opacity = '';
   if (s.moved) _clSwipeBlockClickUntil = Date.now() + 400; // any horizontal drag suppresses the tap-to-tick
   if (s.moved && dx > 48) toggleChecklistFlag(s.task, s.item);
+  else if (s.moved && dx < -48) hideTask(s.task, s.item);
 }
 function _startClDrag(row, task, startY, flagged) {
   _clSwipe = null;
@@ -24402,6 +24465,7 @@ const _clEditScope = 'plan';
 // Which ▣ batches are collapsed in the Organise sheet (by batch name; 'Unbatched'
 // for the loose group). View-only state, reset each time the sheet opens.
 let _clOrgCollapsed = {};
+let _clOrgHiddenOpen = false;   // the 🙈 Hidden section at the foot of Organise
 function _clToggleBatchCollapse(name) {
   if (Date.now() < _clSwipeBlockClickUntil) return;   // a drag just finished — not a tap
   _clOrgCollapsed[name] = !_clOrgCollapsed[name];
@@ -24468,7 +24532,7 @@ function _renderClOrganiseBody() {
   const task = _clOrganiseTask;
   const body = document.getElementById('cl-organise-body');
   if (!body) return;
-  const all = SUBTASKS[task] || [];
+  const all = _shownTasks(task, SUBTASKS[task]);
   const flags = _editTargetFlags();
   const pid = _clTargetPlanId();
   const orderArg = pid ? ((getPlannerChecklist()[pid] || {}).order || null) : _sessionOrGlobalOrder(task);
@@ -24541,7 +24605,7 @@ function _renderClOrganiseBody() {
   }
   const _bRec = _batchRec(task);
   const _hasBatches = !!(_bRec && _bRec.order.length);
-  const intro = `<div style="font-size:11px;color:var(--subtext);margin:${_clOrganisePlanId ? '8px' : '12px'} 0 8px;">Hold &amp; drag any item to set the order it’s done in · swipe an item right to 🚩 flag it${_hasBatches ? ' (it stays in its batch, floated to the top). Tap a ▣ heading to open/close it; hold &amp; drag a heading to reorder batches; drag a task under a heading to move it there.' : ' to the top.'}</div>`
+  const intro = `<div style="font-size:11px;color:var(--subtext);margin:${_clOrganisePlanId ? '8px' : '12px'} 0 8px;">Hold &amp; drag any item to set the order it’s done in · swipe an item left to 🙈 hide it, right to 🚩 flag it${_hasBatches ? ' (it stays in its batch, floated to the top). Tap a ▣ heading to open/close it; hold &amp; drag a heading to reorder batches; drag a task under a heading to move it there.' : ' to the top.'}</div>`
     // ⭐ ON DEMAND, NOT AUTOMATIC. The running clock re-sorts its unflagged tail by
     // last-completed on every render, and that is right there because the clock is
     // a browse-and-pick surface. HERE, dragging is the whole point of the screen —
@@ -24634,6 +24698,17 @@ function _renderClOrganiseBody() {
   let rsCtl = '';
   if (pid && _plannerPlans.some(p => p.id === pid) && Object.keys(flags).length) {
     rsCtl = `<div onclick="openRunSheet('${_attr(pid)}')" style="display:flex;align-items:center;justify-content:center;gap:7px;margin:8px 0 2px;padding:9px 12px;border-radius:10px;border:1px solid rgba(90,200,250,0.4);background:rgba(90,200,250,0.1);color:#5ac8fa;font-size:13px;font-weight:600;cursor:pointer;">📋 Run sheet — what finishes when</div>`;
+  }
+  // 🙈 Hidden tasks gather here, folded, so the list above stays short and nothing
+  // is ever out of reach. Plain rows, not .cl-row, so a drag never re-homes them.
+  const _hid = (getHiddenTasks()[task] || []).filter(s => (SUBTASKS[task] || []).includes(s));
+  if (_hid.length) {
+    const _hEnc = v => encodeURIComponent(v).replace(/'/g, '%27');
+    bodyHtml += `<div onclick="_clOrgHiddenOpen=!_clOrgHiddenOpen;_renderClOrganiseBody()" style="display:flex;align-items:center;gap:8px;margin:20px 0 8px;cursor:pointer;font-size:12px;color:var(--subtext);font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">
+        <span>${_clOrgHiddenOpen ? '▾' : '▸'}</span><span>🙈 Hidden · ${_hid.length}</span></div>`
+      + (_clOrgHiddenOpen ? _hid.map(s => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:11px 10px;border-radius:8px;border:1px dashed var(--border);">
+          <span style="flex:1;min-width:0;overflow-wrap:anywhere;font-size:15px;color:var(--subtext);">${_escHtml(s)}</span>
+          <span onclick="unhideTask(decodeURIComponent('${_hEnc(task)}'), decodeURIComponent('${_hEnc(s)}'))" style="flex-shrink:0;color:var(--blue);font-weight:700;font-size:14px;cursor:pointer;padding:2px 4px;">Show</span></div>`).join('') : '');
   }
   body.innerHTML = '<div class="cl-sticky-top">' + scopeToggle + estLine + rsCtl + intro + toolsRow + '</div>' + bodyHtml;
 }
