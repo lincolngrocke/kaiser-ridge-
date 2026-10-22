@@ -3306,7 +3306,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.415';
+const APP_VERSION = '2026-06-21.416';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -23870,9 +23870,16 @@ function _rsRender() {
     const nSteps = stepsOf(r.t).length;
     const open = nSteps ? _rsIsOpen(r, key) : false;
     // B — the count alone tells you a row has depth, without spending a row on it.
+    // It counts DOWN as steps are ticked (v416, Lincoln 23 Oct 2026: "it shows 19 steps,
+    // but 3 or 4 have been ticked off"). Only on the row whose steps can be ticked, since
+    // the ticks belong to the lap in hand, not to laps still to come.
+    const _stTicked = (ctx.kind === 'clock' && r.tappable && clockState.stepChecks && clockState.stepChecks[r.t])
+      ? stepsOf(r.t).filter(st => clockState.stepChecks[r.t][st]).length : 0;
+    const _stWords = !_stTicked ? `${nSteps} step${nSteps === 1 ? '' : 's'}`
+      : (_stTicked >= nSteps ? `all ${nSteps} done` : `${nSteps - _stTicked} of ${nSteps} left`);
     const stepChip = nSteps
       ? `<span onclick="event.stopPropagation();_rsToggleSteps(decodeURIComponent('${encodeURIComponent(key).replace(/'/g, '%27')}'))"
-           style="display:inline-flex;align-items:center;gap:3px;flex-shrink:0;font-size:11px;font-weight:600;color:#5ac8fa;cursor:pointer;">${open ? '▾' : '▸'} ☰ ${nSteps} step${nSteps === 1 ? '' : 's'}</span>`
+           style="display:inline-flex;align-items:center;gap:3px;flex-shrink:0;font-size:11px;font-weight:600;color:${_stTicked >= nSteps ? '#30d158' : '#5ac8fa'};cursor:pointer;">${open ? '▾' : '▸'} ☰ ${_stWords}</span>`
       : '';
     const lap = r.lapTotal > 1 ? `<span style="font-size:11px;font-weight:700;color:#30d158;flex-shrink:0;">🔁 ${r.lapIdx}/${r.lapTotal}</span>` : '';
     // ▣ the batch this task sits in — the run sheet flattens batches away, so
@@ -23983,6 +23990,8 @@ function _rsStepsHtml(r, ctx, stepsOf) {
   // since step ticks belong to the lap in hand; never while a row is being placed.
   const canTick = live && r.tappable && !_rsMoveKey && !_rsPlacing;
   const _uItem = encodeURIComponent(r.t).replace(/'/g, '%27');
+  // ⏱ Minutes per ticked step, the same figure the clock list shows beside it (v416).
+  const _sDur = canTick ? _stepDurations() : {};
   const body = steps.map(s => {
     const ticked = !!checks[s];
     const isCur = live && r.isNow && s === nextStep && !ticked;
@@ -23990,7 +23999,7 @@ function _rsStepsHtml(r, ctx, stepsOf) {
       const _uStep = encodeURIComponent(s).replace(/'/g, '%27');
       return `<div onclick="event.stopPropagation();_rsStepTick(decodeURIComponent('${_uItem}'),decodeURIComponent('${_uStep}'))" style="display:flex;align-items:flex-start;gap:10px;padding:8px 2px;cursor:pointer;">
         <span style="font-size:19px;flex-shrink:0;line-height:1.1;color:${ticked ? '#30d158' : (isCur ? '#5ac8fa' : 'var(--subtext)')};">${ticked ? '☑' : '☐'}</span>
-        <span style="flex:1;min-width:0;overflow-wrap:anywhere;font-size:14px;line-height:1.45;${ticked ? 'color:var(--subtext);text-decoration:line-through;' : 'color:var(--text);'}">${_escHtml(s)}</span></div>`;
+        <span style="flex:1;min-width:0;overflow-wrap:anywhere;font-size:14px;line-height:1.45;${ticked ? 'color:var(--subtext);text-decoration:line-through;' : 'color:var(--text);'}">${_escHtml(s)}</span>${(ticked && _sDur[r.t + '~|~' + s]) ? `<span style="font-size:12px;color:#30d158;font-weight:600;white-space:nowrap;flex-shrink:0;line-height:1.6;">${fmtMin(_sDur[r.t + '~|~' + s])}</span>` : ''}</div>`;
     }
     return `<div style="display:flex;align-items:flex-start;gap:8px;padding:5px 2px;">
       <span style="font-size:11px;flex-shrink:0;line-height:1.5;color:${ticked ? '#616a7e' : (isCur ? '#5ac8fa' : 'var(--subtext)')};">${ticked ? '✓' : (isCur ? '▸' : '·')}</span>
