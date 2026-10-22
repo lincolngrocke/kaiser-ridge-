@@ -2511,7 +2511,10 @@
   <div class="modal-sheet" style="padding:16px 0 28px;height:92vh;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;">
     <div class="modal-handle"></div>
     <div style="padding:0 20px 10px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
-      <span id="run-sheet-title" style="font-size:16px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:10px;"></span>
+      <div style="min-width:0;display:flex;flex-direction:column;gap:2px;padding-right:10px;">
+        <span id="run-sheet-kind" style="font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--blue);">📋 Run sheet</span>
+        <span id="run-sheet-title" style="font-size:16px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+      </div>
       <span onclick="closeRunSheet()" style="color:var(--blue);font-size:16px;cursor:pointer;flex-shrink:0;">Done</span>
     </div>
     <div id="run-sheet-body" style="padding:0 20px;overflow-y:auto;overflow-x:hidden;flex:1;"></div>
@@ -3303,7 +3306,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.414';
+const APP_VERSION = '2026-06-21.415';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -23690,6 +23693,11 @@ function _rsTickNowElapsed() {
 function openRunSheet(planId) {
   _rsPlanId = planId || null;
   if (!_rsPlanId && (!clockState || !clockState.running)) { showToast('Clock in first — the run sheet lists the job you’re on'); return; }
+  // v415, Lincoln 23 Oct 2026: "There's nowhere on this page that shows you which page
+  // you are on." The job's name alone read like any other sheet. Say it's the run sheet,
+  // and whether it's a plan or the job you're running now.
+  const _kind = document.getElementById('run-sheet-kind');
+  if (_kind) _kind.textContent = _rsPlanId ? '📋 Run sheet · planning' : '📋 Run sheet · running now';
   openModal('modal-run-sheet');
   _rsRender();
 }
@@ -23968,9 +23976,22 @@ function _rsStepsHtml(r, ctx, stepsOf) {
   const live = ctx.kind === 'clock';
   const checks = (live && clockState.stepChecks && clockState.stepChecks[r.t]) || {};
   const nextStep = steps.find(s => !checks[s]);
+  // ⭐ TICK STEPS HERE (v415). Lincoln: "Once you're in the run sheet, everything gets
+  // done from there", but steps could only be ticked back on the clock list. Same call
+  // as the clock (toggleChecklistStep), so each step is timed exactly as it is there.
+  // Only on the row the task's work is actually on (r.tappable = its next owed lap),
+  // since step ticks belong to the lap in hand; never while a row is being placed.
+  const canTick = live && r.tappable && !_rsMoveKey && !_rsPlacing;
+  const _uItem = encodeURIComponent(r.t).replace(/'/g, '%27');
   const body = steps.map(s => {
     const ticked = !!checks[s];
     const isCur = live && r.isNow && s === nextStep && !ticked;
+    if (canTick) {
+      const _uStep = encodeURIComponent(s).replace(/'/g, '%27');
+      return `<div onclick="event.stopPropagation();_rsStepTick(decodeURIComponent('${_uItem}'),decodeURIComponent('${_uStep}'))" style="display:flex;align-items:flex-start;gap:10px;padding:8px 2px;cursor:pointer;">
+        <span style="font-size:19px;flex-shrink:0;line-height:1.1;color:${ticked ? '#30d158' : (isCur ? '#5ac8fa' : 'var(--subtext)')};">${ticked ? '☑' : '☐'}</span>
+        <span style="flex:1;min-width:0;overflow-wrap:anywhere;font-size:14px;line-height:1.45;${ticked ? 'color:var(--subtext);text-decoration:line-through;' : 'color:var(--text);'}">${_escHtml(s)}</span></div>`;
+    }
     return `<div style="display:flex;align-items:flex-start;gap:8px;padding:5px 2px;">
       <span style="font-size:11px;flex-shrink:0;line-height:1.5;color:${ticked ? '#616a7e' : (isCur ? '#5ac8fa' : 'var(--subtext)')};">${ticked ? '✓' : (isCur ? '▸' : '·')}</span>
       <span style="flex:1;min-width:0;overflow-wrap:anywhere;font-size:13px;line-height:1.45;color:${ticked ? '#616a7e' : 'var(--text)'};">${_escHtml(s)}</span></div>`;
@@ -23981,6 +24002,12 @@ function _rsStepsHtml(r, ctx, stepsOf) {
   return `<div style="margin:0 0 0 22px;padding:6px 10px;border-radius:8px;${box}">${body}</div>`;
 }
 
+function _rsStepTick(item, step) {
+  if (Date.now() < _clSwipeBlockClickUntil) return;   // a drag just happened — not a tap
+  if (!clockState || !clockState.running) return;
+  toggleChecklistStep(item, step);
+  _rsRender();
+}
 // Tick the NEXT owed lap of a task. Goes through the ordinary completion path, so
 // the sheet can never disagree with the clock about what's done.
 function _rsTick(task) {
