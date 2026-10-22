@@ -86,6 +86,10 @@ create policy task_notes_update on public.task_notes
 -- and recreated — is INVISIBLE to the Data API until granted explicitly. This is
 -- the S4 trap, and dropping a table is precisely how you walk into it.
 grant select, insert, update on public.task_notes to authenticated;
+-- Explicit, not left to 003's default privileges (22 Oct 2026): from 30 Oct
+-- Supabase stops granting new public tables to the Data API on its own, and every
+-- table we add states its own grants in its own migration, as 009_shared_jobs does.
+revoke all on public.task_notes from anon;
 
 -- ── 7. Verify ───────────────────────────────────────────────────────────────
 select 'columns' as check, string_agg(column_name, ', ' order by ordinal_position) as detail
@@ -100,4 +104,8 @@ select 'trigger', string_agg(tgname, ', ')
 union all
 select 'grants', string_agg(privilege_type, ', ' order by privilege_type)
   from information_schema.role_table_grants
- where table_schema = 'public' and table_name = 'task_notes' and grantee = 'authenticated';
+ where table_schema = 'public' and table_name = 'task_notes' and grantee = 'authenticated'
+union all
+select 'anon (must be empty)', string_agg(privilege_type, ', ' order by privilege_type)
+  from information_schema.role_table_grants
+ where table_schema = 'public' and table_name = 'task_notes' and grantee = 'anon';

@@ -3298,7 +3298,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.411';
+const APP_VERSION = '2026-06-21.412';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -10690,6 +10690,13 @@ const KR_REC_TABLES = {
   // added upstream is silently dropped in transit.
   task_notes: {
     table: 'task_notes', scope: 'org',
+    // ⏸ PAUSED while To-dos are hidden (v412, Lincoln 22 Oct 2026). The live table
+    // is still the pre-007 shape (007_task_notes_records.sql was never run), so every
+    // push came back "column task_notes.id does not exist" and Settings showed a red
+    // error and ~393 changes waiting, for a feature nobody is using. Changes still
+    // queue in the outbox exactly as before, so switching To-dos back on (after 007
+    // has been run) sends them all on the next sync. Nothing is dropped.
+    paused: () => featureHidden('todos'),
     read: () => {
       const o = getTaskNotes(); const out = [];
       Object.keys(o).forEach(t => (o[t] || []).forEach(n => { if (n && n.id) out.push(Object.assign({}, n, { _task: t })); }));
@@ -10828,7 +10835,8 @@ function _recScan(name) {
 }
 function recPending() {
   const q = _recRead(KR_REC_OUTBOX, '{}');
-  return Object.keys(q).reduce((n, t) => n + Object.keys(q[t] || {}).length, 0);
+  // A paused table's queue is waiting on purpose, so it is not "waiting to send".
+  return Object.keys(q).reduce((n, t) => (KR_REC_TABLES[t] && KR_REC_TABLES[t].paused && KR_REC_TABLES[t].paused()) ? n : n + Object.keys(q[t] || {}).length, 0);
 }
 
 // ── Push ────────────────────────────────────────────────────────────────────
@@ -11014,6 +11022,8 @@ async function _recPull(name) {
 async function _recSyncAll() {
   let pushed = 0, seen = 0, applied = 0;
   for (const name of Object.keys(KR_REC_TABLES)) {
+    const _d = KR_REC_TABLES[name];
+    if (_d.paused && _d.paused()) continue;   // neither sent nor pulled; its queue keeps
     pushed += await _recPush(name);
     const r = await _recPull(name);
     seen += r.seen; applied += r.applied;
