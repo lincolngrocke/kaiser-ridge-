@@ -232,6 +232,7 @@
     --run-fill1: rgba(255,255,255,0.06); --run-fill2: rgba(255,255,255,0.08);
     --run-fill3: rgba(255,255,255,0.13); --run-fill4: rgba(255,255,255,0.22);
     --run-blue: #5ac8fa; --run-green: #30d158; --run-yellow: #ffd60a;
+    --run-pill: rgba(255,255,255,0.10); --run-line: rgba(255,255,255,0.14); --run-ring: rgba(255,255,255,0.28);
   }
   body:not(.dark) .clock-running-overlay, body:not(.dark) #modal-run-done {
     --run-sheet: var(--bg);
@@ -240,6 +241,10 @@
     --run-fill1: rgba(0,0,0,0.04); --run-fill2: rgba(0,0,0,0.06);
     --run-fill3: #ffffff; --run-fill4: rgba(0,0,0,0.18);
     --run-blue: #007aff; --run-green: #248a3d; --run-yellow: #9a6b00;
+    /* v414, Lincoln 23 Oct 2026: Start Break's edge and every task's tick circle were
+       hand-written white, so on the light page they vanished. Outline colours live
+       here now, one per theme, like everything else on this screen. */
+    --run-pill: #ffffff; --run-line: rgba(0,0,0,0.16); --run-ring: rgba(0,0,0,0.28);
   }
   body:not(.dark) .clock-running-overlay .run-seg div.on { box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
   .clock-running-overlay {
@@ -364,8 +369,8 @@
     flex: 1;
     height: 54px;
     border-radius: 27px;
-    border: 0.5px solid rgba(255,255,255,0.14);
-    background: rgba(255,255,255,0.10);
+    border: 0.5px solid var(--run-line);
+    background: var(--run-pill);
     color:var(--run-yellow);
     font-size: 16px;
     font-weight: 600;
@@ -2012,7 +2017,7 @@
     <div class="run-job-title" id="run-job-title"></div>
     <div class="run-job-meta" id="run-job-meta"></div>
     <div id="run-break-info"></div>
-    <button id="run-video-btn" onclick="playVideoForTask(clockState&&clockState.task)" style="display:none;margin-top:12px;background:var(--run-fill2);color:var(--run-text);border:0.5px solid rgba(255,255,255,0.15);border-radius:20px;padding:8px 16px;font-size:14px;font-weight:600;cursor:pointer;">▶ Watch how-to</button>
+    <button id="run-video-btn" onclick="playVideoForTask(clockState&&clockState.task)" style="display:none;margin-top:12px;background:var(--run-fill2);color:var(--run-text);border:0.5px solid var(--run-line);border-radius:20px;padding:8px 16px;font-size:14px;font-weight:600;cursor:pointer;">▶ Watch how-to</button>
     <span class="run-undo" id="run-undo" onclick="undoClockIn()">Undo clock-in</span>
   </div>
   <div id="run-list-top" ontouchstart="runGrabStart(event)" ontouchmove="runGrabMove(event)" ontouchend="runGrabEnd(event)">
@@ -3298,7 +3303,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.413';
+const APP_VERSION = '2026-06-21.414';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -6639,7 +6644,7 @@ function renderRunChecklist() {
       const expanded = _expandedChecklistItems.has(s);
       const checkedCount = steps.filter(st => stepChecks[s] && stepChecks[s][st]).length;
       const flagged = !!clFlags[s];
-      const circle = `<span onclick="markChecklistItemDone(decodeURIComponent('${enc}'))" title="${_isRep ? 'Add a rep' : ''}" style="width:24px;height:24px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;${isDone ? 'background:#30d158;' : (_isRep && _reps ? 'border:2px solid rgba(48,209,88,0.6);' : 'border:2px solid rgba(255,255,255,0.28);')}">${isDone ? '<span style="color:#05070c;font-size:14px;">✓</span>' : (_isRep ? '<span style="color:var(--run-green);font-size:19px;font-weight:700;line-height:1;">+</span>' : '')}</span>`;
+      const circle = `<span onclick="markChecklistItemDone(decodeURIComponent('${enc}'))" title="${_isRep ? 'Add a rep' : ''}" style="width:24px;height:24px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;${isDone ? 'background:#30d158;' : (_isRep && _reps ? 'border:2px solid rgba(48,209,88,0.6);' : 'border:2px solid var(--run-ring);')}">${isDone ? '<span style="color:#05070c;font-size:14px;">✓</span>' : (_isRep ? '<span style="color:var(--run-green);font-size:19px;font-weight:700;line-height:1;">+</span>' : '')}</span>`;
       // Long tasks (or tasks with steps) clamp to 2 lines and expand on tap — same
       // as to-dos. Short tasks keep tap-the-text-to-complete. The circle always completes.
       const _longish = s.length > 55;
@@ -6820,7 +6825,7 @@ function renderRunChecklist() {
       const fullMeta = (expanded && caughtTs) ? ` · Caught ${_inboxStamp(caughtTs)}${pinnedTs ? ' · 📌 ' + _inboxStamp(pinnedTs) : ''}${p.editedTs ? ' · ✏️ ' + _inboxStamp(p.editedTs) : ''}` : '';
       const thumb = expanded ? _photoThumbHtml(p, 80) : '';
       const clamp = expanded ? '' : 'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;';
-      const box = `<span onclick="togglePinnedNote('${p.id}')" style="width:22px;height:22px;border-radius:7px;flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;cursor:pointer;${isDone ? 'background:#30d158;' : 'border:1.5px solid rgba(255,255,255,0.28);'}">${isDone ? '<span style="color:#05070c;font-size:13px;">✓</span>' : ''}</span>`;
+      const box = `<span onclick="togglePinnedNote('${p.id}')" style="width:22px;height:22px;border-radius:7px;flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;cursor:pointer;${isDone ? 'background:#30d158;' : 'border:1.5px solid var(--run-ring);'}">${isDone ? '<span style="color:#05070c;font-size:13px;">✓</span>' : ''}</span>`;
       const durStr = (isDone && dur['pin:' + p.id] != null) ? `<span style="font-size:13px;color:var(--run-green);font-weight:600;white-space:nowrap;flex-shrink:0;">${fmtMin(dur['pin:' + p.id])}</span>` : '';
       return `<div class="pin-row" data-pin-id="${p.id}" data-pin-task="${pinTaskAttr}" data-pin-flagged="${p.flagged && !isDone ? '1' : ''}" ontouchstart="pinSwipeStart(event)" ontouchmove="pinSwipeMove(event)" ontouchend="pinSwipeEnd(event)" style="display:flex;gap:12px;padding:14px 0;border-top:0.5px solid var(--run-fill2);${p.flagged && !isDone ? 'background:rgba(255,214,10,0.06);' : ''}${isDone ? 'opacity:0.55;' : ''}">
         ${box}
