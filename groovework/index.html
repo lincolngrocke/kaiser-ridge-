@@ -3306,7 +3306,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.416';
+const APP_VERSION = '2026-06-21.417';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -23873,10 +23873,13 @@ function _rsRender() {
     // It counts DOWN as steps are ticked (v416, Lincoln 23 Oct 2026: "it shows 19 steps,
     // but 3 or 4 have been ticked off"). Only on the row whose steps can be ticked, since
     // the ticks belong to the lap in hand, not to laps still to come.
-    const _stTicked = (ctx.kind === 'clock' && r.tappable && clockState.stepChecks && clockState.stepChecks[r.t])
-      ? stepsOf(r.t).filter(st => clockState.stepChecks[r.t][st]).length : 0;
+    // A FINISHED row says how many of its steps were done (v417, Lincoln 23 Oct 2026:
+    // "It's showing 19 steps, but only 4 of 19 were completed").
+    const _stSet = nSteps ? _rsStepTicks(r, ctx) : new Set();
+    const _stTicked = stepsOf(r.t).filter(st => _stSet.has(st)).length;
     const _stWords = !_stTicked ? `${nSteps} step${nSteps === 1 ? '' : 's'}`
-      : (_stTicked >= nSteps ? `all ${nSteps} done` : `${nSteps - _stTicked} of ${nSteps} left`);
+      : (_stTicked >= nSteps ? `all ${nSteps} done`
+      : (r.isDone ? `${_stTicked} of ${nSteps} done` : `${nSteps - _stTicked} of ${nSteps} left`));
     const stepChip = nSteps
       ? `<span onclick="event.stopPropagation();_rsToggleSteps(decodeURIComponent('${encodeURIComponent(key).replace(/'/g, '%27')}'))"
            style="display:inline-flex;align-items:center;gap:3px;flex-shrink:0;font-size:11px;font-weight:600;color:${_stTicked >= nSteps ? '#30d158' : '#5ac8fa'};cursor:pointer;">${open ? '▾' : '▸'} ☰ ${_stWords}</span>`
@@ -23981,7 +23984,7 @@ function _rsStepsHtml(r, ctx, stepsOf) {
   const steps = stepsOf(r.t);
   if (!steps.length) return '';
   const live = ctx.kind === 'clock';
-  const checks = (live && clockState.stepChecks && clockState.stepChecks[r.t]) || {};
+  const checks = {}; _rsStepTicks(r, ctx).forEach(st => { checks[st] = true; });
   const nextStep = steps.find(s => !checks[s]);
   // ⭐ TICK STEPS HERE (v415). Lincoln: "Once you're in the run sheet, everything gets
   // done from there", but steps could only be ticked back on the clock list. Same call
@@ -23991,7 +23994,9 @@ function _rsStepsHtml(r, ctx, stepsOf) {
   const canTick = live && r.tappable && !_rsMoveKey && !_rsPlacing;
   const _uItem = encodeURIComponent(r.t).replace(/'/g, '%27');
   // ⏱ Minutes per ticked step, the same figure the clock list shows beside it (v416).
-  const _sDur = canTick ? _stepDurations() : {};
+  // A finished once-off shows them too. A lapped task does not: its step times are
+  // keyed by name, so every lap would show the latest lap's minutes.
+  const _sDur = (canTick || (live && r.isDone && !isRepeatTask(ctx.job, r.t))) ? _stepDurations() : {};
   const body = steps.map(s => {
     const ticked = !!checks[s];
     const isCur = live && r.isNow && s === nextStep && !ticked;
@@ -24003,7 +24008,7 @@ function _rsStepsHtml(r, ctx, stepsOf) {
     }
     return `<div style="display:flex;align-items:flex-start;gap:8px;padding:5px 2px;">
       <span style="font-size:11px;flex-shrink:0;line-height:1.5;color:${ticked ? '#616a7e' : (isCur ? '#5ac8fa' : 'var(--subtext)')};">${ticked ? '✓' : (isCur ? '▸' : '·')}</span>
-      <span style="flex:1;min-width:0;overflow-wrap:anywhere;font-size:13px;line-height:1.45;color:${ticked ? '#616a7e' : 'var(--text)'};">${_escHtml(s)}</span></div>`;
+      <span style="flex:1;min-width:0;overflow-wrap:anywhere;font-size:13px;line-height:1.45;color:${ticked ? '#616a7e' : 'var(--text)'};">${_escHtml(s)}</span>${(ticked && _sDur[r.t + '~|~' + s]) ? `<span style="font-size:11px;color:#30d158;font-weight:600;white-space:nowrap;flex-shrink:0;line-height:1.5;">${fmtMin(_sDur[r.t + '~|~' + s])}</span>` : ''}</div>`;
   }).join('');
   const box = r.isNow
     ? 'border:1px solid rgba(90,200,250,0.55);background:rgba(90,200,250,0.07);'
@@ -24011,6 +24016,25 @@ function _rsStepsHtml(r, ctx, stepsOf) {
   return `<div style="margin:0 0 0 22px;padding:6px 10px;border-radius:8px;${box}">${body}</div>`;
 }
 
+// Which of a row's steps are ticked. The row in hand reads the live boxes. A FINISHED
+// row reads the timed log instead, because banking a lap clears the boxes (v299):
+// the steps ticked after the task's previous tick and up to this row's own tick.
+// A row finished in an earlier session has no log here, so it shows no count.
+function _rsStepTicks(r, ctx) {
+  const out = new Set();
+  if (!ctx || ctx.kind !== 'clock' || !clockState) return out;
+  if (!r.doneAt) {
+    if (!r.tappable) return out;
+    const c = (clockState.stepChecks && clockState.stepChecks[r.t]) || {};
+    Object.keys(c).forEach(st => { if (c[st]) out.add(st); });
+    return out;
+  }
+  const end = new Date(r.doneAt).getTime();
+  let from = -Infinity;
+  (clockState.checklistDone || []).forEach(d => { if (d.item === r.t) { const t = new Date(d.at).getTime(); if (t < end && t > from) from = t; } });
+  (clockState.stepDone || []).forEach(d => { if (d.item === r.t) { const t = new Date(d.at).getTime(); if (t > from && t <= end) out.add(d.step); } });
+  return out;
+}
 function _rsStepTick(item, step) {
   if (Date.now() < _clSwipeBlockClickUntil) return;   // a drag just happened — not a tap
   if (!clockState || !clockState.running) return;
