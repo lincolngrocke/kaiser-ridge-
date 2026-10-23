@@ -2630,6 +2630,7 @@
     </div>
     <div id="run-add-hint" style="font-size:13px;color:var(--subtext);margin-bottom:10px;"></div>
     <textarea id="run-add-input" rows="2" placeholder="" oninput="_autoSizeRunInput()" onkeydown="if(event.key==='Enter'&&_runAddMode==='add'){event.preventDefault();confirmRunAdd();}" style="width:100%;box-sizing:border-box;min-height:60px;border:1px solid var(--border);border-radius:12px;padding:12px;font-size:16px;font-family:inherit;resize:none;outline:none;color:var(--text);background:var(--bg);" autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true"></textarea>
+    <div id="run-add-batches" style="display:none;"></div>
     <label id="run-add-photo-label" style="display:inline-flex;align-items:center;gap:6px;margin-top:12px;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">
       📷 Add photo
       <input type="file" accept="image/*" multiple onchange="onCapturePhoto(event)" style="display:none;">
@@ -3322,7 +3323,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.420';
+const APP_VERSION = '2026-06-21.421';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5595,6 +5596,23 @@ function runGrabEnd() {
 let _runAddKind = 'tasks';
 let _runAddMode = 'add';          // 'add' | 'edit'
 let _runAddJob = null;            // v420: set when the sheet adds to a job previewed, not the one running
+let _runAddBatch = null;          // v421: the batch a new task goes into (null = none)
+// The batch choice on Add task (v421): only for a task on a job that has batches.
+function _renderRunAddBatches(job, show) {
+  const el = document.getElementById('run-add-batches'); if (!el) return;
+  const rec = job ? _batchRec(job) : null;
+  if (!show || !rec || !rec.order.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = '';
+  const enc = v => encodeURIComponent(v).replace(/'/g, '%27');
+  const chip = (val, label) => {
+    const on = _runAddBatch === val;
+    const set = val === null ? 'null' : "decodeURIComponent('" + enc(val) + "')";
+    return '<span onclick="_runAddBatch=' + set + ';_renderRunAddBatches(decodeURIComponent(\'' + enc(job) + '\'),true)" style="display:inline-block;padding:6px 12px;border-radius:14px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--blue);'
+      + (on ? 'background:var(--blue);color:#fff;' : 'color:var(--blue);') + '">' + _escHtml(label) + '</span>';
+  };
+  el.innerHTML = '<div style="font-size:12px;color:var(--subtext);margin:12px 0 6px;">Batch</div><div style="display:flex;flex-wrap:wrap;gap:6px;">'
+    + chip(null, 'No batch') + rec.order.map(b => chip(b, '▣ ' + b)).join('') + '</div>';
+}
 let _runEditRef = null;           // when editing: { kind, task, pinId, oldText }
 // The add/edit/comment box grows with its content (long to-dos carry links and
 // several lines) — from a per-mode minimum up to 42vh so the sheet's buttons
@@ -5619,6 +5637,7 @@ function openRunAdd(kind, jobOverride) {
   const _job = jobOverride || ((clockState && clockState.running && clockState.task) || null);
   if (!_job) return;
   _runAddJob = jobOverride || null;   // v420: a job preview adds to a job that is not running
+  _runAddBatch = null;
   _runAddMode = 'add'; _runEditRef = null;
   _runAddKind = (kind === 'notes') ? 'notes' : 'tasks';
   const isTask = _runAddKind === 'tasks';
@@ -5634,6 +5653,7 @@ function openRunAdd(kind, jobOverride) {
   const stb0 = document.getElementById('run-add-steps'); if (stb0) stb0.style.display = 'none';
   const cb0 = document.getElementById('run-add-comment'); if (cb0) cb0.style.display = 'none';
   const pl0 = document.getElementById('run-add-photo-label'); if (pl0) pl0.style.display = 'inline-flex';
+  _renderRunAddBatches(_job, isTask);
   const inp = document.getElementById('run-add-input');
   inp.value = '';
   inp.placeholder = isTask ? 'e.g. Wipe down the benches' : 'e.g. Order more filters';
@@ -5645,6 +5665,7 @@ function openRunAdd(kind, jobOverride) {
 // clock — reuses the add sheet. For a task, ref = the item text; for a to-do, the pin id.
 function openRunEdit(kind, ref) {
   if (!clockState || !clockState.running || !clockState.task) return;
+  _renderRunAddBatches(null, false);
   const isTask = kind === 'tasks';
   _runAddMode = 'edit'; _runAddKind = isTask ? 'tasks' : 'notes';
   _capturePhotos = []; _captureRemovedIds = [];
@@ -5795,6 +5816,7 @@ async function confirmRunAdd() {
     _stampNoteFiled(note, [task], mode);
     if (mode === 'permanent') {
       _storeSet('kr_subtasks', JSON.stringify(SUBTASKS)); saveSubtaskOrigin(orig);
+      if (_runAddBatch) _moveTaskToBatch(task, text, _runAddBatch);   // v421: straight into the batch chosen
       if (photos.length) { const sp = getSubtaskPhotos(); sp[text] = (sp[text] || []).concat(photos); saveSubtaskPhotos(sp); }   // reference photo on the task
     }
     else saveTaskNotes(tn);
@@ -9188,6 +9210,65 @@ function _ciShowAddOnly(host) {
   const a = document.getElementById(host + '-add'); if (a) a.style.display = '';
 }
 function _ciAddTask() { if (_ciAddJob) openRunAdd('tasks', _ciAddJob); }
+// ⠿ HOLD A TASK, DRAG IT ONTO A BATCH HEADING (v421). Lincoln, 24 Oct 2026, having added
+// "Replace broken toilet seat" from the preview: "I want to be able to drop it into
+// Maintenance." Hold for a moment to lift the row (a quick swipe still scrolls), drag
+// over a heading (it lights up), let go to move the task into that batch. Letting go
+// anywhere else puts it back. "Unbatched" is a heading too, for taking one out.
+let _ciDrag = null, _ciHoldT = null;
+function _ciDragStart(e) {
+  const row = e.currentTarget, t = e.touches[0];
+  _ciDrag = { row, task: row.dataset.ciTask, x: t.clientX, y: t.clientY, on: false, over: null };
+  clearTimeout(_ciHoldT);
+  _ciHoldT = setTimeout(() => {
+    if (!_ciDrag) return;
+    _ciDrag.on = true;
+    const r = _ciDrag.row.style;
+    r.transition = 'none'; r.position = 'relative'; r.zIndex = '5'; r.background = 'var(--card)';
+    r.boxShadow = '0 6px 16px rgba(0,0,0,0.25)'; r.borderRadius = '8px'; r.pointerEvents = 'none';
+    if (navigator.vibrate) { try { navigator.vibrate(15); } catch (err) {} }
+  }, _CL_HOLD_MS);
+}
+function _ciDragMove(e) {
+  if (!_ciDrag) return;
+  const t = e.touches[0];
+  if (!_ciDrag.on) {
+    if (Math.abs(t.clientX - _ciDrag.x) > 8 || Math.abs(t.clientY - _ciDrag.y) > 8) { clearTimeout(_ciHoldT); _ciDrag = null; }   // scrolling, not holding
+    return;
+  }
+  e.preventDefault();
+  _ciDrag.row.style.transform = 'translateY(' + (t.clientY - _ciDrag.y) + 'px)';
+  const hit = document.elementFromPoint(t.clientX, t.clientY);
+  const hd = hit ? hit.closest('[data-ci-batch]') : null;
+  if (_ciDrag.over && _ciDrag.over !== hd) _ciDrag.over.style.background = '';
+  if (hd) hd.style.background = 'rgba(10,132,255,0.14)';
+  _ciDrag.over = hd;
+  _clEdgeScroll(document.getElementById(_ciHost + '-tasks'), t.clientY, () => {});
+}
+function _ciDragEnd() {
+  clearTimeout(_ciHoldT);
+  const d = _ciDrag; _ciDrag = null;
+  if (!d || !d.on) return;
+  _clStopEdgeScroll();
+  _clSwipeBlockClickUntil = Date.now() + 500;   // the lift must not also open or close a section
+  const target = d.over;
+  if (target) target.style.background = '';
+  if (!target || !_ciCtx) { _ciRenderList(false); return; }
+  _ciMoveTo(d.task, target.dataset.ciBatch || null);
+}
+function _ciMoveTo(task, batch) {
+  const job = _ciCtx && _ciCtx.job; if (!job) return;
+  const prevBatch = _batchOfTask(job, task), prevIdx = (SUBTASKS[job] || []).indexOf(task);
+  if (!_moveTaskToBatch(job, task, batch)) { _ciRenderList(false); return; }
+  _ciRefreshAfterAdd(job, task);
+  showUndoToast((batch ? 'Moved into ' + batch : 'Moved out of its batch'), () => {
+    _moveTaskToBatch(job, task, prevBatch);
+    const list = SUBTASKS[job] || [], i = list.indexOf(task);
+    if (i >= 0 && prevIdx >= 0) { list.splice(i, 1); list.splice(Math.min(prevIdx, list.length), 0, task); _storeSet('kr_subtasks', JSON.stringify(SUBTASKS)); }
+    _ciRefreshAfterAdd(job, task);
+    showToast('↺ Moved back');
+  }, 5000);
+}
 // After a task is added from a preview, redraw that preview with it in.
 function _ciRefreshAfterAdd(job, added) {
   if (_ciHost === 'pa-job') {
@@ -9212,7 +9293,7 @@ function _ciSections() {
   try { secs = _orgSections(_ciCtx.job, _ciCtx.items) || secs; } catch (e) {}
   return secs.filter(sec => sec.items && sec.items.length);
 }
-function _ciToggle(i) { _ciOpen[i] = !_ciOpen[i]; _ciRenderList(false); }
+function _ciToggle(i) { if (Date.now() < _clSwipeBlockClickUntil) return; _ciOpen[i] = !_ciOpen[i]; _ciRenderList(false); }
 function _ciSetMode(mode) {
   const secs = _ciSections();
   const allOpen = secs.length && secs.every((x, i) => _ciOpen[i]);
@@ -9229,6 +9310,8 @@ function _ciRenderList(resetScroll) {
   const doneOf = t => (_ciCtx.done && _ciCtx.done[t]) || null;
   const secs = _ciSections();
   const batched = secs.length > 1 || (secs.length === 1 && secs[0].name);
+  // Rows can be dragged into a batch only on a plain job preview (the job's own list).
+  const _ciCanMove = !!(batched && _ciAddJob && _ciAddJob === _ciCtx.job && !_ciCtx.done && !_ciCtx.lapsFor);
   if (tools) tools.style.display = (batched || _ciCtx.items.length) ? 'flex' : 'none';
   const _addBtn = document.getElementById(_ciHost + '-add');
   if (_addBtn) _addBtn.style.display = (_ciAddJob && _ciAddJob === _ciCtx.job) ? '' : 'none';
@@ -9253,11 +9336,13 @@ function _ciRenderList(resetScroll) {
       // Expand all shows the whole batch name too, over two lines if it needs them.
       const hRow = _ciWrap ? 'align-items:flex-start;min-height:42px;padding:11px 0;box-sizing:border-box;' : 'align-items:center;height:42px;';
       const hName = _ciWrap ? 'white-space:normal;overflow-wrap:anywhere;line-height:1.3;' : 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
-      return '<div onclick="_ciToggle(' + i + ')" style="display:flex;' + hRow + 'gap:8px;border-bottom:1px solid var(--border);cursor:pointer;-webkit-tap-highlight-color:transparent;">'
+      return '<div data-ci-batch="' + _attr(sec.loose ? '' : (sec.name || '')) + '" onclick="_ciToggle(' + i + ')" style="display:flex;' + hRow + 'gap:8px;border-bottom:1px solid var(--border);cursor:pointer;-webkit-tap-highlight-color:transparent;border-radius:6px;">'
         + '<span style="flex-shrink:0;width:14px;font-size:12px;color:var(--subtext);">' + (open ? '\u25be' : '\u25b8') + '</span>'
         + '<span style="flex:1;min-width:0;font-size:15px;font-weight:700;color:var(--text);' + hName + '">' + _escHtml(sec.name || 'Other tasks') + '</span>'
         + '<span style="flex-shrink:0;font-size:12px;color:var(--subtext);white-space:nowrap;">' + _escHtml(meta) + '</span></div>'
-        + (open ? '<div style="padding-left:22px;">' + sec.items.map(t => _clockInRowHtml(t, lastMap, est, laps(t), doneOf(t), _ciWrap)).join('') + '</div>' : '');
+        + (open ? '<div style="padding-left:22px;">' + sec.items.map(t => _ciCanMove
+            ? '<div data-ci-task="' + _attr(t) + '" ontouchstart="_ciDragStart(event)" ontouchmove="_ciDragMove(event)" ontouchend="_ciDragEnd(event)" ontouchcancel="_ciDragEnd(event)">' + _clockInRowHtml(t, lastMap, est, laps(t), doneOf(t), _ciWrap) + '</div>'
+            : _clockInRowHtml(t, lastMap, est, laps(t), doneOf(t), _ciWrap)).join('') + '</div>' : '');
     }).join('');
   }
   el.scrollTop = resetScroll ? 0 : keep;
@@ -15295,6 +15380,29 @@ function _batchRec(job) {
   return (r && Array.isArray(r.order) && r.items) ? r : null;
 }
 function _jobHasBatches(job) { const r = _batchRec(job); return !!(r && r.order.length); }
+// Move ONE task into a batch, or out of every batch (batch = null). It joins the END of
+// that batch in the job's order (SUBTASKS), the same placement the Jobs editor uses
+// (_dirMoveTaskToBatch), so every list that groups by batch agrees. v421.
+function _batchOfTask(job, task) { const r = _batchRec(job); const b = r && r.items[task]; return (b && r.order.includes(b)) ? b : null; }
+function _moveTaskToBatch(job, task, batch) {
+  const tb = getTaskBatches();
+  const rec = tb[job] || (tb[job] = { order: [], items: {} });
+  rec.items = rec.items || {};
+  if (batch && !rec.order.includes(batch)) return false;
+  if (_batchOfTask(job, task) === (batch || null)) return false;
+  if (batch) rec.items[task] = batch; else delete rec.items[task];
+  saveTaskBatches(tb);
+  const list = (SUBTASKS[job] || []).slice(), i = list.indexOf(task);
+  if (i >= 0) {
+    list.splice(i, 1);
+    let at = -1;
+    list.forEach((t, k) => { const b = (rec.items[t] && rec.order.includes(rec.items[t])) ? rec.items[t] : null; if (b === (batch || null)) at = k; });
+    list.splice(at >= 0 ? at + 1 : list.length, 0, task);
+    SUBTASKS[job] = list; _storeSet('kr_subtasks', JSON.stringify(SUBTASKS));
+  }
+  try { _refreshChecklistSurfaces(job); } catch (e) {}
+  return true;
+}
 // To-dos share a job's batch list (.order) with tasks but keep their own
 // membership map (.todoItems: pinId → batchName) so a to-do's id can't collide
 // with a task's text. Rides kr_task_batches, so it syncs in the library already.
