@@ -3323,7 +3323,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.421';
+const APP_VERSION = '2026-06-21.422';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5597,6 +5597,7 @@ let _runAddKind = 'tasks';
 let _runAddMode = 'add';          // 'add' | 'edit'
 let _runAddJob = null;            // v420: set when the sheet adds to a job previewed, not the one running
 let _runAddBatch = null;          // v421: the batch a new task goes into (null = none)
+let _runAddFrom = 'clock';        // v422: 'clock' | 'preview' | 'organise'
 // The batch choice on Add task (v421): only for a task on a job that has batches.
 function _renderRunAddBatches(job, show) {
   const el = document.getElementById('run-add-batches'); if (!el) return;
@@ -5633,10 +5634,11 @@ function _setRunInputSize(minPx) {
   inp.style.minHeight = minPx + 'px';
   _autoSizeRunInput();
 }
-function openRunAdd(kind, jobOverride) {
+function openRunAdd(kind, jobOverride, from) {
   const _job = jobOverride || ((clockState && clockState.running && clockState.task) || null);
   if (!_job) return;
   _runAddJob = jobOverride || null;   // v420: a job preview adds to a job that is not running
+  _runAddFrom = from || (jobOverride ? 'preview' : 'clock');   // v422: who to refresh afterwards
   _runAddBatch = null;
   _runAddMode = 'add'; _runEditRef = null;
   _runAddKind = (kind === 'notes') ? 'notes' : 'tasks';
@@ -5825,7 +5827,11 @@ async function confirmRunAdd() {
     _capturePhotos = []; _captureRemovedIds = [];
     closeModal('modal-run-add');
     renderRunChecklist();
-    if (_runAddJob) { _ciRefreshAfterAdd(task, text); _runAddJob = null; }
+    if (_runAddJob) {
+      if (_runAddFrom === 'organise') _clOrgAfterAdd(task, text);
+      else _ciRefreshAfterAdd(task, text);
+      _runAddJob = null;
+    }
     updateInboxCount();
     autoBackup();
     showToast((mode === 'permanent' ? 'Task' : 'To-do') + ' added to ' + task + ' ✓' + (mode === 'permanent' ? ' — Publish to share' : ''));
@@ -24736,6 +24742,21 @@ const _clEditScope = 'plan';
 // for the loose group). View-only state, reset each time the sheet opens.
 let _clOrgCollapsed = {};
 let _clOrgHiddenOpen = false;   // the 🙈 Hidden section at the foot of Organise
+function _clOrgAddTask() { if (_clOrganiseTask) openRunAdd('tasks', _clOrganiseTask, 'organise'); }
+// A task made while organising a run is meant for that run, so it comes in FLAGGED on
+// whatever this sheet arranges (the block, or the running session), its batch opens
+// and the sheet redraws with it in view. Swipe it right to unflag if not.
+function _clOrgAfterAdd(job, task) {
+  const org = document.getElementById('modal-cl-organise');
+  if (!org || !org.classList.contains('open') || _clOrganiseTask !== job) return;
+  try { if (!_editTargetFlags()[task]) toggleChecklistFlag(job, task); } catch (e) {}
+  _clOrgCollapsed[_batchOfTask(job, task) || 'Unbatched'] = false;
+  _renderClOrganiseBody();
+  try {
+    const row = [...document.querySelectorAll('#cl-organise-body .cl-row')].find(r => r.dataset.clItem === task);
+    if (row) row.scrollIntoView({ block: 'center' });
+  } catch (e) {}
+}
 function _clToggleBatchCollapse(name) {
   if (Date.now() < _clSwipeBlockClickUntil) return;   // a drag just finished — not a tap
   _clOrgCollapsed[name] = !_clOrgCollapsed[name];
@@ -24983,7 +25004,11 @@ function _renderClOrganiseBody() {
           <span style="flex:1;min-width:0;overflow-wrap:anywhere;font-size:15px;color:var(--subtext);">${_escHtml(s)}</span>
           <span onclick="unhideTask(decodeURIComponent('${_hEnc(task)}'), decodeURIComponent('${_hEnc(s)}'))" style="flex-shrink:0;color:var(--blue);font-weight:700;font-size:14px;cursor:pointer;padding:2px 4px;">Show</span></div>`).join('') : '');
   }
-  body.innerHTML = '<div class="cl-sticky-top">' + scopeToggle + estLine + rsCtl + intro + toolsRow + '</div>' + bodyHtml;
+  // ＋ Add task (v422, Lincoln 24 Oct 2026): "need to be able to add a task in the
+  // Organise screen as well", with the batch chosen. First line of the list, because the
+  // tools row above is already full on a phone.
+  const addCtl = `<div onclick="_clOrgAddTask()" style="padding:2px 0 10px;color:var(--blue);font-weight:600;font-size:14px;cursor:pointer;">＋ Add task</div>`;
+  body.innerHTML = '<div class="cl-sticky-top">' + scopeToggle + estLine + rsCtl + intro + toolsRow + '</div>' + addCtl + bodyHtml;
 }
 
 function openPlannerDetail(planId) {
