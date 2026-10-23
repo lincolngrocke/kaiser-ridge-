@@ -3306,7 +3306,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.417';
+const APP_VERSION = '2026-06-21.418';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5021,6 +5021,13 @@ function _bumpTaskRep(job, task, delta) {
 }
 function jobHasReps(job) { const r = getJobRuns()[job]; return !!(r && r.reps && Object.keys(r.reps).length); }
 function resetRun(job) { const all = getJobRuns(); if (all[job]) { delete all[job]; saveJobRuns(all); } }
+// What a fresh clock-in cleared (v418), so its Undo and a following Resume can put it back.
+let _repsResetPrev = null;
+function _restoreResetReps() {
+  const p = _repsResetPrev; if (!p) return;
+  const all = getJobRuns(); all[p.job] = p.rec; saveJobRuns(all);
+  _repsResetPrev = null;
+}
 function finishRunPrompt() {
   const job = clockState && clockState.task; if (!job) return;
   // Laps live in TWO stores, and to anyone reading the button both of them are "reps":
@@ -5302,6 +5309,8 @@ function resumeRunYes() {
   if (rec.order)      clockState.orderOverride = rec.order.slice();
   if (rec.runOrder)   clockState.runOrder      = rec.runOrder.slice();
   if (rec.lapTargets) clockState.lapTargets    = Object.assign({}, rec.lapTargets);
+  // Resuming is the same run, so the laps a fresh clock-in just cleared come back.
+  if (_repsResetPrev && _repsResetPrev.job === rec.job) _restoreResetReps();
   clockState.checklistDone = (rec.done || []).slice();   // carried:true — display only
   _storeSet('kr_clock', JSON.stringify(clockState));
   clearRunResume(rec.job); _resumeRec = null;
@@ -5337,6 +5346,19 @@ function _jobLastDone(job) {
   return best;
 }
 
+// ⭐ RECENT DAY FIRST, THEN THE ORDER IT WAS DONE IN (v418). The browse-to-flag pool
+// sorted by last-done time, newest first. When a whole job was done yesterday that is
+// yesterday's sequence upside down: Lincoln, 24 Oct 2026, "the task I did first finishes
+// at the bottom", while the clock-in preview showed it the right way up. Recency is
+// really about the DAY (what you use often floats above what you never do); inside one
+// day the sequence is the learned order and must read top to bottom. Never-done last.
+function _byRecentDayThenOrder(last) {
+  const day = t => { if (!t) return 0; const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
+  return (a, b) => {
+    const ta = last[a] || 0, tb = last[b] || 0;
+    return (day(tb) - day(ta)) || (ta - tb);
+  };
+}
 function _checklistItemLastDone(job) {
   const map = {};
   if (!job) return map;
@@ -6786,7 +6808,7 @@ function renderRunChecklist() {
       const _batchOrder = (members) => {
         const head = [], tail = [];
         members.forEach(s => ((clFlags[s] && !_isDoneRow(s)) ? head : tail).push(s));
-        tail.sort((a, b) => (itemLastDone[b] || 0) - (itemLastDone[a] || 0));   // never-done → 0 → last
+        tail.sort(_byRecentDayThenOrder(itemLastDone));   // newest day first, that day's order kept; never-done last
         return head.concat(tail);
       };
       const _batchBody = (members) => _batchOrder(members).map(buildTaskRow).join('');
@@ -9392,6 +9414,22 @@ function confirmTime(choice) {
       if (taskInfo._resumeLapTargets && Object.keys(taskInfo._resumeLapTargets).length)
         clockState.lapTargets = Object.assign({}, taskInfo._resumeLapTargets);
       clearRunResume(clockState.task);   // consumed — clocking out again rewrites it if work is still owing
+    }
+    // 🔁 EVERY NEW RUN STARTS FROM LAP ONE (v418). Lincoln, 24 Oct 2026: with ↺ Reset
+    // reps hidden (v410) there was no way to clear yesterday's laps, so a job clocked in
+    // from the Clock carried them into today; only a planned block reset them (v322).
+    // Now every fresh clock-in does. A RESUME is the same run continuing, so it keeps its
+    // laps, and so does Resume on the offer that may follow (resumeRunYes restores them).
+    _repsResetPrev = null;
+    const _isResume = Array.isArray(taskInfo._resumeCarried) || !!(taskInfo._resumeFlags && Object.keys(taskInfo._resumeFlags).length);
+    if (!_isResume && jobHasReps(clockState.task)) {
+      const _rj = clockState.task;
+      _repsResetPrev = { job: _rj, rec: JSON.parse(JSON.stringify(getJobRuns()[_rj])) };
+      resetRun(_rj);
+      showUndoToast('🔁 Laps start from 1 for this run', () => {
+        _restoreResetReps(); renderRunChecklist(); updateRunRing();
+        showToast('↺ Laps carried on from last time');
+      }, 8000);
     }
     _storeSet('kr_clock', JSON.stringify(clockState));
     renderClockState();
@@ -24617,7 +24655,7 @@ function _renderClOrganiseBody() {
     const _dPool = arr => {
       const head = [], tail = [];
       arr.forEach(t => (flags[t] ? head : tail).push(t));
-      tail.sort((a, b) => (_dLast[b] || 0) - (_dLast[a] || 0));
+      tail.sort(_byRecentDayThenOrder(_dLast));
       return head.concat(tail);
     };
     const _dRec = _batchRec(task);
