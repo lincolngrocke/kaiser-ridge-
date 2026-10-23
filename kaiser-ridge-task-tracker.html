@@ -2113,7 +2113,8 @@
       <div id="time-job-kind" style="font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--blue);flex-shrink:0;margin-bottom:2px;">⏱ Clock in</div>
       <div id="time-job-name" style="font-size:20px;font-weight:700;color:var(--text);line-height:1.25;flex-shrink:0;"></div>
       <div id="time-job-sub" style="font-size:13px;color:var(--subtext);margin:3px 0 8px;flex-shrink:0;"></div>
-      <div id="time-job-tools" style="display:none;flex-shrink:0;justify-content:flex-end;gap:8px;padding:0 0 8px;">
+      <div id="time-job-tools" style="display:none;flex-shrink:0;justify-content:flex-end;align-items:center;gap:8px;padding:0 0 8px;">
+        <span id="time-job-add" onclick="_ciAddTask()" style="margin-right:auto;font-size:14px;font-weight:600;color:var(--blue);cursor:pointer;padding:4px 0;white-space:nowrap;">＋ Add task</span>
         <span id="time-job-expand" onclick="_ciSetMode('open')" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;border:1px solid var(--blue);border-radius:14px;padding:4px 12px;">Expand</span><span id="time-job-full" onclick="_ciSetMode('full')" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;border:1px solid var(--blue);border-radius:14px;padding:4px 12px;">Expand all</span>
       </div>
       <div id="time-job-tasks" style="flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;border-top:1px solid var(--border);border-bottom:1px solid var(--border);"></div>
@@ -2417,9 +2418,11 @@
     <div id="pa-step-place" style="display:none;flex-direction:column;flex:1 1 auto;min-height:0;">
       <div style="display:flex;flex-direction:column;flex:1 1 auto;min-height:0;padding:0 20px;">
         <div onclick="plannerAddBack()" style="font-size:14px;color:var(--blue);font-weight:600;padding:0 0 8px;cursor:pointer;flex-shrink:0;">‹ Jobs</div>
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--blue);flex-shrink:0;margin-bottom:2px;">🗓 Add to planner</div>
         <div id="pa-job-name" style="font-size:20px;font-weight:700;color:var(--text);line-height:1.25;flex-shrink:0;"></div>
         <div id="pa-job-sub" style="font-size:13px;color:var(--subtext);margin:3px 0 8px;flex-shrink:0;"></div>
-        <div id="pa-job-tools" style="display:none;flex-shrink:0;justify-content:flex-end;gap:8px;padding:0 0 8px;">
+        <div id="pa-job-tools" style="display:none;flex-shrink:0;justify-content:flex-end;align-items:center;gap:8px;padding:0 0 8px;">
+          <span id="pa-job-add" onclick="_ciAddTask()" style="margin-right:auto;font-size:14px;font-weight:600;color:var(--blue);cursor:pointer;padding:4px 0;white-space:nowrap;">＋ Add task</span>
           <span id="pa-job-expand" onclick="_ciSetMode('open')" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;border:1px solid var(--blue);border-radius:14px;padding:4px 12px;">Expand</span><span id="pa-job-full" onclick="_ciSetMode('full')" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;border:1px solid var(--blue);border-radius:14px;padding:4px 12px;">Expand all</span>
         </div>
         <div id="pa-job-tasks" style="flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;border-top:1px solid var(--border);border-bottom:1px solid var(--border);"></div>
@@ -3319,7 +3322,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.419';
+const APP_VERSION = '2026-06-21.420';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5591,6 +5594,7 @@ function runGrabEnd() {
 // straight from the clock — writes to the same stores the Jobs page reads.
 let _runAddKind = 'tasks';
 let _runAddMode = 'add';          // 'add' | 'edit'
+let _runAddJob = null;            // v420: set when the sheet adds to a job previewed, not the one running
 let _runEditRef = null;           // when editing: { kind, task, pinId, oldText }
 // The add/edit/comment box grows with its content (long to-dos carry links and
 // several lines) — from a per-mode minimum up to 42vh so the sheet's buttons
@@ -5611,16 +5615,18 @@ function _setRunInputSize(minPx) {
   inp.style.minHeight = minPx + 'px';
   _autoSizeRunInput();
 }
-function openRunAdd(kind) {
-  if (!clockState || !clockState.running || !clockState.task) return;
+function openRunAdd(kind, jobOverride) {
+  const _job = jobOverride || ((clockState && clockState.running && clockState.task) || null);
+  if (!_job) return;
+  _runAddJob = jobOverride || null;   // v420: a job preview adds to a job that is not running
   _runAddMode = 'add'; _runEditRef = null;
   _runAddKind = (kind === 'notes') ? 'notes' : 'tasks';
   const isTask = _runAddKind === 'tasks';
   document.getElementById('run-add-title').textContent = isTask ? 'Add task' : 'Add to-do';
   const sb = document.getElementById('run-add-save'); if (sb) sb.textContent = 'Add';
   document.getElementById('run-add-hint').innerHTML = isTask
-    ? 'A recurring task on <b>' + _escHtml(clockState.task) + '</b> — part of the job every time. Publish the library to share it.'
-    : 'A one-off to-do on <b>' + _escHtml(clockState.task) + '</b> — shows here until you tick it off, then it\'s gone.';
+    ? 'A recurring task on <b>' + _escHtml(_job) + '</b> — part of the job every time. Publish the library to share it.'
+    : 'A one-off to-do on <b>' + _escHtml(_job) + '</b> — shows here until you tick it off, then it\'s gone.';
   _capturePhotos = []; _captureRemovedIds = [];   // fresh photo tray (shared w/ quick-capture)
   const pv = document.getElementById('run-add-photo-preview'); if (pv) pv.innerHTML = '';
   const rb0 = document.getElementById('run-add-remind'); if (rb0) rb0.style.display = 'none';
@@ -5759,14 +5765,15 @@ async function confirmRunAdd() {
   if (_savingRunAdd) return;
   const inp = document.getElementById('run-add-input');
   const text = (inp.value || '').trim();
-  if (!clockState || !clockState.task) { closeModal('modal-run-add'); return; }
+  const _addTo = _runAddJob || (clockState && clockState.task) || null;
+  if (!_addTo) { closeModal('modal-run-add'); return; }
   if (!text) { if (!_capturePhotos.length) closeModal('modal-run-add'); else showToast('Give it a name'); return; }
   _savingRunAdd = true;
   const btn = document.getElementById('run-add-save');
   const hasNew = _capturePhotos.some(p => !p.id && p.data);
   if (btn) { btn.textContent = hasNew ? 'Saving…' : 'Add'; btn.style.opacity = '0.5'; btn.style.pointerEvents = 'none'; }
   try {
-    const task = clockState.task;
+    const task = _addTo;
     const mode = (_runAddKind === 'tasks') ? 'permanent' : 'pinned';
     // Resolve photos: keep Drive id, upload new ones, or keep on-device if Drive is unreachable.
     const photos = [];
@@ -5792,10 +5799,11 @@ async function confirmRunAdd() {
     }
     else saveTaskNotes(tn);
     saveInbox(inbox);
-    _runTab = (mode === 'permanent') ? 'tasks' : 'notes'; _runTabUserSet = true;
+    if (!_runAddJob) { _runTab = (mode === 'permanent') ? 'tasks' : 'notes'; _runTabUserSet = true; }
     _capturePhotos = []; _captureRemovedIds = [];
     closeModal('modal-run-add');
     renderRunChecklist();
+    if (_runAddJob) { _ciRefreshAfterAdd(task, text); _runAddJob = null; }
     updateInboxCount();
     autoBackup();
     showToast((mode === 'permanent' ? 'Task' : 'To-do') + ' added to ' + task + ' ✓' + (mode === 'permanent' ? ' — Publish to share' : ''));
@@ -9122,6 +9130,7 @@ function _clockInBack() {
 // A PREVIEW: nothing here is tappable, ticking starts once the clock is running.
 function _renderClockInPreview(job, plan, resume) {
   _ciHost = 'time-job';
+  _ciAddJob = null;   // set again below for a plain job preview; a block or a resume shows its own plan
   document.getElementById('time-job-back').textContent = (plan || resume) ? '\u2039 Planner' : '\u2039 Jobs';
   // v419: the sheet's own name, since the job's name alone could be any sheet.
   const _ck = document.getElementById('time-job-kind');
@@ -9141,8 +9150,9 @@ function _renderClockInPreview(job, plan, resume) {
   document.getElementById('time-job-sub').textContent = bits.join(' \u00b7 ') + ' \u00b7 ' + items.length + ' task' + (items.length === 1 ? '' : 's');
   const lastMap = _checklistItemLastDone(job), est = _taskEstMap(), cnt = _taskHistCountMap();
   const el = document.getElementById('time-job-tasks');
+  _ciAddJob = job;
   if (!items.length) {
-    _ciCtx = null; const _tl = document.getElementById('time-job-tools'); if (_tl) _tl.style.display = 'none';
+    _ciCtx = null; _ciShowAddOnly('time-job');
     el.innerHTML = '<div style="padding:18px 2px;font-size:14px;line-height:1.5;color:var(--subtext);">This job has no tasks yet. You can add them once you are clocked in, or from More, then Jobs.</div>';
     return;
   }
@@ -9166,6 +9176,36 @@ let _ciWrap = false;
 // Which sheet the preview is drawing into: 'time-job' (clock-in) or 'pa-job'
 // (add to planner). The three element ids differ only by this prefix.
 let _ciHost = 'time-job';
+// ＋ ADD A TASK FROM THE JOB PREVIEW (v420). Lincoln, 24 Oct 2026: going back to the
+// clock or to Jobs just to add a task "becomes a bit of a pain". The preview before you
+// clock in or plan a job now has the clock's own Add task box, writing into the job's
+// task list (SUBTASKS), so Jobs, the clock and the planner all have it at once. Only on
+// a plain job preview: a planned block or a resume shows a plan, not the job's list.
+let _ciAddJob = null;
+function _ciShowAddOnly(host) {
+  const t = document.getElementById(host + '-tools'); if (t) t.style.display = 'flex';
+  ['-expand', '-full'].forEach(x => { const b = document.getElementById(host + x); if (b) b.style.display = 'none'; });
+  const a = document.getElementById(host + '-add'); if (a) a.style.display = '';
+}
+function _ciAddTask() { if (_ciAddJob) openRunAdd('tasks', _ciAddJob); }
+// After a task is added from a preview, redraw that preview with it in.
+function _ciRefreshAfterAdd(job, added) {
+  if (_ciHost === 'pa-job') {
+    // Re-selecting the job redraws its list, but it also re-fills the block length from
+    // the average, so keep whatever length was typed before the task was added.
+    const d = document.getElementById('planner-add-duration'), n = document.getElementById('planner-add-avg-note');
+    const keep = d ? d.value : null, keepNote = n ? n.textContent : null;
+    try { selectPlannerTask(job); } catch (e) {}
+    if (d && keep != null) d.value = keep;
+    if (n && keepNote != null) n.textContent = keepNote;
+  }
+  else { try { _renderClockInPreview(job); } catch (e) {} }
+  // A new task joins no batch, so open whichever section holds it: you see it land.
+  try {
+    const i = _ciCtx ? _ciSections().findIndex(sec => sec.items.includes(added)) : -1;
+    if (i >= 0) { _ciOpen[i] = true; _ciRenderList(); }
+  } catch (e) {}
+}
 function _ciSections() {
   if (!_ciCtx) return [];
   let secs = [{ name: null, loose: false, items: _ciCtx.items }];
@@ -9190,6 +9230,8 @@ function _ciRenderList(resetScroll) {
   const secs = _ciSections();
   const batched = secs.length > 1 || (secs.length === 1 && secs[0].name);
   if (tools) tools.style.display = (batched || _ciCtx.items.length) ? 'flex' : 'none';
+  const _addBtn = document.getElementById(_ciHost + '-add');
+  if (_addBtn) _addBtn.style.display = (_ciAddJob && _ciAddJob === _ciCtx.job) ? '' : 'none';
   const exBtn = document.getElementById(_ciHost + '-expand'), fullBtn = document.getElementById(_ciHost + '-full');
   if (exBtn) exBtn.style.display = batched ? '' : 'none';
   const _allOpenNow = !batched || secs.every((x, i) => _ciOpen[i]);
@@ -22498,10 +22540,11 @@ function selectPlannerTask(taskName) {
   document.getElementById('pa-job-name').textContent = taskName;
   document.getElementById('pa-job-sub').textContent = bits.join(' \u00b7 ');
   _ciHost = 'pa-job';
+  _ciAddJob = taskName;
   const listEl = document.getElementById('pa-job-tasks');
   if (!items.length) {
-    _ciCtx = null; document.getElementById('pa-job-tools').style.display = 'none';
-    listEl.innerHTML = '<div style="padding:18px 2px;font-size:14px;line-height:1.5;color:var(--subtext);">This job has no tasks yet. You can add them from More, then Jobs.</div>';
+    _ciCtx = null; _ciShowAddOnly('pa-job');
+    listEl.innerHTML = '<div style="padding:18px 2px;font-size:14px;line-height:1.5;color:var(--subtext);">This job has no tasks yet. Tap ＋ Add task to give it its first one.</div>';
   } else {
     _ciCtx = { job: taskName, items: _shownTasks(taskName, items), lapsFor: null }; _ciOpen = {}; _ciWrap = false;
     _ciRenderList(true);
