@@ -507,7 +507,10 @@
     animation: slideUp 0.28s ease;
   }
   /* A picker sheet that takes the whole screen (v402): see _sizeEntryList. */
-  .modal-sheet.sheet-full { min-height: calc(100vh - env(safe-area-inset-top) - 12px); }
+  /* v419, Lincoln 24 Oct 2026: "the very top of this page is hidden". On the phone, 100vh
+     is the whole screen INCLUDING the status bar strip, taller than what is visible, so the
+     sheet's Cancel / Clock in row sat under the status bar. dvh is the visible height. */
+  .modal-sheet.sheet-full { min-height: calc(100vh - env(safe-area-inset-top) - 12px); min-height: calc(100dvh - env(safe-area-inset-top) - 12px); }
   @keyframes slideUp {
     from { transform: translateY(100%); }
     to { transform: translateY(0); }
@@ -1855,7 +1858,10 @@
   <div class="modal-sheet" style="padding:16px 0 24px;" onclick="event.stopPropagation()">
     <div class="modal-handle"></div>
     <div style="padding:0 20px 4px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
-      <span id="task-trend-title" style="font-size:17px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;">
+        <span style="font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--blue);">📈 Time trend</span>
+        <span id="task-trend-title" style="font-size:17px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+      </div>
       <span onclick="closeModal('modal-task-trend')" style="color:var(--blue);font-size:16px;cursor:pointer;flex-shrink:0;">Done</span>
     </div>
     <div id="task-trend-stats" style="padding:0 20px 8px;font-size:13px;color:var(--subtext);"></div>
@@ -2104,6 +2110,7 @@
          clock-out, breaks and a planner block start use the sheet as it always was. -->
     <div id="time-job-preview" style="display:none;flex:1 1 auto;min-height:0;flex-direction:column;padding:0 20px;">
       <div id="time-job-back" onclick="_clockInBack()" style="font-size:14px;color:var(--blue);font-weight:600;padding:0 0 8px;cursor:pointer;flex-shrink:0;">‹ Jobs</div>
+      <div id="time-job-kind" style="font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--blue);flex-shrink:0;margin-bottom:2px;">⏱ Clock in</div>
       <div id="time-job-name" style="font-size:20px;font-weight:700;color:var(--text);line-height:1.25;flex-shrink:0;"></div>
       <div id="time-job-sub" style="font-size:13px;color:var(--subtext);margin:3px 0 8px;flex-shrink:0;"></div>
       <div id="time-job-tools" style="display:none;flex-shrink:0;justify-content:flex-end;gap:8px;padding:0 0 8px;">
@@ -2481,7 +2488,10 @@
   <div class="modal-sheet" style="padding:16px 0 28px;height:92vh;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;">
     <div class="modal-handle"></div>
     <div style="padding:0 20px 10px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
-      <span id="pin-preview-title" style="font-size:16px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:10px;"></span>
+      <div style="min-width:0;display:flex;flex-direction:column;gap:2px;padding-right:10px;">
+        <span style="font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--blue);">📌 To-dos</span>
+        <span id="pin-preview-title" style="font-size:16px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+      </div>
       <span onclick="closeModal('modal-pin-preview')" style="color:var(--blue);font-size:16px;cursor:pointer;flex-shrink:0;">Done</span>
     </div>
     <div style="padding:10px 20px 6px;flex-shrink:0;">
@@ -2496,7 +2506,10 @@
   <div class="modal-sheet" style="padding:16px 0 28px;height:92vh;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;">
     <div class="modal-handle"></div>
     <div style="padding:0 20px 10px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
-      <span id="cl-organise-title" style="font-size:16px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:10px;"></span>
+      <div style="min-width:0;display:flex;flex-direction:column;gap:2px;padding-right:10px;">
+        <span id="cl-organise-kind" style="font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--blue);">⤢ Organise</span>
+        <span id="cl-organise-title" style="font-size:16px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+      </div>
       <span onclick="closeClOrganise()" style="color:var(--blue);font-size:16px;cursor:pointer;flex-shrink:0;">Done</span>
     </div>
     <div id="cl-organise-body" style="padding:0 20px;overflow-y:auto;overflow-x:hidden;flex:1;"></div>
@@ -3306,7 +3319,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.418';
+const APP_VERSION = '2026-06-21.419';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -9110,6 +9123,9 @@ function _clockInBack() {
 function _renderClockInPreview(job, plan, resume) {
   _ciHost = 'time-job';
   document.getElementById('time-job-back').textContent = (plan || resume) ? '\u2039 Planner' : '\u2039 Jobs';
+  // v419: the sheet's own name, since the job's name alone could be any sheet.
+  const _ck = document.getElementById('time-job-kind');
+  if (_ck) _ck.textContent = resume ? '↻ Clock in · pick up' : (plan ? '⏱ Clock in · planned job' : '⏱ Clock in');
   if (resume) { try { if (_renderClockInResumePreview(job, resume)) return; } catch (e) {} }
   if (plan) { try { if (_renderClockInPlanPreview(job, plan)) return; } catch (e) {} }
   document.getElementById('time-job-name').textContent = job;
@@ -24635,6 +24651,9 @@ function _renderClOrganiseBody() {
   const task = _clOrganiseTask;
   const body = document.getElementById('cl-organise-body');
   if (!body) return;
+  // v419: every sheet says which sheet it is, not only which job.
+  const _okind = document.getElementById('cl-organise-kind');
+  if (_okind) _okind.textContent = _clTargetPlanId() ? '⤢ Organise · planning' : '⤢ Organise';
   const all = _shownTasks(task, SUBTASKS[task]);
   const flags = _editTargetFlags();
   const pid = _clTargetPlanId();
