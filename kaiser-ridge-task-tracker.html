@@ -3323,7 +3323,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.422';
+const APP_VERSION = '2026-06-21.423';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4620,6 +4620,7 @@ function clockOut(overrideTime) {
   _storeRemove('kr_clock');
   renderClockState();
   autoBackup(true);      // clock-out always snapshots — the one moment it's worth the write
+  _safeSetItem(KR_DRIVE_OWED, '1');   // owed until a backup actually lands (v423)
   autoBackupToDrive();   // silent ☁️ safety net — full snapshot to Drive
   // If calendar sync is in use, silently refresh that day so the ▶ live
   // event becomes the ✓ completed one (clockState is now null, so the live
@@ -12042,16 +12043,25 @@ function updateBackupReminder() {
     el.style.color = 'var(--green)';
     el.innerHTML = '✓ Backed up today (' + todayStr + ') — ' + lastStr + '.';
   } else {
-    el.style.background = 'rgba(255,149,0,0.12)';
-    el.style.border = '1px solid rgba(255,149,0,0.4)';
-    el.style.color = '#FF9500';
-    el.innerHTML = '⚠ No backup yet today — it happens automatically at your next clock-out.<br>Today: ' + todayStr + ' · Last backup: ' + lastStr + '.';
+    // Calm unless nothing has landed for 2 days (v423), the same rule as the clock line.
+    const _stale = !at || (Date.now() - new Date(at).getTime() > BACKUP_STALE_MS);
+    el.style.background = _stale ? 'rgba(255,149,0,0.12)' : 'transparent';
+    el.style.border = _stale ? '1px solid rgba(255,149,0,0.4)' : '1px solid var(--border)';
+    el.style.color = _stale ? '#FF9500' : 'var(--subtext)';
+    const _t = _driveTry();
+    el.innerHTML = 'Last backup: ' + lastStr + '. A backup goes after every clock-out, and the app keeps trying until it gets through.'
+      + ((_t && !_t.ok && _t.why) ? '<br>Last try ' + new Date(_t.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) + ': ' + _escHtml(_t.why) + '.' : '');
   }
 }
 
 // Clock-screen daily backup banner. Warns from 9:00am if no export today;
 // once backed up it collapses to a subtle "last backup" reference line.
-const BACKUP_DUE_HOUR = 9; // 9:00am
+const BACKUP_DUE_HOUR = 9; // 9:00am  (no longer used for the warning, see v423 below)
+// v423, Lincoln 24 Oct 2026: "We don't really want to see that. It should just back up
+// automatically." The orange "No backup yet today" went up at 9am every day whether or
+// not anything was wrong. Now the line stays a quiet "Last backup …" and only turns
+// orange when no backup has landed for 2 days, saying why the last try failed.
+const BACKUP_STALE_MS = 48 * 3600000;
 function updateBackupBanner() {
   const els = [document.getElementById('backup-banner-clock'),
                document.getElementById('backup-banner-running')];
@@ -12071,17 +12081,20 @@ function updateBackupBanner() {
     ref = (viaDrive ? '☁️ to Drive ' : '') + (backedToday ? ('today at ' + t)
       : (d.toLocaleDateString(undefined, { day:'numeric', month:'short' }) + ' at ' + t));
   }
-  const due = now.getHours() >= BACKUP_DUE_HOUR;
+  const stale = !at || (now.getTime() - new Date(at).getTime() > BACKUP_STALE_MS);
+  const _try = _driveTry();
+  const _why = (_try && !_try.ok && _try.why) ? (' Last try: ' + _try.why + '.') : '';
 
   let cls, html, show = true;
   if (_backupAlarm()) {
     cls = 'warn'; html = '🛑 Backup stopped. ' + _backupAlarmWords();
   } else if (backedToday) {
     cls = 'ok';  html = '✓ Backed up ' + ref;
-  } else if (due) {
+  } else if (at && stale) {
     cls = 'warn';
-    html = at ? ('⚠ No backup yet today — it happens automatically at your next clock-out. Last backup ' + ref + '.')
-              : '⚠ No backup yet — tap to export your data.';
+    html = '⚠ No backup for 2 days. Last backup ' + ref + '. It keeps trying while the app is open.' + _why;
+  } else if (!at && entries.length && now.getHours() >= BACKUP_DUE_HOUR) {
+    cls = 'warn'; html = '⚠ No backup yet — tap to export your data.';
   } else if (at) {
     cls = 'ok';  html = 'Last backup ' + ref;
   } else {
@@ -12342,18 +12355,55 @@ function confirmBackupAsIs() {
 }
 
 let _driveBackupBusy = false;
+// ⭐ A BACKUP IS OWED UNTIL ONE LANDS (v423). Lincoln, 24 Oct 2026: "No backup yet today"
+// after finishing a job, with the last one the evening before. The backup was sent ONCE,
+// at clock-out, and any failure was swallowed ("retried at the next clock-out"), so a
+// whole day of clock-outs could fail with nothing said. Worse, the upload had no time
+// limit: one that hung (iOS freezes a PWA's network the moment you switch away) left
+// _driveBackupBusy true, and every backup after it returned at the first line until
+// the app was restarted. Now: a clock-out marks a backup OWED; the upload gives up after
+// 2 minutes; every attempt records how it went; and while one is owed the app retries
+// whenever it is open on screen (at most every 5 minutes) until one lands.
+const KR_DRIVE_OWED = 'kr_drive_backup_owed';   // '1' while a clock-out's backup has not landed
+const KR_DRIVE_TRY  = 'kr_drive_backup_try';    // { at, ok, why } — the last attempt, for the banner and Settings
+const DRIVE_RETRY_MS = 5 * 60000, DRIVE_TIMEOUT_MS = 120000;
+// Literal key, not KR_DRIVE_TRY: the banner reads this and can run before this line of
+// the file has (a const read before its line is a TDZ error that takes boot down).
+function _driveTry() { try { return JSON.parse(localStorage.getItem('kr_drive_backup_try') || 'null'); } catch (e) { return null; } }
+function _driveTryNote(ok, why) { _safeSetItem('kr_drive_backup_try', JSON.stringify({ at: new Date().toISOString(), ok: !!ok, why: why || '' })); }
+function _driveBackupRetry() {
+  if (document.hidden || _driveBackupBusy || !_kvHydrated) return;
+  if (!localStorage.getItem('kr_sheet_url')) return;
+  const owed = localStorage.getItem(KR_DRIVE_OWED) === '1';
+  const last = localStorage.getItem('kr_last_drive_backup_at');
+  const stale = !last || (Date.now() - new Date(last).getTime() > 24 * 3600000);
+  if (!owed && !stale) return;
+  const t = _driveTry();
+  if (t && !t.ok && Date.now() - new Date(t.at).getTime() < DRIVE_RETRY_MS) return;
+  autoBackupToDrive();
+}
 async function autoBackupToDrive(force) {
   if (_driveBackupBusy) return;
   const url = localStorage.getItem('kr_sheet_url');
   if (!url) return;
   if (!force && !_backupCheck()) return;   // collapsed: send nothing, the alarm is up
   _driveBackupBusy = true;
+  const ctl = (typeof AbortController === 'function') ? new AbortController() : null;
+  const timer = ctl ? setTimeout(() => ctl.abort(), DRIVE_TIMEOUT_MS) : null;
   try {
     const snapshot = buildBackupSnapshot();
     const stats = _backupStatsOf(snapshot.data);
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'saveBackup', who: getUserName(), force: !!force, json: JSON.stringify(snapshot) }) });
-    const json = await res.json();
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'saveBackup', who: getUserName(), force: !!force, json: JSON.stringify(snapshot) }), signal: ctl ? ctl.signal : undefined });
+    const raw = await res.text();
+    let json = null;
+    try { json = JSON.parse(raw); } catch (e) {
+      // Google answers a failed script with a web page, not JSON. Say so plainly.
+      _driveTryNote(false, 'Google sent back an error page' + (res.status && res.status !== 200 ? ' (' + res.status + ')' : ''));
+      return;
+    }
     if (json && json.success) {
+      _driveTryNote(true, '');
+      try { localStorage.removeItem(KR_DRIVE_OWED); } catch (e) {}
       _storeSet('kr_last_drive_backup_at', new Date().toISOString());
       _storeSet(KR_BACKUP_GOOD, JSON.stringify(Object.assign({ at: new Date().toISOString() }, stats)));
       updateBackupBanner();
@@ -12363,10 +12413,20 @@ async function autoBackupToDrive(force) {
       // numbers as the record, so the alarm survives the next open as well.
       _storeSet(KR_BACKUP_GOOD, JSON.stringify(Object.assign({ at: new Date().toISOString() }, json.prev)));
       _raiseBackupAlarm(json.prev, json.now || stats);
+      _driveTryNote(false, 'Drive holds more than this phone, so it refused');
+    } else {
+      _driveTryNote(false, (json && (json.error || json.message)) ? String(json.error || json.message).slice(0, 80) : 'Drive did not confirm it');
     }
-  } catch (e) { /* offline — retried at the next clock-out */ }
-  finally { _driveBackupBusy = false; }
+  } catch (e) {
+    _driveTryNote(false, (e && e.name === 'AbortError') ? 'timed out after 2 minutes' : 'no connection');
+  }
+  finally { if (timer) clearTimeout(timer); _driveBackupBusy = false; try { updateBackupBanner(); updateBackupReminder(); } catch (e) {} }
 }
+// Retry while a backup is owed: shortly after the app opens, whenever it comes back on
+// screen, and every 5 minutes while it stays open.
+_kvReady.then(() => setTimeout(_driveBackupRetry, 8000)).catch(() => {});
+document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(_driveBackupRetry, 3000); });
+setInterval(_driveBackupRetry, DRIVE_RETRY_MS);
 
 // ── ☁️ Restore from Drive: a list to choose from, never "the newest" ──
 // ⭐⭐ 6 Oct 2026: this fetched the newest file by name and offered to restore it.
