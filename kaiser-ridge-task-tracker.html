@@ -528,7 +528,12 @@
     padding: 0 20px 14px;
     border-bottom: 1px solid var(--border);
   }
-  .modal-title { font-size: 17px; font-weight: 600; }
+  .modal-title { font-size: 17px; font-weight: 600; text-wrap: balance; }
+  /* v427, Lincoln 25 Oct 2026: a job name that will not fit on one line is spread EVENLY
+     over two lines, and over three if two will not hold it ("Carting straw to Southern
+     Cross / Poultry" became "Carting straw to / Southern Cross Poultry"). text-wrap:
+     balance does exactly that; these headings used to cut the name off with … instead. */
+  .job-heading { white-space: normal !important; overflow: visible !important; text-overflow: clip !important; text-wrap: balance; overflow-wrap: anywhere; line-height: 1.25; }
   .modal-cancel { font-size: 17px; color: var(--blue); cursor: pointer; background: none; border: none; }
   .modal-save { font-size: 17px; color: var(--blue); font-weight: 600; cursor: pointer; background: none; border: none; }
 
@@ -1860,7 +1865,7 @@
     <div style="padding:0 20px 4px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
       <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;">
         <span style="font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--blue);">📈 Time trend</span>
-        <span id="task-trend-title" style="font-size:17px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+        <span class="job-heading" id="task-trend-title" style="font-size:17px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
       </div>
       <span onclick="closeModal('modal-task-trend')" style="color:var(--blue);font-size:16px;cursor:pointer;flex-shrink:0;">Done</span>
     </div>
@@ -2111,7 +2116,7 @@
     <div id="time-job-preview" style="display:none;flex:1 1 auto;min-height:0;flex-direction:column;padding:0 20px;">
       <div id="time-job-back" onclick="_clockInBack()" style="font-size:14px;color:var(--blue);font-weight:600;padding:0 0 8px;cursor:pointer;flex-shrink:0;">‹ Jobs</div>
       <div id="time-job-kind" style="font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--blue);flex-shrink:0;margin-bottom:2px;">⏱ Clock in</div>
-      <div id="time-job-name" style="font-size:20px;font-weight:700;color:var(--text);line-height:1.25;flex-shrink:0;"></div>
+      <div class="job-heading" id="time-job-name" style="font-size:20px;font-weight:700;color:var(--text);line-height:1.25;flex-shrink:0;"></div>
       <div id="time-job-sub" style="font-size:13px;color:var(--subtext);margin:3px 0 8px;flex-shrink:0;"></div>
       <div id="time-job-tools" style="display:none;flex-shrink:0;justify-content:flex-end;align-items:center;gap:8px;padding:0 0 8px;">
         <span id="time-job-add" onclick="_ciAddTask()" style="margin-right:auto;font-size:14px;font-weight:600;color:var(--blue);cursor:pointer;padding:4px 0;white-space:nowrap;">＋ Add task</span>
@@ -2419,7 +2424,7 @@
       <div style="display:flex;flex-direction:column;flex:1 1 auto;min-height:0;padding:0 20px;">
         <div onclick="plannerAddBack()" style="font-size:14px;color:var(--blue);font-weight:600;padding:0 0 8px;cursor:pointer;flex-shrink:0;">‹ Jobs</div>
         <div style="font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--blue);flex-shrink:0;margin-bottom:2px;">🗓 Add to planner</div>
-        <div id="pa-job-name" style="font-size:20px;font-weight:700;color:var(--text);line-height:1.25;flex-shrink:0;"></div>
+        <div class="job-heading" id="pa-job-name" style="font-size:20px;font-weight:700;color:var(--text);line-height:1.25;flex-shrink:0;"></div>
         <div id="pa-job-sub" style="font-size:13px;color:var(--subtext);margin:3px 0 8px;flex-shrink:0;"></div>
         <div id="pa-job-tools" style="display:none;flex-shrink:0;justify-content:flex-end;align-items:center;gap:8px;padding:0 0 8px;">
           <span id="pa-job-add" onclick="_ciAddTask()" style="margin-right:auto;font-size:14px;font-weight:600;color:var(--blue);cursor:pointer;padding:4px 0;white-space:nowrap;">＋ Add task</span>
@@ -2493,7 +2498,7 @@
     <div style="padding:0 20px 10px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
       <div style="min-width:0;display:flex;flex-direction:column;gap:2px;padding-right:10px;">
         <span style="font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--blue);">📌 To-dos</span>
-        <span id="pin-preview-title" style="font-size:16px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+        <span class="job-heading" id="pin-preview-title" style="font-size:16px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
       </div>
       <span onclick="closeModal('modal-pin-preview')" style="color:var(--blue);font-size:16px;cursor:pointer;flex-shrink:0;">Done</span>
     </div>
@@ -2511,7 +2516,7 @@
     <div style="padding:0 20px 10px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
       <div style="min-width:0;display:flex;flex-direction:column;gap:2px;padding-right:10px;">
         <span id="cl-organise-kind" style="font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--blue);">⤢ Organise</span>
-        <span id="cl-organise-title" style="font-size:16px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+        <span class="job-heading" id="cl-organise-title" style="font-size:16px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
       </div>
       <span onclick="closeClOrganise()" style="color:var(--blue);font-size:16px;cursor:pointer;flex-shrink:0;">Done</span>
     </div>
@@ -2529,7 +2534,7 @@
     <div style="padding:0 20px 10px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
       <div style="min-width:0;display:flex;flex-direction:column;gap:2px;padding-right:10px;">
         <span id="run-sheet-kind" style="font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--blue);">📋 Run sheet</span>
-        <span id="run-sheet-title" style="font-size:16px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+        <span class="job-heading" id="run-sheet-title" style="font-size:16px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
       </div>
       <span onclick="closeRunSheet()" style="color:var(--blue);font-size:16px;cursor:pointer;flex-shrink:0;">Done</span>
     </div>
@@ -3323,7 +3328,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.426';
+const APP_VERSION = '2026-06-21.427';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
