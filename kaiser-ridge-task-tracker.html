@@ -3323,7 +3323,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.425';
+const APP_VERSION = '2026-06-21.426';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -22248,6 +22248,49 @@ function reflowPlannerBlocks(grid) {
   if (needed > (parseFloat(grid.style.height) || 0)) grid.style.height = needed + 'px';
 }
 
+// ☕ BREAKS ON THE PLANNER (v426). Lincoln, 25 Oct 2026: "planned breaks need to be
+// displayed on the planner ... the time and how many minutes ... each on its own line
+// underneath the start, finish time and total time. Once a job's completed, the breaks
+// need to be displayed as well in the same format." One line per break: ☕ 9:57am · 10m.
+//   • Planned block: the run sheet's own forecast (_rsRows), so the two always agree.
+//   • Running job: breaks taken, the one you're on now, and planned ones still to come (~).
+//   • Finished job: the breaks actually taken (entry.breaks: start/end).
+function _plannerBreakLines(list) {
+  return (list || []).sort((a, b) => a.ms - b.ms).map(b =>
+    '<div style="font-size:10px;opacity:0.95;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">☕ '
+      + (b.ahead ? '~' : '') + _rsHM(b.ms) + ' · ' + (b.now ? 'on break now' : fmtMin(b.mins)) + '</div>').join('');
+}
+function _rsRowsFor(planId) {   // the run sheet's rows for a block (planId) or the running job (null)
+  const prev = _rsPlanId;
+  try { _rsPlanId = planId; return _rsRows(); } catch (e) { return []; } finally { _rsPlanId = prev; }
+}
+function _plannedBreaksFor(planId) {
+  const rec = getPlannerChecklist()[planId];
+  if (!rec || !Array.isArray(rec.breaks) || !rec.breaks.length) return [];
+  return _rsRowsFor(planId).filter(r => r.brk && isFinite(r.startWhen)).map(r => ({ ms: r.startWhen, mins: r.mins }));
+}
+function _doneBreaksFor(entry) {
+  return (Array.isArray(entry && entry.breaks) ? entry.breaks : [])
+    .filter(b => b && isFinite(b.start) && isFinite(b.end) && b.end > b.start)
+    .map(b => ({ ms: b.start, mins: Math.max(1, Math.round((b.end - b.start) / 60000)) }));
+}
+function _liveBreaksFor(cs) {
+  if (!cs) return [];
+  const out = (Array.isArray(cs.breaks) ? cs.breaks : [])
+    .filter(b => b && isFinite(b.start) && isFinite(b.end) && b.end > b.start)
+    .map(b => ({ ms: b.start, mins: Math.max(1, Math.round((b.end - b.start) / 60000)) }));
+  if (cs.onBreak && cs.breakStartMs) out.push({ ms: cs.breakStartMs, now: true });
+  if (Array.isArray(cs.plannedBreaks) && cs.plannedBreaks.length) {
+    _rsRowsFor(null).forEach(r => {
+      if (!r.brk || r.isDone || !isFinite(r.startWhen)) return;
+      if (cs.onBreak && cs.brkActiveId === r.id) return;   // already shown as "on break now"
+      // A break not yet taken cannot start before now, even when the forecast's
+      // cursor still sits back at the last tick.
+      out.push({ ms: Math.max(r.startWhen, Date.now()), mins: r.mins, ahead: true });
+    });
+  }
+  return out;
+}
 function renderPlannerBlock(plan, grid) {
   const [h, m] = plan.startTime.split(':').map(Number);
   const topMins = (h - PLANNER_START_HOUR) * 60 + m;
@@ -22276,7 +22319,7 @@ function renderPlannerBlock(plan, grid) {
   const _blkFlags = (_pov && _pov.flags && Object.keys(_pov.flags).length) ? _pov.flags : (getChecklistFlags()[plan.task] || {});
   const _hasFlags = Object.keys(_blkFlags).length > 0 || (getTaskNotes()[plan.task] || []).some(p => p.flagged);
   block.innerHTML = `<div class="planner-block-title">${_hasFlags ? '🚩 ' : ''}${plan.task}</div>
-    <div class="planner-block-meta">${startStr} – ${endStr} · ${plan.durationHours}h</div>`;
+    <div class="planner-block-meta">${startStr} – ${endStr} · ${plan.durationHours}h</div>${_plannerBreakLines(_plannedBreaksFor(plan.id))}`;
 
   let _blockTouchStartTime = 0;
 
@@ -22330,7 +22373,7 @@ function renderPlannerDoneBlock(entry, grid) {
     <div style="font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
       ✓ ${entry.task}
     </div>
-    <div style="font-size:10px;opacity:0.9;margin-top:2px;">${startStr} – ${endStr} · ${entry.durationHours}h</div>`;
+    <div style="font-size:10px;opacity:0.9;margin-top:2px;">${startStr} – ${endStr} · ${entry.durationHours}h</div>${_plannerBreakLines(_doneBreaksFor(entry))}`;
 
   block.addEventListener('click', () => openPlannerDoneDetail(entry));
 
@@ -22538,7 +22581,7 @@ function renderPlannerLiveBlock(cs, grid) {
     <div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
       ⏱ ${cs.task}
     </div>
-    <div style="font-size:10px;opacity:0.9;margin-top:2px;">${startStr} – now (${nowStr})</div>`;
+    <div style="font-size:10px;opacity:0.9;margin-top:2px;">${startStr} – now (${nowStr})</div>${_plannerBreakLines(_liveBreaksFor(cs))}`;
 
   grid.appendChild(block);
   _renderLiveForecastGhost(grid, nowMins);
