@@ -3323,7 +3323,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.423';
+const APP_VERSION = '2026-06-21.424';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -24092,7 +24092,7 @@ function _rsRender() {
   const _ins = (i) => _rsMoveKey
     ? `<div onclick="_rsMoveTo(${i}, this)" style="margin:2px 0 6px;padding:5px 10px;border-radius:8px;border:1px dashed rgba(90,200,250,0.75);background:rgba(90,200,250,0.10);color:#5ac8fa;font-size:12px;font-weight:700;text-align:center;cursor:pointer;">⤵ move here</div>`
     : (_rsPlacing
-    ? `<div onclick="_rsPlaceBreak(${i})" style="margin:2px 0 6px;padding:5px 10px;border-radius:8px;border:1px dashed rgba(255,159,10,0.75);background:rgba(255,159,10,0.10);color:#ff9f0a;font-size:12px;font-weight:700;text-align:center;cursor:pointer;">☕ break goes here</div>`
+    ? `<div onclick="_rsPlaceBreak(${i}, this)" style="margin:2px 0 6px;padding:5px 10px;border-radius:8px;border:1px dashed rgba(255,159,10,0.75);background:rgba(255,159,10,0.10);color:#ff9f0a;font-size:12px;font-weight:700;text-align:center;cursor:pointer;">☕ break goes here</div>`
     : '');
   const rowsHtml = rows.map((r, _i) => {
     // ☕ A break row: no batch, no average, no steps — it is time, not work. On the
@@ -24665,13 +24665,19 @@ function _rsResetOrder() {
   _rsRender();
   showToast('↺ Back to the learned order');
 }
-function _rsAfterBrkChange(ctx) {
-  _rsRender();
+// v424, Lincoln 25 Oct 2026: "as soon as I add the break, the task list scrolls away from
+// where the break is". Placing shows a "☕ break goes here" slot in EVERY gap; the drop
+// removes them all, the list above shrinks, and you land somewhere else. So a break
+// change re-renders KEEPING the break where your finger was (the same anchor the task
+// moves use), since the next thing you do is usually trim it from 30 minutes.
+function _rsAfterBrkChange(ctx, keepKey, prevTop) {
+  if (keepKey) _rsRenderKeeping(keepKey, prevTop); else _rsRender();
   if (ctx.kind === 'plan') { _applyBlockEstimate(_rsPlanId); if (typeof renderPlannerScreen === 'function') renderPlannerScreen(); }
   else { renderRunChecklist(); updateRunRing(); }
 }
-function _rsPlaceBreak(idx) {
+function _rsPlaceBreak(idx, gapEl) {
   const ctx = _rsCtx(); if (!ctx || !ctx.saveBreaks) return;
+  const gapTop = gapEl && gapEl.getBoundingClientRect ? gapEl.getBoundingClientRect().top : null;
   const id = 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
   ctx.saveBreaks((ctx.breaks || []).concat([{ id, mins: 30 }]));
   // Put it exactly where the gap was: rebuild the order with the new key spliced in.
@@ -24680,7 +24686,7 @@ function _rsPlaceBreak(idx) {
   keys.splice(Math.max(0, Math.min(idx, keys.length)), 0, _rsBrkKey(id));
   c2.saveOrder(keys);
   _rsPlacing = false;
-  _rsAfterBrkChange(_rsCtx());
+  _rsAfterBrkChange(_rsCtx(), _rsBrkKey(id), gapTop);
   showToast('☕ 30 min break planned');
 }
 function _rsBrkAdj(id, delta) {
@@ -24691,7 +24697,7 @@ function _rsBrkAdj(id, delta) {
     mins = Math.max(5, Math.min(240, (b.mins || 30) + delta));
     return Object.assign({}, b, { mins });
   }));
-  _rsAfterBrkChange(_rsCtx());
+  _rsAfterBrkChange(_rsCtx(), _rsBrkKey(id), _rsRowTop(_rsBrkKey(id)));
   showToast('☕ ' + fmtMin(mins) + ' break');
 }
 // ⭐ DELETING A BREAK GIVES THE TIME BACK. Removing the row used to leave the REAL
