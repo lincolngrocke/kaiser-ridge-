@@ -3323,7 +3323,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.424';
+const APP_VERSION = '2026-06-21.425';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -24071,8 +24071,8 @@ function _rsRender() {
         ? `<span onclick="_rsResetOrder()" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:13px;">↺ Back to the learned order</span>`
         : ''}</span>
       <span>${_rsPlacing
-      ? `<span onclick="_rsPlacing=false;_rsRender()" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:13px;">✕ cancel — tap a gap above to drop the break in</span>`
-      : (_rsMoveKey ? '' : `<span onclick="_rsPlacing=true;_rsRender()" style="color:#ff9f0a;cursor:pointer;font-weight:600;font-size:13px;">☕ Add a break</span>`)}</span></div>
+      ? `<span onclick="_rsSetPlacing(false)" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:13px;">✕ cancel — tap a gap above to drop the break in</span>`
+      : (_rsMoveKey ? '' : `<span onclick="_rsSetPlacing(true)" style="color:#ff9f0a;cursor:pointer;font-weight:600;font-size:13px;">☕ Add a break</span>`)}</span></div>
     ${(ctx.order && !_rsMoveKey && !_rsPlacing)
       ? `<div style="font-size:11px;color:#6d7686;line-height:1.5;padding:0 0 8px;">The learned order is the order you ticked these off <b>last time you did this job</b>. You have arranged this one by hand, so it is following your order instead.</div>`
       : '<div style="padding:0 0 6px;"></div>'}</div>`;
@@ -24674,6 +24674,26 @@ function _rsAfterBrkChange(ctx, keepKey, prevTop) {
   if (keepKey) _rsRenderKeeping(keepKey, prevTop); else _rsRender();
   if (ctx.kind === 'plan') { _applyBlockEstimate(_rsPlanId); if (typeof renderPlannerScreen === 'function') renderPlannerScreen(); }
   else { renderRunChecklist(); updateRunRing(); }
+}
+// ☕ Add a break / cancel WITHOUT LOSING YOUR PLACE (v425). Lincoln, 25 Oct 2026: you
+// scroll to the spot, tap Add a break, and "the screen jumps", because a "break goes
+// here" slot appears in every gap above you and pushes the list down. Anchor on the row
+// nearest the middle of what you can see, and put it back at the same height after.
+function _rsSetPlacing(on) {
+  const sc = document.getElementById('run-sheet-body');
+  let key = null, top = null;
+  if (sc) {
+    const r = sc.getBoundingClientRect(), mid = r.top + r.height / 2;
+    let best = Infinity;
+    sc.querySelectorAll('.rs-row').forEach(row => {
+      const b = row.getBoundingClientRect();
+      if (b.bottom < r.top || b.top > r.bottom) return;   // off screen
+      const d = Math.abs((b.top + b.bottom) / 2 - mid);
+      if (d < best) { best = d; key = row.dataset.rsKey; top = b.top; }
+    });
+  }
+  _rsPlacing = !!on;
+  if (key) _rsRenderKeeping(key, top); else _rsRender();
 }
 function _rsPlaceBreak(idx, gapEl) {
   const ctx = _rsCtx(); if (!ctx || !ctx.saveBreaks) return;
