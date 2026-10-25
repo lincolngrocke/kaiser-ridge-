@@ -3328,7 +3328,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.428';
+const APP_VERSION = '2026-06-21.429';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5671,8 +5671,11 @@ function openRunAdd(kind, jobOverride, from) {
 }
 // Edit an existing Task (checklist item) or To-do (pinned note) straight from the
 // clock — reuses the add sheet. For a task, ref = the item text; for a to-do, the pin id.
-function openRunEdit(kind, ref) {
-  if (!clockState || !clockState.running || !clockState.task) return;
+function openRunEdit(kind, ref, jobOverride, from) {
+  const _job = (kind === 'tasks' && jobOverride) ? jobOverride : ((clockState && clockState.running && clockState.task) || null);
+  if (!_job) return;
+  _runAddFrom = from || 'clock';
+  const _live = !!(clockState && clockState.running && clockState.task === _job);
   _renderRunAddBatches(null, false);
   const isTask = kind === 'tasks';
   _runAddMode = 'edit'; _runAddKind = isTask ? 'tasks' : 'notes';
@@ -5681,20 +5684,20 @@ function openRunEdit(kind, ref) {
   document.getElementById('run-add-title').textContent = isTask ? 'Edit task' : 'Edit to-do';
   const sb = document.getElementById('run-add-save'); if (sb) sb.textContent = 'Save';
   const rb = document.getElementById('run-add-remind'); if (rb) rb.style.display = 'none';
-  const cb = document.getElementById('run-add-comment'); if (cb) cb.style.display = 'inline-flex';   // 💬 attach a stamped comment to this item
+  const cb = document.getElementById('run-add-comment'); if (cb) cb.style.display = _live ? 'inline-flex' : 'none';   // 💬 stamped comment: only on the running job, it folds into its timesheet
   const pl = document.getElementById('run-add-photo-label'); if (pl) pl.style.display = 'inline-flex';
   const db = document.getElementById('run-add-delete'); if (db) { db.style.display = 'block'; db.textContent = isTask ? 'Delete task' : 'Delete to-do'; }
   const inp = document.getElementById('run-add-input');
   inp.placeholder = '';
   const stb = document.getElementById('run-add-steps');
   if (isTask) {
-    _runEditRef = { kind: 'tasks', task: clockState.task, oldText: ref };
-    document.getElementById('run-add-hint').innerHTML = 'Rename this task on <b>' + _escHtml(clockState.task) + '</b>, add a reference photo or steps. Publish the library to share.';
+    _runEditRef = { kind: 'tasks', task: _job, oldText: ref };
+    document.getElementById('run-add-hint').innerHTML = 'Rename this task on <b>' + _escHtml(_job) + '</b>, add a reference photo or steps. Publish the library to share.';
     inp.value = ref;
     _capturePhotos = (getSubtaskPhotos()[ref] || []).map(ph => Object.assign({}, ph));   // preload the task's reference photos
     renderCapturePreview();
     if (stb) {   // steps live on the task globally — editing here saves to the jobs page too
-      const _nSt = stepsFor((clockState && clockState.task) || null, ref).length;
+      const _nSt = stepsFor(_job, ref).length;
       stb.textContent = _nSt ? ('≣ Steps (' + _nSt + ')') : '≣ Add steps';
       stb.style.display = 'inline-flex';
     }
@@ -5725,7 +5728,7 @@ function openRunTaskSteps() {
   if (!ref || ref.kind !== 'tasks') return;
   closeModal('modal-run-add');
   _runAddMode = 'add'; _runEditRef = null;
-  openSubtaskStepsEditor(ref.oldText, (clockState && clockState.task) || null);
+  openSubtaskStepsEditor(ref.oldText, ref.task || (clockState && clockState.task) || null);
 }
 // 💬 Attach a timestamped comment to the task/to-do being edited (Lincoln's
 // "called Jack Miles, the update belongs on that to-do" flow). Re-skins the
@@ -5851,7 +5854,7 @@ async function confirmRunAdd() {
 async function confirmRunEdit() {
   if (_savingRunAdd) return;
   const ref = _runEditRef;
-  if (!ref || !clockState) { closeModal('modal-run-add'); _runAddMode = 'add'; return; }
+  if (!ref || (ref.kind !== 'tasks' && !clockState)) { closeModal('modal-run-add'); _runAddMode = 'add'; return; }
   const inp = document.getElementById('run-add-input');
   const text = (inp.value || '').trim();
   if (!text) { showToast('Give it a name'); return; }
@@ -5893,6 +5896,7 @@ async function confirmRunEdit() {
     _capturePhotos = []; _captureRemovedIds = [];
     closeModal('modal-run-add');
     renderRunChecklist();
+    if (_runAddFrom === 'organise') { try { _refreshChecklistSurfaces(ref.task); _renderClOrganiseBody(); } catch (e) {} }
     updateInboxCount();
     autoBackup();
     showToast(ref.kind === 'tasks' ? 'Task updated ✓ — Publish to share' : 'To-do updated ✓');
@@ -6311,7 +6315,7 @@ function reviveDoneItem(i) {
 // Delete the task or to-do being edited, straight from the running clock.
 function deleteRunItem() {
   const ref = _runEditRef;
-  if (!ref || !clockState) { closeModal('modal-run-add'); return; }
+  if (!ref || (ref.kind !== 'tasks' && !clockState)) { closeModal('modal-run-add'); return; }
   const isTask = ref.kind === 'tasks';
   if (!confirm('Delete this ' + (isTask ? 'task' : 'to-do') + '?' + (isTask ? '\n\nIt is removed from this job — Publish the library to share.' : ''))) return;
   const task = ref.task;
@@ -6322,6 +6326,7 @@ function deleteRunItem() {
     const flags = getChecklistFlags(); if (flags[task] && flags[task][item] != null) { delete flags[task][item]; if (!Object.keys(flags[task]).length) delete flags[task]; saveChecklistFlags(flags); }
     const tbat = getTaskBatches(); if (tbat[task] && tbat[task].items && tbat[task].items[item] != null) { delete tbat[task].items[item]; saveTaskBatches(tbat); }   // ▣ this job's batch only
     const sp = getSubtaskPhotos(); if (sp[item]) { delete sp[item]; saveSubtaskPhotos(sp); }
+    if (clockState && clockState.task === task) {   // v429: also reachable from Organise with nothing running
     if (Array.isArray(clockState.checklistDone)) clockState.checklistDone = clockState.checklistDone.filter(d => d.item !== item);
     if (Array.isArray(clockState.stepDone)) clockState.stepDone = clockState.stepDone.filter(d => d.item !== item);
     if (clockState.stepChecks && clockState.stepChecks[item]) delete clockState.stepChecks[item];
@@ -6329,6 +6334,7 @@ function deleteRunItem() {
     if (clockState.flagOverride && clockState.flagOverride[item]) delete clockState.flagOverride[item];
     if (Array.isArray(clockState.orderOverride)) clockState.orderOverride = clockState.orderOverride.filter(s => s !== item);
     _storeSet('kr_clock', JSON.stringify(clockState));
+    }
   } else {
     const tn = getTaskNotes();
     if (Array.isArray(tn[task])) tn[task] = tn[task].filter(p => p.id !== ref.pinId);
@@ -6339,6 +6345,7 @@ function deleteRunItem() {
   _runAddMode = 'add'; _runEditRef = null;
   closeModal('modal-run-add');
   renderRunChecklist();
+  if (_runAddFrom === 'organise') { try { _refreshChecklistSurfaces(task); _renderClOrganiseBody(); } catch (e) {} }
   autoBackup();
   showToast((isTask ? 'Task' : 'To-do') + ' deleted');
 }
@@ -24880,6 +24887,12 @@ const _clEditScope = 'plan';
 let _clOrgCollapsed = {};
 let _clOrgHiddenOpen = false;   // the 🙈 Hidden section at the foot of Organise
 function _clOrgAddTask() { if (_clOrganiseTask) openRunAdd('tasks', _clOrganiseTask, 'organise'); }
+// ✎ EDIT A TASK WHILE PLANNING (v429). Lincoln, 26 Oct 2026: "It would just be very handy to
+// be able to edit a task name whilst you're planning out the job." The clock's own edit
+// sheet, aimed at this job: the rename goes through _renameChecklistItem, so the task's
+// history, steps, photos, flags and planned blocks follow the new name, and the job's
+// list on the Jobs screen has it straight away.
+function _clOrgEditTask(item) { if (_clOrganiseTask) openRunEdit('tasks', item, _clOrganiseTask, 'organise'); }
 // A task made while organising a run is meant for that run, so it comes in FLAGGED on
 // whatever this sheet arranges (the block, or the running session), its batch opens
 // and the sheet redraws with it in view. Swipe it right to unflag if not.
@@ -25079,6 +25092,7 @@ function _renderClOrganiseBody() {
                      : `<span style="font-size:11px;color:#4a5165;font-style:italic;">🗓 not done yet</span>`;
         })()}</span></span>
       ${lapChip}
+      <span onclick="event.stopPropagation();_clOrgEditTask(decodeURIComponent('${_lapEnc(s)}'))" ontouchstart="event.stopPropagation()" title="edit this task" style="font-size:17px;flex-shrink:0;cursor:pointer;padding:2px 4px;">✎</span>
       <span style="font-size:12px;color:var(--subtext);flex-shrink:0;">⠿</span></div>`;
   };
   // ▣ heading — tap to open/close the batch (chevron + task count). Still a drop
