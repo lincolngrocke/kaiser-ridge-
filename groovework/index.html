@@ -3328,7 +3328,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.429';
+const APP_VERSION = '2026-06-21.430';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -24051,7 +24051,7 @@ function _rsRender() {
   // surface of the sheet or none of them.
   // Expanded-steps state is keyed by task TEXT, which the changeover jobs share —
   // it must not travel from one job's sheet to another's.
-  if (_rsLastJob !== ctx.job) { _rsExpanded.clear(); _rsCollapsedNow = null; _rsLastJob = ctx.job; }
+  if (_rsLastJob !== ctx.job) { _rsExpanded.clear(); _rsCollapsedNow = null; _rsLastJob = ctx.job; _rsMarkKey = null; }
   const rows = _rsRows(ctx);
   // A flagged REPEAT task whose planned laps were all banked in an earlier session of
   // the same run has nothing owing, so it isn't on the sheet — but it still looks
@@ -24113,7 +24113,7 @@ function _rsRender() {
   // ⭐ Lead with the ⠿ tap, not the drag. On a 44-step sheet the drag is the thing
   // that does not work, so naming it first taught the wrong habit.
   const hint = planning
-    ? 'Tap ⠿ on a row (or on several), then tap the gap where they go. Every time below re-forecasts. Hold &amp; drag still works for a short nudge. This order carries onto the clock when you start the job.'
+    ? 'Tap a row to 📍 mark where things go, then tap ⠿ on the rows to move (or on several) and tap ⤵ Drop under 📍. Or tap the gap where they go. Every time below re-forecasts. This order carries onto the clock when you start the job.'
     : 'Tap ⠿ on a row (or on several), then tap the gap where they go. Every time below re-forecasts. Hold &amp; drag still works for a short nudge. Tap a row to tick it off.';
   const head = `<div class="cl-sticky-top">
     <div style="margin:10px 0 4px;padding:9px 12px;border-radius:10px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.35);font-size:13px;color:var(--text);">
@@ -24123,6 +24123,7 @@ function _rsRender() {
       ⤴ Moving <b>${_escHtml(_rsMoveLabel())}</b><div style="font-size:11px;color:var(--subtext);margin-top:2px;">${_rsMoveSet.length > 1
         ? 'Tap a <b>⤵ move here</b> gap to drop them all in, in the order they are in now. Tap ⠿ on another row to add it, or on a blue one to put it back.'
         : 'Tap a <b>⤵ move here</b> gap to drop it in, or tap ⠿ on more rows to move several together. Scroll as far as you like first.'}</div>
+      ${(_rsMarkKey && !_rsMoveSet.includes(_rsMarkKey)) ? `<div onclick="_rsDropUnderMark()" style="margin-top:8px;padding:9px 12px;border-radius:9px;background:#0a84ff;color:#fff;font-weight:700;font-size:14px;text-align:center;cursor:pointer;">⤵ Drop under 📍 ${_escHtml(_rsKeyName(_rsMarkKey))}</div>` : ''}
       <div onclick="_rsMoveClear();_rsRender()" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:12px;margin-top:5px;">✕ cancel</div></div>` : ''}
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:0 0 2px;">
       <span>${(ctx.order && !_rsMoveKey && !_rsPlacing)
@@ -24244,9 +24245,12 @@ function _rsRender() {
     // ⚠️ While a row is being placed the whole sheet is a placement surface, so
     // tap-to-tick has to stand down. Otherwise the tap that means "put it here"
     // lands on a row and ticks off work that has not been done.
-    const tap = (_rsMoveKey || _rsPlacing) ? ''
+    // 📍 Planning: a tap marks this row as WHERE THINGS GO (v430). On the clock a tap
+    // ticks, so marking is a planning-sheet gesture.
+    const _markTap = (ctx.kind === 'plan' && !_rsPlacing) ? ` onclick="_rsMark(decodeURIComponent('${_encArg(key)}'))"` : '';
+    const tap = (_rsMoveKey || _rsPlacing) ? _markTap
               : (r.tappable ? ` onclick="_rsTick(decodeURIComponent('${_enc}'))"`
-              : (r.undoable ? ` onclick="_rsUntick(decodeURIComponent('${_enc}'))"` : ''));
+              : (r.undoable ? ` onclick="_rsUntick(decodeURIComponent('${_enc}'))"` : _markTap));
     // ▶ NOW — the one row you're on. Blue, so it can't be confused with the green
     // that means "timed/forecast" elsewhere on the sheet, and calm rather than
     // alarming: it says where you are, it doesn't chase you.
@@ -24259,18 +24263,20 @@ function _rsRender() {
     // Blue means "this is the one": in your hand while placing, and for 3 seconds
     // after you drop it so you can see where it landed.
     const _lifted = _rsMoveSet.includes(key) || _rsJustMoved.includes(key);
-    const border = _lifted ? 'rgba(90,200,250,0.9)' : (r.isNow ? 'rgba(90,200,250,0.75)' : (r.tappable ? 'rgba(48,209,88,0.45)' : 'var(--border)'));
-    const bg = _lifted ? 'rgba(90,200,250,0.16)' : (r.isDone ? 'transparent' : (r.isNow ? 'rgba(90,200,250,0.10)' : 'var(--card)'));
+    const _marked = key === _rsMarkKey && !_lifted;
+    const border = _marked ? '#0a84ff' : (_lifted ? 'rgba(90,200,250,0.9)' : (r.isNow ? 'rgba(90,200,250,0.75)' : (r.tappable ? 'rgba(48,209,88,0.45)' : 'var(--border)')));
+    const bg = _marked ? 'rgba(10,132,255,0.12)' : (_lifted ? 'rgba(90,200,250,0.16)' : (r.isDone ? 'transparent' : (r.isNow ? 'rgba(90,200,250,0.10)' : 'var(--card)')));
+    const markChip = _marked ? '<span style="font-size:11px;font-weight:700;color:#0a84ff;flex-shrink:0;">📍 things go under here</span>' : '';
     // The .rs-row is a WRAPPER holding the header line and, when open, its steps —
     // so a drag carries the steps with it instead of stranding them. Tap-to-tick
     // lives on the header, not the wrapper, so tapping a step can't tick the task.
     return `${_ins(_i)}<div class="rs-row" data-rs-key="${_attr(key)}" ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)"
       style="margin-bottom:8px;">
-      <div${tap} style="display:flex;align-items:center;gap:9px;padding:11px 10px;border-radius:8px;border:1px solid ${border};background:${bg};${(r.tappable || r.undoable) ? 'cursor:pointer;' : ''}">
+      <div${tap} style="display:flex;align-items:center;gap:9px;padding:11px 10px;border-radius:8px;border:${_marked ? '2px' : '1px'} solid ${border};background:${bg};${(r.tappable || r.undoable || _markTap) ? 'cursor:pointer;' : ''}">
       <span style="font-size:15px;flex-shrink:0;opacity:${r.isDone ? '0.5' : '1'};">${r.isDone ? '✓' : '🚩'}</span>
       <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;">
         <span style="overflow-wrap:anywhere;font-size:15px;color:${r.isDone ? '#616a7e' : 'var(--text)'};">${_escHtml(r.t)}</span>
-        ${(_avgMeta(r.t, avgMap, cntMap) || nowChip || stepChip || batchChip || actualChip) ? `<span style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">${batchChip}${_avgMeta(r.t, avgMap, cntMap)}${actualChip}${brkNote}${nowChip}${stepChip}</span>` : ''}</span>
+        ${(_avgMeta(r.t, avgMap, cntMap) || nowChip || stepChip || batchChip || actualChip || markChip) ? `<span style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">${markChip}${batchChip}${_avgMeta(r.t, avgMap, cntMap)}${actualChip}${brkNote}${nowChip}${stepChip}</span>` : ''}</span>
       ${lap}${timeTxt}
       <span ontouchstart="event.stopPropagation()" ontouchmove="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_rsPickUp(decodeURIComponent('${_encArg(key)}'))" title="move this row" style="font-size:17px;line-height:1;color:${_lifted ? '#5ac8fa' : '#8b93a7'};flex-shrink:0;cursor:pointer;padding:10px 8px;margin:-10px -6px -10px 0;">⠿</span></div>
       ${open ? `<div style="padding-top:6px;">${_rsStepsHtml(r, ctx, stepsOf)}</div>` : ''}</div>`;
@@ -24603,6 +24609,35 @@ let _rsMoveKey = null;              // the first row picked up; truthy = the she
 let _rsMoveSet = [];                // every row picked up, in the order they were tapped
 let _rsJustMoved = [], _rsJustMovedTimer = null;   // the rows you just dropped, held blue so you can see where they went
 function _rsMoveClear() { _rsMoveKey = null; _rsMoveSet = []; }
+// 📍 THE DROP POINT (v430). Lincoln, 26 Oct 2026: he finds where tasks should go, scrolls
+// away to find the tasks to move, then cannot find the spot again. Tap that row first:
+// it turns blue and stays blue while you scroll and pick rows up with ⠿, the banner
+// offers "⤵ Drop under 📍 …" so you never have to scroll back, and the colour goes
+// back to normal once they are dropped. Tap the blue row again to unmark it.
+let _rsMarkKey = null;
+function _rsKeyName(key) {
+  if (!key) return '';
+  if (key.indexOf(_RS_BRK) === 0) return 'the break';
+  const i = key.lastIndexOf(_RS_SEP), t = i > 0 ? key.slice(0, i) : key;
+  return t.length > 34 ? t.slice(0, 34).trimEnd() + '…' : t;
+}
+function _rsMark(key) {
+  if (Date.now() < _clSwipeBlockClickUntil) return;   // a drag or swipe just happened
+  if (_rsMoveSet.includes(key)) return;               // a held row cannot be its own landing spot
+  const top = _rsRowTop(key);
+  _rsMarkKey = (_rsMarkKey === key) ? null : key;
+  _rsRenderKeeping(key, top);
+  if (_rsMarkKey) showToast('📍 Marked. Now tap ⠿ on the rows to move.');
+}
+function _rsDropUnderMark() {
+  const ctx = _rsCtx(); if (!ctx || !_rsMarkKey) return;
+  const keys = _rsOrdered(ctx).map(x => _rsInstKey(x));
+  const m = keys.indexOf(_rsMarkKey);
+  if (m < 0) { _rsMarkKey = null; _rsRender(); return; }
+  const sc = document.getElementById('run-sheet-body');
+  const el = sc ? [...sc.querySelectorAll('.rs-row')].find(r => r.dataset.rsKey === _rsMarkKey) : null;
+  _rsMoveTo(m + 1, el);   // the gap straight under the marked row; the view follows them there
+}
 // ⭐ KEEP YOUR PLACE. Picking a row up inserts a gap bar above every row plus the
 // banner up top, so the list grows by hundreds of pixels and everything below the
 // touch slides down the screen. Re-rendering then leaves you somewhere else in a
@@ -24691,6 +24726,7 @@ function _rsMoveTo(idx, gapEl) {
   const next = rest.slice(0, before).concat(moving, rest.slice(before));
   const key = moving[0];
   _rsMoveClear();
+  _rsMarkKey = null;   // dropped: the 📍 mark has done its job (v430)
   if (next.every((k, i) => k === keys[i])) { _rsRenderKeeping(key, gapTop); return; }   // dropped where they already were
   ctx.saveOrder(next);
   // ⭐ Hold it blue for 3 seconds. On a 44 step sheet the row you just placed is
@@ -24835,7 +24871,7 @@ function _rsBrkStart(id) {
   applyBreakStart(String(n.getHours()).padStart(2, '0') + ':' + String(n.getMinutes()).padStart(2, '0'));
   _rsRender(); updateRunRing();
 }
-function closeRunSheet() { closeModal('modal-run-sheet'); _rsPlanId = null; _rsPlacing = false; _rsMoveClear(); _rsJustMoved = []; clearTimeout(_rsJustMovedTimer); }
+function closeRunSheet() { closeModal('modal-run-sheet'); _rsPlanId = null; _rsPlacing = false; _rsMoveClear(); _rsMarkKey = null; _rsJustMoved = []; clearTimeout(_rsJustMovedTimer); }
 function toggleChecklistFlag(task, item) {
   const pid = _clTargetPlanId();
   if (pid) {   // flagging within a planner block's arrangement
