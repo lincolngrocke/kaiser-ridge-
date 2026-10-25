@@ -3328,7 +3328,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.427';
+const APP_VERSION = '2026-06-21.428';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -19524,7 +19524,7 @@ function setFeatureShown(id, on) {
   applyHiddenFeatures();
   if (id === 'reminders') { try { updateReminderBanners(); } catch (e) {} }
   if (id === 'todos' || id === 'run-view' || id === 'reset-reps') { try { renderRunChecklist(); } catch (e) {} }
-  if (id === 'allday') { try { renderAllDayStrip(); } catch (e) {} }
+  if (id === 'allday') { try { renderAllDayStrip(); if (_plannerMode === 'week') renderPlannerScreen(); } catch (e) {} }
   // Re-push today so its ✓ / ▶ events go (or come back) without waiting for an edit.
   if (id === 'caldone') { try { scheduleCalendarAutoPush(plannerDateStr(new Date()), 5000); } catch (e) {} }
   if (id === 'calplan') { try { if (on) scheduleCalendarAutoPush(plannerDateStr(new Date()), 5000); else _calSweepPlanned().then(_calSweepPast); } catch (e) {} }
@@ -21404,7 +21404,10 @@ function renderPlannerWeek() {
   const _wkEndD = new Date(ws); _wkEndD.setDate(ws.getDate() + 6);
   const _wsT = new Date(ws.getFullYear(), ws.getMonth(), ws.getDate()).getTime();
   const _weT = new Date(_wkEndD.getFullYear(), _wkEndD.getMonth(), _wkEndD.getDate()).getTime();
-  const _adWeek = _plannerPlans.filter(p => p.allDay)
+  // Hidden (the `allday` register row, v395) means hidden in the WEEK too (v428, Lincoln
+  // 26 Oct 2026: "the Kaiser bookings are still showing" on the week view). The time
+  // columns then start straight under the day headings. Bookings keep importing.
+  const _adWeek = featureHidden('allday') ? [] : _plannerPlans.filter(p => p.allDay)
     .map(p => ({ p, s: _dmyToDate(p.date).getTime(), e: _dmyToDate(p.endDate || p.date).getTime() }))
     .filter(x => isFinite(x.s) && isFinite(x.e) && x.e >= _wsT && x.s <= _weT)
     .sort((a, b) => a.s - b.s || b.e - a.e);
