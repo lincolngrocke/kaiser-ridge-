@@ -3167,6 +3167,16 @@
 </div>
 
 <!-- ══════════════ TASK ACTIONS SHEET (job editor ⋯) ══════════════ -->
+<!-- ✎ Rename a task that other jobs also have: this job only, or all of them (v432).
+     No tap-outside close: the rename waits on the answer, so it has to be given. -->
+<div class="modal-backdrop" id="modal-rename-scope" style="z-index:2000;">
+  <div class="modal-sheet" style="padding:14px 20px 26px;">
+    <div class="modal-handle"></div>
+    <div style="font-size:17px;font-weight:700;color:var(--text);padding:4px 0 8px;">Rename it where?</div>
+    <div id="rename-scope-body"></div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="modal-task-actions" style="z-index:690;" onclick="closeModal('modal-task-actions')">
   <div class="modal-sheet" style="padding:14px 20px 26px;" onclick="event.stopPropagation()">
     <div class="modal-handle"></div>
@@ -3328,7 +3338,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.431';
+const APP_VERSION = '2026-06-21.432';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5869,13 +5879,20 @@ async function confirmRunEdit() {
   const inp = document.getElementById('run-add-input');
   const text = (inp.value || '').trim();
   if (!text) { showToast('Give it a name'); return; }
+  // ✎ v432: another job has this task too → ask where the rename goes. Cancel leaves
+  // the edit sheet open with nothing saved.
+  let _scope = 'all';
+  if (ref.kind === 'tasks' && ref.oldText !== text) {
+    _scope = await _askRenameScope(ref.task, ref.oldText, text);
+    if (!_scope) return;
+  }
   _savingRunAdd = true;
   const btn = document.getElementById('run-add-save');
   const hasNew = _capturePhotos.some(p => !p.id && p.data);
   if (btn) { btn.textContent = hasNew ? 'Saving…' : 'Save'; btn.style.opacity = '0.5'; btn.style.pointerEvents = 'none'; }
   try {
     if (ref.kind === 'tasks') {
-      _renameChecklistItem(ref.task, ref.oldText, text);
+      _renameChecklistItem(ref.task, ref.oldText, text, _scope);
       // Reference photo(s) on the task — resolve like the add flow (keep Drive ids,
       // upload new, on-device fallback), then store under the (possibly renamed)
       // item text. _capturePhotos was preloaded with any existing ref-photos.
@@ -5889,7 +5906,7 @@ async function confirmRunEdit() {
       _captureRemovedIds.forEach(id => _deletePhoto(id));
       const sp = getSubtaskPhotos();
       if (tphotos.length) sp[text] = tphotos; else delete sp[text];
-      if (ref.oldText !== text) delete sp[ref.oldText];
+      if (ref.oldText !== text && _scope !== 'job') delete sp[ref.oldText];   // job-only: the other jobs keep theirs
       saveSubtaskPhotos(sp);
     } else {
       // Resolve photos the same way the add flow does: keep Drive ids, upload new
@@ -5926,19 +5943,28 @@ async function confirmRunEdit() {
 // The name is the identity in this app, so a rename must carry the identity's
 // history with it. Refining a task's wording over time is normal use — it must
 // never cost the learning that makes the app worth using.
-function _migrateItemHistory(oldName, newName) {
+// onlyJob (v432): rename the task on ONE job and leave every other job's task of
+// the same name, and its history, exactly where it was. Without it, the rename is
+// app-wide, which is right when the same task lives on several jobs and you are
+// changing its wording everywhere, and wrong when a COPIED job wants one task to
+// become a different task. Lincoln, 26 Oct 2026: he duplicated the hay job, renamed
+// a task on the straw copy, and the hay job's task (and its past times) went too.
+function _migrateItemHistory(oldName, newName, onlyJob) {
+  const _mine = j => !onlyJob || j === onlyJob;
   // 🙈 A hidden task stays hidden under its new name, on every job that hid it.
   try {
     const _hid = getHiddenTasks(); let _hCh = false;
-    Object.keys(_hid).forEach(j => { const i = _hid[j].indexOf(oldName); if (i >= 0) { _hid[j][i] = newName; _hCh = true; } });
+    Object.keys(_hid).forEach(j => { if (!_mine(j)) return; const i = _hid[j].indexOf(oldName); if (i >= 0) { _hid[j][i] = newName; _hCh = true; } });
     if (_hCh) saveHiddenTasks(_hid);
   } catch (e) {}
   const SEP = '\u0001';   // the job\u0001item and runOrder key separator (same byte as _RS_SEP / _taskTypeKey)
   // 1) Historical entries — the source of every learned average. Rewrite the item
   //    text in past checklists and step logs. The entries' notes TEXT keeps the old
   //    wording (it's the historical record); only the analytics keys move.
+  //    Job-only: just the timesheets of that job.
   let entCh = 0;
   entries.forEach(e => {
+    if (onlyJob && e.task !== onlyJob) return;
     (Array.isArray(e.checklist) ? e.checklist : []).forEach(d => { if (d && d.item === oldName) { d.item = newName; entCh++; } });
     (Array.isArray(e.steps) ? e.steps : []).forEach(d => { if (d && d.item === oldName) { d.item = newName; entCh++; } });
   });
@@ -5955,6 +5981,7 @@ function _migrateItemHistory(oldName, newName) {
   const runs = getJobRuns(); let runsCh = false;
   Object.keys(runs).forEach(j => {
     const r = runs[j];
+    if (!_mine(j)) return;
     if (r && r.reps && r.reps[oldName] != null) { r.reps[newName] = (r.reps[newName] || 0) + r.reps[oldName]; delete r.reps[oldName]; runsCh = true; }
   });
   if (runsCh) saveJobRuns(runs);
@@ -5963,7 +5990,7 @@ function _migrateItemHistory(oldName, newName) {
   const types = getTaskTypes(); let typesCh = false;
   Object.keys(types).forEach(k => {
     const i = k.indexOf(SEP);
-    if (i > 0 && k.slice(i + 1) === oldName) {
+    if (i > 0 && k.slice(i + 1) === oldName && _mine(k.slice(0, i))) {
       const nk = k.slice(0, i + 1) + newName;
       if (types[nk] == null) types[nk] = types[k];
       delete types[k]; typesCh = true;
@@ -5974,7 +6001,7 @@ function _migrateItemHistory(oldName, newName) {
   const trem = getTaskReminders(); let tremCh = false;
   Object.keys(trem).forEach(k => {
     const i = k.indexOf(SEP);
-    if (i > 0 && k.slice(i + 1) === oldName) {
+    if (i > 0 && k.slice(i + 1) === oldName && _mine(k.slice(0, i))) {
       const nk = k.slice(0, i + 1) + newName;
       if (trem[nk] == null) trem[nk] = trem[k];
       delete trem[k]; tremCh = true;
@@ -5982,7 +6009,7 @@ function _migrateItemHistory(oldName, newName) {
   });
   if (tremCh) saveTaskReminders(trem);
   // 5) The live session's plan: lap targets, flags, order, run-sheet arrangement.
-  if (clockState) {
+  if (clockState && _mine(clockState.task)) {
     let ch = false;
     if (clockState.lapTargets && clockState.lapTargets[oldName] != null) { clockState.lapTargets[newName] = clockState.lapTargets[oldName]; delete clockState.lapTargets[oldName]; ch = true; }
     if (clockState.flagOverride && clockState.flagOverride[oldName] != null) { clockState.flagOverride[newName] = clockState.flagOverride[oldName]; delete clockState.flagOverride[oldName]; ch = true; }
@@ -5992,8 +6019,16 @@ function _migrateItemHistory(oldName, newName) {
   }
   // 6) Pending planner blocks that carry an arrangement for this item.
   const pcm = getPlannerChecklist(); let pcmCh = false;
+  // Job-only: just the blocks booked for that job (a block's job lives on the plan
+  // itself, in whichever planner store holds it).
+  let _pids = null;
+  if (onlyJob) {
+    _pids = new Set();
+    _allPlannerKeys().forEach(k => { try { JSON.parse(localStorage.getItem(k) || '[]').forEach(p => { if (p && p.task === onlyJob) _pids.add(String(p.id)); }); } catch (e) {} });
+  }
   Object.keys(pcm).forEach(pid => {
     const rec = pcm[pid]; if (!rec) return;
+    if (_pids && !_pids.has(String(pid))) return;
     if (rec.flags && rec.flags[oldName] != null) { rec.flags[newName] = rec.flags[oldName]; delete rec.flags[oldName]; pcmCh = true; }
     if (rec.laps && rec.laps[oldName] != null) { rec.laps[newName] = rec.laps[oldName]; delete rec.laps[oldName]; pcmCh = true; }
     if (Array.isArray(rec.order)) rec.order = rec.order.map(s => { if (s === oldName) { pcmCh = true; return newName; } return s; });
@@ -6164,8 +6199,13 @@ function applyRepairHistory() {
   autoBackup();
 }
 
-function _renameChecklistItem(task, oldName, newName) {
+// scope 'job' (v432): this job only — see _migrateItemHistory. Anything shared by
+// task TEXT across jobs (steps, guide, origin, reference photos) is COPIED to the new
+// name rather than moved, so the other jobs keep theirs. Default is app-wide, which
+// is also what a task on only one job gets, since the two are then the same thing.
+function _renameChecklistItem(task, oldName, newName, scope) {
   if (!newName || newName === oldName) return;
+  if (scope === 'job' && task) return _renameTaskOnJob(task, oldName, newName);
   _migrateItemHistory(oldName, newName);   // history follows the name — averages, reps, type, reminders, plans
   // Already on this job under a different case? Just drop the old one, no rename.
   Object.keys(SUBTASKS).forEach(t => {
@@ -6207,6 +6247,71 @@ function _renameChecklistItem(task, oldName, newName) {
   }
   if (_expandedChecklistItems.has(oldName)) { _expandedChecklistItems.delete(oldName); _expandedChecklistItems.add(newName); }
   const pi = _subtaskItems.indexOf(oldName); if (pi !== -1) _subtaskItems[pi] = newName;
+}
+// ✎ Rename a task on ONE job (v432). Every other job with a task of the old name
+// keeps it, with its own history. What this job owned moves; what all jobs SHARE by
+// task text is copied, and only where the new name has nothing of its own yet.
+function _renameTaskOnJob(job, oldName, newName) {
+  const has = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k);
+  _migrateItemHistory(oldName, newName, job);   // this job's timesheets, reps, type, reminders, blocks
+  if (Array.isArray(SUBTASKS[job])) {
+    SUBTASKS[job] = SUBTASKS[job].map(s => (s === oldName ? newName : s));
+    const seen = new Set();   // collapse any duplicate the rename created
+    SUBTASKS[job] = SUBTASKS[job].filter(s => { const k = s.trim().toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+    _storeSet('kr_subtasks', JSON.stringify(SUBTASKS));
+  }
+  // Steps and guide: this job's own version moves; the shared one is copied.
+  const ownS = getJobSteps();
+  if (ownS[job] && has(ownS[job], oldName)) { if (!has(ownS[job], newName)) ownS[job][newName] = ownS[job][oldName]; delete ownS[job][oldName]; saveJobSteps(ownS); }
+  else { const st = getSubtaskSteps(); if (st[oldName] && !st[newName]) { st[newName] = JSON.parse(JSON.stringify(st[oldName])); saveSubtaskSteps(st); } }
+  const ownG = getJobGuides();
+  if (ownG[job] && has(ownG[job], oldName)) { if (!has(ownG[job], newName)) ownG[job][newName] = ownG[job][oldName]; delete ownG[job][oldName]; saveJobGuides(ownG); }
+  else { const gd = getSubtaskGuides(); if (gd[oldName] && !gd[newName]) { gd[newName] = JSON.parse(JSON.stringify(gd[oldName])); saveSubtaskGuides(gd); } }
+  const tb = getTaskBatches();
+  if (tb[job] && tb[job].items && tb[job].items[oldName] != null) { if (tb[job].items[newName] == null) tb[job].items[newName] = tb[job].items[oldName]; delete tb[job].items[oldName]; saveTaskBatches(tb); }
+  const orig = getSubtaskOrigin();
+  if (orig[oldName] && !orig[newName]) { orig[newName] = Object.assign({}, orig[oldName], { edited: new Date().toISOString() }); saveSubtaskOrigin(orig); }
+  const sp = getSubtaskPhotos();
+  if (sp[oldName] && !sp[newName]) { sp[newName] = sp[oldName].slice(); saveSubtaskPhotos(sp); }
+  const flags = getChecklistFlags();
+  if (flags[job] && flags[job][oldName] != null) { flags[job][newName] = flags[job][oldName]; delete flags[job][oldName]; saveChecklistFlags(flags); }
+  if (clockState && clockState.task === job) {
+    let ch = false;
+    if (Array.isArray(clockState.checklistDone)) clockState.checklistDone.forEach(d => { if (d.item === oldName) { d.item = newName; ch = true; } });
+    if (Array.isArray(clockState.checklistCarried)) clockState.checklistCarried = clockState.checklistCarried.map(s => { if (s === oldName) { ch = true; return newName; } return s; });
+    if (clockState.checklistCarriedInfo && clockState.checklistCarriedInfo[oldName]) { clockState.checklistCarriedInfo[newName] = clockState.checklistCarriedInfo[oldName]; delete clockState.checklistCarriedInfo[oldName]; ch = true; }
+    if (clockState.stepChecks && clockState.stepChecks[oldName]) { clockState.stepChecks[newName] = clockState.stepChecks[oldName]; delete clockState.stepChecks[oldName]; ch = true; }
+    if (Array.isArray(clockState.stepDone)) clockState.stepDone.forEach(d => { if (d.item === oldName) { d.item = newName; ch = true; } });
+    if (ch) _storeSet('kr_clock', JSON.stringify(clockState));
+    if (_expandedChecklistItems.has(oldName)) { _expandedChecklistItems.delete(oldName); _expandedChecklistItems.add(newName); }
+  }
+  const pi = _subtaskItems.indexOf(oldName); if (pi !== -1 && _dirJobName() === job) _subtaskItems[pi] = newName;
+}
+// The other jobs holding a task of exactly this name (exact, as everything keys on it).
+function _otherJobsWithTask(job, task) { return jobsUsingTask(task).filter(j => j !== job); }
+// ✎ "Just this job, or every job that has it?" (v432, Lincoln's choice: ask each
+// time). Only asked when another job really has a task of that name; otherwise
+// the two answers are the same thing and nothing is asked. Resolves 'job', 'all',
+// or null for Cancel (keep the old name).
+let _renameAskResolve = null;
+function _askRenameScope(job, oldName, newName) {
+  const others = _otherJobsWithTask(job, oldName);
+  if (!job || !others.length) return Promise.resolve('all');
+  const short = s => (s.length > 60 ? s.slice(0, 60).trimEnd() + '…' : s);
+  document.getElementById('rename-scope-body').innerHTML =
+    `<div style="font-size:14px;color:var(--subtext);line-height:1.5;padding:0 0 12px;">“${_escTxt(short(oldName))}” is also on ${others.length === 1 ? 'another job' : others.length + ' other jobs'}: <b style="color:var(--text);">${others.map(_escTxt).join(', ')}</b>.</div>
+     <div onclick="_renameScopePick('job')" style="padding:14px;border-radius:12px;background:var(--blue);color:#fff;font-size:16px;font-weight:700;text-align:center;cursor:pointer;margin-bottom:6px;">Just this job</div>
+     <div style="font-size:12px;color:var(--subtext);line-height:1.45;padding:0 4px 12px;">Only <b>${_escTxt(job)}</b> gets the new name. The other ${others.length === 1 ? 'job keeps' : 'jobs keep'} “${_escTxt(short(oldName))}” and ${others.length === 1 ? 'its' : 'their'} own times.</div>
+     <div onclick="_renameScopePick('all')" style="padding:13px;border-radius:12px;border:1px solid var(--blue);color:var(--blue);font-size:15px;font-weight:600;text-align:center;cursor:pointer;margin-bottom:6px;">Every job that has it (${others.length + 1})</div>
+     <div style="font-size:12px;color:var(--subtext);line-height:1.45;padding:0 4px 12px;">The new wording everywhere, with all the times kept together as one task.</div>
+     <div onclick="_renameScopePick(null)" style="padding:10px;color:#8b93a7;font-size:14px;font-weight:600;text-align:center;cursor:pointer;">Cancel, keep the old name</div>`;
+  openModal('modal-rename-scope');
+  return new Promise(res => { _renameAskResolve = res; });
+}
+function _renameScopePick(v) {
+  closeModal('modal-rename-scope');
+  const r = _renameAskResolve; _renameAskResolve = null;
+  if (r) r(v);
 }
 // Edit a pinned to-do's text/photos in place. If it came from the Inbox, edit the
 // source note too so the capture ledger stays truthful (also propagates to any
@@ -15047,7 +15152,11 @@ function _sizeDirSubtaskInputs() {
 //
 // `_renameChecklistItem` is the path that carries all of it, and every OTHER
 // rename in the app already used it. This one just never did.
-function updateSubtaskItem(i, val) {
+// v432: a task other jobs also have asks "Just this job / Every job that has it"
+// first. While it is asking, Save waits (_renamePending), or the save's batch prune
+// would drop the old name's membership before the rename could carry it.
+let _renamePending = false;
+async function updateSubtaskItem(i, val) {
   if (_stDragging) return; // don't interfere with active drag
   const trimmed = val.trim();
   if (trimmed && trimmed !== _subtaskItems[i]) {
@@ -15057,7 +15166,18 @@ function updateSubtaskItem(i, val) {
     // scratch has nothing to carry, and migrating it would rewrite history that
     // belongs to whatever half-typed text was in the box a keystroke ago.
     const _job = _dirJobName();
-    if (_old && _job && (SUBTASKS[_job] || []).includes(_old)) _renameChecklistItem(_job, _old, trimmed);
+    if (_old && _job && (SUBTASKS[_job] || []).includes(_old)) {
+      _renamePending = true;
+      let scope;
+      try { scope = await _askRenameScope(_job, _old, trimmed); } finally { _renamePending = false; }
+      if (!scope) {   // Cancel: the box goes back to the old wording
+        const k = _subtaskItems.indexOf(trimmed); if (k !== -1) _subtaskItems[k] = _old;
+        renderDirSubtaskList();
+        return;
+      }
+      _renameChecklistItem(_job, _old, trimmed, scope);
+      if (scope === 'job') showToast('Renamed on this job only');
+    }
   } else if (!trimmed) {
     // Empty — remove the item
     _subtaskItems.splice(i, 1);
@@ -18838,6 +18958,7 @@ function saveDirTask() {
   const freq = _selectedFrequency || (featureHidden('repeats') ? 'Weekly' : '');
   const grp  = _selectedGroup || (featureHidden('area') ? 'General' : '');
   const task = document.getElementById('dir-task').value.trim();
+  if (_renamePending) { showToast('Choose where the rename goes first'); return; }
   if (!freq)     { showToast('Please select a Frequency'); return; }
   if (!grp)  { showToast('Please select a Group'); return; }
   if (!task) { showToast('Please enter a Task Name'); return; }
