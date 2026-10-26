@@ -3328,7 +3328,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.430';
+const APP_VERSION = '2026-06-21.431';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4754,12 +4754,18 @@ const _BATCH_WINDOW_MS = 60000;
 // outBreaks (optional): filled with { item: minutesOfBreakInsideThisSpan }. A task
 // whose span swallowed a break shows a correct but surprising number, so the screen
 // needs to be able to say WHY it is bigger than the average.
+// ⚡ A QUICK TICK never joins a batch (v431). Lincoln, 26 Oct 2026: a 10 minute task
+// ticked, then a 40 second one ticked straight after, and the batch rule shared the
+// 10m40s evenly, so the quick task learned 5 minutes it never took and the long one
+// lost them. Swiping a row LEFT on the run sheet marks its tick `quick`, which means
+// "these seconds are all it took": it keeps its own real span, the task before it
+// keeps its full time, and a tick straight after it starts a batch of its own.
 function _computeChecklistDurations(sorted, clockInMs, breaks, outBreaks) {
   const out = {};
   let prev = clockInMs, i = 0;
   while (i < sorted.length) {
     let j = i;
-    while (j + 1 < sorted.length && (new Date(sorted[j + 1].at) - new Date(sorted[j].at)) < _BATCH_WINDOW_MS) j++;
+    if (!sorted[i].quick) while (j + 1 < sorted.length && !sorted[j + 1].quick && (new Date(sorted[j + 1].at) - new Date(sorted[j].at)) < _BATCH_WINDOW_MS) j++;
     const last = new Date(sorted[j].at).getTime();
     const brk = _breakOverlapMs(breaks, prev, last);
     const net = Math.max(0, (last - prev) - brk);
@@ -4781,7 +4787,7 @@ function _checklistBreakMins() {
   const pinDone = clockState.pinDone || {};
   const breaks = Array.isArray(clockState.breaks) ? clockState.breaks.slice() : [];
   if (clockState.onBreak && clockState.breakStartMs) breaks.push({ start: clockState.breakStartMs, end: Date.now() });
-  const events = done.map(d => ({ item: _occKey(d), at: d.at }))
+  const events = done.map(d => ({ item: _occKey(d), at: d.at, quick: !!d.quick }))
     .concat(Object.keys(pinDone).map(id => ({ item: 'pin:' + id, at: pinDone[id] })))
     .sort((a, b) => new Date(a.at) - new Date(b.at));
   const outB = {};
@@ -5416,7 +5422,7 @@ function _checklistDurations() {
   // Merge checklist items + pinned-note completions into one timeline so each is
   // timed by the gap from the previous completion. Pins are keyed 'pin:<id>'; the
   // checklist keys stay the item text, so existing readers are unaffected.
-  const events = done.map(d => ({ item: _occKey(d), at: d.at }))
+  const events = done.map(d => ({ item: _occKey(d), at: d.at, quick: !!d.quick }))
     .concat(Object.keys(pinDone).map(id => ({ item: 'pin:' + id, at: pinDone[id] })))
     .sort((a, b) => new Date(a.at) - new Date(b.at));
   return _computeChecklistDurations(events, _clockInEpoch(), breaks);
@@ -5437,7 +5443,7 @@ function _stepDurations() {
   const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
   const pinDone = clockState.pinDone || {};
   const events = sd.map(d => ({ item: d.item + '~|~' + d.step, at: d.at }))
-    .concat(done.map(d => ({ item: 't:' + _occKey(d), at: d.at })))          // anchor events —
+    .concat(done.map(d => ({ item: 't:' + _occKey(d), at: d.at, quick: !!d.quick })))          // anchor events —
     .concat(Object.keys(pinDone).map(id => ({ item: 'p:' + id, at: pinDone[id] })))  // computed, then discarded
     .sort((a, b) => new Date(a.at) - new Date(b.at));
   const all = _computeChecklistDurations(events, _clockInEpoch(), breaks);
@@ -5446,8 +5452,12 @@ function _stepDurations() {
   return out;
 }
 let _expandedChecklistItems = new Set();
-function markChecklistItemDone(item) {
-  if (Date.now() < _clSwipeBlockClickUntil) return;   // a swipe/drag just happened — not a tap
+// opts.quick (v431): the ⚡ quick tick from the run sheet's left swipe. The swipe IS
+// the gesture, so it skips the "a swipe just happened" guard that stops a swipe's
+// trailing click from ticking a row.
+function markChecklistItemDone(item, opts) {
+  const _quick = !!(opts && opts.quick);
+  if (!_quick && Date.now() < _clSwipeBlockClickUntil) return;   // a swipe/drag just happened — not a tap
   if (!clockState || !clockState.running) return;
   if (!Array.isArray(clockState.checklistDone)) clockState.checklistDone = [];
   const job = clockState.task;
@@ -5457,6 +5467,7 @@ function markChecklistItemDone(item) {
     // logs a timed completion, and the task STAYS in the list so you can tap again.
     const rep = _bumpTaskRep(job, item, +1);
     doneOcc = { item, at: new Date().toISOString(), rep };
+    if (_quick) doneOcc.quick = true;
     clockState.checklistDone.push(doneOcc);
     // A banked lap resets the step boxes (v299, Lincoln 17 Aug): a repeat task's
     // checklist is per-LAP — upload three videos, work the list fresh three
@@ -5470,7 +5481,7 @@ function markChecklistItemDone(item) {
     // 'Once' task: tap to tick, tap again to untick (stamped without a rep).
     const i = clockState.checklistDone.findIndex(d => d.item === item && !d.rep && !d.lap);
     if (i >= 0) { clockState.checklistDone.splice(i, 1); _setTaskReminderDone(job, item, false); }
-    else { doneOcc = { item, at: new Date().toISOString() }; clockState.checklistDone.push(doneOcc); _expandedChecklistItems.delete(item); _setTaskReminderDone(job, item, true); didComplete = true; undoFn = () => markChecklistItemDone(item); }
+    else { doneOcc = { item, at: new Date().toISOString() }; if (_quick) doneOcc.quick = true; clockState.checklistDone.push(doneOcc); _expandedChecklistItems.delete(item); _setTaskReminderDone(job, item, true); didComplete = true; undoFn = () => markChecklistItemDone(item); }
   }
   if (didComplete) _chipHold++;              // hold the counter number until the bubble lands
   _storeSet('kr_clock', JSON.stringify(clockState));
@@ -7025,7 +7036,7 @@ function _entryChecklistDurations(e, keepExcluded) {
   const list = Array.isArray(e.checklist) ? e.checklist : [];
   if (!list.length) return {};
   const sorted = list.slice().sort((a, b) => new Date(a.at) - new Date(b.at))
-    .map(d => ({ item: _occKey(d), at: d.at }));   // lap-stamped completions stay distinct
+    .map(d => ({ item: _occKey(d), at: d.at, quick: !!d.quick }));   // lap-stamped completions stay distinct; ⚡ quick ticks stay unshared
   const ci = _entryClockInEpoch(e);
   const clockIn = (ci != null) ? ci : new Date(sorted[0].at).getTime();
   const raw = _computeChecklistDurations(sorted, clockIn, e.breaks);
@@ -13078,6 +13089,7 @@ function updateRestoreClockBanner() {
 // ════════════════════════════════
 
 let _dirEditingKey = null; // "frequency|group|task" key for editing
+let _dirDupFrom = null;    // ⎘ Duplicate Job: the job being copied, so the save can bring its setup across
 
 // ── Directory filters ──
 const _dirFilters = { freq: null, group: null, location: null, equip: null, client: null, horizon: null };
@@ -14006,6 +14018,7 @@ function selectGroup(name) {
 
 function openDirAddTask() {
   _dirEditingKey = null;
+  _dirDupFrom = null;
   document.getElementById('dir-modal-title').textContent = 'Add Job';
   setLocationDisplay('');
   setClientDisplay('');
@@ -14055,6 +14068,7 @@ function openDirEditTask(encodedKey) {
   const key = decodeURIComponent(encodedKey);
   const [keyFreq, keyGrp, task] = key.split('||');
   _dirEditingKey = key;
+  _dirDupFrom = null;
   document.getElementById('dir-modal-title').textContent = 'Edit Job';
 
   const matches = DIRECTORY.filter(r => _dirKeyMatches(r, keyFreq, keyGrp, task));
@@ -14134,6 +14148,7 @@ function duplicateDirTask() {
   const subtasks = SUBTASKS[task] || [];
 
   _dirEditingKey = null; // Saving will create a new entry, not overwrite the source
+  _dirDupFrom = task;    // ▣ …and the save copies the source's batches and laps across (v431)
   document.getElementById('dir-modal-title').textContent = 'Duplicate Job';
   document.getElementById('dir-delete-wrap').style.display = 'none';
   document.getElementById('dir-duplicate-wrap').style.display = 'none';
@@ -15508,6 +15523,100 @@ function _migrateBatchTaskName(oldName, newName) {
   if (ch) saveTaskBatches(all);
 }
 
+// ⎘ COPY A JOB'S SETUP ONTO ANOTHER JOB (v431). Lincoln, 26 Oct 2026: he duplicated
+// the straw carting job to make "Carting straw with Scania and semi trailer", and
+// only the task list came across. Everything else a job keeps about its tasks is
+// keyed by JOB name and was left behind on the original:
+//   ▣ batches (names, order, which task sits in which), ↻ once/repeat type (which is
+//   what makes a task lap, the 🔁 2/2), this job's own 📍 steps and guide versions,
+//   and its 🙈 hidden tasks.
+// Matching is by task TEXT, the same identity everything else uses, so only tasks
+// the two jobs share are touched and a renamed task simply starts unbatched. It
+// only FILLS GAPS: anything the target already has set is left exactly as it is,
+// which makes it safe to run on a job that has been partly set up by hand.
+// Learned times need nothing: they are pooled by task name across every job, so a
+// copied task already shows the original's "~3m avg · 27×". To-dos, flags and
+// reminders are not copied; they belong to the job they were made on.
+function _copyJobSetup(src, dst, tasks) {
+  const out = { batches: 0, tasks: 0, types: 0 };
+  if (!src || !dst || src === dst) return out;
+  const list = (tasks || []).filter(Boolean);
+  const has = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k);
+  // ▣ Batches: every batch with at least one of these tasks in it, in the source's order.
+  const tb = getTaskBatches(), s = tb[src];
+  if (s && Array.isArray(s.order) && s.items) {
+    const d = tb[dst] || { order: [], items: {} };
+    d.order = Array.isArray(d.order) ? d.order : []; d.items = d.items || {};
+    let ch = false;
+    s.order.forEach(bn => {
+      const members = list.filter(t => s.items[t] === bn && !(d.items[t] && d.order.includes(d.items[t])));
+      if (!members.length) return;
+      if (!d.order.includes(bn)) { d.order.push(bn); out.batches++; }
+      members.forEach(t => { d.items[t] = bn; out.tasks++; });
+      ch = true;
+    });
+    if (ch) { tb[dst] = d; saveTaskBatches(tb); }
+  }
+  // ↻ Once / repeat.
+  const tty = getTaskTypes(); let tCh = false;
+  list.forEach(t => {
+    const sk = _taskTypeKey(src, t), dk = _taskTypeKey(dst, t);
+    if (has(tty, sk) && !has(tty, dk)) { tty[dk] = tty[sk]; tCh = true; out.types++; }
+  });
+  if (tCh) saveTaskTypes(tty);
+  // 📍 This job's own versions of steps and guides.
+  [[getJobSteps, saveJobSteps], [getJobGuides, saveJobGuides]].forEach(([get, save]) => {
+    const m = get(), own = m[src];
+    if (!own) return;
+    const mine = m[dst] || {}; let c = false;
+    list.forEach(t => { if (has(own, t) && !has(mine, t)) { mine[t] = JSON.parse(JSON.stringify(own[t])); c = true; } });
+    if (c) { m[dst] = mine; save(m); }
+  });
+  // 🙈 Hidden on the source → hidden on the copy.
+  const hid = getHiddenTasks(), hs = hid[src];
+  if (Array.isArray(hs) && hs.length) {
+    const hd = hid[dst] || []; let c = false;
+    hs.forEach(t => { if (list.includes(t) && !hd.includes(t)) { hd.push(t); c = true; } });
+    if (c) { hid[dst] = hd; saveHiddenTasks(hid); }
+  }
+  return out;
+}
+// Repair for a job copied before v431 (Edit Job → ▣ Batches → ⧉ Copy batches from…).
+// Lists the jobs that have batches and share tasks with this one, best match first,
+// since the job it was copied from is the one sharing the most.
+function openCopyBatchesFrom() {
+  const job = _dirJobName(); if (!job || isWorker()) return;
+  const mine = new Set(_subtaskItems);
+  const tb = getTaskBatches();
+  const cands = Object.keys(tb).filter(j => j !== job && _jobHasBatches(j)).map(j => {
+    const r = tb[j];
+    const shared = (SUBTASKS[j] || []).filter(t => mine.has(t));
+    const batched = shared.filter(t => r.items[t] && r.order.includes(r.items[t])).length;
+    return { j, shared: shared.length, batched };
+  }).filter(c => c.batched > 0).sort((a, b) => b.batched - a.batched || b.shared - a.shared || a.j.localeCompare(b.j));
+  document.getElementById('task-actions-title').textContent = '⧉ Copy batches from…';
+  document.getElementById('task-actions-list').innerHTML = cands.length
+    ? `<div style="font-size:12px;color:var(--subtext);line-height:1.5;padding:0 0 6px;">Tasks with the same name go into the same batch, and lap tasks stay lap tasks. Anything already set up on this job is left alone.</div>`
+      + cands.map(c => `
+      <div onclick="_copyBatchesFrom(decodeURIComponent('${_encArg(c.j)}'))" style="display:flex;align-items:center;gap:12px;padding:13px 2px;border-bottom:1px solid var(--border);cursor:pointer;">
+        <span style="font-size:17px;width:24px;text-align:center;flex-shrink:0;">▣</span>
+        <span style="flex:1;min-width:0;font-size:15px;color:var(--text);overflow-wrap:anywhere;">${_escTxt(c.j)}</span>
+        <span style="font-size:13px;color:var(--subtext);flex-shrink:0;">${c.batched} task${c.batched === 1 ? '' : 's'} match</span>
+      </div>`).join('')
+    : '<div style="padding:14px 0;color:var(--subtext);font-size:14px;line-height:1.5;">No other job has batches with tasks of the same names as this one.</div>';
+  openModal('modal-task-actions');
+}
+function _copyBatchesFrom(src) {
+  const job = _dirJobName(); if (!job) return;
+  closeModal('modal-task-actions');
+  const got = _copyJobSetup(src, job, _subtaskItems);
+  renderBatchManager();
+  renderDirSubtaskList();
+  showToast(got.tasks
+    ? '▣ ' + got.tasks + ' task' + (got.tasks === 1 ? '' : 's') + ' put into ' + got.batches + ' batch' + (got.batches === 1 ? '' : 'es') + (got.types ? ' · ' + got.types + ' lap setting' + (got.types === 1 ? '' : 's') : '')
+    : 'Nothing to copy: those tasks are already set up here');
+}
+
 // ── Batch manager (Edit Job → ▣ Batches) ──
 let _batchPickTarget = null;   // batch name the task picker is filling
 function openBatchManager() {
@@ -15563,7 +15672,11 @@ function renderBatchManager() {
       <div style="font-size:12px;font-weight:700;color:var(--subtext);margin-bottom:2px;">UNBATCHED · ${loose.length}</div>
       <div style="font-size:13px;color:var(--subtext);line-height:1.6;">${loose.map(_escTxt).join(' · ')}</div>
     </div>` : '';
-  listEl.innerHTML = (cards || '<div style="padding:14px 0;color:var(--subtext);font-size:14px;">No batches yet — name one above (e.g. Animals, Power checks, Planning) and add tasks to it.</div>') + looseHtml;
+  // ⧉ Repair for a job copied before v431 lost its batches. Offered while any task
+  // here is still unbatched, which is exactly when it can help.
+  const copyLink = (!ro && (!rec.order.length || loose.length))
+    ? `<div onclick="openCopyBatchesFrom()" style="color:var(--blue);font-size:13px;font-weight:600;cursor:pointer;padding:12px 0 2px;">⧉ Copy batches from another job…</div>` : '';
+  listEl.innerHTML = (cards || '<div style="padding:14px 0;color:var(--subtext);font-size:14px;">No batches yet — name one above (e.g. Animals, Power checks, Planning) and add tasks to it.</div>') + looseHtml + copyLink;
 }
 function addBatch() {
   if (isWorker()) return;
@@ -18856,6 +18969,14 @@ function saveDirTask() {
     Object.keys(_tbRec.items).forEach(t => { if (!subtasks.includes(t)) { delete _tbRec.items[t]; _tbCh = true; } });
     if (_tbCh) saveTaskBatches(_tbAll);
   }
+  // ⎘ A duplicated job brings its source's setup across (v431). Only the task list
+  // used to come, so a copy landed with every task unbatched and every lap task
+  // turned back into a once-off.
+  if (!_dirEditingKey && _dirDupFrom && _dirDupFrom !== task) {
+    const got = _copyJobSetup(_dirDupFrom, task, subtasks);
+    if (got.batches) setTimeout(() => showToast('▣ ' + got.batches + ' batch' + (got.batches === 1 ? '' : 'es') + ' copied with the tasks'), 1600);
+  }
+  _dirDupFrom = null;
 
   // Save / clear the how-to video reference (keyed by the final task name).
   const vidInput = (document.getElementById('dir-video').value || '').trim();
@@ -21856,7 +21977,7 @@ function _entryStepDurations(e) {
   if (!sd.length) return {};
   const done = Array.isArray(e.checklist) ? e.checklist : [];
   const events = sd.map(d => ({ item: _stepKey(d.item, d.step), at: d.at }))
-    .concat(done.map(d => ({ item: 't:' + _occKey(d), at: d.at })))   // anchors, discarded after
+    .concat(done.map(d => ({ item: 't:' + _occKey(d), at: d.at, quick: !!d.quick })))   // anchors, discarded after
     .sort((a, b) => new Date(a.at) - new Date(b.at));
   const ci = _entryClockInEpoch(e);
   const clockIn = (ci != null) ? ci : new Date(events[0].at).getTime();
@@ -24029,6 +24150,8 @@ function openRunSheet(planId) {
   if (_kind) _kind.textContent = _rsPlanId ? '📋 Run sheet · planning' : '📋 Run sheet · running now';
   openModal('modal-run-sheet');
   _rsRender();
+  _rsRestWire();
+  _rsGoRest(false);   // ⚓ opens already at rest (running only); no animation on the way in
 }
 function _rsHM(ms) { const d = new Date(ms); return formatTimeAmPm(String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')); }
 
@@ -24114,27 +24237,38 @@ function _rsRender() {
   // that does not work, so naming it first taught the wrong habit.
   const hint = planning
     ? 'Tap a row to 📍 mark where things go, then tap ⠿ on the rows to move (or on several) and tap ⤵ Drop under 📍. Or tap the gap where they go. Every time below re-forecasts. This order carries onto the clock when you start the job.'
-    : 'Tap ⠿ on a row (or on several), then tap the gap where they go. Every time below re-forecasts. Hold &amp; drag still works for a short nudge. Tap a row to tick it off.';
+    : 'Tap ⠿ on a row (or on several), then tap the gap where they go. Every time below re-forecasts. Hold &amp; drag still works for a short nudge. Tap a row to tick it off, or swipe it left for a ⚡ quick tick when it took under a minute.';
+  // ⚓ RUNNING: ONLY THE PROGRESS BAR IS PINNED (v431, Lincoln 26 Oct 2026). The sheet
+  // rests with the last finished row and the row you are on sitting straight under
+  // it, so the hint and the order/break links scroll away with the list. The move
+  // banner and the break-placing cancel stay pinned: while one is in hand you scroll
+  // to find the spot, and the way out has to come with you. Planning keeps the whole
+  // header pinned as before.
+  const pinBar = `<div style="margin:10px 0 4px;padding:9px 12px;border-radius:10px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.35);font-size:13px;color:var(--text);">
+      ${summary}${bankedNote}</div>`;
+  const hintHtml = `<div style="font-size:11px;color:var(--subtext);margin:0 0 8px;">${hint}</div>`;
+  const placingCancel = _rsPlacing
+    ? `<div style="text-align:right;padding:0 0 2px;"><span onclick="_rsSetPlacing(false)" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:13px;">✕ cancel — tap a gap to drop the break in</span></div>` : '';
   const head = `<div class="cl-sticky-top">
-    <div style="margin:10px 0 4px;padding:9px 12px;border-radius:10px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.35);font-size:13px;color:var(--text);">
-      ${summary}${bankedNote}</div>
-    <div style="font-size:11px;color:var(--subtext);margin:0 0 8px;">${hint}</div>
+    ${pinBar}
+    ${planning ? hintHtml : ''}
     ${_rsMoveKey ? `<div style="margin:0 0 8px;padding:9px 12px;border-radius:10px;background:rgba(90,200,250,0.12);border:1px solid rgba(90,200,250,0.5);font-size:13px;color:var(--text);">
       ⤴ Moving <b>${_escHtml(_rsMoveLabel())}</b><div style="font-size:11px;color:var(--subtext);margin-top:2px;">${_rsMoveSet.length > 1
         ? 'Tap a <b>⤵ move here</b> gap to drop them all in, in the order they are in now. Tap ⠿ on another row to add it, or on a blue one to put it back.'
         : 'Tap a <b>⤵ move here</b> gap to drop it in, or tap ⠿ on more rows to move several together. Scroll as far as you like first.'}</div>
       ${(_rsMarkKey && !_rsMoveSet.includes(_rsMarkKey)) ? `<div onclick="_rsDropUnderMark()" style="margin-top:8px;padding:9px 12px;border-radius:9px;background:#0a84ff;color:#fff;font-weight:700;font-size:14px;text-align:center;cursor:pointer;">⤵ Drop under 📍 ${_escHtml(_rsKeyName(_rsMarkKey))}</div>` : ''}
       <div onclick="_rsMoveClear();_rsRender()" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:12px;margin-top:5px;">✕ cancel</div></div>` : ''}
+    ${placingCancel}
+    ${planning ? '' : '</div>'}
+    ${planning ? '' : hintHtml}
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:0 0 2px;">
       <span>${(ctx.order && !_rsMoveKey && !_rsPlacing)
         ? `<span onclick="_rsResetOrder()" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:13px;">↺ Back to the learned order</span>`
         : ''}</span>
-      <span>${_rsPlacing
-      ? `<span onclick="_rsSetPlacing(false)" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:13px;">✕ cancel — tap a gap above to drop the break in</span>`
-      : (_rsMoveKey ? '' : `<span onclick="_rsSetPlacing(true)" style="color:#ff9f0a;cursor:pointer;font-weight:600;font-size:13px;">☕ Add a break</span>`)}</span></div>
+      <span>${(_rsMoveKey || _rsPlacing) ? '' : `<span onclick="_rsSetPlacing(true)" style="color:#ff9f0a;cursor:pointer;font-weight:600;font-size:13px;">☕ Add a break</span>`}</span></div>
     ${(ctx.order && !_rsMoveKey && !_rsPlacing)
       ? `<div style="font-size:11px;color:#6d7686;line-height:1.5;padding:0 0 8px;">The learned order is the order you ticked these off <b>last time you did this job</b>. You have arranged this one by hand, so it is following your order instead.</div>`
-      : '<div style="padding:0 0 6px;"></div>'}</div>`;
+      : '<div style="padding:0 0 6px;"></div>'}${planning ? '</div>' : ''}`;
   const avgMap = _taskEstMap(), cntMap = _taskHistCountMap();   // built once, not per row
   const _brks = ctx.kind === 'clock' ? _checklistBreakMins() : {};   // minutes of break sitting inside each done task
   // ⚠️ cntMap stays MEASURED — the ×N must never count a guess.
@@ -24186,7 +24320,7 @@ function _rsRender() {
                 ? '<span style="font-size:11px;color:#8b93a7;">already on another break</span>'
                 : '<span style="font-size:11px;color:#8b93a7;">tap to start it</span>'))
         : '';
-      return `${_ins(_i)}<div class="rs-row" data-rs-key="${_attr(bk)}" ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)" style="margin-bottom:8px;">
+      return `${_ins(_i)}<div class="rs-row" data-rs-key="${_attr(bk)}"${r.isNow ? ' data-rs-now="1"' : ''}${r.isDone ? ' data-rs-done="1"' : ''} ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)" style="margin-bottom:8px;">
         <div${tapB} style="display:flex;align-items:center;gap:9px;padding:11px 10px;border-radius:8px;border:1px ${onBreakNow ? 'solid rgba(255,159,10,0.9)' : 'dashed rgba(255,159,10,0.55)'};background:${r.isDone ? 'transparent' : 'rgba(255,159,10,0.10)'};${tapB ? 'cursor:pointer;' : ''}">
         <span style="font-size:15px;flex-shrink:0;opacity:${r.isDone ? '0.5' : '1'};">☕</span>
         <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;">
@@ -24235,8 +24369,13 @@ function _rsRender() {
     const _brkIn = r.isDone ? _brks[_dk] : null;
     const brkNote = (isFinite(_brkIn) && _brkIn >= 1)
       ? `<span style="font-size:11px;color:#ff9f0a;flex-shrink:0;" title="a break inside this task, already deducted">☕ ${fmtMin(_brkIn)} out</span>` : '';
-    const actualChip = (isFinite(_actual) && _actual > 0)
-      ? `<span style="font-size:11px;font-weight:700;color:#30d158;flex-shrink:0;" title="actual time for this one, breaks already taken out">✓ ${fmtMin(_actual)}</span>` : '';
+    // ⚡ A quick tick says so, 0m included (v431): "✓ 0m quick" is the receipt that the
+    // swipe landed and the task before it kept its time.
+    const _isQuick = r.isDone && ctx.kind === 'clock' && _rsTickIsQuick(r);
+    const actualChip = _isQuick
+      ? `<span style="font-size:11px;font-weight:700;color:#30d158;flex-shrink:0;" title="quick tick: only its own seconds, nothing shared with the task before">✓ ${fmtMin(_actual || 0)} quick</span>`
+      : ((isFinite(_actual) && _actual > 0)
+      ? `<span style="font-size:11px;font-weight:700;color:#30d158;flex-shrink:0;" title="actual time for this one, breaks already taken out">✓ ${fmtMin(_actual)}</span>` : '');
     const timeTxt = r.isDone
       ? `<span style="font-size:13px;font-weight:700;color:#616a7e;white-space:nowrap;">${r.undoable ? '<span style="font-weight:400;opacity:0.75;">↺ </span>' : ''}✓ ${_rsHM(r.when)}</span>`
       : (r.when ? `<span style="font-size:13px;font-weight:700;color:${r.tappable ? '#30d158' : 'var(--subtext)'};white-space:nowrap;">~${_rsHM(r.when)}</span>`
@@ -24270,7 +24409,10 @@ function _rsRender() {
     // The .rs-row is a WRAPPER holding the header line and, when open, its steps —
     // so a drag carries the steps with it instead of stranding them. Tap-to-tick
     // lives on the header, not the wrapper, so tapping a step can't tick the task.
-    return `${_ins(_i)}<div class="rs-row" data-rs-key="${_attr(key)}" ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)"
+    // data-rs-now / data-rs-done: where the sheet comes to rest. data-rs-quick: this row can take a
+    // ⚡ left-swipe quick tick (the same rows a tap would tick).
+    const _canQuick = r.tappable && !_rsMoveKey && !_rsPlacing;
+    return `${_ins(_i)}<div class="rs-row" data-rs-key="${_attr(key)}"${r.isNow ? ' data-rs-now="1"' : ''}${r.isDone ? ' data-rs-done="1"' : ''}${_canQuick ? ' data-rs-quick="1"' : ''} ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)"
       style="margin-bottom:8px;">
       <div${tap} style="display:flex;align-items:center;gap:9px;padding:11px 10px;border-radius:8px;border:${_marked ? '2px' : '1px'} solid ${border};background:${bg};${(r.tappable || r.undoable || _markTap) ? 'cursor:pointer;' : ''}">
       <span style="font-size:15px;flex-shrink:0;opacity:${r.isDone ? '0.5' : '1'};">${r.isDone ? '✓' : '🚩'}</span>
@@ -24380,8 +24522,121 @@ function _rsStepTick(item, step) {
 // the sheet can never disagree with the clock about what's done.
 function _rsTick(task) {
   if (Date.now() < _clSwipeBlockClickUntil) return;   // a drag just happened — not a tap
+  const before = clockState && Array.isArray(clockState.checklistDone) ? clockState.checklistDone.length : 0;
   markChecklistItemDone(task);
   _rsRender();
+  // ⚓ Ticked → straight back to rest, so the row just done sits on top and the next
+  // one under it (v431). Only when a tick actually landed.
+  if (clockState && (clockState.checklistDone || []).length > before) _rsGoRest(true);
+}
+// ⚡ QUICK TICK (v431). Lincoln, 26 Oct 2026: a quick task straight after a long one
+// shared the long one's minutes, because ticks under a minute apart are batched and
+// split evenly. Swipe the row LEFT: within a minute of the last tick it is logged as
+// only its own seconds (under 30s reads 0m, 30 to 60s reads 1m) and the task before
+// keeps its full time. Past a minute it ticks normally with the real time and says
+// so (his call, 26 Oct): nothing that is not true goes into an average.
+// The seconds are measured exactly as the ▶ NOW pill measures them: from the last
+// tick (or clock-in), less any break inside that span.
+function _rsQuickTick(task) {
+  if (!clockState || !clockState.running) return;
+  const now = Date.now(), a = _runAnchorMs();
+  let idle = _breakOverlapMs(clockState.breaks, a, now);
+  if (clockState.onBreak && clockState.breakStartMs) idle += Math.max(0, now - Math.max(clockState.breakStartMs, a));
+  const secs = Math.max(0, (now - a - idle) / 1000);
+  const quick = secs <= 60;
+  const done = clockState.checklistDone || [];
+  const before = done.length;
+  const g = _clSwipeBlockClickUntil; _clSwipeBlockClickUntil = 0;   // the swipe set it; this tick IS the swipe
+  markChecklistItemDone(task, quick ? { quick: true } : undefined);
+  _clSwipeBlockClickUntil = g;
+  if (!clockState || (clockState.checklistDone || []).length <= before) return;   // nothing landed
+  _rsRender();
+  _rsGoRest(true);
+  const _short = task.length > 24 ? task.slice(0, 24).trimEnd() + '…' : task;
+  const undo = () => {
+    if (!clockState || !clockState.running) return;
+    if (isRepeatTask(clockState.task, task)) undoTaskRep(task);
+    else { const g2 = _clSwipeBlockClickUntil; _clSwipeBlockClickUntil = 0; markChecklistItemDone(task); _clSwipeBlockClickUntil = g2; }
+    _rsRender();
+    showToast('↺ Brought back');
+  };
+  if (quick) showUndoToast('⚡ ' + (secs < 30 ? '0m' : '1m') + ' quick: ' + _short, undo, 5000);
+  else showUndoToast('Ticked normally · ' + fmtMin(secs / 60) + ' since the last one: ' + _short, undo, 5000);
+}
+// Was this finished row's tick a ⚡ quick one? The row's own tick: its lap for a
+// repeat task, the un-lapped tick for a once-off.
+function _rsTickIsQuick(r) {
+  if (!clockState || !r || r.brk) return false;
+  return (clockState.checklistDone || []).some(d => d.quick && d.item === r.t && (r.n > 0 ? d.rep === r.n : !d.rep));
+}
+
+// ⚓ THE RESTING POSITION (v431). Lincoln, 26 Oct 2026: the running sheet should
+// always settle in the same place: the last finished row on top, the row you are
+// on (the task, or the ☕ break you are having) straight under it, what is coming
+// below. Scroll away to look at something and it springs back on its own after
+// 10 seconds of no touching. Ticking a task, or starting or ending a break,
+// re-anchors straight away. Nothing done yet → the NOW row sits on top; all done
+// → it rests on the last row.
+// ⚠️ It never moves while you are busy with the sheet: a row in hand (⠿), a hold
+// and drag, a break being placed, a finger on the glass, another sheet open on
+// top, or the keyboard up. A touch or a scroll restarts the 10 seconds.
+const _RS_REST_MS = 10000;
+let _rsRestTimer = null, _rsFingerDown = false, _rsRestWired = false;
+function _rsRestTop() {
+  const sc = document.getElementById('run-sheet-body');
+  if (!sc) return null;
+  const rows = [...sc.querySelectorAll('.rs-row')];
+  if (!rows.length) return null;
+  // The top row is the last FINISHED row above the one you are on. A planned break
+  // not yet taken can sit between them; it stays in view under the finished row
+  // rather than pushing it off the top.
+  const ni = rows.findIndex(r => r.dataset.rsNow === '1');
+  let anchor = null;
+  for (let k = (ni < 0 ? rows.length : ni) - 1; k >= 0; k--) { if (rows[k].dataset.rsDone === '1') { anchor = rows[k]; break; } }
+  if (!anchor) anchor = ni < 0 ? rows[rows.length - 1] : rows[ni];
+  const sticky = sc.querySelector('.cl-sticky-top');
+  const want = sc.scrollTop + (anchor.getBoundingClientRect().top - sc.getBoundingClientRect().top) - (sticky ? sticky.offsetHeight : 0) - 4;
+  return Math.max(0, Math.min(Math.round(want), sc.scrollHeight - sc.clientHeight));
+}
+function _rsRestOk() {
+  const ctx = _rsCtx();
+  if (!ctx || ctx.kind !== 'clock') return false;
+  const m = document.getElementById('modal-run-sheet');
+  if (!m || !m.classList.contains('open')) return false;
+  if (_rsMoveKey || _rsPlacing || _rsDrag || _rsFingerDown) return false;
+  // Anything opened on top of the run sheet (an edit sheet, a picker, a menu).
+  const z = parseInt(getComputedStyle(m).zIndex, 10) || 0;
+  if ([...document.querySelectorAll('.modal-backdrop.open')].some(b => b !== m && (parseInt(getComputedStyle(b).zIndex, 10) || 0) >= z)) return false;
+  const ae = document.activeElement;
+  if (ae && (/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) || ae.isContentEditable)) return false;   // keyboard up
+  return true;
+}
+function _rsGoRest(smooth) {
+  if (!_rsRestOk()) return;
+  const sc = document.getElementById('run-sheet-body');
+  const top = _rsRestTop();
+  if (!sc || top == null || Math.abs(sc.scrollTop - top) < 2) return;
+  if (smooth && typeof sc.scrollTo === 'function') sc.scrollTo({ top, behavior: 'smooth' });
+  else sc.scrollTop = top;
+}
+function _rsRestArm() {
+  clearTimeout(_rsRestTimer); _rsRestTimer = null;
+  if (_rsFingerDown) return;   // starts when the finger lifts
+  _rsRestTimer = setTimeout(() => { _rsRestTimer = null; _rsGoRest(true); }, _RS_REST_MS);
+}
+// Wired once on the scroller. Passive, so it never slows the scroll itself. A
+// momentum scroll keeps firing after the finger lifts, and each event restarts the
+// count, so the 10 seconds run from when the list actually stops.
+function _rsRestWire() {
+  if (_rsRestWired) return;
+  const sc = document.getElementById('run-sheet-body');
+  if (!sc) return;
+  _rsRestWired = true;
+  sc.addEventListener('touchstart', () => { _rsFingerDown = true; clearTimeout(_rsRestTimer); _rsRestTimer = null; }, { passive: true });
+  const up = () => { _rsFingerDown = false; _rsRestArm(); };
+  sc.addEventListener('touchend', up, { passive: true });
+  sc.addEventListener('touchcancel', up, { passive: true });
+  sc.addEventListener('scroll', () => { if (!_rsFingerDown) _rsRestArm(); }, { passive: true });
 }
 // ↺ Tapping a ✓ row brings it back. Ticking the wrong row is easy here — the rows are
 // large and the sheet is built for fast tapping — and the only way back used to be to
@@ -24546,14 +24801,25 @@ function _rsDragMove2(e) {
   const rawDx = e.touches[0].clientX - _rsTouch.x;
   const dx = Math.abs(rawDx), dy = Math.abs(e.touches[0].clientY - _rsTouch.y);
   if (_rsHoldTimer && (dx > 8 || dy > 8)) { clearTimeout(_rsHoldTimer); _rsHoldTimer = null; }   // scrolling or swiping, not holding
-  // A vertical move or a leftward one is the list scrolling — leave it alone.
-  if (!_rsTouch.swiped && (dy > dx || rawDx < 0)) { if (dy > 8) _rsTouch = null; return; }
-  if (rawDx > 6) {
+  // A vertical move is the list scrolling — leave it alone. A leftward one is only a
+  // gesture on a row that can take a ⚡ quick tick (v431); anywhere else it is ignored.
+  const _canLeft = _rsTouch.row.dataset.rsQuick === '1';
+  if (!_rsTouch.swiped && (dy > dx || (rawDx < 0 && !_canLeft))) { if (dy > 8) _rsTouch = null; return; }
+  if (rawDx > 6 && _rsTouch.swiped !== 'left') {
     _rsTouch.swiped = true;
     e.preventDefault();
     _rsTouch.row.style.transition = 'none';
     _rsTouch.row.style.transform = 'translateX(' + Math.min(rawDx, 90) + 'px)';
     _rsTouch.row.style.opacity = String(Math.max(0.45, 1 - rawDx / 220));
+  } else if (rawDx < -6 && _canLeft && _rsTouch.swiped !== true) {
+    // ⚡ Slides left with a green ring: the colour of a tick, so it reads as "done".
+    // The ring goes solid once the swipe has gone far enough to count.
+    _rsTouch.swiped = 'left';
+    e.preventDefault();
+    _rsTouch.row.style.transition = 'none';
+    _rsTouch.row.style.transform = 'translateX(' + Math.max(rawDx, -90) + 'px)';
+    _rsTouch.row.style.borderRadius = '8px';
+    _rsTouch.row.style.boxShadow = '0 0 0 2px ' + (rawDx < -48 ? 'rgba(48,209,88,0.95)' : 'rgba(48,209,88,0.35)');
   }
 }
 function _rsDragEnd2(e) {
@@ -24562,8 +24828,16 @@ function _rsDragEnd2(e) {
   if (!_rsDrag && sw && sw.swiped) {
     const dx = (e && e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientX : sw.x) - sw.x;
     sw.row.style.transition = 'transform 0.16s, opacity 0.16s';
-    sw.row.style.transform = ''; sw.row.style.opacity = '';
+    sw.row.style.transform = ''; sw.row.style.opacity = ''; sw.row.style.boxShadow = '';
     _clSwipeBlockClickUntil = Date.now() + 400;   // the swipe must not also tick the row
+    if (sw.swiped === 'left') {
+      if (dx < -48) {
+        const k = sw.row.dataset.rsKey || '';
+        const i = k.lastIndexOf(_RS_SEP);
+        if (i > 0) _rsQuickTick(k.slice(0, i));
+      }
+      return;
+    }
     if (dx > 48) {
       const k = sw.row.dataset.rsKey || '';
       // A ☕ break has its own ✕ and no flag to remove — leave it to that.
@@ -24862,6 +25136,7 @@ function _rsBrkEnd() {
   if (!clockState || !clockState.onBreak) return;
   const n = new Date();
   applyBreakEnd(String(n.getHours()).padStart(2, '0') + ':' + String(n.getMinutes()).padStart(2, '0'));
+  _rsGoRest(true);   // ⚓ break over → the next task comes to rest under it
 }
 function _rsBrkStart(id) {
   if (!clockState || !clockState.running) return;
@@ -24870,8 +25145,9 @@ function _rsBrkStart(id) {
   const n = new Date();
   applyBreakStart(String(n.getHours()).padStart(2, '0') + ':' + String(n.getMinutes()).padStart(2, '0'));
   _rsRender(); updateRunRing();
+  _rsGoRest(true);   // ⚓ the break is now the row you are on
 }
-function closeRunSheet() { closeModal('modal-run-sheet'); _rsPlanId = null; _rsPlacing = false; _rsMoveClear(); _rsMarkKey = null; _rsJustMoved = []; clearTimeout(_rsJustMovedTimer); }
+function closeRunSheet() { clearTimeout(_rsRestTimer); _rsRestTimer = null; _rsFingerDown = false; closeModal('modal-run-sheet'); _rsPlanId = null; _rsPlacing = false; _rsMoveClear(); _rsMarkKey = null; _rsJustMoved = []; clearTimeout(_rsJustMovedTimer); }
 function toggleChecklistFlag(task, item) {
   const pid = _clTargetPlanId();
   if (pid) {   // flagging within a planner block's arrangement
