@@ -1546,6 +1546,10 @@
     </div>
     <div class="settings-note" style="margin-top:0">Used on the dashboard progress bar.</div>
 
+    <!-- Task order choice RETIRED v434 (Lincoln, 27 Oct 2026: "keep it as simple as
+         possible"). Every screen now uses the order you did it last time. Hidden, not
+         deleted: the buttons below no longer change anything. -->
+    <div style="display:none;">
     <div class="settings-section" style="margin-top:16px">
       <div class="settings-row"><div class="settings-label">Task order (running clock)</div></div>
       <div style="display:flex;gap:8px;padding:4px 0 2px;">
@@ -1555,7 +1559,11 @@
       </div>
     </div>
     <div class="settings-note" style="margin-top:0">Manual = the job editor's order. Last used = the average order you ticked tasks off across your last 3 times doing this job. Typical = the average across all recent times. (Display only — doesn’t change the saved tasks; switch back to Manual any time to revert.)</div>
+    </div>
 
+    <!-- "New flag sits" RETIRED v434 with the Task order choice: flagged tasks always
+         keep the order you did them last time. Hidden, not deleted. -->
+    <div style="display:none;">
     <div class="settings-section" style="margin-top:16px">
       <div class="settings-row"><div class="settings-label">New flag sits</div></div>
       <div style="display:flex;gap:8px;padding:4px 0 2px;">
@@ -1564,6 +1572,7 @@
       </div>
     </div>
     <div class="settings-note" style="margin-top:0">Where a task lands when you swipe right to flag it — anywhere you can flag. Bottom = it sits below the flags you’ve already made, keeping your list order as you flag top-to-bottom. Top = the newest flag jumps to the front.</div>
+    </div>
 
       </div>
     </div>
@@ -3338,7 +3347,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.433';
+const APP_VERSION = '2026-06-21.434';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4883,21 +4892,25 @@ function _lastUsedChecklistOrder(task) {
   Object.keys(sums).forEach(it => order[it] = sums[it] / counts[it]);
   return order;
 }
+// ⭐ ONE ORDER EVERYWHERE: THE ORDER YOU DID IT LAST TIME (v434). The learned order is
+// SUBTASKS, rewritten at every clock-out to the sequence the tasks were ticked off
+// (_learnTaskOrderOnClockOut), and every surface starts from it: the clock, Organise,
+// the run sheet, the planner. Lincoln, 27 Oct 2026: plan in the order you did it, do it
+// in that order, and it comes back that way next time; "keep it as simple as possible".
+// The Settings "Task order" choice (Manual / Last used = average of the last 3 runs /
+// Typical) is retired and hidden. His phone was on "Last used", so every screen was
+// quietly following a three-run average instead of what he did last time.
+// _lastUsedChecklistOrder / _typicalChecklistOrder stay, unreached.
 function _orderedChecklistItems(task, items, flagsArg, orderArg) {
-  const mode = localStorage.getItem('kr_checklist_order') || 'manual';
   let base = items;
   // An explicit drag-set order (a per-block/session override, or a passed orderArg)
-  // wins over the mode. Otherwise Last-used/Typical compute an order; Manual keeps
-  // the item list order (which IS the whole-job manual order, i.e. SUBTASKS).
+  // wins; otherwise the item list order, which IS the learned order (SUBTASKS).
   const manualOrder = orderArg || _sessionOrGlobalOrder(task);
   if (manualOrder) {
     base = items.slice().sort((a, b) => {
       const ia = manualOrder.indexOf(a), ib = manualOrder.indexOf(b);
       return (ia === -1 ? 1e9 : ia) - (ib === -1 ? 1e9 : ib);   // items not in the order keep at the end
     });
-  } else if (mode !== 'manual') {
-    const order = mode === 'lastused' ? _lastUsedChecklistOrder(task) : _typicalChecklistOrder(task);
-    base = items.slice().sort((a, b) => (a in order ? order[a] : Infinity) - (b in order ? order[b] : Infinity));  // stable: no-data keeps manual order
   }
   // 🚩 Flagged items float to the top as a group; within the group the order
   // depends on kr_flag_new_pos (see _flagNewPos): 'bottom' (default) keeps the
@@ -5003,7 +5016,11 @@ function saveChecklistFlags(o) { return _storeSet('kr_checklist_flags', JSON.str
 // swipe-to-flag. 'bottom' (default): new flag appends below the current flags,
 // keeping the learned list order — flag top-to-bottom and they stay in that
 // order. 'top': newest flag jumps to the head of the group. Device-local.
-function _flagNewPos() { return localStorage.getItem('kr_flag_new_pos') === 'top' ? 'top' : 'bottom'; }
+// RETIRED v434: always 'bottom'. Lincoln, 27 Oct 2026, with the Task order choice:
+// flagged tasks keep the order you did them last time. 'top' sorted them newest flag
+// first, so the order you happened to flag in became the order of the run. The stored
+// kr_flag_new_pos is ignored and its Settings row hidden.
+function _flagNewPos() { return 'bottom'; }
 // Per-planner-block checklist arrangement (flag+order override) — { planId: { flags:{item:ts} } }.
 // Lets you plan a block's checklist ahead; carried into clockState.flagOverride at
 // clock-in, then reverts (the job's global flags stay untouched). Device-local.
@@ -25416,36 +25433,14 @@ function _renderClOrganiseBody() {
   const flags = _editTargetFlags();
   const pid = _clTargetPlanId();
   const orderArg = pid ? ((getPlannerChecklist()[pid] || {}).order || null) : _sessionOrGlobalOrder(task);
+  // ⭐ OPENS IN THE LEARNED ORDER (v434), the exact sequence you ticked these off last
+  // time, and a drag still beats it. Lincoln, 27 Oct 2026: plan in the order you did it,
+  // do it in that order, and tomorrow it comes back that way. From v403 to v433 this
+  // sheet opened sorted by last-done date instead, which put the learned order out of
+  // sight and disagreed with the run sheet built from it. "🗓 Sort by last done" is gone
+  // with it (he never used it); _clSortByLastDone stays, unreached. The 🗓 "yesterday" on
+  // each row stays: deciding what to flag, when it was last done still matters.
   let ordered = _orderedChecklistItems(task, all, flags, orderArg);
-  // ⭐ SORTED BY LAST DONE BY DEFAULT, and a drag beats it forever.
-  //
-  // The button alone was the wrong default: Lincoln asked for the list arranged by
-  // when things were last done, and arriving unsorted with a button to press is not
-  // that. But an unconditional sort would undo a drag on every redraw.
-  //
-  // Both hold because a drag SAVES an order (orderArg). So: no saved order means
-  // nobody has arranged this yet, and recency is the most useful starting point.
-  // The moment anything is dragged, orderArg exists and this never runs again.
-  // The button stays, for re-sorting a list that has been arranged before.
-  if (!orderArg && ordered.length > 1) {
-    const _dLast = _checklistItemLastDone(task);
-    const _dPool = arr => {
-      const head = [], tail = [];
-      arr.forEach(t => (flags[t] ? head : tail).push(t));
-      tail.sort(_byRecentDayThenOrder(_dLast));
-      return head.concat(tail);
-    };
-    const _dRec = _batchRec(task);
-    if (_dRec && _dRec.order.length) {
-      const used = new Set(), seq = [];
-      _dRec.order.forEach(bn => _dPool(ordered.filter(t => _dRec.items[t] === bn && !used.has(t)))
-        .forEach(t => { used.add(t); seq.push(t); }));
-      _dPool(ordered.filter(t => !used.has(t))).forEach(t => seq.push(t));
-      ordered = seq;
-    } else {
-      ordered = _dPool(ordered);
-    }
-  }
   const taskAttr = _attr(task);
   const flagged = ordered.filter(s => flags[s]);
   // Opened from a planner block → always arranges THAT block. The old
@@ -25493,7 +25488,6 @@ function _renderClOrganiseBody() {
     // this is a button: it reorders once, saves the result as the arranged order,
     // and everything stays draggable afterwards.
     ;
-  const sortCtl = `<span onclick="_clSortByLastDone()" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;white-space:nowrap;">🗓 Sort by last done</span>`;
   // 🔁 Planned-laps stepper — on flagged repeat tasks, the estimate counts these
   // once per lap. Two homes, one control: a planner BLOCK (edits the block's laps,
   // re-sizing it on the timeline) and the RUNNING CLOCK (edits this session's lap
@@ -25572,7 +25566,7 @@ function _renderClOrganiseBody() {
   }
   // One row (v404, Lincoln 20 Oct 2026: "Expand all batches should sit to the left,
   // not underneath. Sort by last done."): expand on the left, sort on the right.
-  const toolsRow = `<div style="display:flex;justify-content:${collapseAllCtl ? 'space-between' : 'flex-end'};align-items:center;gap:12px;margin:-2px 0 8px;">${collapseAllCtl}${sortCtl}</div>`;
+  const toolsRow = collapseAllCtl ? `<div style="display:flex;align-items:center;gap:12px;margin:-2px 0 8px;">${collapseAllCtl}</div>` : '';
   // 📋 Run sheet from a planner BLOCK — so the job can be laid out step by step,
   // with a finish time against each one, before it's even started. The order set
   // there rides onto the clock at clock-in (see the _planId carry in clockIn).
