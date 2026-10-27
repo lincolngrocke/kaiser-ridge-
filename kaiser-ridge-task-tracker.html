@@ -3347,7 +3347,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.437';
+const APP_VERSION = '2026-06-21.438';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4339,7 +4339,7 @@ function showScreen(id, tab) {
   if (tab) tab.classList.add('active');
   if (id === 'timesheets') renderTimesheets();
   if (id === 'settings') { updateStats(); updateLastBackupLabel(); updateBackupReminder(); updateStorageUsage(); updateBookingsLabel(); }
-  if (id === 'planner') { _plannerDate = new Date(); renderPlannerScreen(); _calRearmDirty(true); maybeImportBookings(); }
+  if (id === 'planner') { _plannerDate = new Date(); _plannerScrollKey = null; renderPlannerScreen(); _calRearmDirty(true); maybeImportBookings(); }
   else document.body.classList.remove('kr-wide');
   if (id === 'clock') updateBackupBanner();
   if (id === 'robots') { renderRobotsScreen(); startRobotTick(); } else { stopRobotTick(); }
@@ -21083,6 +21083,7 @@ const PLANNER_ZOOM_GAIN = 6;
 let PLANNER_HOUR_PX = Math.max(PLANNER_ZOOM_MIN, Math.min(PLANNER_ZOOM_MAX,
   parseFloat(localStorage.getItem('kr_planner_zoom')) || 360));
 let _plannerSuppressAutoScroll = false;
+let _plannerScrollKey = null;   // the day + view last shown; a redraw of the same one keeps your place (v438)
 const PLANNER_START_HOUR = 0; // midnight
 const PLANNER_END_HOUR = 24; // full 24-hour day
 
@@ -21534,6 +21535,7 @@ function plannerChangeDay(delta) {
 
 function plannerGoToday() {
   _plannerDate = new Date();
+  _plannerScrollKey = null;   // Today always comes back to now, even if already on today
   renderPlannerScreen();
 }
 // Jump the planner to a date chosen from the calendar picker.
@@ -21551,6 +21553,7 @@ function togglePlannerMode() {
   _plannerMode = _plannerMode === 'week' ? 'day' : 'week';
   _storeSet('kr_planner_mode', _plannerMode);
   _plannerSuppressAutoScroll = false;
+  _plannerScrollKey = null;   // a change of view arrives fresh, at now
   renderPlannerScreen();
 }
 
@@ -22308,6 +22311,7 @@ function fmtEstHours(h) {
 }
 
 function renderPlannerScreen() {
+  const _keepTop = (() => { const s = document.getElementById('planner-scroll'); return s ? s.scrollTop : null; })();
   // Ensure no stuck modal backdrops
   document.getElementById('modal-planner-add').classList.remove('open');
   document.getElementById('modal-planner-detail').classList.remove('open');
@@ -22438,7 +22442,20 @@ function renderPlannerScreen() {
   reflowPlannerBlocks(grid);
 
   // Scroll to current time or first task (skipped during a pinch-zoom re-render)
-  if (!_plannerSuppressAutoScroll) {
+  // ⭐ ONLY WHEN YOU ARRIVE AT A DAY (v438). Every redraw used to do this, and 38
+  // things redraw the planner: dropping a job from the holding bay, moving, resizing,
+  // deleting. Lincoln, 27 Oct 2026, "it's been doing this right from day one": you
+  // scroll to the time you want, drag the job across, and the view leaps back to now.
+  // A redraw of the day already on screen now keeps your place. Opening the planner,
+  // changing day or view, and tapping Today still go to now (_plannerScrollKey = null).
+  const _scrollKey = dateStr + '|' + _plannerView;
+  const _scrPl = document.getElementById('screen-planner');
+  const _stay = _scrollKey === _plannerScrollKey && _keepTop != null && _scrPl && _scrPl.classList.contains('active');
+  _plannerScrollKey = _scrollKey;
+  if (_stay && !_plannerSuppressAutoScroll) {
+    const scroll = document.getElementById('planner-scroll');
+    if (scroll) scroll.scrollTop = _keepTop;
+  } else if (!_plannerSuppressAutoScroll) {
     const scroll = document.getElementById('planner-scroll');
     if (diff === 0) {
       const nowMins = (now.getHours() - PLANNER_START_HOUR) * 60 + now.getMinutes();
