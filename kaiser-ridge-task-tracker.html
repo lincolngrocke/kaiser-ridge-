@@ -2668,6 +2668,13 @@
     <button id="run-add-steps" onclick="openRunTaskSteps()" style="display:none;margin-top:12px;margin-left:18px;background:none;border:none;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">≣ Steps</button>
     <button id="run-add-remind" onclick="openReminderPicker(_runEditRef && _runEditRef.inboxId)" style="display:none;margin-top:12px;margin-left:18px;background:none;border:none;color:var(--blue);font-size:14px;font-weight:600;cursor:pointer;">🔔 Remind me</button>
     <div id="run-add-photo-preview"></div>
+    <!-- ▶️ This job's video for the task (v441): a YouTube link, played in the app. -->
+    <div id="run-add-video-wrap" style="display:none;margin-top:14px;">
+      <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:6px;">▶️ Video · this job only</div>
+      <input id="run-add-video" type="url" inputmode="url" placeholder="Paste a YouTube link" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+        style="width:100%;box-sizing:border-box;padding:11px 12px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;">
+      <div id="run-add-video-note" style="font-size:12px;color:var(--subtext);margin-top:5px;"></div>
+    </div>
     <button id="run-add-delete" onclick="deleteRunItem()" style="display:none;width:100%;margin-top:18px;background:none;border:1px solid var(--red);color:var(--red);border-radius:10px;padding:11px;font-size:15px;cursor:pointer;">Delete</button>
   </div>
 </div>
@@ -3365,7 +3372,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.440';
+const APP_VERSION = '2026-06-21.441';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5757,6 +5764,7 @@ function openRunAdd(kind, jobOverride, from) {
   _runAddMode = 'add'; _runEditRef = null;
   _runAddKind = (kind === 'notes') ? 'notes' : 'tasks';
   const isTask = _runAddKind === 'tasks';
+  { const _vw = document.getElementById('run-add-video-wrap'); if (_vw) _vw.style.display = 'none'; }   // a video is added by editing the task
   document.getElementById('run-add-title').textContent = isTask ? 'Add task' : 'Add to-do';
   const sb = document.getElementById('run-add-save'); if (sb) sb.textContent = 'Add';
   document.getElementById('run-add-hint').innerHTML = isTask
@@ -5783,6 +5791,8 @@ function openRunEdit(kind, ref, jobOverride, from) {
   const _job = (kind === 'tasks' && jobOverride) ? jobOverride : ((clockState && clockState.running && clockState.task) || null);
   if (!_job) return;
   _runAddFrom = from || 'clock';
+  // Opened from the run sheet (z 362), the edit sheet (360) would sit hidden behind it.
+  { const _ma = document.getElementById('modal-run-add'); if (_ma) _ma.style.zIndex = (_runAddFrom === 'runsheet') ? '370' : ''; }
   const _live = !!(clockState && clockState.running && clockState.task === _job);
   _renderRunAddBatches(null, false);
   const isTask = kind === 'tasks';
@@ -5800,10 +5810,20 @@ function openRunEdit(kind, ref, jobOverride, from) {
   const stb = document.getElementById('run-add-steps');
   if (isTask) {
     _runEditRef = { kind: 'tasks', task: _job, oldText: ref };
-    document.getElementById('run-add-hint').innerHTML = 'Rename this task on <b>' + _escHtml(_job) + '</b>, add a reference photo or steps. Publish the library to share.';
+    document.getElementById('run-add-hint').innerHTML = 'Rename this task on <b>' + _escHtml(_job) + '</b>, add a photo, a video or steps. Photos and video are for this job only.';
     inp.value = ref;
-    _capturePhotos = (getSubtaskPhotos()[ref] || []).map(ph => Object.assign({}, ph));   // preload the task's reference photos
+    _capturePhotos = photosFor(_job, ref).map(ph => Object.assign({}, ph));   // this job's photos for the task (v441)
     renderCapturePreview();
+    // ▶️ This job's own link; a guide's link shows as a note, not in the box, so saving
+    // without touching the box never copies it here.
+    const _vw = document.getElementById('run-add-video-wrap'), _vi = document.getElementById('run-add-video'), _vn = document.getElementById('run-add-video-note');
+    if (_vw && _vi) {
+      const _own = (getJobVideos()[_job] || {})[ref];
+      const _v = videoFor(_job, ref);
+      _vi.value = (_own && _own.url) || '';
+      if (_vn) _vn.textContent = (_v && !_v.own) ? 'This task already plays the video from its guide. A link here replaces it for this job.' : 'Upload from the YouTube app as Unlisted, then paste the link.';
+      _vw.style.display = 'block';
+    }
     if (stb) {   // steps live on the task globally — editing here saves to the jobs page too
       const _nSt = stepsFor(_job, ref).length;
       stb.textContent = _nSt ? ('≣ Steps (' + _nSt + ')') : '≣ Add steps';
@@ -5811,6 +5831,7 @@ function openRunEdit(kind, ref, jobOverride, from) {
     }
   } else {
     if (stb) stb.style.display = 'none';
+    const _vw = document.getElementById('run-add-video-wrap'); if (_vw) _vw.style.display = 'none';
     const p = ((getTaskNotes()[clockState.task]) || []).find(x => x.id === ref);
     if (!p) return;
     _runEditRef = { kind: 'notes', task: clockState.task, pinId: ref, oldText: p.text, inboxId: p.inboxId };
@@ -5936,7 +5957,7 @@ async function confirmRunAdd() {
     if (mode === 'permanent') {
       _storeSet('kr_subtasks', JSON.stringify(SUBTASKS)); saveSubtaskOrigin(orig);
       if (_runAddBatch) _moveTaskToBatch(task, text, _runAddBatch);   // v421: straight into the batch chosen
-      if (photos.length) { const sp = getSubtaskPhotos(); sp[text] = (sp[text] || []).concat(photos); saveSubtaskPhotos(sp); }   // reference photo on the task
+      if (photos.length) setPhotosFor(task, text, photosFor(task, text).concat(photos));   // reference photo on THIS job's task (v441)
     }
     else saveTaskNotes(tn);
     saveInbox(inbox);
@@ -5990,11 +6011,19 @@ async function confirmRunEdit() {
         else if (p.data) { const id = await _uploadPhoto(p.data); if (id) tphotos.push({ id }); else { tphotos.push({ data: p.data }); tAnyLocal = true; } }
       }
       if (tAnyLocal) showToast('Some photos saved on-device (no connection to Drive)');
-      _captureRemovedIds.forEach(id => _deletePhoto(id));
-      const sp = getSubtaskPhotos();
-      if (tphotos.length) sp[text] = tphotos; else delete sp[text];
-      if (ref.oldText !== text && _scope !== 'job') delete sp[ref.oldText];   // job-only: the other jobs keep theirs
-      saveSubtaskPhotos(sp);
+      // v441: the photos are THIS job's. Write its own list (the rename above has
+      // already carried any own list across), and only delete a removed photo's file
+      // when no other job or shared list still shows it.
+      if (tphotos.length || photosFor(ref.task, text).length) setPhotosFor(ref.task, text, tphotos);
+      _captureRemovedIds.forEach(id => { if (!_photoIdInUse(id)) _deletePhoto(id); });
+      // ▶️ This job's video link. Saved only when the box changed, so an untouched box
+      // never clears or copies anything.
+      const _vi = document.getElementById('run-add-video');
+      if (_vi) {
+        const was = ((getJobVideos()[ref.task] || {})[text] || {}).url || '';
+        const now = _vi.value.trim();
+        if (now !== was && !setVideoFor(ref.task, text, now)) showToast('That does not look like a YouTube link, so no video was saved');
+      }
     } else {
       // Resolve photos the same way the add flow does: keep Drive ids, upload new
       // ones, or fall back to on-device if Drive is unreachable.
@@ -6012,6 +6041,7 @@ async function confirmRunEdit() {
     closeModal('modal-run-add');
     renderRunChecklist();
     if (_runAddFrom === 'organise') { try { _refreshChecklistSurfaces(ref.task); _renderClOrganiseBody(); } catch (e) {} }
+    if (_runAddFrom === 'runsheet') { try { _refreshChecklistSurfaces(ref.task); _rsRenderKeepScroll(); } catch (e) {} }
     updateInboxCount();
     autoBackup();
     showToast(ref.kind === 'tasks' ? 'Task updated ✓ — Publish to share' : 'To-do updated ✓');
@@ -6315,6 +6345,15 @@ function _renameChecklistItem(task, oldName, newName, scope) {
   const flags = getChecklistFlags(); let flagsChanged = false;
   Object.keys(flags).forEach(t => { if (flags[t] && flags[t][oldName] != null) { flags[t][newName] = flags[t][oldName]; delete flags[t][oldName]; flagsChanged = true; } });
   if (flagsChanged) saveChecklistFlags(flags);
+  // 📷 ▶️ Photos and video follow the name everywhere (v441): the shared list and every
+  // job's own list and link.
+  { const sp = getSubtaskPhotos(); if (sp[oldName]) { if (!sp[newName]) sp[newName] = sp[oldName]; delete sp[oldName]; saveSubtaskPhotos(sp); } }
+  { const jp = getJobPhotos(); let c = false;
+    Object.keys(jp).forEach(j => { const o = jp[j]; if (o && Object.prototype.hasOwnProperty.call(o, oldName)) { if (!Object.prototype.hasOwnProperty.call(o, newName)) o[newName] = o[oldName]; delete o[oldName]; c = true; } });
+    if (c) saveJobPhotos(jp); }
+  { const jv = getJobVideos(); let c = false;
+    Object.keys(jv).forEach(j => { const o = jv[j]; if (o && o[oldName]) { if (!o[newName]) o[newName] = o[oldName]; delete o[oldName]; c = true; } });
+    if (c) saveJobVideos(jv); }
   // Current session: keep a ticked/carried/expanded item ticked under its new name.
   // ⚠️ clockState is NULL whenever you are not clocked in (it is parsed straight
   // from kr_clock, and clock-out sets it back to null). Reading it unguarded threw
@@ -6358,8 +6397,14 @@ function _renameTaskOnJob(job, oldName, newName) {
   if (tb[job] && tb[job].items && tb[job].items[oldName] != null) { if (tb[job].items[newName] == null) tb[job].items[newName] = tb[job].items[oldName]; delete tb[job].items[oldName]; saveTaskBatches(tb); }
   const orig = getSubtaskOrigin();
   if (orig[oldName] && !orig[newName]) { orig[newName] = Object.assign({}, orig[oldName], { edited: new Date().toISOString() }); saveSubtaskOrigin(orig); }
-  const sp = getSubtaskPhotos();
-  if (sp[oldName] && !sp[newName]) { sp[newName] = sp[oldName].slice(); saveSubtaskPhotos(sp); }
+  // 📷 ▶️ The photos this job showed on the old name become this job's OWN under the
+  // new name (v441); the shared list and every other job are left as they were.
+  { const ph = photosFor(job, oldName);
+    const jp = getJobPhotos(); const own = jp[job] || {};
+    const hadOwn = has(own, oldName);
+    if (hadOwn) { delete own[oldName]; jp[job] = own; saveJobPhotos(jp); }
+    if ((ph.length || hadOwn) && !has(getJobPhotos()[job], newName)) setPhotosFor(job, newName, ph); }
+  { const jv = getJobVideos(); if (jv[job] && jv[job][oldName]) { if (!jv[job][newName]) jv[job][newName] = jv[job][oldName]; delete jv[job][oldName]; saveJobVideos(jv); } }
   const flags = getChecklistFlags();
   if (flags[job] && flags[job][oldName] != null) { flags[job][newName] = flags[job][oldName]; delete flags[job][oldName]; saveChecklistFlags(flags); }
   if (clockState && clockState.task === job) {
@@ -6528,7 +6573,10 @@ function deleteRunItem() {
     _storeSet('kr_subtasks', JSON.stringify(SUBTASKS));
     const flags = getChecklistFlags(); if (flags[task] && flags[task][item] != null) { delete flags[task][item]; if (!Object.keys(flags[task]).length) delete flags[task]; saveChecklistFlags(flags); }
     const tbat = getTaskBatches(); if (tbat[task] && tbat[task].items && tbat[task].items[item] != null) { delete tbat[task].items[item]; saveTaskBatches(tbat); }   // ▣ this job's batch only
-    const sp = getSubtaskPhotos(); if (sp[item]) { delete sp[item]; saveSubtaskPhotos(sp); }
+    // v441: drop THIS job's own photos and video for the task. The shared-by-name photos
+    // used to be deleted here, which took them off every other job with that task too.
+    { const jp = getJobPhotos(); if (jp[task] && Object.prototype.hasOwnProperty.call(jp[task], item)) { delete jp[task][item]; saveJobPhotos(jp); } }
+    { const jv = getJobVideos(); if (jv[task] && jv[task][item]) { delete jv[task][item]; saveJobVideos(jv); } }
     if (clockState && clockState.task === task) {   // v429: also reachable from Organise with nothing running
     if (Array.isArray(clockState.checklistDone)) clockState.checklistDone = clockState.checklistDone.filter(d => d.item !== item);
     if (Array.isArray(clockState.stepDone)) clockState.stepDone = clockState.stepDone.filter(d => d.item !== item);
@@ -6549,6 +6597,7 @@ function deleteRunItem() {
   closeModal('modal-run-add');
   renderRunChecklist();
   if (_runAddFrom === 'organise') { try { _refreshChecklistSurfaces(task); _renderClOrganiseBody(); } catch (e) {} }
+  if (_runAddFrom === 'runsheet') { try { _refreshChecklistSurfaces(task); _rsRenderKeepScroll(); } catch (e) {} }
   autoBackup();
   showToast((isTask ? 'Task' : 'To-do') + ' deleted');
 }
@@ -6873,7 +6922,7 @@ function renderRunChecklist() {
     const _ownGuidesRun = ((clockState && clockState.task) && getJobGuides()[clockState.task]) || null;
     const _taskJobCountRun = {};
     Object.keys(SUBTASKS || {}).forEach(j => (SUBTASKS[j] || []).forEach(t => { _taskJobCountRun[t] = (_taskJobCountRun[t] || 0) + 1; }));
-    const subPhotos = getSubtaskPhotos();
+    const _mmRun = _mediaMaps(clockState && clockState.task);   // 📷 ▶️ once per render (v441)
     const itemLastDone = _checklistItemLastDone(clockState && clockState.task);
     const itemAvg = {}, itemCount = {};   // normalised item text → average minutes / times done (from history)
     _aggregateChecklistTimes().forEach(a => { const k = a.item.trim().replace(/\s+/g, ' ').toLowerCase(); itemAvg[k] = a.avg; itemCount[k] = a.count; });
@@ -7023,11 +7072,14 @@ function renderRunChecklist() {
         const _sharedVid = !_ownHere && (_taskJobCountRun[s] || 0) > 1;
         _metaBits.push(`<span onclick="event.stopPropagation();viewSubtaskGuide(decodeURIComponent('${enc}'), (clockState&&clockState.task)||null)" style="color:var(--run-blue);cursor:pointer;font-weight:600;">${_escHtml(_label)}${_sharedVid ? ' 🔗' : ''}</span>`);
       }
+      // ▶️ This job's own video for the task (v441), played in the app.
+      const _ownVid = (_mmRun.jv[clockState.task] || {})[s];
+      if (_ownVid && _ownVid.id) _metaBits.push(`<span onclick="event.stopPropagation();playTaskVideo((clockState&&clockState.task)||'', decodeURIComponent('${enc}'))" style="color:var(--run-blue);cursor:pointer;font-weight:600;">▶️ Video</span>`);
       if (_metaBits.length) html += `<div style="font-size:11px;color:var(--run-faint);padding:1px 0 7px 36px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${_metaBits.join('<span style="opacity:0.6;">·</span>')}</div>`;
       // 💬 Session comments attached to this task (fold into the entry at clock-out)
       const _cmts = (clockState.itemComments && clockState.itemComments[s]) || [];
       if (_cmts.length) html += _cmts.map(c => `<div style="font-size:12px;color:var(--run-sub);padding:0 14px 6px 36px;line-height:1.4;">💬 ${_escHtml(c.text)} <span style="color:var(--run-faint);white-space:nowrap;">· ${_timeShort(c.at)}</span></div>`).join('');
-      const refPhotos = subPhotos[s] || [];
+      const refPhotos = photosFor(clockState.task, s, _mmRun);   // this job's photos for the task (v441)
       if (refPhotos.length) html += `<div style="padding:0 0 10px 36px;" onclick="event.stopPropagation();">${_photosHtml({ photos: refPhotos }, 64)}</div>`;   // reference photo
       if (expanded && steps.length && !isDone) {
         html += steps.map(st => {
@@ -10805,6 +10857,8 @@ const KR_SYNC_NEVER = [
   'kr_org_members',
   // Class B — real per-record tables in S4, never blobs in kv.
   'kr_entries', 'kr_inbox', 'kr_task_notes', 'kr_subtask_photos',
+  // v441: one job's own task photos — same reason as kr_subtask_photos (can hold bytes).
+  'kr_subtask_photos_by_job',
 ];
 
 // The org's shared state. Everything here is safe to overwrite wholesale from
@@ -10819,6 +10873,8 @@ const KR_SYNC_KEYS = [
   'kr_equipment_order', 'kr_task_types', 'kr_task_merges', 'kr_task_moves', 'kr_time_excl',
   'kr_subtask_origin', 'kr_job_horizon', 'kr_job_links',
   'kr_task_batches', 'kr_task_videos', 'kr_projects',
+  // v441: one job's own task video links (YouTube refs, never bytes).
+  'kr_task_video_by_job',
   // 🌱 Onboarding's seeded times. Org library data like the rest of this block —
   // a worker joining a set-up org should get the estimates, not a wall of dashes.
   // ⚠️ Safe to share precisely BECAUSE it is separate from measured history: it
@@ -12035,7 +12091,7 @@ const KR_BACKUP_KEYS = [
   'kr_sheet_url', 'kr_gmaps_key', 'kr_dark_mode',
   'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
   'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_task_videos', 'kr_checklist_flags', 'kr_hidden_tasks', 'kr_task_merges', 'kr_subtask_origin', 'kr_pins_applied',
-  'kr_agents', 'kr_agent_runs', 'kr_planner_checklist', 'kr_pin_order', 'kr_subtask_photos', 'kr_job_reminders', 'kr_task_reminders',
+  'kr_agents', 'kr_agent_runs', 'kr_planner_checklist', 'kr_pin_order', 'kr_subtask_photos', 'kr_subtask_photos_by_job', 'kr_task_video_by_job', 'kr_job_reminders', 'kr_task_reminders',
   'kr_task_types', 'kr_job_runs', 'kr_job_flags', 'kr_task_moves', 'kr_job_horizon', 'kr_job_links', 'kr_task_batches', 'kr_time_excl',
   // Added v219 — these were silently LOST on restore (Lincoln's icon re-add restore
   // dropped team mode → the Ethan tab vanished). Team/role, Ethan's planned day +
@@ -12773,7 +12829,8 @@ const KR_LIBRARY_KEYS = [
   'kr_equipment_notes', 'kr_equipment_links',
   'kr_equipment_master', 'kr_extra_frequencies', 'kr_extra_locations', 'kr_extra_clients',
   'kr_task_order', 'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
-  'kr_projects', 'kr_task_videos', 'kr_subtask_photos', 'kr_job_links', 'kr_task_batches'
+  'kr_projects', 'kr_task_videos', 'kr_subtask_photos', 'kr_job_links', 'kr_task_batches',
+  'kr_subtask_photos_by_job', 'kr_task_video_by_job'
 ];
 
 function exportTaskLibrary() {
@@ -15097,6 +15154,7 @@ function renderDirSubtaskList(items) {
   Object.keys(SUBTASKS || {}).forEach(j => (SUBTASKS[j] || []).forEach(t => { _taskJobCount[t] = (_taskJobCount[t] || 0) + 1; }));
   const _ownSteps = (_jn && getJobSteps()[_jn]) || null;
   const _ownGuides = (_jn && getJobGuides()[_jn]) || null;
+  const _mmDir = _jn ? _mediaMaps(_jn) : null;   // 📷 ▶️ once per render (v441)
   const _TYMETA = {
     once:   { label: '1×', color: 'var(--subtext)', title: 'Once — tap to make it repeatable' },
     repeat: { label: '↻',  color: '#30d158',        title: 'Repeatable — tick it as many times as you do it' },
@@ -15132,6 +15190,9 @@ function renderDirSubtaskList(items) {
     if (hasGuide) metaBits.push(_guideGlyph + (_ownGuideHere ? ' 📍' : (_sharedWith > 0 ? ' 🔗' : '')));
     if (_isRep) metaBits.push('<span style="color:#30d158;font-weight:700;">↻</span>');
     if (_remOn && !featureHidden('reminders')) metaBits.push('🔔');
+    // 📷 ▶️ This job's photos and video for the task, tappable to view (v441).
+    const _media = _jn ? _taskMediaChips(_jn, s, 'var(--blue)', _mmDir) : '';
+    if (_media) metaBits.push(_media);
     const metaLine = metaBits.length ? `<div style="font-size:11px;color:var(--subtext);padding:0 0 3px 2px;">${metaBits.join(' · ')}</div>` : '';
     return `
     <div id="strow-${i}" ontouchstart="stSwipeStart(event,${i})" ontouchmove="stSwipeMove(event)" ontouchend="stSwipeEnd(event)"
@@ -15782,6 +15843,15 @@ function _copyJobSetup(src, dst, tasks) {
     list.forEach(t => { if (has(own, t) && !has(mine, t)) { mine[t] = JSON.parse(JSON.stringify(own[t])); c = true; } });
     if (c) { m[dst] = mine; save(m); }
   });
+  // 📷 ▶️ The source job's own photos and video links (v441): a copy is the same work.
+  { const jp = getJobPhotos(), own = jp[src];
+    if (own) { const mine = jp[dst] || {}; let c = false;
+      list.forEach(t => { if (has(own, t) && !has(mine, t)) { mine[t] = (own[t] || []).slice(); c = true; } });
+      if (c) { jp[dst] = mine; saveJobPhotos(jp); } } }
+  { const jv = getJobVideos(), own = jv[src];
+    if (own) { const mine = jv[dst] || {}; let c = false;
+      list.forEach(t => { if (own[t] && !mine[t]) { mine[t] = Object.assign({}, own[t]); c = true; } });
+      if (c) { jv[dst] = mine; saveJobVideos(jv); } } }
   // 🙈 Hidden on the source → hidden on the copy.
   const hid = getHiddenTasks(), hs = hid[src];
   if (Array.isArray(hs) && hs.length) {
@@ -16196,6 +16266,97 @@ function taskActionGo(act) {
 // the running clock when that task appears. Rides the library so Ethan gets them.
 function getSubtaskPhotos() { try { return JSON.parse(localStorage.getItem('kr_subtask_photos') || '{}') || {}; } catch (e) { return {}; } }
 function saveSubtaskPhotos(o) { return _storeSet('kr_subtask_photos', JSON.stringify(o)); }
+
+// ── 📷 ▶️ A TASK'S PHOTOS AND VIDEO BELONG TO ITS JOB (v441) ──────────────────
+// Lincoln, 27 Oct 2026: "it only relates to that job alone. That photo or that video
+// then appears across all pages that are displaying the run sheet and also the job
+// page." So a photo or YouTube link added on a task lives on THAT job's task and
+// shows on its planning run sheet, its running run sheet, the clock list and Edit
+// Job, never on another job holding a task of the same name.
+//   kr_subtask_photos_by_job = { [job]: { [task]: [ {id} | {data} ] } }
+//   kr_task_video_by_job     = { [job]: { [task]: { id, url } } }    (YouTube refs, never bytes)
+// Reading falls back to what existed before: the shared-by-name photos, and a
+// YouTube link in the task's guide (which already has its own per-job choice). The
+// first photo added on a job copies any shared ones into that job's own list, so
+// other jobs keep theirs untouched. An empty list is a real answer ("none here").
+function getJobPhotos() { try { return JSON.parse(localStorage.getItem('kr_subtask_photos_by_job') || '{}') || {}; } catch (e) { return {}; } }
+function saveJobPhotos(m) { return _storeSet('kr_subtask_photos_by_job', JSON.stringify(m)); }
+function getJobVideos() { try { return JSON.parse(localStorage.getItem('kr_task_video_by_job') || '{}') || {}; } catch (e) { return {}; } }
+function saveJobVideos(m) { return _storeSet('kr_task_video_by_job', JSON.stringify(m)); }
+// mm (optional): _mediaMaps(job), so a list render parses each store once, not per row.
+function _mediaMaps(job) {
+  return { jp: getJobPhotos(), sp: getSubtaskPhotos(), jv: getJobVideos(), g: (typeof guidesResolver === 'function') ? guidesResolver(job) : null };
+}
+function photosFor(job, task, mm) {
+  const m = job ? (mm ? mm.jp : getJobPhotos())[job] : null;
+  if (m && Object.prototype.hasOwnProperty.call(m, task)) return m[task] || [];
+  return (mm ? mm.sp : getSubtaskPhotos())[task] || [];
+}
+function setPhotosFor(job, task, arr) {
+  if (!job || !task) return;
+  const m = getJobPhotos(); const own = m[job] || (m[job] = {});
+  own[task] = (arr || []).slice();
+  saveJobPhotos(m);
+}
+// → { id, url, own } or null. The job's own link first, else a YouTube link in the guide.
+function videoFor(job, task, mm) {
+  const own = job ? ((mm ? mm.jv : getJobVideos())[job] || {})[task] : null;
+  if (own && own.id) return { id: own.id, url: own.url || ('https://youtu.be/' + own.id), own: true };
+  const g = (mm && mm.g) ? mm.g(task) : ((typeof guideFor === 'function') ? guideFor(job, task) : null);
+  const gid = g && g.url ? parseYouTubeId(g.url) : '';
+  return gid ? { id: gid, url: g.url, own: false } : null;
+}
+// url '' clears this job's own link (a guide link, if any, shows again).
+function setVideoFor(job, task, url) {
+  if (!job || !task) return false;
+  const m = getJobVideos(); const own = m[job] || (m[job] = {});
+  const id = parseYouTubeId(url || '');
+  if (!id) { delete own[task]; if (!Object.keys(own).length) delete m[job]; saveJobVideos(m); return !String(url || '').trim(); }
+  own[task] = { id, url: String(url).trim() };
+  saveJobVideos(m);
+  return true;
+}
+// Play any YouTube video in the app's own full-page player, so watching never leaves
+// the screen you were on: Done brings you straight back.
+function playYouTubeInApp(id, title) {
+  if (!id) return;
+  _videoPlayerTask = '';
+  document.getElementById('video-player-title').textContent = title || 'Video';
+  const meta = document.getElementById('video-player-meta'); if (meta) meta.textContent = '';
+  document.getElementById('video-player-frame').src = 'https://www.youtube.com/embed/' + id + '?rel=0&playsinline=1&modestbranding=1';
+  openModal('modal-video-player');
+}
+// Is this Drive photo still shown anywhere (the shared lists, or any job's own list)?
+// A photo copied into one job's list must not have its file deleted from under the
+// others when that one job drops it.
+function _photoIdInUse(id) {
+  if (!id) return false;
+  const hit = arr => Array.isArray(arr) && arr.some(p => p && p.id === id);
+  const sp = getSubtaskPhotos();
+  if (Object.keys(sp).some(t => hit(sp[t]))) return true;
+  const jp = getJobPhotos();
+  return Object.keys(jp).some(j => Object.keys(jp[j] || {}).some(t => hit(jp[j][t])));
+}
+function playTaskVideo(job, task) { const v = videoFor(job, task); if (v) playYouTubeInApp(v.id, task); else showToast('No video on this task yet'); }
+// The photos full screen, in the app's gallery, starting from the first.
+async function viewTaskPhotos(job, task) {
+  const ph = photosFor(job, task);
+  if (!ph.length) { showToast('No photos on this task yet'); return; }
+  // Drive photos fetch through the cache first (one download ever, v268), inline ones are ready.
+  const srcs = (await Promise.all(ph.map(p => p.data ? p.data : (p.id ? (_photoCache[p.id] || _fetchPhoto(p.id)) : null)))).filter(Boolean);
+  if (!srcs.length) { showToast('The photos could not load — check the connection and try again'); return; }
+  _ivGallery = srcs; _ivIndex = 0;
+  _ivOpenSrc(srcs[0]);
+}
+// The 📷 / ▶️ chips for a task's meta line. One line, no new rows (sleeper car).
+function _taskMediaChips(job, task, color, mm) {
+  const n = photosFor(job, task, mm).length, v = videoFor(job, task, mm);
+  if (!n && !v) return '';
+  const e = s => encodeURIComponent(s).replace(/'/g, '%27');
+  const st = `display:inline-flex;align-items:center;gap:3px;flex-shrink:0;font-size:11px;font-weight:700;color:${color || '#5ac8fa'};cursor:pointer;padding:1px 2px;`;
+  return (n ? `<span onclick="event.stopPropagation();viewTaskPhotos(decodeURIComponent('${e(job)}'),decodeURIComponent('${e(task)}'))" ontouchstart="event.stopPropagation()" title="see the photos" style="${st}">📷 ${n}</span>` : '')
+       + (v ? `<span onclick="event.stopPropagation();playTaskVideo(decodeURIComponent('${e(job)}'),decodeURIComponent('${e(task)}'))" ontouchstart="event.stopPropagation()" title="watch the video" style="${st}">▶️ Video</span>` : '');
+}
 // Origin of a checklist item that came from the Inbox — keyed by item text.
 // { caught, added } so the item's history is viewable (ℹ️ in the task editor).
 function getSubtaskOrigin() { return JSON.parse(localStorage.getItem('kr_subtask_origin') || '{}'); }
@@ -19243,6 +19404,9 @@ function saveDirTask() {
       // ▣ Batches keyed by job name
       const tbat = getTaskBatches();
       if (tbat[oldTask]) { if (!tbat[task]) tbat[task] = tbat[oldTask]; delete tbat[oldTask]; saveTaskBatches(tbat); }
+      // 📷 ▶️ This job's own task photos and video links (v441)
+      { const jp = getJobPhotos(); if (jp[oldTask]) { if (!jp[task]) jp[task] = jp[oldTask]; delete jp[oldTask]; saveJobPhotos(jp); } }
+      { const jv = getJobVideos(); if (jv[oldTask]) { if (!jv[task]) jv[task] = jv[oldTask]; delete jv[oldTask]; saveJobVideos(jv); } }
       // 🗓 Horizon keyed by job name
       const jhz = getJobHorizons();
       if (jhz[oldTask]) { jhz[task] = jhz[oldTask]; delete jhz[oldTask]; saveJobHorizons(jhz); }
@@ -19377,6 +19541,8 @@ function _purgeJobData(task) {
   if (jflags[task]) { delete jflags[task]; saveJobFlags(jflags); }
   const tbat = getTaskBatches();
   if (tbat[task]) { delete tbat[task]; saveTaskBatches(tbat); }
+  { const jp = getJobPhotos(); if (jp[task]) { delete jp[task]; saveJobPhotos(jp); } }   // 📷 v441 (files stay: other lists may show them)
+  { const jv = getJobVideos(); if (jv[task]) { delete jv[task]; saveJobVideos(jv); } }
   // To-dos die with the job (the caller warns) — orphaned notes under a dead job
   // name were invisible forever; deleting honestly beats losing them silently.
   const tnDel = getTaskNotes();
@@ -24630,6 +24796,7 @@ function _rsRender() {
   const _bRec = _batchRec(ctx.job);
   const _durs = ctx.kind === 'clock' ? _checklistDurations() : {};
   const stepsOf = stepsResolver(ctx.job);   // step AVERAGES aren't read here — the sheet shows no per-step times
+  const _mm = _mediaMaps(ctx.job);          // 📷 ▶️ read once per render, not per row (v441)
   // ⭐ THE GAPS ARE THE TARGET, for a break AND now for a task. Dragging a row up
   // 30 places on a 44-step straw run is the pain this replaces: pick the row up,
   // scroll wherever you like, tap the gap. Distance stops costing anything, which
@@ -24758,6 +24925,8 @@ function _rsRender() {
     const border = _marked ? '#0a84ff' : (_lifted ? 'rgba(90,200,250,0.9)' : (r.isNow ? 'rgba(90,200,250,0.75)' : (r.tappable ? 'rgba(48,209,88,0.45)' : 'var(--border)')));
     const bg = _marked ? 'rgba(10,132,255,0.12)' : (_lifted ? 'rgba(90,200,250,0.16)' : (r.isDone ? 'transparent' : (r.isNow ? 'rgba(90,200,250,0.10)' : 'var(--card)')));
     const markChip = _marked ? '<span style="font-size:11px;font-weight:700;color:#0a84ff;flex-shrink:0;">📍 things go under here</span>' : '';
+    // 📷 ▶️ This job's photos and video for the task, viewed without leaving the sheet (v441).
+    const mediaChips = _taskMediaChips(ctx.job, r.t, null, _mm);
     // The .rs-row is a WRAPPER holding the header line and, when open, its steps —
     // so a drag carries the steps with it instead of stranding them. Tap-to-tick
     // lives on the header, not the wrapper, so tapping a step can't tick the task.
@@ -24770,8 +24939,9 @@ function _rsRender() {
       ${_rsHeldBadge(key) || `<span style="font-size:15px;flex-shrink:0;opacity:${r.isDone ? '0.5' : '1'};">${r.isDone ? '✓' : '🚩'}</span>`}
       <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;">
         <span style="overflow-wrap:anywhere;font-size:15px;color:${r.isDone ? '#616a7e' : 'var(--text)'};">${_escHtml(r.t)}</span>
-        ${(_avgMeta(r.t, avgMap, cntMap) || nowChip || stepChip || batchChip || actualChip || markChip) ? `<span style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">${markChip}${batchChip}${_avgMeta(r.t, avgMap, cntMap)}${actualChip}${brkNote}${nowChip}${stepChip}</span>` : ''}</span>
+        ${(_avgMeta(r.t, avgMap, cntMap) || nowChip || stepChip || batchChip || actualChip || markChip || mediaChips) ? `<span style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">${markChip}${batchChip}${_avgMeta(r.t, avgMap, cntMap)}${actualChip}${brkNote}${nowChip}${stepChip}${mediaChips}</span>` : ''}</span>
       ${lap}${timeTxt}
+      ${(_rsMoveKey || _rsPlacing) ? '' : `<span ontouchstart="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_rsEditTask(decodeURIComponent('${_encArg(r.t)}'))" title="edit: photo, video, name" style="font-size:16px;line-height:1;color:#8b93a7;flex-shrink:0;cursor:pointer;padding:10px 4px;margin:-10px 0;">✎</span>`}
       <span ontouchstart="event.stopPropagation()" ontouchmove="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_rsPickUp(decodeURIComponent('${_encArg(key)}'))" title="move this row" style="font-size:17px;line-height:1;color:${_lifted ? '#5ac8fa' : '#8b93a7'};flex-shrink:0;cursor:pointer;padding:10px 8px;margin:-10px -6px -10px 0;">⠿</span></div>
       ${open ? `<div style="padding-top:6px;">${_rsStepsHtml(r, ctx, stepsOf)}</div>` : ''}</div>`;
   }).join('');
@@ -24880,6 +25050,22 @@ function _rsTick(task) {
   // ⚓ Ticked → straight back to rest, so the row just done sits on top and the next
   // one under it (v431). Only when a tick actually landed.
   if (clockState && (clockState.checklistDone || []).length > before) _rsGoRest(true);
+}
+// ✎ Edit a task from the run sheet (v441): the same edit sheet as the clock and
+// Organise, aimed at the job this sheet is for, so a photo or a video link can be
+// added in the moment, planning or running. Lincoln, 27 Oct 2026: "every piece of
+// data on that task window on the run sheet is gold."
+function _rsEditTask(task) {
+  if (Date.now() < _clSwipeBlockClickUntil) return;
+  const ctx = _rsCtx(); if (!ctx) return;
+  openRunEdit('tasks', task, ctx.job, 'runsheet');
+}
+// Redraw after an edit without moving the list.
+function _rsRenderKeepScroll() {
+  const sc = document.getElementById('run-sheet-body');
+  const keep = sc ? sc.scrollTop : null;
+  _rsRender();
+  if (sc && keep != null) sc.scrollTop = keep;
 }
 // ⚡ QUICK TICK (v431). Lincoln, 26 Oct 2026: a quick task straight after a long one
 // shared the long one's minutes, because ticks under a minute apart are batched and
