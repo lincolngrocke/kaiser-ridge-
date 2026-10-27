@@ -1917,6 +1917,21 @@
   </div>
 </div>
 
+<!-- ▣ COPY BATCHES TO OTHER JOBS (v439): pick a batch, untick any tasks you don't want,
+     pick the jobs. Adds only, never replaces. Replaces "Copy Tasks To…" above, which
+     overwrote each chosen job's whole task list. -->
+<div class="modal-backdrop" id="modal-copy-batches" style="z-index:600;">
+  <div class="modal-sheet" style="padding:16px 0 24px;display:flex;flex-direction:column;max-height:90vh;">
+    <div class="modal-handle"></div>
+    <div style="padding:0 20px 4px;display:flex;align-items:center;justify-content:space-between;">
+      <span onclick="closeModal('modal-copy-batches')" style="color:var(--blue);font-size:16px;cursor:pointer;">Cancel</span>
+      <span style="font-size:17px;font-weight:600;">Copy Batches To…</span>
+      <span onclick="confirmCopyBatches()" style="color:var(--blue);font-size:16px;font-weight:700;cursor:pointer;">Copy</span>
+    </div>
+    <div id="copy-batches-body" style="flex:1;overflow-y:auto;padding:4px 20px 0;"></div>
+  </div>
+</div>
+
 <!-- ══════════════ CHECKLIST ITEM STEPS ══════════════ -->
 <!-- ══════════════ RESUME AN INTERRUPTED RUN ══════════════ -->
 <!-- Offered, never automatic: applying it silently would reinstate the flag
@@ -2886,7 +2901,10 @@
         <div id="dir-subtask-list"></div>
         <button onclick="openSubtaskPicker()" style="margin-top:8px;background:none;border:1px dashed var(--border);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">+ Add Task</button>
         <button id="dir-restore-subtasks-btn" onclick="restoreDefaultSubtasks()" style="display:none;margin-top:8px;background:none;border:1px dashed var(--blue);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">↺ Restore Default Tasks</button>
-        <button onclick="openCopyChecklist()" style="margin-top:8px;background:none;border:1px dashed var(--blue);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">⧉ Copy Tasks to Other Jobs…</button>
+        <button onclick="openCopyBatches()" style="margin-top:8px;background:none;border:1px dashed var(--blue);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">⧉ Copy Batches to Other Jobs…</button>
+        <!-- "⧉ Copy Tasks to Other Jobs…" (openCopyChecklist) RETIRED v439: it replaced each
+             chosen job's whole task list. Hidden, not deleted. -->
+        <button onclick="openCopyChecklist()" style="display:none;">⧉ Copy Tasks to Other Jobs…</button>
       </div>
 
       <div style="padding:16px 20px 8px;" data-feature="job-video">
@@ -3347,7 +3365,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.438';
+const APP_VERSION = '2026-06-21.439';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -18987,6 +19005,123 @@ function getDirSubtasks() {
 
 // Copy the checklist currently in the editor onto one or more other tasks.
 // Guides are keyed by item text, so they apply on the targets automatically.
+// ▣ COPY BATCHES TO OTHER JOBS (v439). Lincoln, 27 Oct 2026: "You choose a batch you
+// want to copy, and then you can select the task within that batch to send to another
+// job." It replaces Copy Tasks, which REPLACED each chosen job's whole task list with
+// this one's and carried no batches or lap settings.
+// ⭐ It only ADDS. Each chosen job gets a batch of that name (made if it has none) and
+// the ticked tasks it does not already have, in this job's order, at the end of that
+// batch. A ticked task it already has joins the batch only if it sits in no batch; one
+// already in a different batch stays put, so that job's organisation is never undone.
+// Lap (repeat) type and this job's own steps/guide versions go with a task when the
+// other job has none of its own; shared steps, guides and past times follow the name.
+let _cb = null;   // { job, batch, tasks:Set, targets:Set, q }
+function openCopyBatches() {
+  if (isWorker()) { showToast('Batches are set up by the manager'); return; }
+  const job = _dirJobName();
+  if (!job) { showToast('Save the job first, then copy its batches'); return; }
+  const rec = _batchRec(job);
+  const batches = rec ? rec.order.filter(bn => _subtaskItems.some(t => rec.items[t] === bn)) : [];
+  if (!batches.length) { showToast('This job has no batches with tasks in them yet'); return; }
+  _cb = { job, batch: null, tasks: new Set(), targets: new Set(), q: '' };
+  _cbRender();
+  openModal('modal-copy-batches');
+}
+function _cbPickBatch(bn) {
+  const rec = _batchRec(_cb.job);
+  _cb.batch = bn;
+  _cb.tasks = new Set(_subtaskItems.filter(t => rec.items[t] === bn));   // all ticked to start
+  _cbRender();
+}
+function _cbChangeBatch() { _cb.batch = null; _cb.tasks = new Set(); _cbRender(); }   // jobs picked so far are kept
+function _cbToggleTask(t) { if (_cb.tasks.has(t)) _cb.tasks.delete(t); else _cb.tasks.add(t); _cbRender(true); }
+function _cbToggleTarget(j) { if (_cb.targets.has(j)) _cb.targets.delete(j); else _cb.targets.add(j); _cbRender(true); }
+// Typing only redraws the job list, so the search box keeps its focus and caret.
+function _cbSearch(v) { _cb.q = v; const el = document.getElementById('cb-jobs'); if (el) el.innerHTML = _cbJobsHtml(); }
+function _cbJobsHtml() {
+  const tb = getTaskBatches(), q = _cb.q.trim().toLowerCase();
+  const jobs = [...new Set(DIRECTORY.map(r => r.task).filter(Boolean))].filter(j => j !== _cb.job)
+    .filter(j => !q || j.toLowerCase().includes(q) || _cb.targets.has(j))
+    .sort((a, b) => (_cb.targets.has(b) - _cb.targets.has(a)) || a.localeCompare(b));
+  if (!jobs.length) return '<div style="padding:14px 0;color:var(--subtext);font-size:14px;">No jobs match.</div>';
+  return jobs.map(j => {
+    const has = tb[j] && Array.isArray(tb[j].order) && tb[j].order.includes(_cb.batch);
+    return _cbRow(`_cbToggleTarget(decodeURIComponent('${_encArg(j)}'))`, _cb.targets.has(j), _escTxt(j), has ? 'has ▣ ' + _escTxt(_cb.batch) : '');
+  }).join('');
+}
+function _cbRow(onclick, on, label, sub) {
+  const tick = `<span style="width:22px;height:22px;border-radius:6px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;${on ? 'background:var(--blue);color:#fff;' : 'border:1.5px solid var(--border);'}">${on ? '✓' : ''}</span>`;
+  return `<div onclick="${onclick}" style="display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--border);cursor:pointer;">${tick}<span style="flex:1;min-width:0;font-size:15px;color:var(--text);overflow-wrap:anywhere;">${label}${sub ? `<span style="font-size:12px;color:var(--subtext);"> · ${sub}</span>` : ''}</span></div>`;
+}
+function _cbRender(keepScroll) {
+  const body = document.getElementById('copy-batches-body');
+  if (!body || !_cb) return;
+  const keep = body.scrollTop;
+  const rec = _batchRec(_cb.job);
+  const head = s => `<div style="font-size:12px;font-weight:700;color:var(--subtext);text-transform:uppercase;letter-spacing:0.4px;margin:14px 0 6px;">${s}</div>`;
+  let html = head('1 · Pick a batch');
+  // Once one is picked the list folds to it, so the tasks sit right under it
+  // instead of below every other batch. "Change" opens the list again.
+  html += rec.order.filter(bn => _subtaskItems.some(t => rec.items[t] === bn) && (!_cb.batch || bn === _cb.batch)).map(bn => {
+    const n = _subtaskItems.filter(t => rec.items[t] === bn).length;
+    const on = bn === _cb.batch;
+    return `<div onclick="${on ? '_cbChangeBatch()' : `_cbPickBatch(decodeURIComponent('${_encArg(bn)}'))`}" style="display:flex;align-items:center;gap:10px;padding:11px 12px;margin-bottom:6px;border-radius:10px;cursor:pointer;${on ? 'background:rgba(10,132,255,0.12);border:1.5px solid var(--blue);' : 'border:1px solid var(--border);'}"><span style="flex:1;font-size:15px;font-weight:${on ? 700 : 500};color:var(--text);">▣ ${_escTxt(bn)}</span><span style="font-size:12px;color:var(--subtext);">${n} task${n === 1 ? '' : 's'}</span>${on ? '<span style="font-size:13px;font-weight:600;color:var(--blue);">Change</span>' : ''}</div>`;
+  }).join('');
+  if (_cb.batch) {
+    const members = _subtaskItems.filter(t => rec.items[t] === _cb.batch);
+    html += head(`2 · Tasks to send · ${_cb.tasks.size} of ${members.length}`);
+    html += members.map(t => _cbRow(`_cbToggleTask(decodeURIComponent('${_encArg(t)}'))`, _cb.tasks.has(t), _escTxt(t), isRepeatTask(_cb.job, t) ? '🔁 laps' : '')).join('');
+    html += head(`3 · Send to${_cb.targets.size ? ' · ' + _cb.targets.size + ' job' + (_cb.targets.size === 1 ? '' : 's') : ''}`);
+    html += `<input type="search" placeholder="Search jobs" value="${_attr(_cb.q)}" oninput="_cbSearch(this.value)" style="width:100%;box-sizing:border-box;padding:10px 12px;margin:0 0 6px;border:1px solid var(--border);border-radius:10px;font-size:15px;color:var(--text);background:var(--bg);">`;
+    html += `<div id="cb-jobs">${_cbJobsHtml()}</div><div style="height:12px;"></div>`;
+  }
+  body.innerHTML = html;
+  if (keepScroll) body.scrollTop = keep;
+}
+function confirmCopyBatches() {
+  if (!_cb || !_cb.batch) { showToast('Pick a batch first'); return; }
+  const tasks = _subtaskItems.filter(t => _cb.tasks.has(t));   // this job's order
+  if (!tasks.length) { showToast('Tick at least one task to send'); return; }
+  const targets = [..._cb.targets];
+  if (!targets.length) { showToast('Pick at least one job to send to'); return; }
+  const src = _cb.job, bn = _cb.batch;
+  const tb = getTaskBatches(), tty = getTaskTypes(), ownS = getJobSteps(), ownG = getJobGuides();
+  const has = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k);
+  let added = 0, joined = 0, sCh = false, gCh = false, tCh = false;
+  targets.forEach(job => {
+    const list = Array.isArray(SUBTASKS[job]) ? SUBTASKS[job].slice() : [];
+    const rec = tb[job] || (tb[job] = { order: [], items: {} });
+    rec.order = Array.isArray(rec.order) ? rec.order : []; rec.items = rec.items || {};
+    if (!rec.order.includes(bn)) rec.order.push(bn);
+    const inBatch = t => rec.items[t] && rec.order.includes(rec.items[t]);
+    tasks.forEach(t => {
+      if (list.includes(t)) {
+        if (!inBatch(t)) { rec.items[t] = bn; joined++; }   // loose → into the batch; in another batch → stays
+      } else {
+        // New: straight after the last task already in this batch, else at the end.
+        let at = -1; list.forEach((x, i) => { if (rec.items[x] === bn) at = i; });
+        list.splice(at >= 0 ? at + 1 : list.length, 0, t);
+        rec.items[t] = bn; added++;
+      }
+      const sk = _taskTypeKey(src, t), dk = _taskTypeKey(job, t);
+      if (has(tty, sk) && !has(tty, dk)) { tty[dk] = tty[sk]; tCh = true; }
+      if (ownS[src] && has(ownS[src], t) && !(ownS[job] && has(ownS[job], t))) { (ownS[job] || (ownS[job] = {}))[t] = JSON.parse(JSON.stringify(ownS[src][t])); sCh = true; }
+      if (ownG[src] && has(ownG[src], t) && !(ownG[job] && has(ownG[job], t))) { (ownG[job] || (ownG[job] = {}))[t] = JSON.parse(JSON.stringify(ownG[src][t])); gCh = true; }
+    });
+    SUBTASKS[job] = list;
+  });
+  _storeSet('kr_subtasks', JSON.stringify(SUBTASKS));
+  saveTaskBatches(tb);
+  if (tCh) saveTaskTypes(tty);
+  if (sCh) saveJobSteps(ownS);
+  if (gCh) saveJobGuides(ownG);
+  autoBackup();
+  closeModal('modal-copy-batches');
+  _cb = null;
+  showToast('▣ ' + bn + ' → ' + targets.length + ' job' + (targets.length === 1 ? '' : 's') + ' · ' + added + ' task' + (added === 1 ? '' : 's') + ' added' + (joined ? ', ' + joined + ' moved in' : ''));
+}
+// RETIRED v439 (unreached; its button is hidden). It REPLACED each chosen job's whole
+// task list with this job's, carrying no batches or lap settings.
 function openCopyChecklist() {
   const items = getDirSubtasks();
   if (!items.length) { showToast('Add some checklist items first'); return; }
