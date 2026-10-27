@@ -3347,7 +3347,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.435';
+const APP_VERSION = '2026-06-21.436';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4901,16 +4901,30 @@ function _lastUsedChecklistOrder(task) {
 // Typical) is retired and hidden. His phone was on "Last used", so every screen was
 // quietly following a three-run average instead of what he did last time.
 // _lastUsedChecklistOrder / _typicalChecklistOrder stay, unreached.
+//
+// ⭐ LAST TIME'S TASKS COME FIRST, IN THE ORDER YOU TICKED THEM (v436). The saved
+// order (Rule A) only swaps the tasks you ticked among the places they already held,
+// so on a pick-some-each-time job like Household chores today's four tasks stayed
+// scattered between the ones you skipped. Lincoln, 27 Oct 2026: "They should all be
+// in the same order that I checked them off today." So: every task ticked on the
+// most recent day this job was worked goes first, in tick order; everything else
+// follows in the saved order. On a job done in full the two are the same thing.
 function _orderedChecklistItems(task, items, flagsArg, orderArg) {
   let base = items;
   // An explicit drag-set order (a per-block/session override, or a passed orderArg)
-  // wins; otherwise the item list order, which IS the learned order (SUBTASKS).
+  // wins; otherwise last time's ticks first, then the learned order (SUBTASKS).
   const manualOrder = orderArg || _sessionOrGlobalOrder(task);
   if (manualOrder) {
     base = items.slice().sort((a, b) => {
       const ia = manualOrder.indexOf(a), ib = manualOrder.indexOf(b);
       return (ia === -1 ? 1e9 : ia) - (ib === -1 ? 1e9 : ib);   // items not in the order keep at the end
     });
+  } else {
+    const last = _lastDayTickOrder(task);
+    if (last.length) {
+      const have = new Set(items), first = last.filter(t => have.has(t)), firstSet = new Set(first);
+      base = first.concat(items.filter(t => !firstSet.has(t)));
+    }
   }
   // 🚩 Flagged items float to the top as a group; within the group the order
   // depends on kr_flag_new_pos (see _flagNewPos): 'bottom' (default) keeps the
@@ -4927,6 +4941,31 @@ function _orderedChecklistItems(task, items, flagsArg, orderArg) {
     if (fa && flagTop) return flags[b] - flags[a];   // both flagged, 'top' → newer flag on top
     return pos[a] - pos[b];                          // else keep the learned list order (flags float as a group)
   });
+}
+// The tasks ticked on the most recent DAY this job was worked, in the order they were
+// first ticked that day (all of that day's sessions together, so a job picked up twice
+// in a day reads as one run). Robot runs never count. Cached per job on the entries
+// revision: the clock reads this on every render.
+let _lastDayCache = { rev: -1, map: {} };
+function _lastDayTickOrder(task) {
+  if (!task) return [];
+  if (_lastDayCache.rev !== _entriesRev) _lastDayCache = { rev: _entriesRev, map: {} };
+  if (_lastDayCache.map[task]) return _lastDayCache.map[task];
+  const dayOf = ms => { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); };
+  const ticks = [];
+  entries.forEach(e => {
+    if (!e || e.bot || e.task !== task || !Array.isArray(e.checklist)) return;
+    e.checklist.forEach(d => { const t = d && new Date(d.at).getTime(); if (d && d.item && isFinite(t)) ticks.push({ item: d.item, t }); });
+  });
+  let out = [];
+  if (ticks.length) {
+    const latest = dayOf(Math.max(...ticks.map(x => x.t)));
+    const seen = new Set();
+    ticks.filter(x => dayOf(x.t) === latest).sort((a, b) => a.t - b.t)
+      .forEach(x => { if (!seen.has(x.item)) { seen.add(x.item); out.push(x.item); } });
+  }
+  _lastDayCache.map[task] = out;
+  return out;
 }
 // ── The Organise sheet's VISIBLE sequence — ONE source of truth ─────────────
 // The sheet you flag on is grouped by ▣ batch; the run sheet is a flat list. They
