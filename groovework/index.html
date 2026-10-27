@@ -3347,7 +3347,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.434';
+const APP_VERSION = '2026-06-21.435';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -6577,7 +6577,10 @@ function _runEstSec() {
 function _runRemainingSec() {
   if (!clockState || !clockState.running || !clockState.task) return null;
   const task = clockState.task;
-  const flagged = Object.keys(_sessionOrGlobalFlags(task));
+  // Only flags on tasks the job still has, as the run sheet and the block size count
+  // them (v435). A block's flags ride onto the clock at clock-in, a stale one included.
+  const _onJob = new Set(SUBTASKS[task] || []);
+  const flagged = Object.keys(_sessionOrGlobalFlags(task)).filter(t => _onJob.has(t));
   if (!flagged.length) return null;
   const map = _taskEstMap();            // forecast
   const lt = clockState.lapTargets || {};
@@ -22196,7 +22199,14 @@ function _plannedLapsFor(plan, item, repsMap) {
 function _estimateBlockMins(plan) {
   if (!plan) return null;
   const rec = getPlannerChecklist()[plan.id];
-  const flagged = rec && rec.flags ? Object.keys(rec.flags) : [];
+  // ⚠️ ONLY FLAGS ON TASKS THE JOB STILL HAS (v435) — the run sheet's own rule
+  // (_rsInstances: "a flag can outlive the task it was set on"). A flag left behind
+  // by a rename, a deleted task or a block copied from an old run still sat in the
+  // block's flags, so the block counted it and the run sheet did not. Lincoln,
+  // 27 Oct 2026: hay block 5:00–11:40am on the planner, run sheet "done by ~9:55am",
+  // 1h 45m apart, about one travel leg. Block size and run sheet must add up the SAME rows.
+  const _onJob = new Set(SUBTASKS[plan.task] || []);
+  const flagged = rec && rec.flags ? Object.keys(rec.flags).filter(t => _onJob.has(t)) : [];
   // ☕ Planned breaks lengthen the block. A 30 minute lunch inside the job pushes the
   // block's end out on the timeline, so whatever is planned after it sits right.
   const _brk = (rec && Array.isArray(rec.breaks)) ? rec.breaks.reduce((t, b) => t + (b.mins || 0), 0) : 0;
@@ -25470,7 +25480,8 @@ function _renderClOrganiseBody() {
     const _eMap = _taskEstMap();        // forecast
     const _eLt = clockState.lapTargets || {};
     let _eSum = 0, _eN = 0, _eLapped = false;
-    Object.keys(flags).forEach(item => {
+    const _eOnJob = new Set(SUBTASKS[task] || []);   // stale flags count nowhere (v435)
+    Object.keys(flags).filter(t => _eOnJob.has(t)).forEach(item => {
       const a = _eMap[_normTaskKey(item)];
       if (isFinite(a) && a > 0) { const l = _eLt[item] >= 1 ? _eLt[item] : 1; _eSum += a * l; _eN++; if (l > 1) _eLapped = true; }
     });
