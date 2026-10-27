@@ -3365,7 +3365,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.439';
+const APP_VERSION = '2026-06-21.440';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -24606,7 +24606,7 @@ function _rsRender() {
     ${planning ? hintHtml : ''}
     ${_rsMoveKey ? `<div style="margin:0 0 8px;padding:9px 12px;border-radius:10px;background:rgba(90,200,250,0.12);border:1px solid rgba(90,200,250,0.5);font-size:13px;color:var(--text);">
       ⤴ Moving <b>${_escHtml(_rsMoveLabel())}</b><div style="font-size:11px;color:var(--subtext);margin-top:2px;">${_rsMoveSet.length > 1
-        ? 'Tap a <b>⤵ move here</b> gap to drop them all in, in the order they are in now. Tap ⠿ on another row to add it, or on a blue one to put it back.'
+        ? 'Tap a <b>⤵ move here</b> gap to drop them all in, in the order you tapped them (1, 2, 3…). Tap ⠿ on another row to add it, or on a blue one to put it back.'
         : 'Tap a <b>⤵ move here</b> gap to drop it in, or tap ⠿ on more rows to move several together. Scroll as far as you like first.'}</div>
       ${(_rsMarkKey && !_rsMoveSet.includes(_rsMarkKey)) ? `<div onclick="_rsDropUnderMark()" style="margin-top:8px;padding:9px 12px;border-radius:9px;background:#0a84ff;color:#fff;font-weight:700;font-size:14px;text-align:center;cursor:pointer;">⤵ Drop under 📍 ${_escHtml(_rsKeyName(_rsMarkKey))}</div>` : ''}
       <div onclick="_rsMoveClear();_rsRender()" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:12px;margin-top:5px;">✕ cancel</div></div>` : ''}
@@ -24674,7 +24674,7 @@ function _rsRender() {
         : '';
       return `${_ins(_i)}<div class="rs-row" data-rs-key="${_attr(bk)}"${r.isNow ? ' data-rs-now="1"' : ''}${r.isDone ? ' data-rs-done="1"' : ''} ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)" style="margin-bottom:8px;">
         <div${tapB} style="display:flex;align-items:center;gap:9px;padding:11px 10px;border-radius:8px;border:1px ${onBreakNow ? 'solid rgba(255,159,10,0.9)' : 'dashed rgba(255,159,10,0.55)'};background:${r.isDone ? 'transparent' : 'rgba(255,159,10,0.10)'};${tapB ? 'cursor:pointer;' : ''}">
-        <span style="font-size:15px;flex-shrink:0;opacity:${r.isDone ? '0.5' : '1'};">☕</span>
+        ${_rsHeldBadge(bk) || `<span style="font-size:15px;flex-shrink:0;opacity:${r.isDone ? '0.5' : '1'};">☕</span>`}
         <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;">
           <span style="font-size:15px;color:${r.isDone ? '#616a7e' : 'var(--text)'};">${label}</span>
           <span style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">${stepper}${nowB}${actual}${hintB}</span></span>
@@ -24767,7 +24767,7 @@ function _rsRender() {
     return `${_ins(_i)}<div class="rs-row" data-rs-key="${_attr(key)}"${r.isNow ? ' data-rs-now="1"' : ''}${r.isDone ? ' data-rs-done="1"' : ''}${_canQuick ? ' data-rs-quick="1"' : ''} ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)"
       style="margin-bottom:8px;">
       <div${tap} style="display:flex;align-items:center;gap:9px;padding:11px 10px;border-radius:8px;border:${_marked ? '2px' : '1px'} solid ${border};background:${bg};${(r.tappable || r.undoable || _markTap) ? 'cursor:pointer;' : ''}">
-      <span style="font-size:15px;flex-shrink:0;opacity:${r.isDone ? '0.5' : '1'};">${r.isDone ? '✓' : '🚩'}</span>
+      ${_rsHeldBadge(key) || `<span style="font-size:15px;flex-shrink:0;opacity:${r.isDone ? '0.5' : '1'};">${r.isDone ? '✓' : '🚩'}</span>`}
       <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;">
         <span style="overflow-wrap:anywhere;font-size:15px;color:${r.isDone ? '#616a7e' : 'var(--text)'};">${_escHtml(r.t)}</span>
         ${(_avgMeta(r.t, avgMap, cntMap) || nowChip || stepChip || batchChip || actualChip || markChip) ? `<span style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">${markChip}${batchChip}${_avgMeta(r.t, avgMap, cntMap)}${actualChip}${brkNote}${nowChip}${stepChip}</span>` : ''}</span>
@@ -25235,6 +25235,13 @@ let _rsMoveKey = null;              // the first row picked up; truthy = the she
 let _rsMoveSet = [];                // every row picked up, in the order they were tapped
 let _rsJustMoved = [], _rsJustMovedTimer = null;   // the rows you just dropped, held blue so you can see where they went
 function _rsMoveClear() { _rsMoveKey = null; _rsMoveSet = []; }
+// The tap-order number on a held row (v440): rows drop in the order you tapped ⠿, so
+// the sheet shows that order, 1 2 3, in place of the row's 🚩 while it is in hand.
+function _rsHeldBadge(key) {
+  const i = _rsMoveSet.indexOf(key);
+  if (i < 0 || _rsMoveSet.length < 2) return '';
+  return `<span style="width:22px;height:22px;border-radius:11px;flex-shrink:0;background:#0a84ff;color:#fff;font-size:12px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;">${i + 1}</span>`;
+}
 // 📍 THE DROP POINT (v430). Lincoln, 26 Oct 2026: he finds where tasks should go, scrolls
 // away to find the tasks to move, then cannot find the spot again. Tap that row first:
 // it turns blue and stays blue while you scroll and pick rows up with ⠿, the banner
@@ -25344,9 +25351,12 @@ function _rsMoveTo(idx, gapEl) {
   const held = new Set(_rsMoveSet.filter(k => keys.includes(k)));
   if (!held.size) { _rsMoveClear(); _rsRender(); return; }
   // The gap index counts the CURRENT rendering, held rows included. Everything not
-  // held keeps its order; the held rows go in, in their sheet order, after as many
-  // un-held rows as sat above the gap.
-  const moving = keys.filter(k => held.has(k));
+  // held keeps its order; the held rows go in after as many un-held rows as sat above
+  // the gap, IN THE ORDER YOU TAPPED THEM (v440, Lincoln 27 Oct 2026: "can they be
+  // dropped into position in the order that you tap them in?"). Tap order is the
+  // fine-tuning: pick up C, A, B and they land C, A, B. Until v440 they kept their
+  // sheet order, so re-ordering a few rows took a drop per row.
+  const moving = _rsMoveSet.filter(k => held.has(k));
   const rest = keys.filter(k => !held.has(k));
   const before = keys.slice(0, idx).filter(k => !held.has(k)).length;
   const next = rest.slice(0, before).concat(moving, rest.slice(before));
