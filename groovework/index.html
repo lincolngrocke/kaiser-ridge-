@@ -3338,7 +3338,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.432';
+const APP_VERSION = '2026-06-21.433';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4923,13 +4923,16 @@ function _orderedChecklistItems(task, items, flagsArg, orderArg) {
 // learned order, which on a lapped job like straw carting reads as the run sheet
 // coming out backwards. Both now flatten the SAME sections, so they cannot drift.
 // Returns [{ name, loose, items }] in the order the eye reads them.
-function _orgSections(task, ordered) {
+// withEmpty (v433): the Organise sheet draws an EMPTY batch's heading too, so a batch
+// just made there is something to drag tasks under. Everything else (the run sheet's
+// order) has no use for a heading with nothing in it.
+function _orgSections(task, ordered, withEmpty) {
   const rec = _batchRec(task);
   if (!rec || !rec.order.length) return [{ name: null, loose: false, items: ordered }];
   const out = [], used = new Set();
   rec.order.forEach(bn => {
     const members = ordered.filter(s => rec.items[s] === bn);
-    if (!members.length) return;                 // an empty batch renders no heading
+    if (!members.length && !withEmpty) return;   // an empty batch renders no heading
     members.forEach(s => used.add(s));
     out.push({ name: bn, loose: false, items: members });
   });
@@ -25545,7 +25548,7 @@ function _renderClOrganiseBody() {
     // Sections come from _orgSections so the run sheet flattens EXACTLY what is
     // drawn here — see _orgVisibleOrder. Don't re-group inline again.
     let blocks = '';
-    _orgSections(task, ordered).forEach(sec => {
+    _orgSections(task, ordered, true).forEach(sec => {
       const col = !!_clOrgCollapsed[sec.name];
       blocks += secHd(sec.name, sec.loose, sec.items.length, col) + (col ? '' : sec.items.map(rowHtml).join(''));
     });
@@ -25591,8 +25594,36 @@ function _renderClOrganiseBody() {
   // ＋ Add task (v422, Lincoln 24 Oct 2026): "need to be able to add a task in the
   // Organise screen as well", with the batch chosen. First line of the list, because the
   // tools row above is already full on a phone.
-  const addCtl = `<div onclick="_clOrgAddTask()" style="padding:2px 0 10px;color:var(--blue);font-weight:600;font-size:14px;cursor:pointer;">＋ Add task</div>`;
+  // ▣ ＋ New batch beside it (v433, Lincoln 27 Oct 2026: "Need to be able to add
+  // batches on both of these sheets", planning and running alike). A batch belongs to
+  // the JOB, so it is there on every run of it, the same as one made in Edit Job.
+  const addCtl = `<div style="display:flex;align-items:center;gap:22px;padding:2px 0 10px;">
+    <span onclick="_clOrgAddTask()" style="color:var(--blue);font-weight:600;font-size:14px;cursor:pointer;">＋ Add task</span>
+    ${isWorker() ? '' : `<span onclick="_clOrgNewBatch()" style="color:var(--blue);font-weight:600;font-size:14px;cursor:pointer;">▣ ＋ New batch</span>`}</div>`;
   body.innerHTML = '<div class="cl-sticky-top">' + scopeToggle + estLine + rsCtl + intro + toolsRow + '</div>' + addCtl + bodyHtml;
+}
+// Make a batch from the Organise sheet. It lands at the end of the job's batch list,
+// open and empty, and the sheet scrolls to it so the next move (dragging tasks under
+// it) needs no hunting.
+function _clOrgNewBatch() {
+  if (isWorker()) { showToast('Batches are set up by the manager'); return; }
+  const job = _clOrganiseTask; if (!job) return;
+  const name = (prompt('New batch name (e.g. Loading truck)') || '').trim();
+  if (!name) return;
+  const all = getTaskBatches();
+  const rec = all[job] || (all[job] = { order: [], items: {} });
+  rec.order = Array.isArray(rec.order) ? rec.order : []; rec.items = rec.items || {};
+  if (rec.order.some(b => b.toLowerCase() === name.toLowerCase())) { showToast('That batch already exists'); return; }
+  if (name.toLowerCase() === 'unbatched') { showToast('Pick another name: “Unbatched” is taken'); return; }
+  rec.order.push(name);
+  saveTaskBatches(all);
+  delete _clOrgCollapsed[name];
+  autoBackup();
+  _renderClOrganiseBody();
+  try { _refreshChecklistSurfaces(job); } catch (e) {}
+  const hd = [...document.querySelectorAll('#cl-organise-body [data-batch-sec]')].find(h => h.dataset.batchName === name);
+  if (hd) hd.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  showToast('▣ ' + name + ': drag tasks under it');
 }
 
 function openPlannerDetail(planId) {
