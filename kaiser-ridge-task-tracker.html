@@ -1115,7 +1115,11 @@
       </div>
       <div class="ts-summary-top">
         <div class="ts-summary-amount" id="ts-total-hours">0.00h</div>
-        <div id="ts-count" style="font-size:13px;color:var(--subtext);margin-top:2px;">0 timesheets</div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+          <div id="ts-count" style="font-size:13px;color:var(--subtext);margin-top:2px;">0 timesheets</div>
+          <!-- ↕ v442: oldest first for copying onto the billing spreadsheet -->
+          <span id="ts-order" onclick="toggleTsOrder()" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;white-space:nowrap;">↓ Newest first</span>
+        </div>
       </div>
       <div class="hours-bar-wrap">
         <div class="hours-bar-track"><div class="hours-bar-fill" id="ts-bar" style="width:0%"></div></div>
@@ -3372,7 +3376,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.441';
+const APP_VERSION = '2026-06-21.442';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -8011,8 +8015,18 @@ function _tsFilteredEntries() {
   }
   return filtered;
 }
+// ↕ Timesheet list order (v442): 'newest' (default) or 'oldest'. A view preference
+// for this phone only, so it lives in plain localStorage and never syncs.
+function _tsOrder() { try { return localStorage.getItem('kr_ts_order') === 'oldest' ? 'oldest' : 'newest'; } catch (e) { return 'newest'; } }
+function toggleTsOrder() {
+  const next = _tsOrder() === 'oldest' ? 'newest' : 'oldest';
+  try { localStorage.setItem('kr_ts_order', next); } catch (e) {}
+  renderTimesheets();
+  const sa = document.querySelector('#screen-timesheets .scroll-area'); if (sa) sa.scrollTop = 0;   // the start of the new order
+}
 function renderTimesheets() {
   updateRestoreEntryBanner();
+  { const o = document.getElementById('ts-order'); if (o) o.textContent = _tsOrder() === 'oldest' ? '↑ Oldest first' : '↓ Newest first'; }
   const list = document.getElementById('ts-list');
   const searchTerm = (document.getElementById('ts-search')?.value || '').toLowerCase().trim();
   // With Robots hidden the Mine / Robots / All switch goes too, and the list stays
@@ -8053,9 +8067,11 @@ function renderTimesheets() {
     return text.replace(regex, '<mark style="background:#FFD60A;color:#000;border-radius:2px;padding:0 1px;">$1</mark>');
   };
 
-  // Newest at the top, oldest at the bottom — sorted by the entry's own work
-  // date + clock-in (the inverse of the sheet, which runs oldest→newest).
-  filtered.sort((a, b) => _entryDateTimeKey(b) - _entryDateTimeKey(a));
+  // Newest at the top by default — sorted by the entry's own work date + clock-in.
+  // ↕ Oldest first on request (v442, Lincoln 29 Oct 2026): he copies them onto the
+  // billing spreadsheet in date order, top to bottom. The PDF always reads oldest first.
+  const _oldestFirst = _tsOrder() === 'oldest';
+  filtered.sort((a, b) => _oldestFirst ? (_entryDateTimeKey(a) - _entryDateTimeKey(b)) : (_entryDateTimeKey(b) - _entryDateTimeKey(a)));
 
   list.innerHTML = filtered.map(e => {
     const tag = e.bot
