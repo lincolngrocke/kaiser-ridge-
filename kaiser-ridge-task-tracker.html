@@ -3376,7 +3376,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.442';
+const APP_VERSION = '2026-06-21.443';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -7919,10 +7919,20 @@ function setTsWho(w) { _tsWho = w; renderTimesheets(); }
 let _tsRangeSize = 0, _tsRangeStartMs = null;
 function _tsTodayDayMs() { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); }
 function _tsRangeStartDay() { return _tsRangeStartMs != null ? _tsRangeStartMs : (_tsTodayDayMs() - (_tsRangeSize - 1) * 86400000); }
-function setTsRange(size) { _tsRangeSize = size; renderTimesheets(); }   // keep the chosen start when switching between block sizes
+function setTsRange(size) {
+  // ⭐ 1 day (v443, Lincoln 29 Oct 2026) lands on the LAST day of the window you were
+  // looking at, which is today unless you had moved it. Landing on the window's first
+  // day would turn "14 days to today" into a day two weeks ago. Other sizes keep the
+  // chosen start, as before (a pay-period start stays put).
+  if (size === 1 && _tsRangeSize > 1 && _tsRangeStartMs != null) _tsRangeStartMs = _tsRangeStartDay() + (_tsRangeSize - 1) * 86400000;
+  // …and back out of 1 day, the wider window ENDS on the day you were on, so it
+  // looks back from there rather than running on into days that have not happened.
+  else if (_tsRangeSize === 1 && size > 1 && _tsRangeStartMs != null) _tsRangeStartMs = _tsRangeStartDay() - (size - 1) * 86400000;
+  _tsRangeSize = size; renderTimesheets();
+}
 function openTsRangeMenu() {
   const el = document.getElementById('ts-range-options');
-  if (el) el.innerHTML = [[7, '7 days'], [14, '14 days'], [30, '30 days'], [0, 'All time']].map(([sz, lab]) =>
+  if (el) el.innerHTML = [[1, '1 day'], [7, '7 days'], [14, '14 days'], [30, '30 days'], [0, 'All time']].map(([sz, lab]) =>
     `<div onclick="setTsRange(${sz});closeModal('modal-ts-range');" style="padding:15px 22px;font-size:16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;${_tsRangeSize === sz ? 'color:var(--blue);font-weight:600;' : 'color:var(--text);'}">${lab}${_tsRangeSize === sz ? '<span>✓</span>' : ''}</div>`
   ).join('');
   openModal('modal-ts-range');
@@ -7943,7 +7953,7 @@ function _renderTsRange() {
   const sizesEl = document.getElementById('ts-range-sizes');
   const navEl = document.getElementById('ts-range-nav');
   if (!sizesEl || !navEl) return;
-  const curLab = _tsRangeSize === 0 ? 'All time' : _tsRangeSize + ' days';
+  const curLab = _tsRangeSize === 0 ? 'All time' : (_tsRangeSize === 1 ? '1 day' : _tsRangeSize + ' days');
   sizesEl.innerHTML = `<div onclick="openTsRangeMenu()" style="display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border-radius:9px;background:var(--card);border:1px solid var(--border);font-size:14px;font-weight:600;color:var(--text);cursor:pointer;">${curLab} <span style="color:var(--subtext);font-size:11px;">▾</span></div>`;
   if (!_tsRangeSize) { navEl.innerHTML = '<span style="font-size:13px;color:var(--subtext);">All time</span>'; return; }
   const startDay = _tsRangeStartDay();
@@ -7953,7 +7963,7 @@ function _renderTsRange() {
   navEl.innerHTML =
     `<span onclick="slideTsRange(-1)" style="color:var(--blue);font-size:22px;cursor:pointer;padding:0 6px;line-height:1;">‹</span>`
     + `<label style="position:relative;display:inline-block;">`
-    +   `<span style="font-size:13px;color:var(--text);white-space:nowrap;min-width:104px;text-align:center;display:inline-block;border-bottom:1px dashed var(--subtext);padding-bottom:1px;">${fmt(startDay)} – ${fmt(endDay)}</span>`
+    +   `<span style="font-size:13px;color:var(--text);white-space:nowrap;min-width:104px;text-align:center;display:inline-block;border-bottom:1px dashed var(--subtext);padding-bottom:1px;">${_tsRangeSize === 1 ? new Date(startDay).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) : fmt(startDay) + ' – ' + fmt(endDay)}</span>`
     +   `<input type="date" id="ts-range-date" value="${ymd(startDay)}" onchange="setTsRangeStart(this.value)" style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;-webkit-appearance:none;">`
     + `</label>`
     + `<span onclick="slideTsRange(1)" style="color:var(--blue);font-size:22px;cursor:pointer;padding:0 6px;line-height:1;">›</span>`;
