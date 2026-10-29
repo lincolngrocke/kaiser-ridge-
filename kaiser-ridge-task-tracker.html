@@ -3376,7 +3376,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.444';
+const APP_VERSION = '2026-06-21.445';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -6415,6 +6415,7 @@ function _renameChecklistItem(task, oldName, newName, scope) {
   { const jv = getJobVideos(); let c = false;
     Object.keys(jv).forEach(j => { const o = jv[j]; if (o && o[oldName]) { if (!o[newName]) o[newName] = o[oldName]; delete o[oldName]; c = true; } });
     if (c) saveJobVideos(jv); }
+  _pendingPhotosRekey(p => p.task === oldName, p => Object.assign({}, p, { task: newName }));   // waiting pictures too (v445)
   // Current session: keep a ticked/carried/expanded item ticked under its new name.
   // ⚠️ clockState is NULL whenever you are not clocked in (it is parsed straight
   // from kr_clock, and clock-out sets it back to null). Reading it unguarded threw
@@ -6461,10 +6462,13 @@ function _renameTaskOnJob(job, oldName, newName) {
   // 📷 ▶️ The photos this job showed on the old name become this job's OWN under the
   // new name (v441); the shared list and every other job are left as they were.
   { const ph = photosFor(job, oldName);
+    // Pictures still waiting to upload follow the task to its new name (v445).
+    _pendingPhotosRekey(p => p.job === job && p.task === oldName, p => Object.assign({}, p, { task: newName }));
     const jp = getJobPhotos(); const own = jp[job] || {};
     const hadOwn = has(own, oldName);
     if (hadOwn) { delete own[oldName]; jp[job] = own; saveJobPhotos(jp); }
-    if ((ph.length || hadOwn) && !has(getJobPhotos()[job], newName)) setPhotosFor(job, newName, ph); }
+    const waitNew = _pendingPhotos().filter(p => p.job === job && p.task === newName).map(p => ({ data: p.data }));
+    if ((ph.length || hadOwn) && !has(getJobPhotos()[job], newName)) setPhotosFor(job, newName, _refsOnly(ph).concat(waitNew)); }
   { const jv = getJobVideos(); if (jv[job] && jv[job][oldName]) { if (!jv[job][newName]) jv[job][newName] = jv[job][oldName]; delete jv[job][oldName]; saveJobVideos(jv); } }
   const flags = getChecklistFlags();
   if (flags[job] && flags[job][oldName] != null) { flags[job][newName] = flags[job][oldName]; delete flags[job][oldName]; saveChecklistFlags(flags); }
@@ -6638,6 +6642,7 @@ function deleteRunItem() {
     // used to be deleted here, which took them off every other job with that task too.
     { const jp = getJobPhotos(); if (jp[task] && Object.prototype.hasOwnProperty.call(jp[task], item)) { delete jp[task][item]; saveJobPhotos(jp); } }
     { const jv = getJobVideos(); if (jv[task] && jv[task][item]) { delete jv[task][item]; saveJobVideos(jv); } }
+    _pendingPhotosRekey(p => p.job === task && p.task === item, () => null);   // waiting pictures (v445)
     if (clockState && clockState.task === task) {   // v429: also reachable from Organise with nothing running
     if (Array.isArray(clockState.checklistDone)) clockState.checklistDone = clockState.checklistDone.filter(d => d.item !== item);
     if (Array.isArray(clockState.stepDone)) clockState.stepDone = clockState.stepDone.filter(d => d.item !== item);
@@ -10946,8 +10951,9 @@ const KR_SYNC_NEVER = [
   'kr_org_members',
   // Class B — real per-record tables in S4, never blobs in kv.
   'kr_entries', 'kr_inbox', 'kr_task_notes', 'kr_subtask_photos',
-  // v441: one job's own task photos — same reason as kr_subtask_photos (can hold bytes).
-  'kr_subtask_photos_by_job',
+  // v445: pictures still waiting to upload. Bytes, and this phone's alone. (The job's
+  // photo list itself syncs since v445: it holds Drive tickets only. See KR_SYNC_KEYS.)
+  'kr_photo_pending',
 ];
 
 // The org's shared state. Everything here is safe to overwrite wholesale from
@@ -10964,6 +10970,10 @@ const KR_SYNC_KEYS = [
   'kr_task_batches', 'kr_task_videos', 'kr_projects',
   // v441: one job's own task video links (YouTube refs, never bytes).
   'kr_task_video_by_job',
+  // v445: one job's own task photos, as Drive tickets ({id}) only, so Ethan's phone can
+  // fetch them through the same Apps Script that brings him to-do photos. _syncPush
+  // strips anything that is not a ticket, so a picture's bytes can never go up.
+  'kr_subtask_photos_by_job',
   // 🌱 Onboarding's seeded times. Org library data like the rest of this block —
   // a worker joining a set-up org should get the estimates, not a wall of dashes.
   // ⚠️ Safe to share precisely BECAUSE it is separate from measured history: it
@@ -11098,6 +11108,81 @@ function _syncSchedule(ms) {
   _syncTimer = setTimeout(() => { _syncTimer = null; syncNow(true).catch(() => {}); }, ms == null ? 2500 : ms);
 }
 
+// What a key's value looks like on the wire. The job photo list (v445) goes up as
+// Drive tickets only, whatever this phone holds, so picture bytes can never reach kv.
+function _syncOutValue(k, raw) {
+  if (k !== 'kr_subtask_photos_by_job') return raw;
+  try {
+    const m = JSON.parse(raw || '{}') || {}, out = {};
+    Object.keys(m).forEach(j => { out[j] = {}; Object.keys(m[j] || {}).forEach(t => { out[j][t] = _refsOnly(m[j][t]); }); });
+    return JSON.stringify(out);
+  } catch (e) { return '{}'; }
+}
+
+// ── Catch-up: a store this phone has only just learned to sync (v445) ───────
+// Lincoln, 29 Oct 2026: he added YouTube links to tasks Ethan shares, and Ethan never
+// got them. The pull is a watermark delta, and a phone on an OLDER version skips a key
+// it does not know yet while still moving its watermark past that row. Updating does
+// not bring the row back: the next pull starts after it. So each phone remembers which
+// keys it already syncs, and the first time a key is new to it, it fetches that key
+// once from the server whatever the watermark says, and MERGES it with what it holds
+// (the two v441+ stores are additive: nothing on either side is thrown away), then
+// sends the merge back if it added anything. A phone that never stored the list starts
+// from the keys that predate this fix, so only the v441+ ones are caught up.
+const _SYNC_KEYS_V441_PLUS = ['kr_task_video_by_job', 'kr_subtask_photos_by_job'];
+function _syncMergeValue(k, serverRaw, localRaw) {
+  let sv, lv;
+  try { sv = JSON.parse(serverRaw || '{}') || {}; } catch (e) { sv = {}; }
+  try { lv = JSON.parse(localRaw || '{}') || {}; } catch (e) { lv = {}; }
+  if (k === 'kr_subtask_photos_by_job') {
+    const out = JSON.parse(JSON.stringify(sv));
+    Object.keys(lv).forEach(j => Object.keys(lv[j] || {}).forEach(t => {
+      const a = _refsOnly(((out[j] || {})[t]) || []), seen = new Set(a.map(p => p.id));
+      _refsOnly(lv[j][t]).forEach(p => { if (!seen.has(p.id)) { a.push(p); seen.add(p.id); } });
+      (out[j] || (out[j] = {}))[t] = a;
+    }));
+    return JSON.stringify(out);
+  }
+  if (k === 'kr_task_video_by_job') {
+    const out = JSON.parse(JSON.stringify(sv));
+    Object.keys(lv).forEach(j => Object.keys(lv[j] || {}).forEach(t => { if (!((out[j] || {})[t])) (out[j] || (out[j] = {}))[t] = lv[j][t]; }));
+    return JSON.stringify(out);
+  }
+  return serverRaw;   // any other key: the server's, exactly as a pull would have applied it
+}
+async function _syncCatchUp() {
+  const org = currentOrg();
+  if (!org || !org.id) return { applied: 0 };
+  let known;
+  try { known = JSON.parse(localStorage.getItem('kr_sync_keys_known') || 'null'); } catch (e) { known = null; }
+  if (!Array.isArray(known)) known = KR_SYNC_KEYS.filter(k => _SYNC_KEYS_V441_PLUS.indexOf(k) < 0);
+  const fresh = KR_SYNC_KEYS.filter(k => known.indexOf(k) < 0);
+  if (!fresh.length) { try { localStorage.setItem('kr_sync_keys_known', JSON.stringify(KR_SYNC_KEYS)); } catch (e) {} return { applied: 0 }; }
+  const rows = await _sb('/rest/v1/kv?select=key,value,updated_at&org_id=eq.' + encodeURIComponent(org.id)
+    + '&key=in.(' + fresh.map(encodeURIComponent).join(',') + ')');
+  if (rows === null) return { applied: 0, offline: true };   // try again next sync
+  const hydrate = syncHydrateOn();
+  let applied = 0;
+  fresh.forEach(k => {
+    const r = rows.find(x => x.key === k);
+    const sRaw = (r && typeof r.value === 'string') ? r.value : null;   // a tombstone counts as nothing
+    const lRaw = _storeGet(k);
+    if (sRaw === null) {                                    // nothing up there yet: send ours
+      if (lRaw !== null) { const q = _syncOutbox(); q[k] = { op: 'set', at: Date.now() }; _syncWrite(KR_SYNC_OUTBOX, q); }
+      return;
+    }
+    if (!hydrate) return;                                   // observing only: change nothing here
+    const merged = _syncMergeValue(k, sRaw, lRaw);
+    if (merged !== lRaw) {
+      _syncApplying = true;
+      try { _storeSet(k, merged); applied++; } finally { _syncApplying = false; }
+    }
+    if (merged !== sRaw) { const q = _syncOutbox(); q[k] = { op: 'set', at: Date.now() }; _syncWrite(KR_SYNC_OUTBOX, q); }
+  });
+  try { localStorage.setItem('kr_sync_keys_known', JSON.stringify(KR_SYNC_KEYS)); } catch (e) {}
+  return { applied };
+}
+
 // ── Push: drain the outbox ───────────────────────────────────────────────────
 async function _syncPush() {
   const org = currentOrg();
@@ -11119,7 +11204,7 @@ async function _syncPush() {
       key: k,
       // A delete is a tombstone row, not a missing row: a row that vanishes can
       // never be seen by a delta pull, so the delete would never propagate.
-      value: q[k].op === 'del' ? _SYNC_TOMBSTONE : (_storeGet(k) === null ? _SYNC_TOMBSTONE : _storeGet(k)),
+      value: q[k].op === 'del' ? _SYNC_TOMBSTONE : (_storeGet(k) === null ? _SYNC_TOMBSTONE : _syncOutValue(k, _storeGet(k))),
       updated_by: uid,
     }));
     const res = await _sb('/rest/v1/kv', {
@@ -11207,8 +11292,14 @@ async function syncNow(quiet) {
     // so nothing from in here escapes — _sb returns null rather than throwing
     // today, but that is its promise to keep, not ours to depend on.
     try {
+      _photoRefsMigrate();   // v445: before anything can send or pull the job photo list
       pushed = await _syncPush();
+      const caught = await _syncCatchUp();   // v445: stores this phone has only just learned to sync
+      // Send what the catch-up merged BEFORE pulling, or the pull would lay the
+      // server's older copy back over it.
+      if (Object.keys(_syncOutbox()).length) pushed += await _syncPush();
       pulled = await _syncPull();
+      if (pulled && caught && caught.applied) pulled.applied += caught.applied;
       // S4 per-record tables ride the same trip. Folded into the same counts so
       // the user sees one "Synced" line, not two competing ones.
       const rec = await _recSyncAll();
@@ -12180,7 +12271,7 @@ const KR_BACKUP_KEYS = [
   'kr_sheet_url', 'kr_gmaps_key', 'kr_dark_mode',
   'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
   'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_task_videos', 'kr_checklist_flags', 'kr_hidden_tasks', 'kr_task_merges', 'kr_subtask_origin', 'kr_pins_applied',
-  'kr_agents', 'kr_agent_runs', 'kr_planner_checklist', 'kr_pin_order', 'kr_subtask_photos', 'kr_subtask_photos_by_job', 'kr_task_video_by_job', 'kr_job_reminders', 'kr_task_reminders',
+  'kr_agents', 'kr_agent_runs', 'kr_planner_checklist', 'kr_pin_order', 'kr_subtask_photos', 'kr_subtask_photos_by_job', 'kr_task_video_by_job', 'kr_photo_pending', 'kr_job_reminders', 'kr_task_reminders',
   'kr_task_types', 'kr_job_runs', 'kr_job_flags', 'kr_task_moves', 'kr_job_horizon', 'kr_job_links', 'kr_task_batches', 'kr_time_excl',
   // Added v219 — these were silently LOST on restore (Lincoln's icon re-add restore
   // dropped team mode → the Ethan tab vanished). Team/role, Ethan's planned day +
@@ -16380,17 +16471,93 @@ function saveJobVideos(m) { return _storeSet('kr_task_video_by_job', JSON.string
 function _mediaMaps(job) {
   return { jp: getJobPhotos(), sp: getSubtaskPhotos(), jv: getJobVideos(), g: (typeof guidesResolver === 'function') ? guidesResolver(job) : null };
 }
+// ⭐ THE JOB'S PHOTO LIST HOLDS DRIVE TICKETS ONLY, so it can SYNC (v445). Lincoln,
+// 29 Oct 2026: photos describe a process, and Ethan needs them on the same tasks.
+// A ticket ({id}) is ~40 bytes and Ethan's phone fetches the picture through the same
+// Apps Script URL that already brings him to-do photos. A photo that could not upload
+// (offline) is never put in the synced list: it waits in kr_photo_pending on this
+// phone, shows with its task here all the same, and _flushPendingPhotos uploads it and
+// moves it into the list as a ticket.
+// kr_photo_pending = [{ job, task, data, at }], this phone only. Literal key and function
+// declarations on purpose: photosFor can run during boot, before a const here would exist.
+function _pendingPhotos() { try { return JSON.parse(localStorage.getItem('kr_photo_pending') || '[]') || []; } catch (e) { return []; } }
+function _savePendingPhotos(a) { return _storeSet('kr_photo_pending', JSON.stringify(a || [])); }
+function _refsOnly(arr) { return (Array.isArray(arr) ? arr : []).filter(p => p && p.id).map(p => ({ id: p.id })); }
 function photosFor(job, task, mm) {
   const m = job ? (mm ? mm.jp : getJobPhotos())[job] : null;
-  if (m && Object.prototype.hasOwnProperty.call(m, task)) return m[task] || [];
-  return (mm ? mm.sp : getSubtaskPhotos())[task] || [];
+  const base = (m && Object.prototype.hasOwnProperty.call(m, task)) ? (m[task] || []) : ((mm ? mm.sp : getSubtaskPhotos())[task] || []);
+  const wait = (mm ? (mm.pp || (mm.pp = _pendingPhotos())) : _pendingPhotos()).filter(p => p.job === job && p.task === task).map(p => ({ data: p.data }));
+  return wait.length ? base.concat(wait) : base;
 }
+// arr may hold tickets and not-yet-uploaded pictures: the tickets become the job's
+// list, the pictures replace this task's place in the waiting queue.
 function setPhotosFor(job, task, arr) {
   if (!job || !task) return;
   const m = getJobPhotos(); const own = m[job] || (m[job] = {});
-  own[task] = (arr || []).slice();
+  own[task] = _refsOnly(arr);
   saveJobPhotos(m);
+  const datas = (arr || []).filter(p => p && !p.id && p.data);
+  const q = _pendingPhotos();
+  const rest = q.filter(p => !(p.job === job && p.task === task));
+  if (datas.length || rest.length !== q.length) _savePendingPhotos(rest.concat(datas.map(p => ({ job, task, data: p.data, at: Date.now() }))));
+  if (datas.length) setTimeout(() => _flushPendingPhotos(), 4000);
 }
+// Re-key waiting pictures when a task or a job is renamed or removed (newJob null = drop).
+function _pendingPhotosRekey(test, change) {
+  const q = _pendingPhotos(); let c = false;
+  const out = [];
+  q.forEach(p => { if (test(p)) { c = true; const n = change(p); if (n) out.push(n); } else out.push(p); });
+  if (c) _savePendingPhotos(out);
+}
+// Upload whatever is waiting. One at a time, never two runs at once, and the busy
+// flag cannot outlive a frozen upload (the v423 rule: every busy flag gets a timeout).
+var _pendingBusyUntil = 0;   // var: safe to read whenever this first runs
+async function _flushPendingPhotos() {
+  if (Date.now() < _pendingBusyUntil) return;
+  if (!localStorage.getItem('kr_sheet_url') || (typeof navigator !== 'undefined' && navigator.onLine === false)) return;
+  const q = _pendingPhotos();
+  if (!q.length) return;
+  _pendingBusyUntil = Date.now() + 5 * 60000;
+  const jobsTouched = new Set();
+  try {
+    for (const p of q) {
+      const id = await _uploadPhoto(p.data);
+      if (!id) break;                                       // still offline: try later
+      const m = getJobPhotos(); const own = m[p.job] || (m[p.job] = {});
+      const list = Object.prototype.hasOwnProperty.call(own, p.task) ? own[p.task] : _refsOnly(getSubtaskPhotos()[p.task]);
+      own[p.task] = _refsOnly(list).concat([{ id }]);
+      saveJobPhotos(m);
+      const now = _pendingPhotos();
+      const i = now.findIndex(x => x.job === p.job && x.task === p.task && x.at === p.at && x.data === p.data);
+      if (i >= 0) { now.splice(i, 1); _savePendingPhotos(now); }
+      jobsTouched.add(p.job);
+    }
+  } finally { _pendingBusyUntil = 0; }
+  jobsTouched.forEach(j => { try { _refreshChecklistSurfaces(j); } catch (e) {} });
+  try { const rs = document.getElementById('modal-run-sheet'); if (rs && rs.classList.contains('open')) _rsRenderKeepScroll(); } catch (e) {}
+}
+// One-time move (gated on a stored flag, never a version): a v441–v444 phone could hold
+// a not-uploaded picture inside the job's list. It goes to the waiting queue BEFORE the
+// list is ever synced, so no picture bytes are sent and none are lost to a pull.
+function _photoRefsMigrate() {
+  try {
+    if (localStorage.getItem('kr_photo_refs_v445') === '1') return;
+    const m = getJobPhotos(); const q = _pendingPhotos(); let c = false;
+    Object.keys(m).forEach(job => Object.keys(m[job] || {}).forEach(task => {
+      const arr = m[job][task] || [];
+      const datas = arr.filter(p => p && !p.id && p.data);
+      if (datas.length || arr.some(p => p && !p.id)) { c = true; m[job][task] = _refsOnly(arr); datas.forEach(p => q.push({ job, task, data: p.data, at: Date.now() })); }
+    }));
+    if (c) { saveJobPhotos(m); _savePendingPhotos(q); }
+    localStorage.setItem('kr_photo_refs_v445', '1');
+  } catch (e) {}
+}
+try {
+  window.addEventListener('online', () => { setTimeout(() => _flushPendingPhotos(), 2000); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') setTimeout(() => _flushPendingPhotos(), 3000); });
+  setTimeout(() => { _photoRefsMigrate(); _flushPendingPhotos(); }, 12000);
+  setInterval(() => _flushPendingPhotos(), 5 * 60000);
+} catch (e) {}
 // → { id, url, own } or null. The job's own link first, else a YouTube link in the guide.
 function videoFor(job, task, mm) {
   const own = job ? ((mm ? mm.jv : getJobVideos())[job] || {})[task] : null;
@@ -16527,9 +16694,14 @@ function _photoIdbDel(id) {
 async function _uploadPhoto(dataUrl) {
   const url = localStorage.getItem('kr_sheet_url');
   if (!url) return null;
+  // v445: an upload can freeze when iOS backgrounds the app; give up after 90s so
+  // nothing waiting on it (the photo queue, a Save) hangs for ever. Same rule as v423.
+  const ac = (typeof AbortController === 'function') ? new AbortController() : null;
+  const tmr = ac ? setTimeout(() => { try { ac.abort(); } catch (e) {} }, 90000) : null;
   try {
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'uploadPhoto', dataUrl }) });
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'uploadPhoto', dataUrl }), signal: ac ? ac.signal : undefined });
     const json = await res.json();
+    if (tmr) clearTimeout(tmr);
     if (json && json.success && json.id) {
       _photoCache[json.id] = dataUrl;
       _photoIdbSet(json.id, dataUrl);
@@ -19499,6 +19671,7 @@ function saveDirTask() {
       if (tbat[oldTask]) { if (!tbat[task]) tbat[task] = tbat[oldTask]; delete tbat[oldTask]; saveTaskBatches(tbat); }
       // 📷 ▶️ This job's own task photos and video links (v441)
       { const jp = getJobPhotos(); if (jp[oldTask]) { if (!jp[task]) jp[task] = jp[oldTask]; delete jp[oldTask]; saveJobPhotos(jp); } }
+      _pendingPhotosRekey(p => p.job === oldTask, p => Object.assign({}, p, { job: task }));   // waiting pictures (v445)
       { const jv = getJobVideos(); if (jv[oldTask]) { if (!jv[task]) jv[task] = jv[oldTask]; delete jv[oldTask]; saveJobVideos(jv); } }
       // 🗓 Horizon keyed by job name
       const jhz = getJobHorizons();
@@ -19635,6 +19808,7 @@ function _purgeJobData(task) {
   const tbat = getTaskBatches();
   if (tbat[task]) { delete tbat[task]; saveTaskBatches(tbat); }
   { const jp = getJobPhotos(); if (jp[task]) { delete jp[task]; saveJobPhotos(jp); } }   // 📷 v441 (files stay: other lists may show them)
+  _pendingPhotosRekey(p => p.job === task, () => null);   // and its waiting pictures (v445)
   { const jv = getJobVideos(); if (jv[task]) { delete jv[task]; saveJobVideos(jv); } }
   // To-dos die with the job (the caller warns) — orphaned notes under a dead job
   // name were invisible forever; deleting honestly beats losing them silently.
