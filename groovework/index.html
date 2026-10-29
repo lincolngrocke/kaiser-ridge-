@@ -3376,7 +3376,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.443';
+const APP_VERSION = '2026-06-21.444';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5071,7 +5071,7 @@ function hideTask(job, item) {
   if (hadS !== undefined) { delete clockState.flagOverride[item]; _storeSet('kr_clock', JSON.stringify(clockState)); }
   _refreshChecklistSurfaces(job);
   const _short = item.length > 24 ? item.slice(0, 24).trimEnd() + '…' : item;
-  showUndoToast('🙈 Hidden: ' + _short + '. It is under Hidden in ⤢ Organise.', () => {
+  showUndoToast('🙈 Hidden: ' + _short + '. Bring it back from 🙈 Hidden at the foot of the list.', () => {
     const a2 = getHiddenTasks(); if (a2[job]) { a2[job] = a2[job].filter(x => x !== item); if (!a2[job].length) delete a2[job]; saveHiddenTasks(a2); }
     if (hadG !== undefined) { const g2 = getChecklistFlags(); (g2[job] || (g2[job] = {}))[item] = hadG; saveChecklistFlags(g2); }
     if (hadS !== undefined && clockState && clockState.task === job) { (clockState.flagOverride || (clockState.flagOverride = {}))[item] = hadS; _storeSet('kr_clock', JSON.stringify(clockState)); }
@@ -5085,8 +5085,65 @@ function unhideTask(job, item) {
   all[job] = all[job].filter(x => x !== item);
   if (!all[job].length) delete all[job];
   saveHiddenTasks(all);
-  _refreshChecklistSurfaces(job);
+  _refreshHiddenSurfaces(job);
   showToast('👁 Back on the list');
+}
+function unhideAllTasks(job) {
+  const all = getHiddenTasks();
+  const n = (all[job] || []).length;
+  if (!n) return;
+  delete all[job];
+  saveHiddenTasks(all);
+  _refreshHiddenSurfaces(job);
+  showToast('👁 ' + n + ' task' + (n === 1 ? '' : 's') + ' back on the list');
+}
+// ⭐ HIDDEN TASKS SHOW WHEREVER THE JOB'S TASKS ARE LISTED (v444). Lincoln, 29 Oct 2026:
+// Ethan swiped the 8 "Inside tiny house" tasks of the Kaiser changeover the wrong way,
+// the whole batch vanished, and neither of them could find it: the only way back was
+// the foot of ⤢ Organise, which only opens while clocked in. "If you've got hidden
+// tasks, they need to be shown everywhere to make them easier to bring back."
+// So the clock list, the Clock in and Add to planner previews and Organise each end
+// with the same folded "🙈 Hidden · N" line (open it: each task with its batch and a
+// Show, plus Show all), and Edit Job marks a hidden task where it sits.
+let _hidOpen = {};   // surface|job → the Hidden line is open
+function _hiddenOf(job) { return (getHiddenTasks()[job] || []).filter(s => (SUBTASKS[job] || []).includes(s)); }
+function _hidToggle(key) { _hidOpen[key] = !_hidOpen[key]; _refreshHiddenSurfaces(key.slice(key.indexOf('|') + 1)); }
+// run = the clock's own palette (--run-*), else the ordinary one.
+function _hiddenTasksHtml(job, surface, run) {
+  const hid = _hiddenOf(job);
+  if (!hid.length) return '';
+  const key = surface + '|' + job, open = !!_hidOpen[key];
+  const c = run ? { sub: 'var(--run-sub)', text: 'var(--run-text2)', faint: 'var(--run-faint)', blue: 'var(--run-blue)', line: 'var(--run-fill2)' }
+                : { sub: 'var(--subtext)', text: 'var(--text)', faint: 'var(--subtext)', blue: 'var(--blue)', line: 'var(--border)' };
+  const e = s => encodeURIComponent(s).replace(/'/g, '%27');
+  const rec = _batchRec(job);
+  const batchOf = t => (rec && rec.items[t] && rec.order.includes(rec.items[t])) ? rec.items[t] : '';
+  const head = `<div style="display:flex;align-items:center;gap:8px;margin:18px 0 6px;font-size:13px;font-weight:700;color:${c.sub};">
+      <span onclick="event.stopPropagation();_hidToggle(decodeURIComponent('${e(key)}'))" style="flex:1;cursor:pointer;">${open ? '▾' : '▸'} 🙈 Hidden · ${hid.length}</span>
+      <span onclick="event.stopPropagation();unhideAllTasks(decodeURIComponent('${e(job)}'))" style="color:${c.blue};cursor:pointer;font-weight:700;">Show all</span></div>`;
+  if (!open) return head;
+  return head + hid.map(t => {
+    const b = batchOf(t);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:10px 2px;border-top:1px solid ${c.line};">
+      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;"><span style="font-size:14px;color:${c.text};overflow-wrap:anywhere;">${_escHtml(t)}</span>${b ? `<span style="font-size:11px;color:${c.faint};">▣ ${_escHtml(b)}</span>` : ''}</span>
+      <span onclick="event.stopPropagation();unhideTask(decodeURIComponent('${e(job)}'),decodeURIComponent('${e(t)}'))" style="flex-shrink:0;color:${c.blue};font-weight:700;font-size:14px;cursor:pointer;padding:2px 4px;">Show</span></div>`;
+  }).join('');
+}
+// Redraw every open screen that lists this job's tasks.
+function _refreshHiddenSurfaces(job) {
+  _refreshChecklistSurfaces(job);
+  try {
+    if (_ciCtx && _ciCtx.job === job && _ciAddJob === job) {
+      let items = SUBTASKS[job] || [];
+      try { items = _orgVisibleOrder(job, {}) || items; } catch (e) {}
+      _ciCtx.items = _shownTasks(job, items);
+      _ciRenderList(false);
+    }
+  } catch (e) {}
+  try {
+    const dm = document.getElementById('modal-dir-task');
+    if (dm && dm.classList.contains('open') && _dirJobName() === job) renderDirSubtaskList();
+  } catch (e) {}
 }
 function getChecklistFlags() { return JSON.parse(localStorage.getItem('kr_checklist_flags') || '{}'); }
 function saveChecklistFlags(o) { return _storeSet('kr_checklist_flags', JSON.stringify(o)); }
@@ -7217,11 +7274,14 @@ function renderRunChecklist() {
   if (!rows) {
     const total = (tab === 'tasks') ? items.length : pinned.length;
     const allDone = total > 0;   // rows empty but items exist ⇒ everything's ticked off
+    const _allHidden = !allDone && tab === 'tasks' && clockState && _hiddenOf(clockState.task).length > 0;
     const msg = allDone
       ? (tab === 'tasks' ? 'All tasks done 🎉 — tap ✓ to review.' : 'All to-dos done 🎉 — tap ✓ to review.')
-      : (tab === 'tasks' ? 'No tasks yet — tap “+ Add task”.' : 'No to-dos yet — tap “+ Add to-do”.');
+      : (_allHidden ? 'Every task on this job is hidden. They are under 🙈 Hidden below.'
+      : (tab === 'tasks' ? 'No tasks yet — tap “+ Add task”.' : 'No to-dos yet — tap “+ Add to-do”.'));
     rows = `<div style="padding:22px 0;text-align:center;color:var(--run-faint);font-size:14px;">${msg}</div>`;
   }
+  if (tab === 'tasks' && clockState && clockState.task) rows += _hiddenTasksHtml(clockState.task, 'clock', true);   // 🙈 v444
   const addLink = `<span onclick="openRunAdd('${tab}')" style="color:var(--run-blue);cursor:pointer;font-weight:600;font-size:13px;">+ Add ${tab === 'tasks' ? 'task' : 'to-do'}</span>`;
   const headerHtml = `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:2px 0 6px;">${addLink}${expandLink || '<span></span>'}${organiseLink || '<span></span>'}</div>`;
   // 📋 Run sheet — its own full-width row rather than a fourth link in the header
@@ -9481,7 +9541,7 @@ function _renderClockInPreview(job, plan, resume) {
     el.innerHTML = '<div style="padding:18px 2px;font-size:14px;line-height:1.5;color:var(--subtext);">This job has no tasks yet. You can add them once you are clocked in, or from More, then Jobs.</div>';
     return;
   }
-  _ciCtx = { job, items: _shownTasks(job, items), lapsFor: null }; _ciOpen = {}; _ciWrap = false;
+  _ciCtx = { job, items: _shownTasks(job, items), lapsFor: null, showHidden: true }; _ciOpen = {}; _ciWrap = false;
   _ciRenderList(true);
 }
 // ⭐ BATCHES FIRST. Lincoln, 11 Oct 2026: on a 68 task job the preview was a wall
@@ -9648,6 +9708,9 @@ function _ciRenderList(resetScroll) {
             : _clockInRowHtml(t, lastMap, est, laps(t), doneOf(t), _ciWrap)).join('') + '</div>' : '');
     }).join('');
   }
+  // 🙈 v444: a plain job preview ends with the job's hidden tasks, so they can be
+  // brought back before the job even starts.
+  if (_ciCtx.showHidden) el.innerHTML += _hiddenTasksHtml(_ciCtx.job, 'preview', false);
   el.scrollTop = resetScroll ? 0 : keep;
 }
 // One row of the preview. `laps` > 1 shows as ×3, the way the run sheet counts them.
@@ -15181,6 +15244,7 @@ function renderDirSubtaskList(items) {
   const _ownSteps = (_jn && getJobSteps()[_jn]) || null;
   const _ownGuides = (_jn && getJobGuides()[_jn]) || null;
   const _mmDir = _jn ? _mediaMaps(_jn) : null;   // 📷 ▶️ once per render (v441)
+  const _hidHere = new Set(_jn ? (getHiddenTasks()[_jn] || []) : []);   // 🙈 v444
   const _TYMETA = {
     once:   { label: '1×', color: 'var(--subtext)', title: 'Once — tap to make it repeatable' },
     repeat: { label: '↻',  color: '#30d158',        title: 'Repeatable — tick it as many times as you do it' },
@@ -15219,6 +15283,9 @@ function renderDirSubtaskList(items) {
     // 📷 ▶️ This job's photos and video for the task, tappable to view (v441).
     const _media = _jn ? _taskMediaChips(_jn, s, 'var(--blue)', _mmDir) : '';
     if (_media) metaBits.push(_media);
+    // 🙈 Hidden from the clock list on this phone (v444): say so where it sits, and
+    // bring it back with one tap.
+    if (_hidHere.has(s)) metaBits.push(`<span onclick="event.stopPropagation();unhideTask(decodeURIComponent('${encodeURIComponent(_jn).replace(/'/g, '%27')}'),decodeURIComponent('${encodeURIComponent(s).replace(/'/g, '%27')}'))" ontouchstart="event.stopPropagation()" style="color:#ff9f0a;font-weight:700;cursor:pointer;">🙈 hidden · Show</span>`);
     const metaLine = metaBits.length ? `<div style="font-size:11px;color:var(--subtext);padding:0 0 3px 2px;">${metaBits.join(' · ')}</div>` : '';
     return `
     <div id="strow-${i}" ontouchstart="stSwipeStart(event,${i})" ontouchmove="stSwipeMove(event)" ontouchend="stSwipeEnd(event)"
@@ -23443,7 +23510,7 @@ function selectPlannerTask(taskName) {
     _ciCtx = null; _ciShowAddOnly('pa-job');
     listEl.innerHTML = '<div style="padding:18px 2px;font-size:14px;line-height:1.5;color:var(--subtext);">This job has no tasks yet. Tap ＋ Add task to give it its first one.</div>';
   } else {
-    _ciCtx = { job: taskName, items: _shownTasks(taskName, items), lapsFor: null }; _ciOpen = {}; _ciWrap = false;
+    _ciCtx = { job: taskName, items: _shownTasks(taskName, items), lapsFor: null, showHidden: true }; _ciOpen = {}; _ciWrap = false;
     _ciRenderList(true);
   }
   _plannerAddStep(true);
@@ -25771,7 +25838,6 @@ const _clEditScope = 'plan';
 // Which ▣ batches are collapsed in the Organise sheet (by batch name; 'Unbatched'
 // for the loose group). View-only state, reset each time the sheet opens.
 let _clOrgCollapsed = {};
-let _clOrgHiddenOpen = false;   // the 🙈 Hidden section at the foot of Organise
 function _clOrgAddTask() { if (_clOrganiseTask) openRunAdd('tasks', _clOrganiseTask, 'organise'); }
 // ✎ EDIT A TASK WHILE PLANNING (v429). Lincoln, 26 Oct 2026: "It would just be very handy to
 // be able to edit a task name whilst you're planning out the job." The clock's own edit
@@ -26010,15 +26076,9 @@ function _renderClOrganiseBody() {
   }
   // 🙈 Hidden tasks gather here, folded, so the list above stays short and nothing
   // is ever out of reach. Plain rows, not .cl-row, so a drag never re-homes them.
-  const _hid = (getHiddenTasks()[task] || []).filter(s => (SUBTASKS[task] || []).includes(s));
-  if (_hid.length) {
-    const _hEnc = v => encodeURIComponent(v).replace(/'/g, '%27');
-    bodyHtml += `<div onclick="_clOrgHiddenOpen=!_clOrgHiddenOpen;_renderClOrganiseBody()" style="display:flex;align-items:center;gap:8px;margin:20px 0 8px;cursor:pointer;font-size:12px;color:var(--subtext);font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">
-        <span>${_clOrgHiddenOpen ? '▾' : '▸'}</span><span>🙈 Hidden · ${_hid.length}</span></div>`
-      + (_clOrgHiddenOpen ? _hid.map(s => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:11px 10px;border-radius:8px;border:1px dashed var(--border);">
-          <span style="flex:1;min-width:0;overflow-wrap:anywhere;font-size:15px;color:var(--subtext);">${_escHtml(s)}</span>
-          <span onclick="unhideTask(decodeURIComponent('${_hEnc(task)}'), decodeURIComponent('${_hEnc(s)}'))" style="flex-shrink:0;color:var(--blue);font-weight:700;font-size:14px;cursor:pointer;padding:2px 4px;">Show</span></div>`).join('') : '');
-  }
+  // 🙈 Hidden tasks gather here, folded: the same section the clock and the job
+  // previews end with (v444), with Show all. Plain rows, so a drag never re-homes them.
+  bodyHtml += _hiddenTasksHtml(task, 'organise', false);
   // ＋ Add task (v422, Lincoln 24 Oct 2026): "need to be able to add a task in the
   // Organise screen as well", with the batch chosen. First line of the list, because the
   // tools row above is already full on a phone.
