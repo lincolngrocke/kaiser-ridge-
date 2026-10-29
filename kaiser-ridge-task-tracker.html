@@ -2679,6 +2679,11 @@
         style="width:100%;box-sizing:border-box;padding:11px 12px;border:1px solid var(--border);border-radius:12px;font-size:15px;color:var(--text);background:var(--bg);outline:none;">
       <div id="run-add-video-note" style="font-size:12px;color:var(--subtext);margin-top:5px;"></div>
     </div>
+    <!-- ⏱ This job's timer for the task (v446). -->
+    <div id="run-add-timer-wrap" style="display:none;margin-top:14px;">
+      <div style="font-size:13px;font-weight:600;color:var(--subtext);margin-bottom:6px;">⏱ Timer · this job only</div>
+      <div id="run-add-timer"></div>
+    </div>
     <button id="run-add-delete" onclick="deleteRunItem()" style="display:none;width:100%;margin-top:18px;background:none;border:1px solid var(--red);color:var(--red);border-radius:10px;padding:11px;font-size:15px;cursor:pointer;">Delete</button>
   </div>
 </div>
@@ -3205,6 +3210,17 @@
 </div>
 
 <!-- ══════════════ TASK ACTIONS SHEET (job editor ⋯) ══════════════ -->
+<!-- ⏱ A task timer has run out (v446): Done / +5 min / a 5 minute break. Above
+     everything, including the run sheet and the edit sheet. -->
+<div class="modal-backdrop" id="modal-pomo" style="z-index:2100;" onclick="if(event.target===this)_pomoClose()">
+  <div class="modal-sheet" style="padding:14px 20px 26px;">
+    <div class="modal-handle"></div>
+    <div id="pomo-title" style="font-size:20px;font-weight:700;color:var(--text);padding:4px 0 4px;text-align:center;"></div>
+    <div id="pomo-sub" style="font-size:15px;color:var(--subtext);line-height:1.45;padding:0 0 16px;text-align:center;overflow-wrap:anywhere;"></div>
+    <div id="pomo-buttons"></div>
+  </div>
+</div>
+
 <!-- ✎ Rename a task that other jobs also have: this job only, or all of them (v432).
      No tap-outside close: the rename waits on the answer, so it has to be given. -->
 <div class="modal-backdrop" id="modal-rename-scope" style="z-index:2000;">
@@ -3376,7 +3392,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.445';
+const APP_VERSION = '2026-06-21.446';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4410,6 +4426,7 @@ function startTimerTick() {
       }
       updateRunRing(netElapsed);
       _rsTickNowElapsed();   // keeps the run sheet's ▶ NOW figure live if the sheet is open
+      try { _pomoTick(); } catch (e) {}   // ⏱ the current task's timer (v446)
       updateAtTimes();
     }
   }, 1000);
@@ -5826,6 +5843,7 @@ function openRunAdd(kind, jobOverride, from) {
   _runAddKind = (kind === 'notes') ? 'notes' : 'tasks';
   const isTask = _runAddKind === 'tasks';
   { const _vw = document.getElementById('run-add-video-wrap'); if (_vw) _vw.style.display = 'none'; }   // a video is added by editing the task
+  { const tw = document.getElementById('run-add-timer-wrap'); if (tw) tw.style.display = 'none'; }    // …and so is a timer
   document.getElementById('run-add-title').textContent = isTask ? 'Add task' : 'Add to-do';
   const sb = document.getElementById('run-add-save'); if (sb) sb.textContent = 'Add';
   document.getElementById('run-add-hint').innerHTML = isTask
@@ -5885,6 +5903,9 @@ function openRunEdit(kind, ref, jobOverride, from) {
       if (_vn) _vn.textContent = (_v && !_v.own) ? 'This task already plays the video from its guide. A link here replaces it for this job.' : 'Upload from the YouTube app as Unlisted, then paste the link.';
       _vw.style.display = 'block';
     }
+    _runEditTimer = _runEditTimerWas = timerFor(_job, ref);   // ⏱ v446
+    { const tw = document.getElementById('run-add-timer-wrap'); if (tw) tw.style.display = 'block'; }
+    _renderRunTimer();
     if (stb) {   // steps live on the task globally — editing here saves to the jobs page too
       const _nSt = stepsFor(_job, ref).length;
       stb.textContent = _nSt ? ('≣ Steps (' + _nSt + ')') : '≣ Add steps';
@@ -5893,6 +5914,7 @@ function openRunEdit(kind, ref, jobOverride, from) {
   } else {
     if (stb) stb.style.display = 'none';
     const _vw = document.getElementById('run-add-video-wrap'); if (_vw) _vw.style.display = 'none';
+    { const tw = document.getElementById('run-add-timer-wrap'); if (tw) tw.style.display = 'none'; }
     const p = ((getTaskNotes()[clockState.task]) || []).find(x => x.id === ref);
     if (!p) return;
     _runEditRef = { kind: 'notes', task: clockState.task, pinId: ref, oldText: p.text, inboxId: p.inboxId };
@@ -6085,6 +6107,8 @@ async function confirmRunEdit() {
         const now = _vi.value.trim();
         if (now !== was && !setVideoFor(ref.task, text, now)) showToast('That does not look like a YouTube link, so no video was saved');
       }
+      // ⏱ This job's timer, saved only when it changed (the rename above already carried it).
+      if (_runEditTimer !== _runEditTimerWas || (ref.oldText !== text && _runEditTimer)) setTimerFor(ref.task, text, _runEditTimer);
     } else {
       // Resolve photos the same way the add flow does: keep Drive ids, upload new
       // ones, or fall back to on-device if Drive is unreachable.
@@ -6416,6 +6440,9 @@ function _renameChecklistItem(task, oldName, newName, scope) {
     Object.keys(jv).forEach(j => { const o = jv[j]; if (o && o[oldName]) { if (!o[newName]) o[newName] = o[oldName]; delete o[oldName]; c = true; } });
     if (c) saveJobVideos(jv); }
   _pendingPhotosRekey(p => p.task === oldName, p => Object.assign({}, p, { task: newName }));   // waiting pictures too (v445)
+  { const jt = getJobTimers(); let c = false;   // ⏱ timers too (v446)
+    Object.keys(jt).forEach(j => { const o = jt[j]; if (o && o[oldName]) { if (!o[newName]) o[newName] = o[oldName]; delete o[oldName]; c = true; } });
+    if (c) saveJobTimers(jt); }
   // Current session: keep a ticked/carried/expanded item ticked under its new name.
   // ⚠️ clockState is NULL whenever you are not clocked in (it is parsed straight
   // from kr_clock, and clock-out sets it back to null). Reading it unguarded threw
@@ -6470,6 +6497,7 @@ function _renameTaskOnJob(job, oldName, newName) {
     const waitNew = _pendingPhotos().filter(p => p.job === job && p.task === newName).map(p => ({ data: p.data }));
     if ((ph.length || hadOwn) && !has(getJobPhotos()[job], newName)) setPhotosFor(job, newName, _refsOnly(ph).concat(waitNew)); }
   { const jv = getJobVideos(); if (jv[job] && jv[job][oldName]) { if (!jv[job][newName]) jv[job][newName] = jv[job][oldName]; delete jv[job][oldName]; saveJobVideos(jv); } }
+  { const jt = getJobTimers(); if (jt[job] && jt[job][oldName]) { if (!jt[job][newName]) jt[job][newName] = jt[job][oldName]; delete jt[job][oldName]; saveJobTimers(jt); } }   // ⏱ v446
   const flags = getChecklistFlags();
   if (flags[job] && flags[job][oldName] != null) { flags[job][newName] = flags[job][oldName]; delete flags[job][oldName]; saveChecklistFlags(flags); }
   if (clockState && clockState.task === job) {
@@ -6643,6 +6671,7 @@ function deleteRunItem() {
     { const jp = getJobPhotos(); if (jp[task] && Object.prototype.hasOwnProperty.call(jp[task], item)) { delete jp[task][item]; saveJobPhotos(jp); } }
     { const jv = getJobVideos(); if (jv[task] && jv[task][item]) { delete jv[task][item]; saveJobVideos(jv); } }
     _pendingPhotosRekey(p => p.job === task && p.task === item, () => null);   // waiting pictures (v445)
+    { const jt = getJobTimers(); if (jt[task] && jt[task][item]) { delete jt[task][item]; saveJobTimers(jt); } }   // ⏱ v446
     if (clockState && clockState.task === task) {   // v429: also reachable from Organise with nothing running
     if (Array.isArray(clockState.checklistDone)) clockState.checklistDone = clockState.checklistDone.filter(d => d.item !== item);
     if (Array.isArray(clockState.stepDone)) clockState.stepDone = clockState.stepDone.filter(d => d.item !== item);
@@ -6769,8 +6798,9 @@ function _runRemainingSec() {
   const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
   const carried = new Set(Array.isArray(clockState.checklistCarried) ? clockState.checklistCarried : []);
   let sum = 0, any = false;
+  const _tmrs = getJobTimers();
   flagged.forEach(item => {
-    const a = map[_normTaskKey(item)];
+    const a = _taskMinsFor(task, item, map, _tmrs);   // ⏱ v446
     if (!(isFinite(a) && a > 0)) return;   // no history → contributes nothing, same as the block estimate
     any = true;
     let left;
@@ -7139,6 +7169,8 @@ function renderRunChecklist() {
         _metaBits.push(`<span onclick="event.stopPropagation();viewSubtaskGuide(decodeURIComponent('${enc}'), (clockState&&clockState.task)||null)" style="color:var(--run-blue);cursor:pointer;font-weight:600;">${_escHtml(_label)}${_sharedVid ? ' 🔗' : ''}</span>`);
       }
       // ▶️ This job's own video for the task (v441), played in the app.
+      const _tmChip = _timerChip(clockState.task, s, null, 'var(--run-orange, #ff9f0a)');   // ⏱ v446
+      if (_tmChip) _metaBits.push(_tmChip);
       const _ownVid = (_mmRun.jv[clockState.task] || {})[s];
       if (_ownVid && _ownVid.id) _metaBits.push(`<span onclick="event.stopPropagation();playTaskVideo((clockState&&clockState.task)||'', decodeURIComponent('${enc}'))" style="color:var(--run-blue);cursor:pointer;font-weight:600;">▶️ Video</span>`);
       if (_metaBits.length) html += `<div style="font-size:11px;color:var(--run-faint);padding:1px 0 7px 36px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${_metaBits.join('<span style="opacity:0.6;">·</span>')}</div>`;
@@ -7301,6 +7333,7 @@ function renderRunChecklist() {
   const sc = document.getElementById('run-checklist-scroll');
   if (sc) sc.scrollTop = prevScroll;
   _loadPhotoThumbs();
+  try { _pomoRefresh(); } catch (e) {}   // ⏱ which task the timer follows (v446)
   // Keep the run sheet honest if it's open behind this — a tick, a flag or a lap
   // change here must move its times too.
   const _rsSheet = document.getElementById('modal-run-sheet');
@@ -10974,6 +11007,8 @@ const KR_SYNC_KEYS = [
   // fetch them through the same Apps Script that brings him to-do photos. _syncPush
   // strips anything that is not a ticket, so a picture's bytes can never go up.
   'kr_subtask_photos_by_job',
+  // v446: one job's own task timers (minutes). Library data, like the video links.
+  'kr_task_timer_by_job',
   // 🌱 Onboarding's seeded times. Org library data like the rest of this block —
   // a worker joining a set-up org should get the estimates, not a wall of dashes.
   // ⚠️ Safe to share precisely BECAUSE it is separate from measured history: it
@@ -11129,7 +11164,9 @@ function _syncOutValue(k, raw) {
 // (the two v441+ stores are additive: nothing on either side is thrown away), then
 // sends the merge back if it added anything. A phone that never stored the list starts
 // from the keys that predate this fix, so only the v441+ ones are caught up.
-const _SYNC_KEYS_V441_PLUS = ['kr_task_video_by_job', 'kr_subtask_photos_by_job'];
+// Every key added since v441. A phone that has never stored its known list treats these
+// as new, so one that jumps several versions at once still catches them all up.
+const _SYNC_KEYS_V441_PLUS = ['kr_task_video_by_job', 'kr_subtask_photos_by_job', 'kr_task_timer_by_job'];
 function _syncMergeValue(k, serverRaw, localRaw) {
   let sv, lv;
   try { sv = JSON.parse(serverRaw || '{}') || {}; } catch (e) { sv = {}; }
@@ -11143,7 +11180,7 @@ function _syncMergeValue(k, serverRaw, localRaw) {
     }));
     return JSON.stringify(out);
   }
-  if (k === 'kr_task_video_by_job') {
+  if (k === 'kr_task_video_by_job' || k === 'kr_task_timer_by_job') {
     const out = JSON.parse(JSON.stringify(sv));
     Object.keys(lv).forEach(j => Object.keys(lv[j] || {}).forEach(t => { if (!((out[j] || {})[t])) (out[j] || (out[j] = {}))[t] = lv[j][t]; }));
     return JSON.stringify(out);
@@ -12271,7 +12308,7 @@ const KR_BACKUP_KEYS = [
   'kr_sheet_url', 'kr_gmaps_key', 'kr_dark_mode',
   'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
   'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_task_videos', 'kr_checklist_flags', 'kr_hidden_tasks', 'kr_task_merges', 'kr_subtask_origin', 'kr_pins_applied',
-  'kr_agents', 'kr_agent_runs', 'kr_planner_checklist', 'kr_pin_order', 'kr_subtask_photos', 'kr_subtask_photos_by_job', 'kr_task_video_by_job', 'kr_photo_pending', 'kr_job_reminders', 'kr_task_reminders',
+  'kr_agents', 'kr_agent_runs', 'kr_planner_checklist', 'kr_pin_order', 'kr_subtask_photos', 'kr_subtask_photos_by_job', 'kr_task_video_by_job', 'kr_photo_pending', 'kr_task_timer_by_job', 'kr_job_reminders', 'kr_task_reminders',
   'kr_task_types', 'kr_job_runs', 'kr_job_flags', 'kr_task_moves', 'kr_job_horizon', 'kr_job_links', 'kr_task_batches', 'kr_time_excl',
   // Added v219 — these were silently LOST on restore (Lincoln's icon re-add restore
   // dropped team mode → the Ethan tab vanished). Team/role, Ethan's planned day +
@@ -13010,7 +13047,7 @@ const KR_LIBRARY_KEYS = [
   'kr_equipment_master', 'kr_extra_frequencies', 'kr_extra_locations', 'kr_extra_clients',
   'kr_task_order', 'kr_frequency_order', 'kr_group_order', 'kr_location_order', 'kr_equipment_order',
   'kr_projects', 'kr_task_videos', 'kr_subtask_photos', 'kr_job_links', 'kr_task_batches',
-  'kr_subtask_photos_by_job', 'kr_task_video_by_job'
+  'kr_subtask_photos_by_job', 'kr_task_video_by_job', 'kr_task_timer_by_job'
 ];
 
 function exportTaskLibrary() {
@@ -15376,6 +15413,7 @@ function renderDirSubtaskList(items) {
     if (_media) metaBits.push(_media);
     // 🙈 Hidden from the clock list on this phone (v444): say so where it sits, and
     // bring it back with one tap.
+    { const _tc = _jn ? _timerChip(_jn, s) : ''; if (_tc) metaBits.push(_tc); }   // ⏱ v446
     if (_hidHere.has(s)) metaBits.push(`<span onclick="event.stopPropagation();unhideTask(decodeURIComponent('${encodeURIComponent(_jn).replace(/'/g, '%27')}'),decodeURIComponent('${encodeURIComponent(s).replace(/'/g, '%27')}'))" ontouchstart="event.stopPropagation()" style="color:#ff9f0a;font-weight:700;cursor:pointer;">🙈 hidden · Show</span>`);
     const metaLine = metaBits.length ? `<div style="font-size:11px;color:var(--subtext);padding:0 0 3px 2px;">${metaBits.join(' · ')}</div>` : '';
     return `
@@ -16036,6 +16074,10 @@ function _copyJobSetup(src, dst, tasks) {
     if (own) { const mine = jv[dst] || {}; let c = false;
       list.forEach(t => { if (own[t] && !mine[t]) { mine[t] = Object.assign({}, own[t]); c = true; } });
       if (c) { jv[dst] = mine; saveJobVideos(jv); } } }
+  { const jt = getJobTimers(), own = jt[src];   // ⏱ timers (v446)
+    if (own) { const mine = jt[dst] || {}; let c = false;
+      list.forEach(t => { if (own[t] && !mine[t]) { mine[t] = own[t]; c = true; } });
+      if (c) { jt[dst] = mine; saveJobTimers(jt); } } }
   // 🙈 Hidden on the source → hidden on the copy.
   const hid = getHiddenTasks(), hs = hid[src];
   if (Array.isArray(hs) && hs.length) {
@@ -16576,6 +16618,181 @@ function setVideoFor(job, task, url) {
   saveJobVideos(m);
   return true;
 }
+// ── ⏱ TASK TIMERS: Pomodoro for the tasks you can keep working at (v446) ──────
+// Lincoln, 30 Oct 2026: admin-style tasks suit a timer. Set per JOB'S TASK (like
+// photos and videos), from the ✎ edit sheet on the run sheets, the clock or Organise;
+// shown on both run sheets, the clock list and Edit Job. His choices: when time is up,
+// ASK (✓ Done / +5 min / ☕ 5 min break); offer the break; FORECASTS USE THE TIMER;
+// length set per task (25 to start, − / + in 5s).
+//   kr_task_timer_by_job = { [job]: { [task]: minutes } }   synced, backed up, in the library
+// ⚠️ A web app cannot alert on a locked phone without push, which Lincoln does not
+// want. The countdown runs while Groovework is open, and a timer that ran out while it
+// was away alerts the moment the app is back on screen.
+function getJobTimers() { try { return JSON.parse(localStorage.getItem('kr_task_timer_by_job') || '{}') || {}; } catch (e) { return {}; } }
+function saveJobTimers(m) { return _storeSet('kr_task_timer_by_job', JSON.stringify(m)); }
+function timerFor(job, task, m) { const v = job && ((m || getJobTimers())[job] || {})[task]; return (isFinite(v) && v > 0) ? v : 0; }
+function setTimerFor(job, task, mins) {
+  if (!job || !task) return;
+  const m = getJobTimers(); const own = m[job] || (m[job] = {});
+  if (mins > 0) own[task] = Math.round(mins); else { delete own[task]; if (!Object.keys(own).length) delete m[job]; }
+  saveJobTimers(m);
+}
+// The minutes a forecast should use: the timer when the task has one, else the learned
+// estimate. One helper so the run sheet, the planner block and the 🏁 all agree.
+function _taskMinsFor(job, task, estMap, timers) {
+  const t = timerFor(job, task, timers);
+  if (t) return t;
+  const a = estMap[_normTaskKey(task)];
+  return (isFinite(a) && a > 0) ? a : 0;
+}
+function _timerChip(job, task, timers, color) {
+  const t = timerFor(job, task, timers);
+  return t ? `<span title="timer" style="font-size:11px;font-weight:700;color:${color || '#ff9f0a'};flex-shrink:0;">⏱ ${t}m</span>` : '';
+}
+// The countdown follows the run sheet's ▶ NOW task on the running clock: it starts when
+// that task becomes current (the last tick), pauses for breaks exactly as the NOW pill
+// does (_rsNowElapsedMin), and a lap gets a fresh timer. _pomoNow is refreshed whenever
+// the sheet's shape changes; the per-second clock tick only does arithmetic.
+var _pomoNow = null, _pomoFired = {}, _pomoExtra = {}, _pomoBase = {}, _pomoResumeFor = null, _pomoTicks = 0;
+function _pomoRefresh() {
+  _pomoNow = null;
+  try {
+    if (!clockState || !clockState.running) return;
+    const rows = _rsRowsFor(null);
+    const now = rows.find(r => r.isNow);
+    if (!now) return;
+    const anchor = _runAnchorMs();
+    if (now.brk) {
+      const b = (clockState.plannedBreaks || []).find(x => x.id === now.id);
+      if (b && b.pomo && clockState.onBreak) _pomoNow = { brk: true, id: now.id, mins: b.mins || 5, key: 'b' + now.id };
+      return;
+    }
+    const mins = timerFor(clockState.task, now.t);
+    if (mins) _pomoNow = { task: now.t, n: now.n, mins, key: now.t + '\u0002' + now.n + '\u0002' + anchor };
+  } catch (e) { _pomoNow = null; }
+}
+// Seconds left on the running timer (negative once over), or null.
+function _pomoLeftSec() {
+  if (!_pomoNow || !clockState || !clockState.running) return null;
+  const extra = _pomoExtra[_pomoNow.key] || 0;
+  const used = _pomoNow.brk ? Math.max(0, (Date.now() - (clockState.breakStartMs || Date.now())) / 1000) : (_rsNowElapsedMin() - (_pomoBase[_pomoNow.key] || 0)) * 60;
+  return (_pomoNow.mins + extra) * 60 - used;
+}
+function _fmtLeft(sec) {
+  const s = Math.abs(Math.round(sec)), m = Math.floor(s / 60), r = s % 60;
+  return m + ':' + String(r).padStart(2, '0');
+}
+// Every second while clocked in: patch the countdown in place and alert once at zero.
+function _pomoTick() {
+  // Back from a timer break (however it was ended): the same task starts a fresh timer.
+  if (_pomoResumeFor && clockState && clockState.running && !clockState.onBreak) {
+    _pomoRefresh();
+    if (_pomoNow && !_pomoNow.brk && _pomoNow.key === _pomoResumeFor) { _pomoBase[_pomoNow.key] = _rsNowElapsedMin(); _pomoExtra[_pomoNow.key] = 0; }
+    _pomoResumeFor = null;
+  }
+  if (++_pomoTicks % 5 === 0) _pomoRefresh();   // cheap safety net; renders refresh it too
+  const left = _pomoLeftSec();
+  const el = document.getElementById('rs-pomo-left');
+  if (el) el.textContent = left == null ? '' : (left >= 0 ? '⏱ ' + _fmtLeft(left) + ' left' : '⏱ ' + _fmtLeft(left) + ' over');
+  if (el && left != null) el.style.color = left >= 0 ? '#ff9f0a' : '#ff453a';
+  if (left == null || left > 0 || document.visibilityState === 'hidden') return;
+  const fireKey = _pomoNow.key + '\u0002' + (_pomoExtra[_pomoNow.key] || 0) + '\u0002' + (_pomoBase[_pomoNow.key] || 0);
+  if (_pomoFired[fireKey]) return;
+  _pomoFired[fireKey] = 1;
+  _pomoAlert();
+}
+// Buzz (the iOS switch trick) and a short chime where the phone allows sound, then ask.
+function _pomoBuzz() {
+  try { _hapticTick(); setTimeout(_hapticTick, 180); setTimeout(_hapticTick, 360); } catch (e) {}
+  try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (e) {}
+  try {
+    const ac = _pomoAudio(); if (!ac) return;
+    [0, 0.25].forEach(t => { const o = ac.createOscillator(), g = ac.createGain(); o.frequency.value = 880; g.gain.setValueAtTime(0.0001, ac.currentTime + t); g.gain.exponentialRampToValueAtTime(0.25, ac.currentTime + t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + t + 0.2); o.connect(g); g.connect(ac.destination); o.start(ac.currentTime + t); o.stop(ac.currentTime + t + 0.22); });
+  } catch (e) {}
+}
+// iOS only lets sound play from a context first touched by a tap, so it is woken on
+// the first touch of the session and kept.
+var _pomoAC = null;
+function _pomoAudio() {
+  try { if (!_pomoAC) { const C = window.AudioContext || window.webkitAudioContext; if (!C) return null; _pomoAC = new C(); } if (_pomoAC.state === 'suspended') _pomoAC.resume(); return _pomoAC; } catch (e) { return null; }
+}
+try { document.addEventListener('touchend', function _wake() { _pomoAudio(); document.removeEventListener('touchend', _wake); }, { passive: true }); } catch (e) {}
+function _pomoAlert() {
+  const p = _pomoNow; if (!p) return;
+  _pomoBuzz();
+  const t = document.getElementById('pomo-title'), s = document.getElementById('pomo-sub'), b = document.getElementById('pomo-buttons');
+  if (!t || !s || !b) return;
+  const btn = (on, label, primary) => `<div onclick="${on}" style="padding:14px;border-radius:12px;text-align:center;font-size:16px;font-weight:700;cursor:pointer;margin-bottom:8px;${primary ? 'background:var(--blue);color:#fff;' : 'border:1px solid var(--border);color:var(--text);'}">${label}</div>`;
+  if (p.brk) {
+    t.textContent = '☕ Break’s over';
+    s.textContent = 'Your ' + p.mins + ' minute break is up.';
+    b.innerHTML = btn('_pomoEndBreak()', 'Back to work', true) + btn('_pomoMore()', '+5 min');
+  } else {
+    t.textContent = '⏱ Time’s up';
+    s.textContent = p.task;
+    b.innerHTML = btn('_pomoDone()', '✓ Done', true) + btn('_pomoMore()', '+5 min') + btn('_pomoBreak()', '☕ Take a 5 minute break');
+  }
+  openModal('modal-pomo');
+}
+function _pomoClose() { closeModal('modal-pomo'); }
+function _pomoMore() {
+  if (_pomoNow) _pomoExtra[_pomoNow.key] = (_pomoExtra[_pomoNow.key] || 0) + 5;
+  _pomoClose(); _pomoTick();
+  showToast('⏱ 5 more minutes');
+}
+function _pomoDone() {
+  const p = _pomoNow; _pomoClose();
+  if (!p || p.brk) return;
+  _clSwipeBlockClickUntil = 0;
+  markChecklistItemDone(p.task);
+  _pomoRefresh();
+  try { const rs = document.getElementById('modal-run-sheet'); if (rs && rs.classList.contains('open')) { _rsRender(); _rsGoRest(true); } } catch (e) {}
+}
+// ☕ The break is a real run sheet break, started now, so it is deducted from the task's
+// time exactly like any other break. The task is NOT ticked: Pomodoro is work, break,
+// work on the same thing. Back from the break, the same task gets a fresh timer
+// (_pomoTick, _pomoResumeFor). ✓ Done is what ticks it.
+function _pomoBreak() {
+  const p = _pomoNow; _pomoClose();
+  if (!p || p.brk || !clockState || !clockState.running || clockState.onBreak) return;
+  const id = 'b' + Date.now().toString(36) + 'p';
+  clockState.plannedBreaks = (clockState.plannedBreaks || []).concat([{ id, mins: 5, pomo: true }]);
+  // Place it at the head of what is still to do; once taken it floats up with the
+  // finished rows in the order things happened (_rsDoneFirst).
+  const prev = _rsPlanId; _rsPlanId = null;
+  try {
+    const ctx = _rsCtx();
+    if (ctx) {
+      const ord = _rsOrdered(ctx);
+      const keys = ord.map(x => _rsInstKey(x)).filter(k => k !== _rsBrkKey(id));
+      const firstTodo = ord.filter(x => !(x.brk && x.id === id)).findIndex(x => !x.doneAt);
+      keys.splice(firstTodo < 0 ? keys.length : firstTodo, 0, _rsBrkKey(id));
+      clockState.runOrder = keys;
+    }
+  } finally { _rsPlanId = prev; }
+  _storeSet('kr_clock', JSON.stringify(clockState));
+  _pomoResumeFor = p.key;
+  _rsBrkStart(id);
+  _pomoRefresh();
+  try { renderRunChecklist(); } catch (e) {}
+  showToast('☕ 5 minute break. Your task carries on after it.');
+}
+function _pomoEndBreak() { _pomoClose(); try { _rsBrkEnd(); } catch (e) {} _pomoRefresh(); try { renderRunChecklist(); } catch (e) {} }
+// The edit sheet's timer control: off ("＋ Add a timer", which starts at 25), or
+// − N min + in 5s from 5 to 180, with Remove.
+var _runEditTimer = 0, _runEditTimerWas = 0;
+function _renderRunTimer() {
+  const el = document.getElementById('run-add-timer'); if (!el) return;
+  const pill = 'display:inline-flex;align-items:center;justify-content:center;border-radius:10px;font-weight:700;cursor:pointer;';
+  el.innerHTML = !_runEditTimer
+    ? `<span onclick="_runTimerSet(25)" style="${pill}padding:9px 14px;border:1px solid var(--border);color:var(--blue);font-size:15px;">＋ Add a timer</span>`
+    : `<span style="display:inline-flex;align-items:center;gap:6px;">
+        <span onclick="_runTimerSet(_runEditTimer - 5)" style="${pill}width:40px;height:38px;border:1px solid var(--border);color:var(--text);font-size:20px;">−</span>
+        <span style="min-width:74px;text-align:center;font-size:17px;font-weight:700;color:#ff9f0a;">${_runEditTimer} min</span>
+        <span onclick="_runTimerSet(_runEditTimer + 5)" style="${pill}width:40px;height:38px;border:1px solid var(--border);color:var(--text);font-size:20px;">+</span>
+        <span onclick="_runTimerSet(0)" style="margin-left:12px;color:#8b93a7;font-size:14px;font-weight:600;cursor:pointer;">Remove</span></span>`;
+}
+function _runTimerSet(m) { _runEditTimer = m <= 0 ? 0 : Math.max(5, Math.min(180, m)); _renderRunTimer(); }
 // Play any YouTube video in the app's own full-page player, so watching never leaves
 // the screen you were on: Done brings you straight back.
 function playYouTubeInApp(id, title) {
@@ -19512,8 +19729,9 @@ function confirmCopyBatches() {
   if (!targets.length) { showToast('Pick at least one job to send to'); return; }
   const src = _cb.job, bn = _cb.batch;
   const tb = getTaskBatches(), tty = getTaskTypes(), ownS = getJobSteps(), ownG = getJobGuides();
+  const jt = getJobTimers(), jv = getJobVideos(), jp = getJobPhotos();   // v446: timers, videos, photos travel too
   const has = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k);
-  let added = 0, joined = 0, sCh = false, gCh = false, tCh = false;
+  let added = 0, joined = 0, sCh = false, gCh = false, tCh = false, mCh = false;
   targets.forEach(job => {
     const list = Array.isArray(SUBTASKS[job]) ? SUBTASKS[job].slice() : [];
     const rec = tb[job] || (tb[job] = { order: [], items: {} });
@@ -19533,6 +19751,9 @@ function confirmCopyBatches() {
       if (has(tty, sk) && !has(tty, dk)) { tty[dk] = tty[sk]; tCh = true; }
       if (ownS[src] && has(ownS[src], t) && !(ownS[job] && has(ownS[job], t))) { (ownS[job] || (ownS[job] = {}))[t] = JSON.parse(JSON.stringify(ownS[src][t])); sCh = true; }
       if (ownG[src] && has(ownG[src], t) && !(ownG[job] && has(ownG[job], t))) { (ownG[job] || (ownG[job] = {}))[t] = JSON.parse(JSON.stringify(ownG[src][t])); gCh = true; }
+      if (jt[src] && jt[src][t] && !(jt[job] && jt[job][t])) { (jt[job] || (jt[job] = {}))[t] = jt[src][t]; mCh = true; }
+      if (jv[src] && jv[src][t] && !(jv[job] && jv[job][t])) { (jv[job] || (jv[job] = {}))[t] = Object.assign({}, jv[src][t]); mCh = true; }
+      if (jp[src] && has(jp[src], t) && !(jp[job] && has(jp[job], t))) { (jp[job] || (jp[job] = {}))[t] = _refsOnly(jp[src][t]); mCh = true; }
     });
     SUBTASKS[job] = list;
   });
@@ -19541,6 +19762,7 @@ function confirmCopyBatches() {
   if (tCh) saveTaskTypes(tty);
   if (sCh) saveJobSteps(ownS);
   if (gCh) saveJobGuides(ownG);
+  if (mCh) { saveJobTimers(jt); saveJobVideos(jv); saveJobPhotos(jp); }
   autoBackup();
   closeModal('modal-copy-batches');
   _cb = null;
@@ -19672,6 +19894,7 @@ function saveDirTask() {
       // 📷 ▶️ This job's own task photos and video links (v441)
       { const jp = getJobPhotos(); if (jp[oldTask]) { if (!jp[task]) jp[task] = jp[oldTask]; delete jp[oldTask]; saveJobPhotos(jp); } }
       _pendingPhotosRekey(p => p.job === oldTask, p => Object.assign({}, p, { job: task }));   // waiting pictures (v445)
+      { const jt = getJobTimers(); if (jt[oldTask]) { if (!jt[task]) jt[task] = jt[oldTask]; delete jt[oldTask]; saveJobTimers(jt); } }   // ⏱ v446
       { const jv = getJobVideos(); if (jv[oldTask]) { if (!jv[task]) jv[task] = jv[oldTask]; delete jv[oldTask]; saveJobVideos(jv); } }
       // 🗓 Horizon keyed by job name
       const jhz = getJobHorizons();
@@ -19809,6 +20032,7 @@ function _purgeJobData(task) {
   if (tbat[task]) { delete tbat[task]; saveTaskBatches(tbat); }
   { const jp = getJobPhotos(); if (jp[task]) { delete jp[task]; saveJobPhotos(jp); } }   // 📷 v441 (files stay: other lists may show them)
   _pendingPhotosRekey(p => p.job === task, () => null);   // and its waiting pictures (v445)
+  { const jt = getJobTimers(); if (jt[task]) { delete jt[task]; saveJobTimers(jt); } }   // ⏱ v446
   { const jv = getJobVideos(); if (jv[task]) { delete jv[task]; saveJobVideos(jv); } }
   // To-dos die with the job (the caller warns) — orphaned notes under a dead job
   // name were invisible forever; deleting honestly beats losing them silently.
@@ -22839,8 +23063,9 @@ function _estimateBlockMins(plan) {
     // however many tasks had never been timed. Counting them is what makes the
     // gap fixable — you cannot estimate what you cannot see is missing.
     let sum = 0, n = 0, lapped = false, missing = 0;
+    const _tmrs = getJobTimers();
     flagged.forEach(item => {
-      const a = map[_normTaskKey(item)];
+      const a = _taskMinsFor(plan.task, item, map, _tmrs);   // ⏱ v446
       if (isFinite(a) && a > 0) {
         const laps = _plannedLapsFor(plan, item, reps);   // 🔁 repeat tasks count once per planned lap
         sum += a * laps; n++;
@@ -24808,6 +25033,7 @@ function _rsRows(ctx) {
   const rows = _rsOrdered(ctx);
   if (!rows.length) return [];
   const avg = _taskEstMap();            // forecast — run sheet row times
+  const _tmrs = getJobTimers();
   const now = Date.now();
   let cursor, floor;
   if (ctx.kind === 'plan') {
@@ -24854,8 +25080,7 @@ function _rsRows(ctx) {
                isNow: i === nowIdx, tappable: false, undoable: false };
     }
     seen[r.t] = (seen[r.t] || 0) + 1;
-    const a = avg[_normTaskKey(r.t)];
-    const mins = (isFinite(a) && a > 0) ? a : 0;
+    const mins = _taskMinsFor(ctx.job, r.t, avg, _tmrs);   // ⏱ a timer sets the task's length (v446)
     const startWhen = cursor;            // when this row begins — steps accumulate from here
     let when = null;
     if (r.doneAt) when = new Date(r.doneAt).getTime();
@@ -25064,6 +25289,7 @@ function _rsRender() {
   const _durs = ctx.kind === 'clock' ? _checklistDurations() : {};
   const stepsOf = stepsResolver(ctx.job);   // step AVERAGES aren't read here — the sheet shows no per-step times
   const _mm = _mediaMaps(ctx.job);          // 📷 ▶️ read once per render, not per row (v441)
+  const _tmrsR = getJobTimers();            // ⏱ v446
   // ⭐ THE GAPS ARE THE TARGET, for a break AND now for a task. Dragging a row up
   // 30 places on a 44-step straw run is the pain this replaces: pick the row up,
   // scroll wherever you like, tap the gap. Distance stops costing anything, which
@@ -25194,6 +25420,12 @@ function _rsRender() {
     const markChip = _marked ? '<span style="font-size:11px;font-weight:700;color:#0a84ff;flex-shrink:0;">📍 things go under here</span>' : '';
     // 📷 ▶️ This job's photos and video for the task, viewed without leaving the sheet (v441).
     const mediaChips = _taskMediaChips(ctx.job, r.t, null, _mm);
+    // ⏱ The task's timer: on the row you are on while clocked in, a live countdown
+    // (patched every second by _pomoTick); everywhere else, its length.
+    const _tm = timerFor(ctx.job, r.t, _tmrsR);
+    const timerBit = !_tm ? '' : ((r.isNow && ctx.kind === 'clock')
+      ? '<span id="rs-pomo-left" style="font-size:11px;font-weight:700;color:#ff9f0a;flex-shrink:0;"></span>'
+      : (r.isDone ? '' : _timerChip(ctx.job, r.t, _tmrsR)));
     // The .rs-row is a WRAPPER holding the header line and, when open, its steps —
     // so a drag carries the steps with it instead of stranding them. Tap-to-tick
     // lives on the header, not the wrapper, so tapping a step can't tick the task.
@@ -25206,7 +25438,7 @@ function _rsRender() {
       ${_rsHeldBadge(key) || `<span style="font-size:15px;flex-shrink:0;opacity:${r.isDone ? '0.5' : '1'};">${r.isDone ? '✓' : '🚩'}</span>`}
       <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;">
         <span style="overflow-wrap:anywhere;font-size:15px;color:${r.isDone ? '#616a7e' : 'var(--text)'};">${_escHtml(r.t)}</span>
-        ${(_avgMeta(r.t, avgMap, cntMap) || nowChip || stepChip || batchChip || actualChip || markChip || mediaChips) ? `<span style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">${markChip}${batchChip}${_avgMeta(r.t, avgMap, cntMap)}${actualChip}${brkNote}${nowChip}${stepChip}${mediaChips}</span>` : ''}</span>
+        ${(_avgMeta(r.t, avgMap, cntMap) || nowChip || stepChip || batchChip || actualChip || markChip || mediaChips || timerBit) ? `<span style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">${markChip}${batchChip}${_avgMeta(r.t, avgMap, cntMap)}${actualChip}${brkNote}${nowChip}${timerBit}${stepChip}${mediaChips}</span>` : ''}</span>
       ${lap}${timeTxt}
       ${(_rsMoveKey || _rsPlacing) ? '' : `<span ontouchstart="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_rsEditTask(decodeURIComponent('${_encArg(r.t)}'))" title="edit: photo, video, name" style="font-size:16px;line-height:1;color:#8b93a7;flex-shrink:0;cursor:pointer;padding:10px 4px;margin:-10px 0;">✎</span>`}
       <span ontouchstart="event.stopPropagation()" ontouchmove="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_rsPickUp(decodeURIComponent('${_encArg(key)}'))" title="move this row" style="font-size:17px;line-height:1;color:${_lifted ? '#5ac8fa' : '#8b93a7'};flex-shrink:0;cursor:pointer;padding:10px 8px;margin:-10px -6px -10px 0;">⠿</span></div>
@@ -25215,6 +25447,7 @@ function _rsRender() {
   // Title and body land in the same breath — nothing above this line touches the DOM.
   if (titleEl) titleEl.textContent = ctx.job;
   body.innerHTML = head + rowsHtml + _ins(rows.length);
+  if (!planning) { try { _pomoRefresh(); _pomoTick(); } catch (e) {} }   // ⏱ the countdown shows at once, not a second later
 }
 
 // ── Steps on the run sheet ────────────────────────────────────────────────────
@@ -26144,8 +26377,9 @@ function _renderClOrganiseBody() {
     const _eLt = clockState.lapTargets || {};
     let _eSum = 0, _eN = 0, _eLapped = false;
     const _eOnJob = new Set(SUBTASKS[task] || []);   // stale flags count nowhere (v435)
+    const _eTmr = getJobTimers();
     Object.keys(flags).filter(t => _eOnJob.has(t)).forEach(item => {
-      const a = _eMap[_normTaskKey(item)];
+      const a = _taskMinsFor(task, item, _eMap, _eTmr);   // ⏱ v446
       if (isFinite(a) && a > 0) { const l = _eLt[item] >= 1 ? _eLt[item] : 1; _eSum += a * l; _eN++; if (l > 1) _eLapped = true; }
     });
     if (_eN > 0 && _eSum > 0) {
