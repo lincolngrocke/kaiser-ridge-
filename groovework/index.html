@@ -889,7 +889,8 @@
   .rsn-card.marked { border-color: var(--rsn-blue); box-shadow: 0 0 0 1px var(--rsn-blue); }
   .rsn-card.done { background: transparent; }
   .rsn-card.done .rsn-title { color: var(--rsn-sub); }
-  .rsn-nowline { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--rsn-blue); }
+  .rsn-nowline { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 6px; font-size: 11px; font-weight: 600; color: var(--rsn-blue); }
+  .rsn-nowline #rs-pomo-left { margin-left: 6px; white-space: nowrap; }
   .rsn-nowline .rsi-flag { margin-right: 4px; }
   .rsn-head { display: flex; align-items: flex-start; gap: 9px; }
   .rsn-head > .rsi-flag { margin-top: 3px; }
@@ -3521,7 +3522,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.448';
+const APP_VERSION = '2026-06-21.449';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -6237,7 +6238,15 @@ async function confirmRunEdit() {
         if (now !== was && !setVideoFor(ref.task, text, now)) showToast('That does not look like a YouTube link, so no video was saved');
       }
       // ⏱ This job's timer, saved only when it changed (the rename above already carried it).
-      if (_runEditTimer !== _runEditTimerWas || (ref.oldText !== text && _runEditTimer)) setTimerFor(ref.task, text, _runEditTimer);
+      if (_runEditTimer !== _runEditTimerWas || (ref.oldText !== text && _runEditTimer)) {
+        // ⭐ Changing a task's timer changes the PLAN, not your pace, so once the target has
+        // locked it moves by the same minutes as the forecast. The gap stays pace alone.
+        const _onRun = clockState && clockState.running && clockState.task === ref.task && clockState.targetMs && _runPlanStarted();
+        const _f0 = _onRun ? _runForecastFinishMs() : null;
+        setTimerFor(ref.task, text, _runEditTimer);
+        const _f1 = _onRun ? _runForecastFinishMs() : null;
+        if (_f0 && _f1 && _f1 !== _f0) { clockState.targetMs += _f1 - _f0; _storeSet('kr_clock', JSON.stringify(clockState)); }
+      }
     } else {
       // Resolve photos the same way the add flow does: keep Drive ids, upload new
       // ones, or fall back to on-device if Drive is unreachable.
@@ -6253,9 +6262,11 @@ async function confirmRunEdit() {
     }
     _capturePhotos = []; _captureRemovedIds = [];
     closeModal('modal-run-add');
-    renderRunChecklist();
+    // ⚠️ One fault behind the sheet must not stop the sheet redrawing: it would sit there
+    // showing the old times over a saved edit, with nothing to say so.
+    try { renderRunChecklist(); } catch (e) { console.error(e); }
     if (_runAddFrom === 'organise') { try { _refreshChecklistSurfaces(ref.task); _renderClOrganiseBody(); } catch (e) {} }
-    if (_runAddFrom === 'runsheet') { try { _refreshChecklistSurfaces(ref.task); _rsRenderKeepScroll(); } catch (e) {} }
+    if (_runAddFrom === 'runsheet') { try { _refreshChecklistSurfaces(ref.task); } catch (e) { console.error(e); } _rsRenderKeepScroll(); }
     updateInboxCount();
     autoBackup();
     showToast(ref.kind === 'tasks' ? 'Task updated ✓ — Publish to share' : 'To-do updated ✓');
@@ -6968,6 +6979,19 @@ function _runAnchorMs() {
 // Fill the ring: elapsed vs the forecast total (work done by the last tick +
 // work still to do). Ticking a task re-forecasts it; the ring keeps filling in
 // real time so you can see yourself running past it.
+function _runPlanStarted() {
+  const f = (clockState && clockState.running && clockState.task) ? _sessionOrGlobalFlags(clockState.task) : null;
+  return !!(f && (clockState.checklistDone || []).some(d => d && f[d.item]));
+}
+function _syncProvisionalTarget() {
+  if (!clockState || !clockState.running || _runPlanStarted()) return;
+  const _t = _runForecastFinishMs();
+  const _b = _breakNowMs();
+  if (_t && (clockState.targetMs !== _t || clockState.targetBreakMs0 !== _b)) {
+    clockState.targetMs = _t; clockState.targetBreakMs0 = _b;
+    _storeSet('kr_clock', JSON.stringify(clockState));
+  }
+}
 function updateRunRing(netElapsedSec) {
   const fg = document.getElementById('run-ring-fg');
   const ring = document.getElementById('run-ring');
@@ -7010,16 +7034,7 @@ function updateRunRing(netElapsedSec) {
   // must measure PACE ALONE. Before the first tick there is no pace to measure, so the gap
   // must be zero — any gap at that point is scope drift wearing a pace badge. Changing what
   // you'll do before you start is still planning; it only becomes overrun once work begins.
-  const _flagsNow = (clockState && clockState.running && clockState.task) ? _sessionOrGlobalFlags(clockState.task) : null;
-  const _planStarted = !!(_flagsNow && (clockState.checklistDone || []).some(d => d && _flagsNow[d.item]));
-  if (clockState && clockState.running && remaining != null && !_planStarted) {
-    const _t = _runForecastFinishMs();
-    const _b = _breakNowMs();
-    if (_t && (clockState.targetMs !== _t || clockState.targetBreakMs0 !== _b)) {
-      clockState.targetMs = _t; clockState.targetBreakMs0 = _b;
-      _storeSet('kr_clock', JSON.stringify(clockState));
-    }
-  }
+  if (remaining != null) _syncProvisionalTarget();
   const live = (remaining != null && elapsed != null);
   // Forecast total = work already banked by the last tick + work still to do.
   // Measured from the anchor, NOT from now, so it stays put between ticks and
@@ -16822,8 +16837,9 @@ function _pomoTick() {
   if (++_pomoTicks % 5 === 0) _pomoRefresh();   // cheap safety net; renders refresh it too
   const left = _pomoLeftSec();
   const el = document.getElementById('rs-pomo-left');
-  if (el) el.textContent = left == null ? '' : (left >= 0 ? '⏱ ' + _fmtLeft(left) + ' left' : '⏱ ' + _fmtLeft(left) + ' over');
-  if (el && left != null) el.style.color = left >= 0 ? '#ff9f0a' : '#ff453a';
+  // A task with a timer always says so: with no countdown to show it keeps its length.
+  if (el) el.textContent = left == null ? '⏱ ' + el.dataset.mins + 'm' : (left >= 0 ? '⏱ ' + _fmtLeft(left) + ' left' : '⏱ ' + _fmtLeft(left) + ' over');
+  if (el && left != null) el.style.color = left >= 0 ? 'var(--rsn-orange)' : 'var(--rsn-red)';
   if (left == null || left > 0 || document.visibilityState === 'hidden') return;
   const fireKey = _pomoNow.key + '\u0002' + (_pomoExtra[_pomoNow.key] || 0) + '\u0002' + (_pomoBase[_pomoNow.key] || 0);
   if (_pomoFired[fireKey]) return;
@@ -25396,6 +25412,9 @@ function _rsRender() {
   // 🎯 The target — what this job was reckoned to take before it started, fixed at
   // clock-in. A guide, not a verdict: shown plainly beside the live 🏁 forecast so
   // the drift is visible without anything shouting about it.
+  // The ring keeps this current every second, but the sheet can draw first (straight after
+  // an edit), and 🎯 must never sit behind 🏁 before the first tick.
+  if (!planning && _runRemainingSec() != null) _syncProvisionalTarget();
   const tgt = (!planning && clockState && clockState.targetMs) ? _targetDisplayMs() : null;   // slides by post-lock breaks
   const placingCancel = _rsPlacing
     ? `<div style="text-align:right;padding:0 0 2px;"><span onclick="_rsSetPlacing(false)" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:13px;">✕ cancel — tap a gap to drop the break in</span></div>` : '';
@@ -25554,11 +25573,11 @@ function _rsRender() {
     const _lifted = _rsMoveSet.includes(key) || _rsJustMoved.includes(key);
     const _marked = planning && key === _rsMarkKey && !_lifted;
     const markChip = _marked ? '<span class="rsn-mark">📍 things go under here</span>' : '';
-    // ⏱ The task's timer: on the row you are on while clocked in, a live countdown
-    // (patched every second by _pomoTick); everywhere else, its length.
+    // ⏱ The task's timer: on the row you are on while clocked in, a live countdown beside
+    // RUNNING NOW (patched every second by _pomoTick); everywhere else, its length.
     const _tm = timerFor(ctx.job, r.t, _tmrsR);
     const timerBit = !_tm ? '' : ((r.isNow && ctx.kind === 'clock')
-      ? '<span id="rs-pomo-left" style="font-size:11px;font-weight:700;color:#ff9f0a;flex-shrink:0;"></span>'
+      ? `<span id="rs-pomo-left" data-mins="${_tm}" style="font-size:11px;font-weight:700;color:#ff9f0a;flex-shrink:0;">⏱ ${_tm}m</span>`
       : (r.isDone ? '' : _timerChip(ctx.job, r.t, _tmrsR)));
     // The .rs-row is a WRAPPER holding the header line and, when open, its steps —
     // so a drag carries the steps with it instead of stranding them. Tap-to-tick
@@ -25568,7 +25587,7 @@ function _rsRender() {
     const _canQuick = r.tappable && !_rsMoveKey && !_rsPlacing;
     const _cardCls = _lifted ? ' lifted' : (_marked ? ' marked' : (r.isNow ? ' now' : (r.isDone ? ' done' : '')));
     const _nowLine = r.isNow
-      ? `<div class="rsn-nowline">${_rsIcon('flag')}<span class="rsi rsi-live"></span><span>RUNNING NOW · <span id="rs-now-elapsed">${fmtMin(_rsNowElapsedMin())}</span></span></div>` : '';
+      ? `<div class="rsn-nowline">${_rsIcon('flag')}<span class="rsi rsi-live"></span><span>RUNNING NOW · <span id="rs-now-elapsed">${fmtMin(_rsNowElapsedMin())}</span></span>${_rnc(timerBit)}</div>` : '';
     const _lead = _rsHeldBadge(key) || (r.isNow ? '' : (r.isDone ? `<span class="rsn-tick">✓</span>` : _rsIcon('flag')));
     const _edit = (_rsMoveKey || _rsPlacing) ? '' : `<span class="rsn-pencil" ontouchstart="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_rsEditTask(decodeURIComponent('${_encArg(r.t)}'))" title="edit: photo, video, name">${_rsIcon('pencil')}</span>`;
     const _when = r.isDone
@@ -25583,7 +25602,7 @@ function _rsRender() {
       ${_nowLine}
       <div class="rsn-head">${_lead}<span class="rsn-title">${_escHtml(r.t)}</span>${_edit}</div>
       <div class="rsn-mid">${markChip}${_batch}${_rnc(lap)}${_when}</div>
-      <div class="rsn-foot">${_avgMeta(r.t, avgMap, cntMap)}${_rnc(actualChip + brkNote + timerBit)}${_media}${_stepsBtn}
+      <div class="rsn-foot">${_avgMeta(r.t, avgMap, cntMap)}${_rnc(actualChip + brkNote + (r.isNow ? '' : timerBit))}${_media}${_stepsBtn}
         <span class="rsn-grip" ontouchstart="event.stopPropagation()" ontouchmove="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_rsPickUp(decodeURIComponent('${_encArg(key)}'))" title="move this row">${_rsIcon('grip')}</span></div></div>
     ${open ? `<div class="rsn-steps-wrap">${_rsStepsHtml(r, ctx, stepsOf)}</div>` : ''}</div>`;
   }).join('');
