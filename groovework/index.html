@@ -824,11 +824,11 @@
   /* Organise sheet: keep the tabs/estimate/instructions pinned while the task list scrolls */
   .cl-sticky-top { position: sticky; top: 0; z-index: 3; background: var(--bg); padding-bottom: 6px; }
   body.dark .cl-sticky-top { background: #1C1C1E; }
-  /* ══ RUN SHEET · RUNNING NOW (v447): Lincoln's Figma design, tightened with Mitch 30 Oct 2026.
-     Everything here hangs off .rs-run, which _rsRender sets on the running sheet only, so the
-     Planning sheet keeps its look until its own design pass. Light values come from Figma; the
-     dark values are ours. ⚠️ --rsn-green is deliberately darker than the design (#68ce67 is 2:1
-     on white, unreadable outdoors; this is 5:1). */
+  /* ══ RUN SHEET (Running now v447, Planning v448): Lincoln's Figma designs, tightened with Mitch
+     30 Oct 2026. Everything here hangs off .rs-run, which _rsRender sets on both sheets, so a
+     change here lands on the two together. Light values come from Figma; the dark values are
+     ours. ⚠️ --rsn-green is deliberately darker than the design (#68ce67 is 2:1 on white,
+     unreadable outdoors; this is 5:1). */
   #modal-run-sheet.rs-run {
     --rsn-bg: #f6f6f3; --rsn-card: #ffffff; --rsn-line: #e8eae5; --rsn-text: #202724; --rsn-sub: #777e79;
     --rsn-blue: #3478f6; --rsn-blue-bg: #eef4ff; --rsn-blue-line: #d7e6ff; --rsn-steps: #e6effe;
@@ -874,9 +874,11 @@
   .rsn-slim-t { display: inline-flex; align-items: center; gap: 4px; }
   .rsn-slim-t .rsi { width: 15px; height: 15px; }
   .rsn-slim-n { margin-left: auto; font-size: 12px; font-weight: 500; color: var(--rsn-sub); white-space: nowrap; }
+  .rsn-slim-brk { width: 34px; height: 30px; margin: -4px -8px -4px -6px; display: inline-flex; align-items: center; justify-content: center; color: var(--rsn-orange); cursor: pointer; flex-shrink: 0; }
   .rsn-bar { height: 3px; border-radius: 2px; background: var(--rsn-line); margin-top: 4px; overflow: hidden; }
   .rsn-bar span { display: block; height: 100%; background: var(--rsn-blue); border-radius: 2px; }
   .rsn-sec { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 16px; font-weight: 600; color: var(--rsn-text); margin: 14px 0 8px; }
+  .rsn-sec.plan { flex-direction: column; align-items: flex-start; gap: 3px; font-size: 18px; line-height: 1.25; }
   .rsn-reset { font-size: 12px; font-weight: 600; color: var(--rsn-sub); cursor: pointer; }
   .rsn-order-note { font-size: 11px; line-height: 1.45; color: var(--rsn-sub); margin-bottom: 8px; }
   .rsn-addbrk { position: relative; height: 38px; display: flex; align-items: center; justify-content: center; gap: 7px; border-radius: 14px; background: linear-gradient(rgba(242,107,0,0.04), rgba(242,107,0,0.04)), var(--rsn-card); border: 1px solid rgba(242,107,0,0.16); color: var(--rsn-orange); font-size: 13px; font-weight: 600; cursor: pointer; margin-bottom: 8px; }
@@ -884,6 +886,7 @@
   .rsn-card { display: flex; flex-direction: column; gap: 5px; padding: 11px 12px 9px; background: var(--rsn-card); border: 1px solid var(--rsn-line); border-radius: 16px; }
   .rsn-card.now { background: var(--rsn-blue-bg); border-color: var(--rsn-blue); }
   .rsn-card.lifted { background: var(--rsn-blue-bg); border-color: var(--rsn-blue); }
+  .rsn-card.marked { border-color: var(--rsn-blue); box-shadow: 0 0 0 1px var(--rsn-blue); }
   .rsn-card.done { background: transparent; }
   .rsn-card.done .rsn-title { color: var(--rsn-sub); }
   .rsn-nowline { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--rsn-blue); }
@@ -897,6 +900,7 @@
   .rsn-batch { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; color: var(--rsn-sub); }
   .rsn-batch > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rsn-batch .rsi { width: 12px; height: 12px; }
+  .rsn-mark { font-size: 11px; font-weight: 700; color: var(--rsn-blue); white-space: nowrap; flex-shrink: 0; }
   .rsn-when { font-size: 13px; font-weight: 600; color: var(--rsn-sub); white-space: nowrap; flex-shrink: 0; }
   .rsn-when.next { color: var(--rsn-green); }
   .rsn-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; min-height: 24px; color: var(--rsn-sub); }
@@ -914,6 +918,8 @@
   .rsn-st { display: flex; align-items: flex-start; gap: 10px; padding: 6px 0; cursor: pointer; }
   .rsn-cb { width: 16px; height: 16px; box-sizing: border-box; flex-shrink: 0; margin-top: 1px; border: 1.5px solid var(--rsn-check); border-radius: 4px; background: var(--rsn-card); display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; line-height: 1; color: #fff; }
   .rsn-st.cur .rsn-cb { border-color: var(--rsn-blue); }
+  .rsn-steps.plan .rsn-st { cursor: default; padding: 4px 0; }
+  .rsn-dot { width: 16px; flex-shrink: 0; text-align: center; font-size: 14px; line-height: 1.35; color: var(--rsn-sub); }
   .rsn-st.ticked .rsn-cb { background: var(--rsn-green); border-color: var(--rsn-green); }
   .rsn-st-t { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 14px; line-height: 1.35; color: var(--rsn-text); }
   .rsn-st.ticked .rsn-st-t { color: var(--rsn-sub); text-decoration: line-through; }
@@ -3515,7 +3521,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.447';
+const APP_VERSION = '2026-06-21.448';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -25289,10 +25295,13 @@ function openRunSheet(planId) {
 }
 function _rsHM(ms) { const d = new Date(ms); return formatTimeAmPm(String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')); }
 
-// 🎨 RUNNING NOW (v447, Lincoln's Figma design, 30 Oct 2026). The running sheet has its
-// own look; Planning keeps the old one until its own design pass. Every tap, swipe and
-// figure below is the same one the old rows used. Only the markup around them changed.
+// 🎨 THE RUN SHEET'S LOOK (Running now v447, Planning v448, Lincoln's Figma designs). Both
+// sheets share these rows and this header, so a design change lands on the two together.
+// Every tap, swipe and figure is the same one the old rows used. Only the markup changed.
+// ⭐ Lead with the ⠿ tap, not the drag. On a 44-step sheet the drag is the thing that does
+// not work, so naming it first taught the wrong habit.
 const _RS_RUN_HINT = 'Tap ⠿ on a row (or on several), then tap the gap where they go. Every time below re-forecasts. Hold &amp; drag still works for a short nudge. Tap a row to tick it off, or swipe it left for a ⚡ quick tick when it took under a minute.';
+const _RS_PLAN_HINT = 'Tap a row to 📍 mark where things go, then tap ⠿ on the rows to move (or on several) and tap ⤵ Drop under 📍. Or tap the gap where they go. Every time below re-forecasts. This order carries onto the clock when you start the job.';
 let _rsHelpOpen = false;
 function _rsHelpToggle() { _rsHelpOpen = !_rsHelpOpen; _rsRender(); }
 function _rsIcon(n) { return `<span class="rsi rsi-${n}"></span>`; }
@@ -25302,10 +25311,10 @@ function _rsBigTime(ms) {
   const m = _rsHM(ms).match(/^(.*?)([ap]m)$/);
   return m ? `<b>${m[1]}</b><i>${m[2]}</i>` : `<b>${_rsHM(ms)}</b>`;
 }
-function _rsRunTop(job) {
+function _rsRunTop(job, planning) {
   return `<div class="rsn-top"><div class="rsn-nav"><span class="rsn-brand">groovework</span><span class="rsn-help" onclick="_rsHelpToggle()" title="How this screen works">?</span></div>`
-    + (_rsHelpOpen ? `<div class="rsn-help-text">${_RS_RUN_HINT}</div>` : '')
-    + `<div class="rsn-kind">Run Sheet · Running now</div>${job ? `<div class="rsn-job">${_escHtml(job)}</div>` : ''}</div>`;
+    + (_rsHelpOpen ? `<div class="rsn-help-text">${planning ? _RS_PLAN_HINT : _RS_RUN_HINT}</div>` : '')
+    + `<div class="rsn-kind">Run Sheet · ${planning ? 'Planning' : 'Running now'}</div>${job ? `<div class="rsn-job">${_escHtml(job)}</div>` : ''}</div>`;
 }
 // ⭐ THE SLIM BAR SITS ON TOP OF THE BIG FINISH BLOCK, NOT BELOW IT. Its negative margin
 // (the height of the bar) means it takes no room in the list, so showing it never moves a
@@ -25328,7 +25337,7 @@ function _rsRender() {
   const titleEl = document.getElementById('run-sheet-title');
   const ctx = _rsCtx();
   const _rsModal = document.getElementById('modal-run-sheet');
-  if (_rsModal) _rsModal.classList.toggle('rs-run', !!ctx && ctx.kind === 'clock');
+  if (_rsModal) _rsModal.classList.toggle('rs-run', !!ctx);
   if (!ctx) {
     if (titleEl) titleEl.textContent = 'Run sheet';
     body.innerHTML = '<div style="padding:44px 0;text-align:center;color:var(--subtext);font-size:15px;">Clock in to see the run sheet.</div>';
@@ -25370,7 +25379,7 @@ function _rsRender() {
     : '';
   if (!rows.length) {
     if (titleEl) titleEl.textContent = ctx.job;
-    body.innerHTML = (planning ? '' : _rsRunTop(ctx.job)) + (banked
+    body.innerHTML = _rsRunTop(ctx.job, planning) + (banked
       ? `<div style="padding:34px 6px;text-align:center;color:var(--subtext);font-size:15px;line-height:1.55;">Every flagged task is already done this run.<br>
          <span style="font-size:13px;">🔁 ${banked} task${banked === 1 ? '' : 's'} banked ${banked === 1 ? 'its' : 'their'} planned laps in an earlier session. Tap ${_rsReset} to run ${banked === 1 ? 'it' : 'them'} again, or flag something else.</span></div>`
       : `<div style="padding:38px 6px;text-align:center;color:var(--subtext);font-size:15px;line-height:1.55;">Nothing flagged yet.<br>
@@ -25379,43 +25388,15 @@ function _rsRender() {
   }
   const doneN = rows.filter(r => r.isDone).length;
   const lastPending = rows.filter(r => !r.isDone && r.when).slice(-1)[0];
-  // The count + finish time stay PINNED while the list scrolls (.cl-sticky-top, the
-  // same treatment the Organise sheet uses) — on a 40-row sheet the whole point is
-  // being able to see "last one ~6:11am" whatever part of the day you're looking at.
-  // _clEdgeScroll measures this header too, so the drag's up-scroll zone starts below
-  // it rather than underneath it.
+  // The finish time stays in view while the list scrolls: on a 40-row sheet the whole
+  // point is being able to see it whatever part of the day you're looking at. The big
+  // block scrolls away and the slim bar takes over (.cl-sticky-top, the same treatment
+  // the Organise sheet uses). _clEdgeScroll measures that bar too, so the drag's
+  // up-scroll zone starts below it rather than underneath it.
   // 🎯 The target — what this job was reckoned to take before it started, fixed at
   // clock-in. A guide, not a verdict: shown plainly beside the live 🏁 forecast so
   // the drift is visible without anything shouting about it.
   const tgt = (!planning && clockState && clockState.targetMs) ? _targetDisplayMs() : null;   // slides by post-lock breaks
-  const tgtBit = tgt ? ` · 🎯 ${_rsHM(tgt)}` : '';
-  const summary = planning
-    ? `🗓 ${rows.length} step${rows.length === 1 ? '' : 's'} from ${_rsHM(ctx.startMs)}${lastPending ? ' · 🏁 done by ~<b>' + _rsHM(lastPending.when) + '</b>' : ''}`
-    // ⭐ COUNT THE BANKED ONES. Lincoln, 14 Sep: "I have six flagged tasks in the
-    // organise screen, when I go to run sheet, only three are available?"
-    // Nothing was missing. Three had banked their laps in an earlier session of
-    // the same run, so they are not listed. But the header read "0 of 3 done"
-    // right above a line saying "3 flagged tasks already done this run", and the
-    // Organise sheet said 6. Three numbers, three different meanings of "done",
-    // and no line anywhere reconciling them.
-    // ⚠️ A number is only reassuring if it agrees with the number on the screen
-    // you came from. "3 of 6" matches the Organise sheet and the gap explains
-    // itself; "0 of 3" reads as the sheet having lost your work.
-    : `✓ ${doneN + banked} of ${rows.length + banked} done${lastPending ? ' · 🏁 last one ~<b>' + _rsHM(lastPending.when) + '</b>' : ''}${tgtBit}`;
-  // ⭐ Lead with the ⠿ tap, not the drag. On a 44-step sheet the drag is the thing
-  // that does not work, so naming it first taught the wrong habit.
-  const hint = planning
-    ? 'Tap a row to 📍 mark where things go, then tap ⠿ on the rows to move (or on several) and tap ⤵ Drop under 📍. Or tap the gap where they go. Every time below re-forecasts. This order carries onto the clock when you start the job.'
-    : _RS_RUN_HINT;
-  // ⚓ RUNNING: ONLY THE PROGRESS BAR IS PINNED (v431, Lincoln 26 Oct 2026). The sheet
-  // rests with the last finished row and the row you are on sitting straight under
-  // it, so the hint and the order/break links scroll away with the list. The move
-  // banner and the break-placing cancel stay pinned: while one is in hand you scroll
-  // to find the spot, and the way out has to come with you. Planning keeps the whole
-  // header pinned as before.
-  const pinBar = `<div style="margin:10px 0 4px;padding:9px 12px;border-radius:10px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.35);font-size:13px;color:var(--text);">
-      ${summary}${bankedNote}</div>`;
-  const hintHtml = `<div style="font-size:11px;color:var(--subtext);margin:0 0 8px;">${hint}</div>`;
   const placingCancel = _rsPlacing
     ? `<div style="text-align:right;padding:0 0 2px;"><span onclick="_rsSetPlacing(false)" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:13px;">✕ cancel — tap a gap to drop the break in</span></div>` : '';
   const _moveBanner = _rsMoveKey ? `<div style="margin:0 0 8px;padding:9px 12px;border-radius:10px;background:rgba(90,200,250,0.12);border:1px solid rgba(90,200,250,0.5);font-size:13px;color:var(--text);">
@@ -25424,34 +25405,41 @@ function _rsRender() {
         : 'Tap a <b>⤵ move here</b> gap to drop it in, or tap ⠿ on more rows to move several together. Scroll as far as you like first.'}</div>
       ${(_rsMarkKey && !_rsMoveSet.includes(_rsMarkKey)) ? `<div onclick="_rsDropUnderMark()" style="margin-top:8px;padding:9px 12px;border-radius:9px;background:#0a84ff;color:#fff;font-weight:700;font-size:14px;text-align:center;cursor:pointer;">⤵ Drop under 📍 ${_escHtml(_rsKeyName(_rsMarkKey))}</div>` : ''}
       <div onclick="_rsMoveClear();_rsRender()" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:12px;margin-top:5px;">✕ cancel</div></div>` : '';
+  // ⭐ COUNT THE BANKED ONES. Lincoln, 14 Sep: "I have six flagged tasks in the
+  // organise screen, when I go to run sheet, only three are available?"
+  // Nothing was missing. Three had banked their laps in an earlier session of
+  // the same run, so they are not listed. But the header read "0 of 3 done"
+  // right above a line saying "3 flagged tasks already done this run", and the
+  // Organise sheet said 6. Three numbers, three different meanings of "done",
+  // and no line anywhere reconciling them.
+  // ⚠️ A number is only reassuring if it agrees with the number on the screen
+  // you came from. "3 of 6" matches the Organise sheet and the gap explains
+  // itself; "0 of 3" reads as the sheet having lost your work.
   const _doneTxt = `${doneN + banked} of ${rows.length + banked} done`;
+  const _stepsTxt = `${rows.length} step${rows.length === 1 ? '' : 's'}`;
   const _runPct = Math.round(((doneN + banked) / (rows.length + banked)) * 100);
   const _finMs = lastPending ? lastPending.when : null;
-  const runHead = planning ? '' : `${_rsRunTop(null)}
+  // ⚓ RUNNING: the sheet rests with the last finished row and the row you are on sitting
+  // straight under the slim bar, so the order and break links scroll away with the list.
+  // The move banner and the break-placing cancel stay pinned: while one is in hand you
+  // scroll to find the spot, and the way out has to come with you.
+  // 📋 PLANNING: nothing gets ticked, so the slim bar has no progress line. It carries a ☕
+  // instead, because Add a break was always within reach on the old pinned header.
+  const _addBrk = !(_rsMoveKey || _rsPlacing);
+  const _orderLink = (ctx.order && _addBrk) ? `<span class="rsn-reset" onclick="_rsResetOrder()">↺ Back to the learned order</span>` : '';
+  const head = `${_rsRunTop(null, planning)}
     <div class="rsn-fin"><div class="rsn-fin-l"><div class="rsn-lab">Projected finish</div><div class="rsn-time">${_rsBigTime(_finMs)}</div></div>
       ${tgt ? `<div class="rsn-tgt">${_rsIcon('dart')}<div class="rsn-time2">${_rsBigTime(tgt)}</div></div>` : ''}</div>
-    <div class="rsn-job">${_escHtml(ctx.job)}</div><div class="rsn-count">${_doneTxt}</div>${bankedNote}
-    <div class="cl-sticky-top rsn-pin${(_rsMoveKey || _rsPlacing) ? ' held' : ''}">
+    ${planning ? `<div class="rsn-count">${_stepsTxt} from ${_rsHM(ctx.startMs)}</div>`
+      : `<div class="rsn-job">${_escHtml(ctx.job)}</div><div class="rsn-count">${_doneTxt}</div>${bankedNote}`}
+    <div class="cl-sticky-top rsn-pin${_addBrk ? '' : ' held'}">
       <div class="rsn-slim-job">${_escHtml(ctx.job)}</div>
-      <div class="rsn-slim"><span class="rsn-time2">${_rsBigTime(_finMs)}</span>${tgt ? `<span class="rsn-slim-t">${_rsIcon('dart')}<span class="rsn-time3">${_rsBigTime(tgt)}</span></span>` : ''}<span class="rsn-slim-n">${_doneTxt}</span></div>
-      <div class="rsn-bar"><span style="width:${_runPct}%;"></span></div>
+      <div class="rsn-slim"><span class="rsn-time2">${_rsBigTime(_finMs)}</span>${tgt ? `<span class="rsn-slim-t">${_rsIcon('dart')}<span class="rsn-time3">${_rsBigTime(tgt)}</span></span>` : ''}<span class="rsn-slim-n">${planning ? _stepsTxt : _doneTxt}</span>${(planning && _addBrk) ? `<span class="rsn-slim-brk" onclick="_rsSetPlacing(true)" title="Add a break">${_rsIcon('coffee')}</span>` : ''}</div>
+      ${planning ? '' : `<div class="rsn-bar"><span style="width:${_runPct}%;"></span></div>`}
       ${_moveBanner}${placingCancel}</div>
-    <div class="rsn-sec"><span>Your session</span>${(ctx.order && !_rsMoveKey && !_rsPlacing) ? `<span class="rsn-reset" onclick="_rsResetOrder()">↺ Back to the learned order</span>` : ''}</div>
-    ${(_rsMoveKey || _rsPlacing) ? '' : `<div class="rsn-addbrk" onclick="_rsSetPlacing(true)">${_rsIcon('coffee')}Add a break</div>`}
-    ${(ctx.order && !_rsMoveKey && !_rsPlacing) ? `<div class="rsn-order-note">The learned order is the order you ticked these off <b>last time you did this job</b>. You have arranged this one by hand, so it is following your order instead.</div>` : ''}`;
-  const head = planning ? `<div class="cl-sticky-top">
-    ${pinBar}
-    ${hintHtml}
-    ${_moveBanner}
-    ${placingCancel}
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:0 0 2px;">
-      <span>${(ctx.order && !_rsMoveKey && !_rsPlacing)
-        ? `<span onclick="_rsResetOrder()" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:13px;">↺ Back to the learned order</span>`
-        : ''}</span>
-      <span>${(_rsMoveKey || _rsPlacing) ? '' : `<span onclick="_rsSetPlacing(true)" style="color:#ff9f0a;cursor:pointer;font-weight:600;font-size:13px;">☕ Add a break</span>`}</span></div>
-    ${(ctx.order && !_rsMoveKey && !_rsPlacing)
-      ? `<div style="font-size:11px;color:#6d7686;line-height:1.5;padding:0 0 8px;">The learned order is the order you ticked these off <b>last time you did this job</b>. You have arranged this one by hand, so it is following your order instead.</div>`
-      : '<div style="padding:0 0 6px;"></div>'}</div>` : runHead;
+    <div class="rsn-sec${planning ? ' plan' : ''}"><span>${planning ? _escHtml(ctx.job) : 'Your session'}</span>${_orderLink}</div>
+    ${_addBrk ? `<div class="rsn-addbrk" onclick="_rsSetPlacing(true)">${_rsIcon('coffee')}Add a break</div>` : ''}
+    ${(ctx.order && _addBrk) ? `<div class="rsn-order-note">The learned order is the order you ticked these off <b>last time you did this job</b>. You have arranged this one by hand, so it is following your order instead.</div>` : ''}`;
   const avgMap = _taskEstMap(), cntMap = _taskHistCountMap();   // built once, not per row
   const _brks = ctx.kind === 'clock' ? _checklistBreakMins() : {};   // minutes of break sitting inside each done task
   // ⚠️ cntMap stays MEASURED — the ×N must never count a guess.
@@ -25468,12 +25456,12 @@ function _rsRender() {
   // scroll wherever you like, tap the gap. Distance stops costing anything, which
   // a drag can never manage no matter how good the edge-scrolling is.
   const _ins = (i) => _rsMoveKey
-    ? `<div onclick="_rsMoveTo(${i}, this)" style="margin:2px 0 6px;padding:5px 10px;border-radius:8px;border:1px dashed rgba(90,200,250,0.75);background:rgba(90,200,250,0.10);color:${planning ? '#5ac8fa' : 'var(--rsn-blue)'};font-size:12px;font-weight:700;text-align:center;cursor:pointer;">⤵ move here</div>`
+    ? `<div onclick="_rsMoveTo(${i}, this)" style="margin:2px 0 6px;padding:5px 10px;border-radius:8px;border:1px dashed rgba(90,200,250,0.75);background:rgba(90,200,250,0.10);color:var(--rsn-blue);font-size:12px;font-weight:700;text-align:center;cursor:pointer;">⤵ move here</div>`
     : (_rsPlacing
-    ? `<div onclick="_rsPlaceBreak(${i}, this)" style="margin:2px 0 6px;padding:5px 10px;border-radius:8px;border:1px dashed rgba(255,159,10,0.75);background:rgba(255,159,10,0.10);color:${planning ? '#ff9f0a' : 'var(--rsn-orange)'};font-size:12px;font-weight:700;text-align:center;cursor:pointer;">☕ break goes here</div>`
+    ? `<div onclick="_rsPlaceBreak(${i}, this)" style="margin:2px 0 6px;padding:5px 10px;border-radius:8px;border:1px dashed rgba(255,159,10,0.75);background:rgba(255,159,10,0.10);color:var(--rsn-orange);font-size:12px;font-weight:700;text-align:center;cursor:pointer;">☕ break goes here</div>`
     : '');
-  // The chips below are shared with Planning, so Running now swaps their bright dark-theme
-  // colours for its own readable ones here rather than in the chips themselves.
+  // The chips below were written for the old dark rows, and the timer chip is shared with the
+  // clock, so the sheet swaps their bright colours for its own readable ones here.
   const _rnc = s => s.replace(/#30d158/g, 'var(--rsn-green)').replace(/#ff9f0a/g, 'var(--rsn-orange)');
   const rowsHtml = rows.map((r, _i) => {
     // ☕ A break row: no batch, no average, no steps — it is time, not work. On the
@@ -25482,16 +25470,8 @@ function _rsRender() {
     // ones. Planning ahead, it is purely a reservation that shapes the finish time.
     if (r.brk) {
       const bk = _rsBrkKey(r.id);
-      const bTime = r.isDone
-        ? `<span style="font-size:13px;font-weight:700;color:#616a7e;white-space:nowrap;">✓ ${_rsHM(r.when)}</span>`
-        : `<span style="font-size:13px;font-weight:700;color:#ff9f0a;white-space:nowrap;">~${_rsHM(r.when)}</span>`;
       const onBreakNow = !planning && clockState && clockState.onBreak && clockState.brkActiveId === r.id;
-      const stepper = r.isDone ? '' :
-        `<span onclick="event.stopPropagation();_rsBrkAdj('${r.id}', -5)" style="font-size:16px;font-weight:700;color:#8b93a7;cursor:pointer;padding:0 6px;line-height:1;">&minus;</span>
-         <span style="font-size:11px;font-weight:700;color:#ff9f0a;">${fmtMin(r.mins)}</span>
-         <span onclick="event.stopPropagation();_rsBrkAdj('${r.id}', 5)" style="font-size:16px;font-weight:700;color:#8b93a7;cursor:pointer;padding:0 6px;line-height:1;">+</span>`;
       const actual = r.isDone && isFinite(r.actualMins) ? `<span style="font-size:11px;font-weight:700;color:#30d158;">✓ ${fmtMin(r.actualMins)}</span>` : '';
-      const label = r.isDone ? 'Break taken' : (onBreakNow ? 'On break now' : 'Break');
       // The same NOW pill the active task carries, so "where am I" reads the same way
       // whether you're working or having a cuppa. Amber rather than blue: it is the
       // break's own colour, and blue everywhere else means a task is running.
@@ -25508,29 +25488,18 @@ function _rsRender() {
                 ? '<span style="font-size:11px;color:#8b93a7;">already on another break</span>'
                 : '<span style="font-size:11px;color:#8b93a7;">tap to start it</span>'))
         : '';
-      if (!planning) {
-        const _bLabel = r.isDone ? 'Break taken' : (onBreakNow ? 'On break now' : `Break, ${fmtMin(r.mins)}`);
-        const _bStep = r.isDone ? '' :
-          `<span class="rsn-step-btn" onclick="event.stopPropagation();_rsBrkAdj('${r.id}', -5)">&minus;</span><span class="rsn-step-btn" onclick="event.stopPropagation();_rsBrkAdj('${r.id}', 5)">+</span>`;
-        const _bTime = r.isDone
-          ? `<span class="rsn-when done">✓ ${_rsHM(r.when)}</span>`
-          : `<span class="rsn-when" style="color:var(--rsn-orange);">~${_rsHM(r.when)}</span>`;
-        return `${_ins(_i)}<div class="rs-row rsn-row" data-rs-key="${_attr(bk)}"${r.isNow ? ' data-rs-now="1"' : ''}${r.isDone ? ' data-rs-done="1"' : ''} ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)">
-        <div class="rsn-brk${onBreakNow ? ' on' : ''}${r.isDone ? ' done' : ''}"${tapB}>
-          <div class="rsn-brk-top">${_rsHeldBadge(bk) || _rsIcon('coffee')}<span class="rsn-brk-lab">${_bLabel}</span>${_bStep}
-            <span class="rsn-x" onclick="event.stopPropagation();_rsBrkRemove('${r.id}')" title="remove this break">✕</span>
-            <span class="rsi rsi-grip"></span></div>
-          <div class="rsn-brk-sub"><span class="rsn-brk-meta">${_rnc(nowB + actual + hintB)}</span>${_bTime}</div></div></div>`;
-      }
-      return `${_ins(_i)}<div class="rs-row" data-rs-key="${_attr(bk)}"${r.isNow ? ' data-rs-now="1"' : ''}${r.isDone ? ' data-rs-done="1"' : ''} ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)" style="margin-bottom:8px;">
-        <div${tapB} style="display:flex;align-items:center;gap:9px;padding:11px 10px;border-radius:8px;border:1px ${onBreakNow ? 'solid rgba(255,159,10,0.9)' : 'dashed rgba(255,159,10,0.55)'};background:${r.isDone ? 'transparent' : 'rgba(255,159,10,0.10)'};${tapB ? 'cursor:pointer;' : ''}">
-        ${_rsHeldBadge(bk) || `<span style="font-size:15px;flex-shrink:0;opacity:${r.isDone ? '0.5' : '1'};">☕</span>`}
-        <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;">
-          <span style="font-size:15px;color:${r.isDone ? '#616a7e' : 'var(--text)'};">${label}</span>
-          <span style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">${stepper}${nowB}${actual}${hintB}</span></span>
-        ${bTime}
-        <span onclick="event.stopPropagation();_rsBrkRemove('${r.id}')" title="remove this break" style="font-size:14px;color:#8b93a7;cursor:pointer;padding:0 4px;flex-shrink:0;">✕</span>
-        <span style="font-size:12px;color:var(--subtext);flex-shrink:0;">⠿</span></div></div>`;
+      const _bLabel = r.isDone ? 'Break taken' : (onBreakNow ? 'On break now' : `Break, ${fmtMin(r.mins)}`);
+      const _bStep = r.isDone ? '' :
+        `<span class="rsn-step-btn" onclick="event.stopPropagation();_rsBrkAdj('${r.id}', -5)">&minus;</span><span class="rsn-step-btn" onclick="event.stopPropagation();_rsBrkAdj('${r.id}', 5)">+</span>`;
+      const _bTime = r.isDone
+        ? `<span class="rsn-when done">✓ ${_rsHM(r.when)}</span>`
+        : `<span class="rsn-when" style="color:var(--rsn-orange);">~${_rsHM(r.when)}</span>`;
+      return `${_ins(_i)}<div class="rs-row rsn-row" data-rs-key="${_attr(bk)}"${r.isNow ? ' data-rs-now="1"' : ''}${r.isDone ? ' data-rs-done="1"' : ''} ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)">
+      <div class="rsn-brk${onBreakNow ? ' on' : ''}${r.isDone ? ' done' : ''}"${tapB}>
+        <div class="rsn-brk-top">${_rsHeldBadge(bk) || _rsIcon('coffee')}<span class="rsn-brk-lab">${_bLabel}</span>${_bStep}
+          <span class="rsn-x" onclick="event.stopPropagation();_rsBrkRemove('${r.id}')" title="remove this break">✕</span>
+          <span class="rsi rsi-grip"></span></div>
+        <div class="rsn-brk-sub"><span class="rsn-brk-meta">${_rnc(nowB + actual + hintB)}</span>${_bTime}</div></div></div>`;
     }
     const key = _rsKey(r.t, r.n);
     const nSteps = stepsOf(r.t).length;
@@ -25546,18 +25515,10 @@ function _rsRender() {
     const _stWords = !_stTicked ? `${nSteps} step${nSteps === 1 ? '' : 's'}`
       : (_stTicked >= nSteps ? `all ${nSteps} done`
       : (r.isDone ? `${_stTicked} of ${nSteps} done` : `${nSteps - _stTicked} of ${nSteps} left`));
-    const stepChip = nSteps
-      ? `<span onclick="event.stopPropagation();_rsToggleSteps(decodeURIComponent('${encodeURIComponent(key).replace(/'/g, '%27')}'))"
-           style="display:inline-flex;align-items:center;gap:3px;flex-shrink:0;font-size:11px;font-weight:600;color:${_stTicked >= nSteps ? '#30d158' : '#5ac8fa'};cursor:pointer;">${open ? '▾' : '▸'} ☰ ${_stWords}</span>`
-      : '';
     const lap = r.lapTotal > 1 ? `<span style="font-size:11px;font-weight:700;color:#30d158;flex-shrink:0;">🔁 ${r.lapIdx}/${r.lapTotal}</span>` : '';
     // ▣ the batch this task sits in — the run sheet flattens batches away, so
     // without this you lose which part of the job you're in.
     const bName = (_bRec && _bRec.items && _bRec.items[r.t] && _bRec.order.includes(_bRec.items[r.t])) ? _bRec.items[r.t] : null;
-    // Shrinkable with an ellipsis, NOT flex-shrink:0 — a long batch name would
-    // otherwise refuse to give ground and overrun the lap chip and the time.
-    const batchChip = bName
-      ? `<span style="font-size:11px;color:#8b93a7;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${_attr(bName)}">▣ ${_escHtml(bName)}</span>` : '';
     // ✓ what it ACTUALLY took, keyed by the same occurrence key the clock uses
     // (item, or item+lap for a rep), so laps are timed individually.
     const _dk = r.n === 0 ? r.t : _occKey({ item: r.t, rep: r.n });
@@ -25578,10 +25539,6 @@ function _rsRender() {
       ? `<span style="font-size:11px;font-weight:700;color:#30d158;flex-shrink:0;" title="quick tick: only its own seconds, nothing shared with the task before">✓ ${fmtMin(_actual || 0)} quick</span>`
       : ((isFinite(_actual) && _actual > 0)
       ? `<span style="font-size:11px;font-weight:700;color:#30d158;flex-shrink:0;" title="actual time for this one, breaks already taken out">✓ ${fmtMin(_actual)}</span>` : '');
-    const timeTxt = r.isDone
-      ? `<span style="font-size:13px;font-weight:700;color:#616a7e;white-space:nowrap;">${r.undoable ? '<span style="font-weight:400;opacity:0.75;">↺ </span>' : ''}✓ ${_rsHM(r.when)}</span>`
-      : (r.when ? `<span style="font-size:13px;font-weight:700;color:${r.tappable ? '#30d158' : 'var(--subtext)'};white-space:nowrap;">~${_rsHM(r.when)}</span>`
-                : '<span style="font-size:13px;color:var(--subtext);white-space:nowrap;" title="no timed history yet">—</span>');
     const _enc = encodeURIComponent(r.t).replace(/'/g, '%27');
     // ⚠️ While a row is being placed the whole sheet is a placement surface, so
     // tap-to-tick has to stand down. Otherwise the tap that means "put it here"
@@ -25592,24 +25549,11 @@ function _rsRender() {
     const tap = (_rsMoveKey || _rsPlacing) ? _markTap
               : (r.tappable ? ` onclick="_rsTick(decodeURIComponent('${_enc}'))"`
               : (r.undoable ? ` onclick="_rsUntick(decodeURIComponent('${_enc}'))"` : _markTap));
-    // ▶ NOW — the one row you're on. Blue, so it can't be confused with the green
-    // that means "timed/forecast" elsewhere on the sheet, and calm rather than
-    // alarming: it says where you are, it doesn't chase you.
-    // Sits on the META line, not the title line: putting it beside the text squeezed a
-    // long task name into a seven-line column. The border and tint already carry the
-    // "you are here" weight, so the chip only has to label it.
-    const nowChip = r.isNow
-      ? `<span style="display:inline-flex;align-items:center;flex-shrink:0;font-size:11px;font-weight:700;color:#5ac8fa;background:rgba(90,200,250,0.18);border:1px solid rgba(90,200,250,0.5);border-radius:9px;padding:0 7px;gap:4px;"><span>▶ NOW ·</span><span id="rs-now-elapsed">${fmtMin(_rsNowElapsedMin())}</span></span>`
-      : '';
     // Blue means "this is the one": in your hand while placing, and for 3 seconds
     // after you drop it so you can see where it landed.
     const _lifted = _rsMoveSet.includes(key) || _rsJustMoved.includes(key);
-    const _marked = key === _rsMarkKey && !_lifted;
-    const border = _marked ? '#0a84ff' : (_lifted ? 'rgba(90,200,250,0.9)' : (r.isNow ? 'rgba(90,200,250,0.75)' : (r.tappable ? 'rgba(48,209,88,0.45)' : 'var(--border)')));
-    const bg = _marked ? 'rgba(10,132,255,0.12)' : (_lifted ? 'rgba(90,200,250,0.16)' : (r.isDone ? 'transparent' : (r.isNow ? 'rgba(90,200,250,0.10)' : 'var(--card)')));
-    const markChip = _marked ? '<span style="font-size:11px;font-weight:700;color:#0a84ff;flex-shrink:0;">📍 things go under here</span>' : '';
-    // 📷 ▶️ This job's photos and video for the task, viewed without leaving the sheet (v441).
-    const mediaChips = _taskMediaChips(ctx.job, r.t, null, _mm);
+    const _marked = planning && key === _rsMarkKey && !_lifted;
+    const markChip = _marked ? '<span class="rsn-mark">📍 things go under here</span>' : '';
     // ⏱ The task's timer: on the row you are on while clocked in, a live countdown
     // (patched every second by _pomoTick); everywhere else, its length.
     const _tm = timerFor(ctx.job, r.t, _tmrsR);
@@ -25622,44 +25566,32 @@ function _rsRender() {
     // data-rs-now / data-rs-done: where the sheet comes to rest. data-rs-quick: this row can take a
     // ⚡ left-swipe quick tick (the same rows a tap would tick).
     const _canQuick = r.tappable && !_rsMoveKey && !_rsPlacing;
-    if (!planning) {
-      const _cardCls = _lifted ? ' lifted' : (r.isNow ? ' now' : (r.isDone ? ' done' : ''));
-      const _nowLine = r.isNow
-        ? `<div class="rsn-nowline">${_rsIcon('flag')}<span class="rsi rsi-live"></span><span>RUNNING NOW · <span id="rs-now-elapsed">${fmtMin(_rsNowElapsedMin())}</span></span></div>` : '';
-      const _lead = _rsHeldBadge(key) || (r.isNow ? '' : (r.isDone ? `<span class="rsn-tick">✓</span>` : _rsIcon('flag')));
-      const _edit = (_rsMoveKey || _rsPlacing) ? '' : `<span class="rsn-pencil" ontouchstart="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_rsEditTask(decodeURIComponent('${_encArg(r.t)}'))" title="edit: photo, video, name">${_rsIcon('pencil')}</span>`;
-      const _when = r.isDone
-        ? `<span class="rsn-when done">${r.undoable ? '↺ ' : ''}✓ ${_rsHM(r.when)}</span>`
-        : (r.when ? `<span class="rsn-when${r.tappable ? ' next' : ''}">~${_rsHM(r.when)}</span>` : '<span class="rsn-when" title="no timed history yet">—</span>');
-      const _batch = bName ? `<span class="rsn-batch" title="${_attr(bName)}">${_rsIcon('box')}<span>${_escHtml(bName)}</span></span>` : '<span class="rsn-batch"></span>';
-      const _stepsBtn = nSteps
-        ? `<span class="rsn-steps-btn${_stTicked >= nSteps ? ' all' : ''}" onclick="event.stopPropagation();_rsToggleSteps(decodeURIComponent('${encodeURIComponent(key).replace(/'/g, '%27')}'))">${_rsIcon('list')}<span>${_stWords}</span><span class="rsi rsi-chev${open ? ' open' : ''}"></span></span>` : '';
-      const _media = _taskMediaChips(ctx.job, r.t, 'var(--rsn-sub)', _mm, true);
-      return `${_ins(_i)}<div class="rs-row rsn-row" data-rs-key="${_attr(key)}"${r.isNow ? ' data-rs-now="1"' : ''}${r.isDone ? ' data-rs-done="1"' : ''}${_canQuick ? ' data-rs-quick="1"' : ''} ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)">
-      <div class="rsn-card${_cardCls}"${tap}>
-        ${_nowLine}
-        <div class="rsn-head">${_lead}<span class="rsn-title">${_escHtml(r.t)}</span>${_edit}</div>
-        <div class="rsn-mid">${_batch}${_rnc(lap)}${_when}</div>
-        <div class="rsn-foot">${_avgMeta(r.t, avgMap, cntMap)}${_rnc(actualChip + brkNote + timerBit)}${_media}${_stepsBtn}
-          <span class="rsn-grip" ontouchstart="event.stopPropagation()" ontouchmove="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_rsPickUp(decodeURIComponent('${_encArg(key)}'))" title="move this row">${_rsIcon('grip')}</span></div></div>
-      ${open ? `<div class="rsn-steps-wrap">${_rsStepsHtml(r, ctx, stepsOf)}</div>` : ''}</div>`;
-    }
-    return `${_ins(_i)}<div class="rs-row" data-rs-key="${_attr(key)}"${r.isNow ? ' data-rs-now="1"' : ''}${r.isDone ? ' data-rs-done="1"' : ''}${_canQuick ? ' data-rs-quick="1"' : ''} ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)"
-      style="margin-bottom:8px;">
-      <div${tap} style="display:flex;align-items:center;gap:9px;padding:11px 10px;border-radius:8px;border:${_marked ? '2px' : '1px'} solid ${border};background:${bg};${(r.tappable || r.undoable || _markTap) ? 'cursor:pointer;' : ''}">
-      ${_rsHeldBadge(key) || `<span style="font-size:15px;flex-shrink:0;opacity:${r.isDone ? '0.5' : '1'};">${r.isDone ? '✓' : '🚩'}</span>`}
-      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;">
-        <span style="overflow-wrap:anywhere;font-size:15px;color:${r.isDone ? '#616a7e' : 'var(--text)'};">${_escHtml(r.t)}</span>
-        ${(_avgMeta(r.t, avgMap, cntMap) || nowChip || stepChip || batchChip || actualChip || markChip || mediaChips || timerBit) ? `<span style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">${markChip}${batchChip}${_avgMeta(r.t, avgMap, cntMap)}${actualChip}${brkNote}${nowChip}${timerBit}${stepChip}${mediaChips}</span>` : ''}</span>
-      ${lap}${timeTxt}
-      ${(_rsMoveKey || _rsPlacing) ? '' : `<span ontouchstart="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_rsEditTask(decodeURIComponent('${_encArg(r.t)}'))" title="edit: photo, video, name" style="font-size:16px;line-height:1;color:#8b93a7;flex-shrink:0;cursor:pointer;padding:10px 4px;margin:-10px 0;">✎</span>`}
-      <span ontouchstart="event.stopPropagation()" ontouchmove="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_rsPickUp(decodeURIComponent('${_encArg(key)}'))" title="move this row" style="font-size:17px;line-height:1;color:${_lifted ? '#5ac8fa' : '#8b93a7'};flex-shrink:0;cursor:pointer;padding:10px 8px;margin:-10px -6px -10px 0;">⠿</span></div>
-      ${open ? `<div style="padding-top:6px;">${_rsStepsHtml(r, ctx, stepsOf)}</div>` : ''}</div>`;
+    const _cardCls = _lifted ? ' lifted' : (_marked ? ' marked' : (r.isNow ? ' now' : (r.isDone ? ' done' : '')));
+    const _nowLine = r.isNow
+      ? `<div class="rsn-nowline">${_rsIcon('flag')}<span class="rsi rsi-live"></span><span>RUNNING NOW · <span id="rs-now-elapsed">${fmtMin(_rsNowElapsedMin())}</span></span></div>` : '';
+    const _lead = _rsHeldBadge(key) || (r.isNow ? '' : (r.isDone ? `<span class="rsn-tick">✓</span>` : _rsIcon('flag')));
+    const _edit = (_rsMoveKey || _rsPlacing) ? '' : `<span class="rsn-pencil" ontouchstart="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_rsEditTask(decodeURIComponent('${_encArg(r.t)}'))" title="edit: photo, video, name">${_rsIcon('pencil')}</span>`;
+    const _when = r.isDone
+      ? `<span class="rsn-when done">${r.undoable ? '↺ ' : ''}✓ ${_rsHM(r.when)}</span>`
+      : (r.when ? `<span class="rsn-when${(r.tappable || planning) ? ' next' : ''}">~${_rsHM(r.when)}</span>` : '<span class="rsn-when" title="no timed history yet">—</span>');
+    const _batch = bName ? `<span class="rsn-batch" title="${_attr(bName)}">${_rsIcon('box')}<span>${_escHtml(bName)}</span></span>` : '<span class="rsn-batch"></span>';
+    const _stepsBtn = nSteps
+      ? `<span class="rsn-steps-btn${_stTicked >= nSteps ? ' all' : ''}" onclick="event.stopPropagation();_rsToggleSteps(decodeURIComponent('${encodeURIComponent(key).replace(/'/g, '%27')}'))">${_rsIcon('list')}<span>${_stWords}</span><span class="rsi rsi-chev${open ? ' open' : ''}"></span></span>` : '';
+    const _media = _taskMediaChips(ctx.job, r.t, 'var(--rsn-sub)', _mm, true);
+    return `${_ins(_i)}<div class="rs-row rsn-row" data-rs-key="${_attr(key)}"${r.isNow ? ' data-rs-now="1"' : ''}${r.isDone ? ' data-rs-done="1"' : ''}${_canQuick ? ' data-rs-quick="1"' : ''} ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)">
+    <div class="rsn-card${_cardCls}"${tap}>
+      ${_nowLine}
+      <div class="rsn-head">${_lead}<span class="rsn-title">${_escHtml(r.t)}</span>${_edit}</div>
+      <div class="rsn-mid">${markChip}${_batch}${_rnc(lap)}${_when}</div>
+      <div class="rsn-foot">${_avgMeta(r.t, avgMap, cntMap)}${_rnc(actualChip + brkNote + timerBit)}${_media}${_stepsBtn}
+        <span class="rsn-grip" ontouchstart="event.stopPropagation()" ontouchmove="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_rsPickUp(decodeURIComponent('${_encArg(key)}'))" title="move this row">${_rsIcon('grip')}</span></div></div>
+    ${open ? `<div class="rsn-steps-wrap">${_rsStepsHtml(r, ctx, stepsOf)}</div>` : ''}</div>`;
   }).join('');
   // Title and body land in the same breath — nothing above this line touches the DOM.
   if (titleEl) titleEl.textContent = ctx.job;
   body.innerHTML = head + rowsHtml + _ins(rows.length);
-  if (!planning) { try { _pomoRefresh(); _pomoTick(); } catch (e) {} _rsPinSync(); }   // ⏱ the countdown shows at once, not a second later
+  if (!planning) { try { _pomoRefresh(); _pomoTick(); } catch (e) {} }   // ⏱ the countdown shows at once, not a second later
+  _rsPinSync();
 }
 
 // ── Steps on the run sheet ────────────────────────────────────────────────────
@@ -25708,35 +25640,18 @@ function _rsStepsHtml(r, ctx, stepsOf) {
   // A finished once-off shows them too. A lapped task does not: its step times are
   // keyed by name, so every lap would show the latest lap's minutes.
   const _sDur = (canTick || (live && r.isDone && !isRepeatTask(ctx.job, r.t))) ? _stepDurations() : {};
-  if (live) {
-    const rows = steps.map(s => {
-      const ticked = !!checks[s];
-      const isCur = r.isNow && s === nextStep && !ticked;
-      const _uStep = encodeURIComponent(s).replace(/'/g, '%27');
-      const tap = canTick ? ` onclick="event.stopPropagation();_rsStepTick(decodeURIComponent('${_uItem}'),decodeURIComponent('${_uStep}'))"` : '';
-      const mins = _sDur[r.t + '~|~' + s];
-      return `<div class="rsn-st${ticked ? ' ticked' : ''}${isCur ? ' cur' : ''}"${tap}><span class="rsn-cb">${ticked ? '✓' : ''}</span><span class="rsn-st-t">${_escHtml(s)}</span>${(ticked && mins) ? `<span class="rsn-st-m">${fmtMin(mins)}</span>` : ''}</div>`;
-    }).join('');
-    const nDone = steps.filter(s => checks[s]).length;
-    return `<div class="rsn-steps${r.isNow ? ' now' : ''}"><div class="rsn-steps-h">STEPS · ${nDone} of ${steps.length} done</div>${rows}</div>`;
-  }
-  const body = steps.map(s => {
+  const rows = steps.map(s => {
     const ticked = !!checks[s];
     const isCur = live && r.isNow && s === nextStep && !ticked;
-    if (canTick) {
-      const _uStep = encodeURIComponent(s).replace(/'/g, '%27');
-      return `<div onclick="event.stopPropagation();_rsStepTick(decodeURIComponent('${_uItem}'),decodeURIComponent('${_uStep}'))" style="display:flex;align-items:flex-start;gap:10px;padding:8px 2px;cursor:pointer;">
-        <span style="font-size:19px;flex-shrink:0;line-height:1.1;color:${ticked ? '#30d158' : (isCur ? '#5ac8fa' : 'var(--subtext)')};">${ticked ? '☑' : '☐'}</span>
-        <span style="flex:1;min-width:0;overflow-wrap:anywhere;font-size:14px;line-height:1.45;${ticked ? 'color:var(--subtext);text-decoration:line-through;' : 'color:var(--text);'}">${_escHtml(s)}</span>${(ticked && _sDur[r.t + '~|~' + s]) ? `<span style="font-size:12px;color:#30d158;font-weight:600;white-space:nowrap;flex-shrink:0;line-height:1.6;">${fmtMin(_sDur[r.t + '~|~' + s])}</span>` : ''}</div>`;
-    }
-    return `<div style="display:flex;align-items:flex-start;gap:8px;padding:5px 2px;">
-      <span style="font-size:11px;flex-shrink:0;line-height:1.5;color:${ticked ? '#616a7e' : (isCur ? '#5ac8fa' : 'var(--subtext)')};">${ticked ? '✓' : (isCur ? '▸' : '·')}</span>
-      <span style="flex:1;min-width:0;overflow-wrap:anywhere;font-size:13px;line-height:1.45;color:${ticked ? '#616a7e' : 'var(--text)'};">${_escHtml(s)}</span>${(ticked && _sDur[r.t + '~|~' + s]) ? `<span style="font-size:11px;color:#30d158;font-weight:600;white-space:nowrap;flex-shrink:0;line-height:1.5;">${fmtMin(_sDur[r.t + '~|~' + s])}</span>` : ''}</div>`;
+    const _uStep = encodeURIComponent(s).replace(/'/g, '%27');
+    const tap = canTick ? ` onclick="event.stopPropagation();_rsStepTick(decodeURIComponent('${_uItem}'),decodeURIComponent('${_uStep}'))"` : '';
+    const mins = _sDur[r.t + '~|~' + s];
+    // Planning can't tick a step, so it gets no box to tick.
+    const mark = live ? `<span class="rsn-cb">${ticked ? '✓' : ''}</span>` : `<span class="rsn-dot">${ticked ? '✓' : '·'}</span>`;
+    return `<div class="rsn-st${ticked ? ' ticked' : ''}${isCur ? ' cur' : ''}"${tap}>${mark}<span class="rsn-st-t">${_escHtml(s)}</span>${(ticked && mins) ? `<span class="rsn-st-m">${fmtMin(mins)}</span>` : ''}</div>`;
   }).join('');
-  const box = r.isNow
-    ? 'border:1px solid rgba(90,200,250,0.55);background:rgba(90,200,250,0.07);'
-    : 'border:1px solid var(--border);background:transparent;';
-  return `<div style="margin:0 0 0 22px;padding:6px 10px;border-radius:8px;${box}">${body}</div>`;
+  const nDone = steps.filter(s => checks[s]).length;
+  return `<div class="rsn-steps${r.isNow ? ' now' : ''}${live ? '' : ' plan'}"><div class="rsn-steps-h">STEPS · ${live ? `${nDone} of ${steps.length} done` : steps.length}</div>${rows}</div>`;
 }
 
 // Which of a row's steps are ticked. The row in hand reads the live boxes. A FINISHED
