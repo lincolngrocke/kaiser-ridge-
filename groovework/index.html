@@ -742,26 +742,31 @@
   /* Reusable Undo bar — sits above every modal so it works on any screen. */
   .undo-toast {
     position: fixed;
-    bottom: calc(var(--nav-height) + 18px);
+    bottom: calc(var(--nav-height) + env(safe-area-inset-bottom) + 14px);
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(0,0,0,0.94);
-    color: #fff;
-    padding: 15px 12px 15px 22px;
-    border-radius: 26px;
-    font-size: 17px;
-    font-weight: 600;
+    width: min(calc(100vw - 32px), 398px);
+    box-sizing: border-box;
+    background: var(--card);
+    color: var(--text);
+    padding: 8px 8px 8px 16px;
+    border-radius: 14px;
     z-index: 720;
     opacity: 0;
     transition: opacity 0.2s;
     pointer-events: none;
     display: flex;
     align-items: center;
-    gap: 14px;
-    max-width: calc(100vw - 28px);
-    box-shadow: 0 6px 22px rgba(0,0,0,0.55);
-    border: 1px solid rgba(255,255,255,0.12);
+    gap: 12px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.14);
+    border: 1px solid var(--border);
   }
+  .undo-toast-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  #undo-toast-msg { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #undo-toast-sub { font-size: 12px; color: var(--subtext); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  body.dark .undo-toast { background: #2c2c2e; border-color: #48484a; box-shadow: 0 6px 18px rgba(0,0,0,0.5); }
+  body.dark .undo-toast button { background: rgba(91,155,255,0.18); color: #5b9bff; }
+  body.undo-on #back-to-top { display: none !important; }
   .undo-toast.show { opacity: 1; pointer-events: auto; }
   /* "Caught it" thought-bubble pop when you capture a note */
   @keyframes caughtPop {
@@ -997,8 +1002,8 @@
     .run-done-chip.bump { animation: none; }
   }
   .undo-toast button {
-    background: rgba(77,163,255,0.16); border: none; color: #6bb6ff; font-size: 16px; font-weight: 800;
-    cursor: pointer; padding: 9px 18px; flex-shrink: 0; border-radius: 18px;
+    background: rgba(0,122,255,0.1); border: none; color: var(--blue); font-size: 14px; font-weight: 600;
+    cursor: pointer; padding: 8px 12px; flex-shrink: 0; border-radius: 10px;
   }
 
   .empty-state {
@@ -3540,7 +3545,7 @@
 
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
-<div class="undo-toast" id="undo-toast"><span id="undo-toast-msg"></span><button onclick="_doUndo()">Undo</button></div>
+<div class="undo-toast" id="undo-toast"><span class="undo-toast-txt"><span id="undo-toast-msg"></span><span id="undo-toast-sub"></span></span><button onclick="_doUndo()">Undo</button></div>
 <div class="caught-bubble" id="caught-bubble">💭 Caught it ✓</div>
 <!-- Haptic experiment: toggling iOS's native switch inside a tap MAY emit the picker-wheel tick (Safari 17.4+; not guaranteed) -->
 <input type="checkbox" id="haptic-tick" switch tabindex="-1" aria-hidden="true" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;pointer-events:none;">
@@ -3557,7 +3562,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.456';
+const APP_VERSION = '2026-06-21.457';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5255,14 +5260,13 @@ function hideTask(job, item) {
   const hadS = sess ? clockState.flagOverride[item] : undefined;
   if (hadS !== undefined) { delete clockState.flagOverride[item]; _storeSet('kr_clock', JSON.stringify(clockState)); }
   _refreshChecklistSurfaces(job);
-  const _short = item.length > 24 ? item.slice(0, 24).trimEnd() + '…' : item;
-  showUndoToast('🙈 Hidden: ' + _short + '. Bring it back from 🙈 Hidden at the foot of the list.', () => {
+  showUndoToast('Hidden: ' + item, () => {
     const a2 = getHiddenTasks(); if (a2[job]) { a2[job] = a2[job].filter(x => x !== item); if (!a2[job].length) delete a2[job]; saveHiddenTasks(a2); }
     if (hadG !== undefined) { const g2 = getChecklistFlags(); (g2[job] || (g2[job] = {}))[item] = hadG; saveChecklistFlags(g2); }
     if (hadS !== undefined && clockState && clockState.task === job) { (clockState.flagOverride || (clockState.flagOverride = {}))[item] = hadS; _storeSet('kr_clock', JSON.stringify(clockState)); }
     _refreshChecklistSurfaces(job);
     showToast('↺ Back on the list');
-  }, 5000);
+  }, 5000, 'It’s under Hidden at the foot of the list');
 }
 function unhideTask(job, item) {
   const all = getHiddenTasks();
@@ -13517,19 +13521,26 @@ function flyDoneBubble(onUndo, mins) {
 // Reusable Undo bar: do the action immediately, then offer ~5s to reverse it.
 // Pass a callback that restores prior state. Drop this onto any delete action.
 let _undoTimer = null, _undoAction = null;
-function showUndoToast(msg, onUndo, ms) {
+// One line of what happened, with an optional quieter line under it (v457, Lincoln's Figma
+// frame). A long name cuts off rather than growing the box. Callers write their messages
+// with a leading emoji, and this box is words only.
+function showUndoToast(msg, onUndo, ms, detail) {
   const el = document.getElementById('undo-toast');
   if (!el) return;
-  document.getElementById('undo-toast-msg').textContent = msg;
+  document.getElementById('undo-toast-msg').textContent = String(msg).replace(/^[^\p{L}\p{N}]+/u, '');
+  const sub = document.getElementById('undo-toast-sub');
+  sub.textContent = detail || ''; sub.style.display = detail ? '' : 'none';
   _undoAction = onUndo;
   el.classList.add('show');
+  document.body.classList.add('undo-on');   // the floating arrow would sit on top of it
   clearTimeout(_undoTimer);
-  _undoTimer = setTimeout(() => { el.classList.remove('show'); _undoAction = null; }, ms || 10000);
+  _undoTimer = setTimeout(() => { el.classList.remove('show'); document.body.classList.remove('undo-on'); _undoAction = null; }, ms || 10000);
 }
 function _doUndo() {
   clearTimeout(_undoTimer);
   const el = document.getElementById('undo-toast');
   if (el) el.classList.remove('show');
+  document.body.classList.remove('undo-on');
   const fn = _undoAction; _undoAction = null;
   if (fn) fn();
 }
@@ -24730,7 +24741,7 @@ function _clBatchFlagAll(task, name) {
     if (org && org.classList.contains('open')) _renderClOrganiseBody();
   };
   after();
-  showUndoToast((allOn ? 'Flags removed from ' : '🚩 Flagged all ') + members.length + ' in ▣ ' + name, () => {
+  showUndoToast((allOn ? 'Flags removed from ' : 'Flagged all ') + members.length + ' in ' + name, () => {
     // ⚠️ ONE store object, used for both the read and the write. Calling _clFlagStore
     // twice re-parses storage, so the second handle saves an unmutated copy and the
     // undo silently does nothing.
@@ -25889,7 +25900,7 @@ function _rsQuickTick(task) {
     showToast('↺ Brought back');
   };
   if (quick) showUndoToast('⚡ ' + (secs < 30 ? '0m' : '1m') + ' quick: ' + _short, undo, 5000);
-  else showUndoToast('Ticked normally · ' + fmtMin(secs / 60) + ' since the last one: ' + _short, undo, 5000);
+  else showUndoToast('Ticked: ' + _short, undo, 5000, fmtMin(secs / 60) + ' since the last one');
 }
 // Was this finished row's tick a ⚡ quick one? The row's own tick: its lap for a
 // repeat task, the un-lapped tick for a once-off.
@@ -26088,9 +26099,9 @@ function _rsSwipeOff(task, n) {
   _rsRender();
   const left = mine.filter(x => !x.doneAt).length - 1;
   const _short = task.length > 24 ? task.slice(0, 24).trimEnd() + '…' : task;
-  showUndoToast('One lap off: ' + _short + ' · ' + left + ' to go', () => {
+  showUndoToast('One lap off: ' + _short, () => {
     undoLaps(); _rsRender(); showToast('↺ Lap back on the run sheet');
-  }, 3000);
+  }, 3000, left + ' to go');
 }
 function _rsDragStart(e) {
   const row = e.currentTarget, y = e.touches[0].clientY;
