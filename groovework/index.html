@@ -932,6 +932,7 @@
   .rsn-obatch { display: flex; align-items: center; gap: 7px; cursor: pointer; margin: 14px 0 8px; font-size: 15px; font-weight: 600; color: var(--rsn-text); }
   .rsn-obatch .rsi-box { color: var(--rsn-sub); }
   .rsn-obatch .rsi-chev { color: var(--rsn-sub); }
+  .rsn-obatch .rsn-pencil { padding: 6px 4px; margin: -6px 0; }
   .rsn-obatch-n { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .rsn-obatch-c { font-size: 12px; font-weight: 600; color: var(--rsn-sub); background: var(--rsn-line); border-radius: 10px; padding: 1px 9px; flex-shrink: 0; }
   .rsn-obatch .rsi-grip { color: var(--rsn-check); }
@@ -3576,7 +3577,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.459';
+const APP_VERSION = '2026-06-21.460';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -16424,19 +16425,26 @@ function addBatch() {
   renderBatchManager();
   openBatchTaskPicker(rec.order.length - 1);   // straight into picking its tasks
 }
-function renameBatch(bi) {
-  if (isWorker()) return;
-  const job = _dirJobName(); const all = getTaskBatches(); const rec = all[job];
-  if (!rec || !rec.order[bi]) return;
-  const oldName = rec.order[bi];
+// One rename for Edit Job and Organise. Returns the new name, or null if nothing changed.
+function _renameBatchOn(job, oldName) {
+  if (isWorker()) return null;
+  const all = getTaskBatches(); const rec = all[job];
+  if (!rec || !rec.order.includes(oldName)) return null;
   const newName = (prompt('Rename "' + oldName + '" to:', oldName) || '').trim();
-  if (!newName || newName === oldName) return;
-  if (rec.order.some(b => b.toLowerCase() === newName.toLowerCase())) { showToast('That batch already exists'); return; }
-  rec.order[bi] = newName;
+  if (!newName || newName === oldName) return null;
+  if (newName.toLowerCase() === 'unbatched') { showToast('Pick another name: “Unbatched” is taken'); return null; }
+  if (rec.order.some(b => b !== oldName && b.toLowerCase() === newName.toLowerCase())) { showToast('That batch already exists'); return null; }
+  rec.order[rec.order.indexOf(oldName)] = newName;
   Object.keys(rec.items).forEach(t => { if (rec.items[t] === oldName) rec.items[t] = newName; });
+  if (rec.todoItems) Object.keys(rec.todoItems).forEach(id => { if (rec.todoItems[id] === oldName) rec.todoItems[id] = newName; });
   saveTaskBatches(all);
   autoBackup();
-  renderBatchManager();
+  return newName;
+}
+function renameBatch(bi) {
+  const job = _dirJobName(); const rec = getTaskBatches()[job];
+  if (!rec || !rec.order[bi]) return;
+  if (_renameBatchOn(job, rec.order[bi])) renderBatchManager();
 }
 function deleteBatch(bi) {
   if (isWorker()) return;
@@ -26675,6 +26683,14 @@ function _orgToggleSteps(item) {
 }
 let _orgHelpOpen = false;
 function _orgHelpToggle() { _orgHelpOpen = !_orgHelpOpen; _renderClOrganiseBody(); }
+function _clOrgRenameBatch(name) {
+  const job = _clOrganiseTask; if (!job) return;
+  const nn = _renameBatchOn(job, name);
+  if (!nn) return;
+  if (name in _clOrgCollapsed) { _clOrgCollapsed[nn] = _clOrgCollapsed[name]; delete _clOrgCollapsed[name]; }
+  _refreshChecklistSurfaces(job);
+  showToast('▣ Renamed to ' + nn);
+}
 function _clOrgTapFlag(item) {
   if (Date.now() < _clSwipeBlockClickUntil) return;   // a swipe or a drag just finished — not a tap
   if (_clOrganiseTask) toggleChecklistFlag(_clOrganiseTask, item);
@@ -26834,7 +26850,7 @@ function _renderClOrganiseBody() {
   // a compact target. `count` shown; `collapsed` hides the rows below.
   const secHd = (label, looseAttr, count, collapsed) => `<div data-batch-sec="1"${looseAttr ? ' data-batch-loose="1"' : ''} data-batch-name="${_attr(label)}" data-batch-task="${taskAttr}" onclick="_clToggleBatchCollapse(decodeURIComponent('${encodeURIComponent(label).replace(/'/g, '%27')}'))"${looseAttr ? ' ontouchstart="clBatchSwipeStart(event)" ontouchmove="clBatchSwipeMove(event)" ontouchend="clBatchSwipeEnd(event)"' : ' ontouchstart="clHeadStart(event)" ontouchmove="clHeadMove(event)" ontouchend="clHeadEnd(event)"'} class="rsn-obatch">
     <span class="rsi rsi-chev${collapsed ? '' : ' open'}"></span>${_rsIcon('box')}<span class="rsn-obatch-n">${_escHtml(label)}</span>
-    <span class="rsn-obatch-c">${count}</span>${looseAttr ? '' : _rsIcon('grip')}</div>`;
+    <span class="rsn-obatch-c">${count}</span>${looseAttr || isWorker() ? '' : `<span class="rsn-pencil" ontouchstart="event.stopPropagation()" ontouchmove="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_clOrgRenameBatch(decodeURIComponent('${encodeURIComponent(label).replace(/'/g, '%27')}'))" title="rename this batch">${_rsIcon('pencil')}</span>`}${looseAttr ? '' : _rsIcon('grip')}</div>`;
   let bodyHtml;
   if (_hasBatches) {
     // Batches are the organisation — a flagged task STAYS in its batch (floated to
