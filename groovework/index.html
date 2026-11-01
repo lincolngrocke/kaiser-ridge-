@@ -3562,7 +3562,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.457';
+const APP_VERSION = '2026-06-21.458';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4527,7 +4527,7 @@ function _isBackToTopList(el) {
 function _initBackToTop() {
   document.addEventListener('scroll', (e) => {
     const el = e.target;
-    if (!_isBackToTopList(el)) return;
+    if (!_isBackToTopList(el) || featureHidden('back-to-top')) return;
     _btTarget = el;
     const b = document.getElementById('back-to-top');
     if (!b) return;
@@ -9566,6 +9566,7 @@ function openModal(id) {
   const _rs = document.getElementById('modal-run-sheet'), _el = document.getElementById(id);
   if (id !== 'modal-run-sheet' && _rs && _rs.classList.contains('open') && (parseInt(getComputedStyle(_el).zIndex, 10) || 0) < 362) { _el.dataset.rsRaised = _el.style.zIndex || 'none'; _el.style.zIndex = '370'; }
   _el.classList.add('open');
+  _hideBackToTop();   // it floats above everything, so one left showing would sit on the sheet
   _fitModalsToKeyboard();
 }
 function closeModal(id) {
@@ -20730,6 +20731,8 @@ function sharedJobApply(mode) {
 // ⚠️ Before hiding a screen, check what can only be reached THROUGH it and give
 // that its own door first. The Dashboard held the only route to the Times list.
 const KR_HIDDEN_FEATURES = [
+  { id: 'back-to-top', name: 'The floating up arrow', since: 'v458',
+    what: 'The round arrow that appeared after scrolling a long list, to jump back to the top.' },
   { id: 'job-comment', name: 'The + comment button', since: 'v453',
     what: 'A comment on the whole job. The Comment button on each task does this job now, and a note for the whole job can go on its timesheet.' },
   { id: 'edit-active', name: 'The three dots on the run sheet', since: 'v454',
