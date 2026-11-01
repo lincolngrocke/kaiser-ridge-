@@ -440,6 +440,8 @@
     cursor: pointer;
   }
   .ts-entry-row { display: flex; justify-content: space-between; align-items: flex-start; }
+  .ts-entry-sub { margin-left: 32px; }
+  .ts-day-job { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-top: 4px; font-size: 13px; color: var(--subtext); }
   .ts-entry-date { font-size: 15px; font-weight: 600; }
   .ts-entry-hours { font-size: 15px; font-weight: 600; }
   .ts-entry-time { font-size: 13px; color: var(--subtext); }
@@ -1289,7 +1291,7 @@
     <div style="display:flex;align-items:center;gap:10px;">
       <div class="header-right" id="ts-header-period"></div>
       <button onclick="openManualEntry()" data-feature="ts-add" style="background:var(--blue);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:14px;font-weight:600;cursor:pointer;">+ Add</button>
-      <button onclick="exportTimesheetsPdf()" style="background:var(--blue);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:14px;font-weight:600;cursor:pointer;">📄 PDF</button>
+      <button onclick="openTsPdf()" style="background:var(--blue);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:14px;font-weight:600;cursor:pointer;">📄 PDF</button>
     </div>
   </div>
 
@@ -1306,7 +1308,11 @@
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
           <div id="ts-count" style="font-size:13px;color:var(--subtext);margin-top:2px;">0 timesheets</div>
           <!-- ↕ v442: oldest first for copying onto the billing spreadsheet -->
-          <span id="ts-order" onclick="toggleTsOrder()" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;white-space:nowrap;">↓ Newest first</span>
+          <div style="display:flex;flex-wrap:wrap;justify-content:flex-end;gap:2px 14px;">
+            <!-- ▤ v462: one line per day and job, for invoices -->
+            <span id="ts-view" onclick="toggleTsView()" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;white-space:nowrap;">☰ Full detail</span>
+            <span id="ts-order" onclick="toggleTsOrder()" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;white-space:nowrap;">↓ Newest first</span>
+          </div>
         </div>
       </div>
       <div class="hours-bar-wrap">
@@ -3416,6 +3422,14 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="modal-ts-pdf" onclick="closeModal('modal-ts-pdf')">
+  <div class="modal-sheet" style="padding:14px 20px 26px;" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div style="font-size:17px;font-weight:700;color:var(--text);padding:4px 0 8px;">Save as PDF</div>
+    <div id="ts-pdf-body"></div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="modal-task-actions" style="z-index:690;" onclick="closeModal('modal-task-actions')">
   <div class="modal-sheet" style="padding:14px 20px 26px;" onclick="event.stopPropagation()">
     <div class="modal-handle"></div>
@@ -3577,7 +3591,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.461';
+const APP_VERSION = '2026-06-21.462';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -8335,9 +8349,45 @@ function toggleTsOrder() {
   renderTimesheets();
   const sa = document.querySelector('#screen-timesheets .scroll-area'); if (sa) sa.scrollTop = 0;   // the start of the new order
 }
+// ▤ Timesheet view (v462, Lincoln 1 Nov 2026): 'full' (default) or 'days'. Daily totals
+// shows each day's hours and job names for invoicing; tap a day to see its timesheets.
+// A view preference for this phone only, like the order above.
+function _tsView() { try { return localStorage.getItem('kr_ts_view') === 'days' ? 'days' : 'full'; } catch (e) { return 'full'; } }
+function toggleTsView() {
+  try { localStorage.setItem('kr_ts_view', _tsView() === 'days' ? 'full' : 'days'); } catch (e) {}
+  renderTimesheets();
+  const sa = document.querySelector('#screen-timesheets .scroll-area'); if (sa) sa.scrollTop = 0;
+}
+const _tsDaysOpen = new Set();   // days unfolded in Daily totals, this visit only
+function toggleTsDay(key) {
+  const sa = document.querySelector('#screen-timesheets .scroll-area');
+  const find = () => document.querySelector(`[data-ts-day="${key}"]`);
+  const was = find(), top = was ? was.getBoundingClientRect().top : 0;
+  if (_tsDaysOpen.has(key)) _tsDaysOpen.delete(key); else _tsDaysOpen.add(key);
+  renderTimesheets();
+  const now = find();   // folding near the foot of the list can pull the tapped day away
+  if (sa && now) sa.scrollTop += now.getBoundingClientRect().top - top;
+}
+// Timesheets gathered by day: the day's total, and one line per job with the same job
+// added together. ONE copy, shared by Daily totals and the PDF, so they always agree.
+function _tsDays(rows) {
+  const days = [], byKey = {};
+  rows.forEach(e => {
+    const dt = _parseEntryDate(e.date);
+    const key = dt ? dt.getFullYear() + '-' + (dt.getMonth() + 1) + '-' + dt.getDate() : String(e.date);
+    const day = byKey[key] || (byKey[key] = days[days.push({ key, date: e.date, dt, rows: [], jobs: [], total: 0 }) - 1]);
+    const hours = e.durationHours || 0;
+    const name = e.bot ? (e.botEmoji || '🤖') + ' ' + [e.personnel, e.task].filter(Boolean).join(' · ') : (e.task || 'No job name');
+    const job = day.jobs.find(j => j.name === name);
+    if (job) job.hours += hours; else day.jobs.push({ name, hours });
+    day.rows.push(e); day.total += hours;
+  });
+  return days;
+}
 function renderTimesheets() {
   updateRestoreEntryBanner();
   { const o = document.getElementById('ts-order'); if (o) o.textContent = _tsOrder() === 'oldest' ? '↑ Oldest first' : '↓ Newest first'; }
+  { const v = document.getElementById('ts-view'); if (v) v.textContent = _tsView() === 'days' ? '▤ Daily totals' : '☰ Full detail'; }
   const list = document.getElementById('ts-list');
   const searchTerm = (document.getElementById('ts-search')?.value || '').toLowerCase().trim();
   // With Robots hidden the Mine / Robots / All switch goes too, and the list stays
@@ -8384,7 +8434,7 @@ function renderTimesheets() {
   const _oldestFirst = _tsOrder() === 'oldest';
   filtered.sort((a, b) => _oldestFirst ? (_entryDateTimeKey(a) - _entryDateTimeKey(b)) : (_entryDateTimeKey(b) - _entryDateTimeKey(a)));
 
-  list.innerHTML = filtered.map(e => {
+  const card = (e, sub) => {
     const tag = e.bot
       ? (e.botEmoji || '🤖') + ' ' + [e.personnel, e.task].filter(Boolean).join(' · ')
       : [featureHidden('area') ? '' : e.group, e.task].filter(Boolean).join(' · ');
@@ -8392,7 +8442,7 @@ function renderTimesheets() {
     const dateObj = new Date(e.date.split('/').reverse().join('-'));
     const dateStr = dateObj.toLocaleDateString('en-AU', {weekday:'short', day:'numeric', month:'long', year:'numeric'});
     const syncBadge = e.synced ? '' : ' 🔄';
-    return `<div class="ts-entry" onclick="openEdit('${e.id}')">
+    return `<div class="ts-entry${sub ? ' ts-entry-sub' : ''}" onclick="openEdit('${e.id}')">
       <div class="ts-entry-row">
         <div>
           <div class="ts-entry-date">${dateStr}${syncBadge}</div>
@@ -8417,7 +8467,20 @@ function renderTimesheets() {
       })() : ''}
       ${(e.commentPhotos && e.commentPhotos.length) ? _photosHtml({ photos: e.commentPhotos }, 80) : ''}
     </div>`;
-  }).join('');
+  };
+  const dayCard = d => {
+    const open = _tsDaysOpen.has(d.key);
+    const dateStr = d.dt ? d.dt.toLocaleDateString('en-AU', {weekday:'short', day:'numeric', month:'long', year:'numeric'}) : d.date;
+    const syncBadge = d.rows.every(e => e.synced) ? '' : ' 🔄';
+    return `<div class="ts-entry" data-ts-day="${d.key}" onclick="toggleTsDay('${d.key}')">
+      <div class="ts-entry-row">
+        <div class="ts-entry-date">${open ? '▾' : '▸'} ${dateStr}${syncBadge}</div>
+        <div class="ts-entry-hours">${formatHours(d.total)}</div>
+      </div>
+      ${d.jobs.map(j => `<div class="ts-day-job"><span class="ts-entry-tag">${hl(_escHtml(j.name))}</span><span>${formatHours(j.hours)}</span></div>`).join('')}
+    </div>${open ? d.rows.map(e => card(e, true)).join('') : ''}`;
+  };
+  list.innerHTML = _tsView() === 'days' ? _tsDays(filtered).map(dayCard).join('') : filtered.map(e => card(e)).join('');
   // Hydrate the Drive-photo placeholders just rendered. This was MISSING — every
   // other photo surface calls it after rendering, so timesheet comment photos sat
   // as invisible 1px placeholders forever (only inline {data} ones ever showed).
@@ -8573,7 +8636,7 @@ function _pdfBytes(pages, W, H) {
   for (let i = 0; i < out.length; i++) bytes[i] = out.charCodeAt(i) & 0xFF;
   return bytes;
 }
-function _tsPdfBuild(list) {
+function _tsPdfBuild(list, daily) {
   _pdfGlyphs = new Map();
   const W = 595, H = 842, L = 40, R = W - 40, BOTTOM = H - 50;
   const rows = list.slice().sort((a, b) => _entryDateTimeKey(a) - _entryDateTimeKey(b));   // paper reads oldest first
@@ -8591,14 +8654,16 @@ function _tsPdfBuild(list) {
   const search = (document.getElementById('ts-search')?.value || '').trim();
   const who = (currentUser() || {}).name || '';
   const sub = [who, rangeLab, _tsGroup ? 'Group: ' + _groupLabel(_tsGroup) : '', search ? 'Search: "' + search + '"' : ''].filter(Boolean).join('  ·  ');
+  const days = _tsDays(rows);   // one band per day
+  const countLab = daily ? days.length + ' day' + (days.length === 1 ? '' : 's') : rows.length + ' timesheet' + (rows.length === 1 ? '' : 's');
   const cols = { job: L + 8, start: 360, finish: 420, brk: 497, hours: R };   // Break and Hours right-aligned
   const pages = []; let ops, y;
   const head = () => {
     ops.push({ t: 'text', x: L + 8, y, size: 8, bold: true, grey: true, s: 'JOB' },
-             { t: 'text', x: cols.start, y, size: 8, bold: true, grey: true, s: 'START' },
-             { t: 'text', x: cols.finish, y, size: 8, bold: true, grey: true, s: 'FINISH' },
-             { t: 'text', x: cols.brk, y, size: 8, bold: true, grey: true, s: 'BREAK', align: 'right' },
              { t: 'text', x: cols.hours, y, size: 8, bold: true, grey: true, s: 'HOURS', align: 'right' });
+    if (!daily) ops.push({ t: 'text', x: cols.start, y, size: 8, bold: true, grey: true, s: 'START' },
+                         { t: 'text', x: cols.finish, y, size: 8, bold: true, grey: true, s: 'FINISH' },
+                         { t: 'text', x: cols.brk, y, size: 8, bold: true, grey: true, s: 'BREAK', align: 'right' });
     y += 6; ops.push({ t: 'line', x1: L, y1: y, x2: R, y2: y }); y += 14;
   };
   const newPage = () => {
@@ -8607,7 +8672,7 @@ function _tsPdfBuild(list) {
       ops.push({ t: 'text', x: L, y, size: 18, bold: true, s: 'Timesheets' });
       ops.push({ t: 'text', x: R, y, size: 18, bold: true, s: formatHours(total), align: 'right' });
       y += 18; ops.push({ t: 'text', x: L, y, size: 10, s: _pdfFit(sub, 10, false, R - L - 120) });
-      ops.push({ t: 'text', x: R, y, size: 10, grey: true, s: rows.length + ' timesheet' + (rows.length === 1 ? '' : 's'), align: 'right' });
+      ops.push({ t: 'text', x: R, y, size: 10, grey: true, s: countLab, align: 'right' });
       y += 26;
     }
     head();
@@ -8628,17 +8693,20 @@ function _tsPdfBuild(list) {
     return out;
   };
   // One grey band per day with the day's total, then that day's timesheets.
-  const days = [];
-  rows.forEach(e => { const last = days[days.length - 1]; if (last && last.date === e.date) last.rows.push(e); else days.push({ date: e.date, rows: [e] }); });
   days.forEach(d => {
     if (y + 20 + 15 > BOTTOM) newPage();   // never strand a day band at the foot of a page
-    const dt = _parseEntryDate(d.date);
-    const dayTot = d.rows.reduce((s, e) => s + (e.durationHours || 0), 0);
+    const dt = d.dt;
     ops.push({ t: 'rect', x: L, y: y - 11, w: R - L, h: 16, g: 0.93 });
     ops.push({ t: 'text', x: L + 4, y, size: 9.5, bold: true, s: dt ? fmtD(dt, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : String(d.date) });
-    ops.push({ t: 'text', x: R - 4, y, size: 9.5, bold: true, s: formatHours(dayTot), align: 'right' });
+    ops.push({ t: 'text', x: R - 4, y, size: 9.5, bold: true, s: formatHours(d.total), align: 'right' });
     y += 18;
-    d.rows.forEach(e => {
+    if (daily) d.jobs.forEach(j => {
+      if (y > BOTTOM) newPage();
+      ops.push({ t: 'text', x: cols.job, y, size: 9.5, s: _pdfFit(j.name, 9.5, false, cols.hours - cols.job - 60) });
+      ops.push({ t: 'text', x: cols.hours, y, size: 9.5, s: formatHours(j.hours), align: 'right' });
+      y += 15;
+    });
+    else d.rows.forEach(e => {
       if (y > BOTTOM) newPage();
       ops.push({ t: 'text', x: cols.job, y, size: 9.5, s: _pdfFit(e.task || '', 9.5, false, cols.start - cols.job - 10) });
       ops.push({ t: 'text', x: cols.start, y, size: 9.5, s: e.clockIn ? formatTimeAmPm(e.clockIn) : '–' });
@@ -8671,14 +8739,33 @@ function _tsPdfBuild(list) {
   });
   return _pdfBytes(pages, W, H);
 }
-function exportTimesheetsPdf() {
+// 📄 The choice when saving (v462): the full sheets, or daily totals for an invoice.
+// The one matching the screen is the solid button.
+function openTsPdf() {
+  if (!_tsFilteredEntries().length) { showToast('No timesheets showing to save'); return; }
+  const btn = (daily, label, note) => {
+    const solid = daily === (_tsView() === 'days');
+    return `<div onclick="pickTsPdf(${daily})" style="padding:13px;border-radius:12px;${solid ? 'background:var(--blue);color:#fff;' : 'border:1px solid var(--blue);color:var(--blue);'}font-size:16px;font-weight:700;text-align:center;cursor:pointer;margin-bottom:6px;">${label}</div>
+      <div style="font-size:12px;color:var(--subtext);line-height:1.45;padding:0 4px 12px;">${note}</div>`;
+  };
+  document.getElementById('ts-pdf-body').innerHTML =
+    btn(false, '☰ Full detail', 'Start and finish times, notes and every task.')
+    + btn(true, '▤ Daily totals', 'The hours for each day and the job names. Good for an invoice.')
+    + `<div onclick="closeModal('modal-ts-pdf')" style="padding:10px;color:#8b93a7;font-size:14px;font-weight:600;text-align:center;cursor:pointer;">Cancel</div>`;
+  openModal('modal-ts-pdf');
+}
+function pickTsPdf(daily) {
+  closeModal('modal-ts-pdf');
+  exportTimesheetsPdf(daily);
+}
+function exportTimesheetsPdf(daily) {
   const list = _tsFilteredEntries();
   if (!list.length) { showToast('No timesheets showing to save'); return; }
   let bytes;
-  try { bytes = _tsPdfBuild(list); } catch (err) { showToast('Could not make the PDF: ' + (err && err.message || err)); return; }
+  try { bytes = _tsPdfBuild(list, daily); } catch (err) { showToast('Could not make the PDF: ' + (err && err.message || err)); return; }
   const ds = list.map(e => _parseEntryDate(e.date)).filter(Boolean).sort((a, b) => a - b);
   const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-  const filename = 'timesheets-' + (ds.length ? ymd(ds[0]) + (ymd(ds[0]) !== ymd(ds[ds.length - 1]) ? '-to-' + ymd(ds[ds.length - 1]) : '') : ymd(new Date())) + '.pdf';
+  const filename = (daily ? 'timesheets-daily-' : 'timesheets-') + (ds.length ? ymd(ds[0]) + (ymd(ds[0]) !== ymd(ds[ds.length - 1]) ? '-to-' + ymd(ds[ds.length - 1]) : '') : ymd(new Date())) + '.pdf';
   const file = new File([bytes], filename, { type: 'application/pdf' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     // File only, no text, for the same reason as exportBackup: two items split the share.
