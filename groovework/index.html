@@ -3533,7 +3533,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.454';
+const APP_VERSION = '2026-06-21.455';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -6014,8 +6014,6 @@ function openRunEdit(kind, ref, jobOverride, from) {
   const _job = (kind === 'tasks' && jobOverride) ? jobOverride : ((clockState && clockState.running && clockState.task) || null);
   if (!_job) return;
   _runAddFrom = from || 'clock';
-  // Opened from the run sheet (z 362), the edit sheet (360) would sit hidden behind it.
-  { const _ma = document.getElementById('modal-run-add'); if (_ma) _ma.style.zIndex = (_runAddFrom === 'runsheet') ? '370' : ''; }
   const _live = !!(clockState && clockState.running && clockState.task === _job);
   _renderRunAddBatches(null, false);
   const isTask = kind === 'tasks';
@@ -9538,7 +9536,7 @@ function openModal(id) {
   // The run sheet sits high in the stack, and it now holds the job's own controls, so
   // whatever opens from it (or from a sheet on top of it) goes above it.
   const _rs = document.getElementById('modal-run-sheet'), _el = document.getElementById(id);
-  if (id !== 'modal-run-sheet' && _rs && _rs.classList.contains('open') && (parseInt(getComputedStyle(_el).zIndex, 10) || 0) < 362) { _el.style.zIndex = '370'; _el.dataset.rsRaised = '1'; }
+  if (id !== 'modal-run-sheet' && _rs && _rs.classList.contains('open') && (parseInt(getComputedStyle(_el).zIndex, 10) || 0) < 362) { _el.dataset.rsRaised = _el.style.zIndex || 'none'; _el.style.zIndex = '370'; }
   _el.classList.add('open');
   _fitModalsToKeyboard();
 }
@@ -9547,7 +9545,9 @@ function closeModal(id) {
   const el = document.getElementById(id);
   el.classList.remove('open');
   el.style.bottom = '';
-  if (el.dataset.rsRaised) { el.style.zIndex = ''; delete el.dataset.rsRaised; }
+  // ⚠️ Back to what it had, not to nothing: several sheets set their place in the stack
+  // in the markup, and clearing that drops them behind whatever they opened from.
+  if (el.dataset.rsRaised) { el.style.zIndex = el.dataset.rsRaised === 'none' ? '' : el.dataset.rsRaised; delete el.dataset.rsRaised; }
   const sheet = el.querySelector('.modal-sheet') || el.firstElementChild;   // also covers the bottom-sheet pickers
   if (sheet && ('kbOrigMax' in sheet.dataset)) { sheet.style.maxHeight = sheet.dataset.kbOrigMax; delete sheet.dataset.kbOrigMax; }
   if (id === 'modal-task') { editingId = null; _entryPickReset(); }
