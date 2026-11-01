@@ -3591,7 +3591,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.462';
+const APP_VERSION = '2026-06-21.463';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5227,6 +5227,44 @@ function _tickRank(task) {
   });
   _tickRankCache.map[task] = out;
   return out;
+}
+// { task: { step: { day, first } } } for one job: _tickRank's date then tick order, for
+// steps (v463, Lincoln 1 Nov 2026: "arranged in the order that they were completed the
+// previous time"). Read from the times each saved timesheet already holds in e.steps,
+// and worked out here rather than written over the step list, because that list can be
+// shared with other jobs. The entry's own date, so a run past midnight stays one day.
+let _stepRankCache = { rev: -1, map: {} };
+function _stepRank(job) {
+  if (!job) return {};
+  if (_stepRankCache.rev !== _entriesRev) _stepRankCache = { rev: _entriesRev, map: {} };
+  if (_stepRankCache.map[job]) return _stepRankCache.map[job];
+  const out = {};
+  entries.forEach(e => {
+    if (!e || e.bot || e.task !== job || !Array.isArray(e.steps)) return;
+    e.steps.forEach(d => {
+      const t = d && d.item && d.step ? new Date(d.at).getTime() : NaN;
+      if (!isFinite(t)) return;
+      const day = (_parseEntryDate(e.date) || new Date(t)).setHours(0, 0, 0, 0);
+      const m = out[d.item] || (out[d.item] = {}), r = m[d.step];
+      if (!r || day > r.day) m[d.step] = { day, first: t };
+      else if (day === r.day && t < r.first) r.first = t;
+    });
+  });
+  _stepRankCache.map[job] = out;
+  return out;
+}
+// stepsResolver in the learned order: newest day first, tick order within a day,
+// never-done steps last in their written order. For lists a person works from. The
+// steps editor keeps reading the written order, because what it saves is that list.
+function learnedStepsResolver(job) {
+  const stepsOf = stepsResolver(job), ranks = _stepRank(job);
+  return function (task) {
+    const rank = ranks[task], steps = stepsOf(task);
+    if (!rank) return steps;
+    return steps.map((s, i) => ({ s, i, r: rank[s] }))
+      .sort((a, b) => (a.r && b.r) ? (b.r.day - a.r.day || a.r.first - b.r.first || a.i - b.i) : (a.r ? -1 : b.r ? 1 : a.i - b.i))
+      .map(x => x.s);
+  };
 }
 // ── The Organise sheet's VISIBLE sequence — ONE source of truth ─────────────
 // The sheet you flag on is grouped by ▣ batch; the run sheet is a flat list. They
@@ -7230,7 +7268,7 @@ function renderRunChecklist() {
   let rows = '', organiseLink = '', expandLink = '';
 
   if (tab === 'tasks') {
-    const stepsOf = stepsResolver(clockState && clockState.task);
+    const stepsOf = learnedStepsResolver(clockState && clockState.task);
     const guideOf = guidesResolver(clockState && clockState.task);
     // Hoisted out of the per-task loop — one parse and one pass over SUBTASKS,
     // not one per row (same reason guidesResolver exists).
@@ -25724,7 +25762,7 @@ function _rsRender() {
   // that matters ("~9m avg · 9× · ✓ 12m") needs no arithmetic from you.
   const _bRec = _batchRec(ctx.job);
   const _durs = ctx.kind === 'clock' ? _checklistDurations() : {};
-  const stepsOf = stepsResolver(ctx.job);   // step AVERAGES aren't read here — the sheet shows no per-step times
+  const stepsOf = learnedStepsResolver(ctx.job);   // step AVERAGES aren't read here — the sheet shows no per-step times
   const _mm = _mediaMaps(ctx.job);          // 📷 ▶️ read once per render, not per row (v441)
   const _tmrsR = getJobTimers();            // ⏱ v446
   // ⭐ THE GAPS ARE THE TARGET, for a break AND now for a task. Dragging a row up
@@ -25924,15 +25962,17 @@ function _rsStepsHtml(r, ctx, stepsOf) {
   // A finished once-off shows them too. A lapped task does not: its step times are
   // keyed by name, so every lap would show the latest lap's minutes.
   const _sDur = (canTick || (live && r.isDone && !isRepeatTask(ctx.job, r.t))) ? _stepDurations() : {};
+  const _sAt = live ? _rsStepTimes(r) : {};   // 🕒 when it was ticked (v463)
   const rows = steps.map(s => {
     const ticked = !!checks[s];
     const isCur = live && r.isNow && s === nextStep && !ticked;
     const _uStep = encodeURIComponent(s).replace(/'/g, '%27');
     const tap = canTick ? ` onclick="event.stopPropagation();_rsStepTick(decodeURIComponent('${_uItem}'),decodeURIComponent('${_uStep}'))"` : '';
     const mins = _sDur[r.t + '~|~' + s];
+    const when = [_sAt[s] ? _stepTime(_sAt[s]) : '', mins ? fmtMin(mins) : ''].filter(Boolean).join(' · ');
     // Planning can't tick a step, so it gets no box to tick.
     const mark = live ? `<span class="rsn-cb">${ticked ? '✓' : ''}</span>` : `<span class="rsn-dot">${ticked ? '✓' : '·'}</span>`;
-    return `<div class="rsn-st${ticked ? ' ticked' : ''}${isCur ? ' cur' : ''}"${tap}>${mark}<span class="rsn-st-t">${_escHtml(s)}</span>${(ticked && mins) ? `<span class="rsn-st-m">${fmtMin(mins)}</span>` : ''}</div>`;
+    return `<div class="rsn-st${ticked ? ' ticked' : ''}${isCur ? ' cur' : ''}"${tap}>${mark}<span class="rsn-st-t">${_escHtml(s)}</span>${(ticked && when) ? `<span class="rsn-st-m">${when}</span>` : ''}</div>`;
   }).join('');
   const nDone = steps.filter(s => checks[s]).length;
   return `<div class="rsn-steps${r.isNow ? ' now' : ''}${live ? '' : ' plan'}"><div class="rsn-steps-h">STEPS · ${live ? `${nDone} of ${steps.length} done` : steps.length}</div>${rows}</div>`;
@@ -25951,12 +25991,21 @@ function _rsStepTicks(r, ctx) {
     Object.keys(c).forEach(st => { if (c[st]) out.add(st); });
     return out;
   }
-  const end = new Date(r.doneAt).getTime();
-  let from = -Infinity;
-  (clockState.checklistDone || []).forEach(d => { if (d.item === r.t) { const t = new Date(d.at).getTime(); if (t < end && t > from) from = t; } });
-  (clockState.stepDone || []).forEach(d => { if (d.item === r.t) { const t = new Date(d.at).getTime(); if (t > from && t <= end) out.add(d.step); } });
+  Object.keys(_rsStepTimes(r)).forEach(st => out.add(st));
   return out;
 }
+// { step: time ticked } for one row: from the task's previous tick up to this row's
+// own, or to now for the row in hand, so each lap keeps its own times.
+function _rsStepTimes(r) {
+  const out = {};
+  if (!clockState) return out;
+  const end = r.doneAt ? new Date(r.doneAt).getTime() : Infinity;
+  let from = -Infinity;
+  (clockState.checklistDone || []).forEach(d => { if (d.item === r.t) { const t = new Date(d.at).getTime(); if (t < end && t > from) from = t; } });
+  (clockState.stepDone || []).forEach(d => { if (d.item === r.t) { const t = new Date(d.at).getTime(); if (t > from && t <= end) out[d.step] = d.at; } });
+  return out;
+}
+function _stepTime(iso) { return _timeShort(iso).replace(/\s+/g, ''); }   // 10:24pm, as the run sheet writes its times
 function _rsStepTick(item, step) {
   if (Date.now() < _clSwipeBlockClickUntil) return;   // a drag just happened — not a tap
   if (!clockState || !clockState.running) return;
@@ -26894,7 +26943,7 @@ function _renderClOrganiseBody() {
   const _lapAdjFn = _lapPlan ? '_clLapAdj' : '_clSessionLapAdj';
   const _oAvg = _taskEstMap(), _oCnt = _taskHistCountMap();   // built once, not per row (count stays measured)
   const _oLast = _checklistItemLastDone(task);   // 🗓 last-done per task, same one pass
-  const _oSteps = stepsResolver(task), _oGuide = guidesResolver(task), _oMm = _mediaMaps(task), _oTmr = getJobTimers();
+  const _oSteps = learnedStepsResolver(task), _oGuide = guidesResolver(task), _oMm = _mediaMaps(task), _oTmr = getJobTimers();
   const _oChecks = (_live && clockState.stepChecks) || {};
   const rowHtml = (s) => {
     if (_live && _isTaskDoneNow(task, s, _liveDone)) return '';
@@ -26922,7 +26971,8 @@ function _renderClOrganiseBody() {
     const _cmts = (_live && clockState.itemComments && clockState.itemComments[s]) || [];
     const _cmtHtml = _cmts.map(c => `<div class="rsn-cmt">💬 ${_escHtml(c.text)} <span>· ${_timeShort(c.at)}</span></div>`).join('');
     // Steps are read here and ticked on the run sheet with their task.
-    const _stPanel = _stOpen ? `<div class="rsn-steps plan" onclick="event.stopPropagation()"><div class="rsn-steps-h">STEPS · ${_st.length}</div>${_st.map(st => { const on = !!(_oChecks[s] && _oChecks[s][st]); return `<div class="rsn-st${on ? ' ticked' : ''}"><span class="rsn-dot">${on ? '✓' : '·'}</span><span class="rsn-st-t">${_escHtml(st)}</span></div>`; }).join('')}<div class="rsn-add-step" onclick="event.stopPropagation();openSubtaskStepsEditor(decodeURIComponent('${_lapEnc(s)}'), decodeURIComponent('${_lapEnc(task)}'))">＋ Add step</div></div>` : '';
+    const _oAt = (_stOpen && _live) ? _rsStepTimes({ t: s }) : {};
+    const _stPanel = _stOpen ? `<div class="rsn-steps plan" onclick="event.stopPropagation()"><div class="rsn-steps-h">STEPS · ${_st.length}</div>${_st.map(st => { const on = !!(_oChecks[s] && _oChecks[s][st]); return `<div class="rsn-st${on ? ' ticked' : ''}"><span class="rsn-dot">${on ? '✓' : '·'}</span><span class="rsn-st-t">${_escHtml(st)}</span>${(on && _oAt[st]) ? `<span class="rsn-st-m">${_stepTime(_oAt[st])}</span>` : ''}</div>`; }).join('')}<div class="rsn-add-step" onclick="event.stopPropagation();openSubtaskStepsEditor(decodeURIComponent('${_lapEnc(s)}'), decodeURIComponent('${_lapEnc(task)}'))">＋ Add step</div></div>` : '';
     // 🗓 WHEN THIS TASK WAS LAST DONE. Deciding what to flag for a planned run, "12 days
     // ago" is the fact that makes the decision. "~5m avg · 46×" says how long and how
     // often; it never said WHEN.
