@@ -844,8 +844,15 @@
   #modal-run-sheet.rs-run .modal-handle, #modal-run-sheet.rs-run .rs-plan-head { display: none !important; }
   #modal-run-sheet.rs-run #run-sheet-body { padding: 0 16px !important; min-height: 0; }
   .rs-run-foot { display: none; }
-  #modal-run-sheet.rs-run .rs-run-foot { display: flex; justify-content: center; flex-shrink: 0; padding: 6px 16px calc(6px + env(safe-area-inset-bottom)); border-top: 1px solid var(--rsn-line); }
-  .rsn-close { min-width: 120px; height: 38px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--rsn-line); border-radius: 12px; font-size: 14px; font-weight: 600; color: var(--rsn-sub); cursor: pointer; }
+  #modal-run-sheet.rs-run .rs-run-foot { display: flex; justify-content: center; gap: 8px; flex-shrink: 0; padding: 8px 16px calc(8px + env(safe-area-inset-bottom)); border-top: 1px solid var(--rsn-line); }
+  #rs-foot-acts { display: flex; flex: 1; gap: 8px; min-width: 0; }
+  #rs-foot-acts:empty { display: none; }
+  .rsn-fbtn { flex: 1; min-width: 0; height: 44px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; border-radius: 12px; font-size: 14px; font-weight: 700; white-space: nowrap; cursor: pointer; }
+  .rsn-fbtn.brk { border: 1px solid rgba(242,107,0,0.3); color: var(--rsn-orange); background: var(--rsn-card); }
+  .rsn-fbtn.brk.on { background: var(--rsn-orange); border-color: var(--rsn-orange); color: #fff; }
+  .rsn-fbtn.out { background: var(--rsn-red); color: #fff; }
+  .rsn-fbtn.in { background: var(--rsn-green); color: #fff; }
+  .rsn-close { min-width: 74px; height: 44px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--rsn-line); border-radius: 12px; font-size: 14px; font-weight: 600; color: var(--rsn-sub); cursor: pointer; }
   .rsn-top { padding-top: 10px; }
   .rsn-nav { display: flex; align-items: center; justify-content: space-between; }
   .rsn-brand { font-size: 18px; font-weight: 600; color: var(--rsn-blue); }
@@ -853,6 +860,14 @@
   .rsn-help-text { margin-top: 8px; padding: 10px 12px; border-radius: 12px; background: var(--rsn-blue-bg); border: 1px solid var(--rsn-blue-line); font-size: 13px; line-height: 1.45; color: var(--rsn-text); }
   .rsn-kind { font-size: 13px; font-weight: 700; color: var(--rsn-blue); margin-top: 8px; }
   .rsn-fin { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-top: 8px; }
+  .rsn-line { margin-top: 10px; }
+  .rsn-line-track { height: 8px; border-radius: 4px; background: var(--rsn-line); overflow: hidden; }
+  .rsn-line-track span { display: block; height: 100%; min-width: 8px; border-radius: 4px; background: linear-gradient(90deg, var(--rsn-blue), var(--rsn-green)); transition: width 0.95s linear; }
+  .rsn-line.over .rsn-line-track span { background: var(--rsn-orange); }
+  .rsn-line-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 5px; font-size: 12px; color: var(--rsn-sub); }
+  #rs-line-time { font-size: 15px; font-weight: 600; color: var(--rsn-text); font-variant-numeric: tabular-nums; }
+  #rs-line-pct { font-weight: 600; color: var(--rsn-blue); white-space: nowrap; }
+  .rsn-line.over #rs-line-pct { color: var(--rsn-orange); }
   .rsn-lab { font-size: 13px; font-weight: 500; color: var(--rsn-sub); }
   .rsn-time { display: flex; align-items: baseline; gap: 4px; line-height: 1.05; }
   .rsn-time b { font-size: 52px; font-weight: 700; color: var(--rsn-text); letter-spacing: -0.5px; }
@@ -876,7 +891,8 @@
   .rsn-slim-n { margin-left: auto; font-size: 12px; font-weight: 500; color: var(--rsn-sub); white-space: nowrap; }
   .rsn-slim-brk { width: 34px; height: 30px; margin: -4px -8px -4px -6px; display: inline-flex; align-items: center; justify-content: center; color: var(--rsn-orange); cursor: pointer; flex-shrink: 0; }
   .rsn-bar { height: 3px; border-radius: 2px; background: var(--rsn-line); margin-top: 4px; overflow: hidden; }
-  .rsn-bar span { display: block; height: 100%; background: var(--rsn-blue); border-radius: 2px; }
+  .rsn-bar span { display: block; height: 100%; background: var(--rsn-blue); border-radius: 2px; transition: width 0.95s linear; }
+  .rsn-bar.over span { background: var(--rsn-orange); }
   .rsn-sec { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 16px; font-weight: 600; color: var(--rsn-text); margin: 14px 0 8px; }
   .rsn-sec.plan { flex-direction: column; align-items: flex-start; gap: 3px; font-size: 18px; line-height: 1.25; }
   .rsn-reset { font-size: 12px; font-weight: 600; color: var(--rsn-sub); cursor: pointer; }
@@ -2169,7 +2185,7 @@
     </span>
   </div>
   <div class="run-hero">
-    <div class="run-ring" id="run-ring">
+    <div class="run-ring" id="run-ring" data-feature="clock-dial">
       <svg width="208" height="208" viewBox="0 0 208 208">
         <circle class="run-ring-track" cx="104" cy="104" r="92" fill="none" stroke-width="13"/>
         <circle class="run-ring-fg" id="run-ring-fg" cx="104" cy="104" r="92" fill="none" stroke-width="13" stroke-linecap="round" stroke-dasharray="578.05" stroke-dashoffset="578.05"/>
@@ -2196,9 +2212,10 @@
     </div>
   </div>
   <div id="run-checklist" ontouchstart="runListInteract()" style="display:none;width:100%;margin:12px auto 0;padding:0 20px;text-align:left;flex:1 1 0;min-height:0;flex-direction:column;"></div>
+  <!-- v451: Start Break and Clock Out live on the run sheet. The strip stays because its
+       padding is what holds the task list clear of the bottom nav. -->
   <div class="running-buttons">
-<button class="btn-pause" id="btn-pause" onclick="breakButtonTap()">☕ Start Break</button>
-<button class="btn-clock-out" style="flex:1" onclick="openTimeModal('out')">Clock Out</button>
+<button class="btn-pause" id="btn-pause" style="display:none;" onclick="breakButtonTap()">☕ Start Break</button>
   </div>
 </div>
 
@@ -2696,7 +2713,7 @@
       <span onclick="closeRunSheet()" style="color:var(--blue);font-size:16px;cursor:pointer;flex-shrink:0;">Done</span>
     </div>
     <div id="run-sheet-body" style="padding:0 20px;overflow-y:auto;overflow-x:hidden;flex:1;"></div>
-    <div class="rs-run-foot"><span class="rsn-close" onclick="closeRunSheet()">Close</span></div>
+    <div class="rs-run-foot"><span class="rsn-close" onclick="closeRunSheet()">Close</span><span id="rs-foot-acts"></span></div>
   </div>
 </div>
 
@@ -3522,7 +3539,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.450';
+const APP_VERSION = '2026-06-21.451';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4556,6 +4573,7 @@ function startTimerTick() {
       }
       updateRunRing(netElapsed);
       _rsTickNowElapsed();   // keeps the run sheet's ▶ NOW figure live if the sheet is open
+      _rsLineSync();
       try { _pomoTick(); } catch (e) {}   // ⏱ the current task's timer (v446)
       updateAtTimes();
     }
@@ -4903,6 +4921,8 @@ function renderClockState() {
     timer.classList.add('running');
   } else {
     overlay.classList.remove('active');
+    // Clocked out from the running sheet: the job it was showing has gone.
+    { const _rs = document.getElementById('modal-run-sheet'); if (_rs && _rs.classList.contains('open') && !_rsPlanId) closeRunSheet(); }
     btn.textContent = 'Clock In';
     btn.className = 'btn-clock-in';
     card.style.display = 'none';
@@ -6992,6 +7012,7 @@ function _syncProvisionalTarget() {
     _storeSet('kr_clock', JSON.stringify(clockState));
   }
 }
+var _rsRing = { frac: 0, over: false };   // what the dial worked out, for the run sheet's line
 function updateRunRing(netElapsedSec) {
   const fg = document.getElementById('run-ring-fg');
   const ring = document.getElementById('run-ring');
@@ -7051,6 +7072,7 @@ function updateRunRing(netElapsedSec) {
   if (!est || elapsed == null) {
     fg.style.strokeDashoffset = C;                      // empty ring — faint track only
     ring.classList.remove('over');
+    _rsRing = { frac: 0, over: false };
     if (label) { label.textContent = 'building your average'; label.style.color = 'var(--run-sub)'; }
     if (finishEl) finishEl.textContent = '';
     return;
@@ -7061,6 +7083,7 @@ function updateRunRing(netElapsedSec) {
   // longer than its average) — the same meaning in both modes now.
   const over = frac >= 1;
   ring.classList.toggle('over', over);
+  _rsRing = { frac, over };
   if (label) {
     label.style.color = over ? '#ff9f0a' : 'var(--run-blue)';
     const _flagCue = _runEstCache.basis === 'flagged' ? ' 🚩' : '';   // estimate comes from the flagged tasks
@@ -7206,7 +7229,7 @@ function renderRunChecklist() {
       const _isRep = isRepeatTask(clockState.task, s);
       const _reps = _isRep ? taskRepCount(clockState.task, s) : 0;
       // The 🔁 rep chip lives on the meta line below the text (moved off the row
-      // so the task text doesn't get stepped in); the + circle still adds a rep.
+      // so the task text doesn't get stepped in).
       const isDone = _isTaskDoneNow(clockState.task, s, done);
       // Ticked this session → vanishes from the active list; it lives in the ✓ chip
       // / "Completed this session" view instead (revive it there).
@@ -7226,12 +7249,13 @@ function renderRunChecklist() {
       const expanded = _expandedChecklistItems.has(s);
       const checkedCount = steps.filter(st => stepChecks[s] && stepChecks[s][st]).length;
       const flagged = !!clFlags[s];
-      const circle = `<span onclick="markChecklistItemDone(decodeURIComponent('${enc}'))" title="${_isRep ? 'Add a rep' : ''}" style="width:24px;height:24px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;${isDone ? 'background:#30d158;' : (_isRep && _reps ? 'border:2px solid rgba(48,209,88,0.6);' : 'border:2px solid var(--run-ring);')}">${isDone ? '<span style="color:#05070c;font-size:14px;">✓</span>' : (_isRep ? '<span style="color:var(--run-green);font-size:19px;font-weight:700;line-height:1;">+</span>' : '')}</span>`;
-      // Long tasks (or tasks with steps) clamp to 2 lines and expand on tap — same
-      // as to-dos. Short tasks keep tap-the-text-to-complete. The circle always completes.
+      // ⭐ THE CLOCK LIST CHOOSES THE WORK, THE RUN SHEET TICKS IT OFF (v451, Lincoln 1 Nov
+      // 2026): "the only place you can tick off a task is in the run sheet." So a tap here
+      // flags. Long tasks and tasks with steps clamp to 2 lines and open on a tap, same as
+      // to-dos. A stray tap on this list can no longer stamp a task done.
       const _longish = s.length > 55;
       const _expandable = steps.length > 0 || _longish;
-      const textTap = _expandable ? `toggleChecklistExpand(decodeURIComponent('${enc}'))` : `markChecklistItemDone(decodeURIComponent('${enc}'))`;
+      const textTap = _expandable ? `toggleChecklistExpand(decodeURIComponent('${enc}'))` : `_clTapFlag(decodeURIComponent('${enc}'))`;
       const stepBadge = steps.length ? ` <span style="color:var(--run-faint);font-size:13px;">(${checkedCount}/${steps.length})</span>` : '';
       const _clamp = (_expandable && !expanded) ? 'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;' : '';
       const textSpan = `<span onclick="${textTap}" style="flex:1;min-width:0;font-size:16px;cursor:pointer;${_clamp}${isDone ? 'color:var(--run-faint);text-decoration:line-through;' : 'color:var(--run-text2);'}">${flagged ? '🚩 ' : ''}${_escHtml(s)}${stepBadge}</span>`;
@@ -7242,7 +7266,7 @@ function renderRunChecklist() {
       const clFlagAttr = (flagged && !isDone) ? '1' : '';
       const clRowBg = (flagged && !isDone) ? 'background:rgba(255,214,10,0.08);' : '';
       const editIcon = `<span onclick="event.stopPropagation();openRunEdit('tasks',decodeURIComponent('${enc}'))" style="flex-shrink:0;color:var(--run-sub);font-size:23px;line-height:1;cursor:pointer;padding:10px 14px 10px 12px;">✎</span>`;
-      let html = `<div class="cl-row" data-cl-item="${_attr(s)}" data-cl-task="${taskAttr}" data-cl-flagged="${clFlagAttr}" ontouchstart="clSwipeStart(event)" ontouchmove="clSwipeMove(event)" ontouchend="clSwipeEnd(event)" style="display:flex;align-items:center;gap:12px;padding:13px 0;border-top:0.5px solid var(--run-fill2);${clRowBg}">${circle}${textSpan}${editIcon}${right}</div>`;
+      let html = `<div class="cl-row" data-cl-item="${_attr(s)}" data-cl-task="${taskAttr}" data-cl-flagged="${clFlagAttr}" ontouchstart="clSwipeStart(event)" ontouchmove="clSwipeMove(event)" ontouchend="clSwipeEnd(event)" style="display:flex;align-items:center;gap:12px;padding:13px 0;border-top:0.5px solid var(--run-fill2);${clRowBg}">${textSpan}${editIcon}${right}</div>`;
       // Meta line under the text — last done, learned average, and the 🔁 rep chip
       // all live here now so the task text keeps the full row width.
       const _la = itemLastDone[s];
@@ -7279,8 +7303,8 @@ function renderRunChecklist() {
         // ⭐ − / + add and remove a PLANNED lap, the same control as the Organise
         // sheet's 🔁 pill and the same function underneath, put here because this is
         // where you are when you realise you need another lap. It had lived only on
-        // the Organise sheet since v257 and Lincoln never found it: the obvious
-        // control on this row is the ⊕, and that banks a TIMED rep instead.
+        // the Organise sheet since v257 and Lincoln never found it. The lap itself is
+        // ticked on the run sheet, where the new row appears.
         // The chip between them keeps its own meaning — tap to undo the last banked
         // rep — so intent and evidence stay separate, they just sit side by side.
         // Flagged repeat tasks only, matching the Organise sheet exactly.
@@ -7317,30 +7341,24 @@ function renderRunChecklist() {
       if (_tmChip) _metaBits.push(_tmChip);
       const _ownVid = (_mmRun.jv[clockState.task] || {})[s];
       if (_ownVid && _ownVid.id) _metaBits.push(`<span onclick="event.stopPropagation();playTaskVideo((clockState&&clockState.task)||'', decodeURIComponent('${enc}'))" style="color:var(--run-blue);cursor:pointer;font-weight:600;">▶️ Video</span>`);
-      if (_metaBits.length) html += `<div style="font-size:11px;color:var(--run-faint);padding:1px 0 7px 36px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${_metaBits.join('<span style="opacity:0.6;">·</span>')}</div>`;
+      if (_metaBits.length) html += `<div style="font-size:11px;color:var(--run-faint);padding:1px 0 7px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${_metaBits.join('<span style="opacity:0.6;">·</span>')}</div>`;
       // 💬 Session comments attached to this task (fold into the entry at clock-out)
       const _cmts = (clockState.itemComments && clockState.itemComments[s]) || [];
-      if (_cmts.length) html += _cmts.map(c => `<div style="font-size:12px;color:var(--run-sub);padding:0 14px 6px 36px;line-height:1.4;">💬 ${_escHtml(c.text)} <span style="color:var(--run-faint);white-space:nowrap;">· ${_timeShort(c.at)}</span></div>`).join('');
+      if (_cmts.length) html += _cmts.map(c => `<div style="font-size:12px;color:var(--run-sub);padding:0 14px 6px 0;line-height:1.4;">💬 ${_escHtml(c.text)} <span style="color:var(--run-faint);white-space:nowrap;">· ${_timeShort(c.at)}</span></div>`).join('');
       const refPhotos = photosFor(clockState.task, s, _mmRun);   // this job's photos for the task (v441)
-      if (refPhotos.length) html += `<div style="padding:0 0 10px 36px;" onclick="event.stopPropagation();">${_photosHtml({ photos: refPhotos }, 64)}</div>`;   // reference photo
+      if (refPhotos.length) html += `<div style="padding:0 0 10px;" onclick="event.stopPropagation();">${_photosHtml({ photos: refPhotos }, 64)}</div>`;   // reference photo
       if (expanded && steps.length && !isDone) {
         html += steps.map(st => {
-          // URI-encoded, not quote-escaped (v299): a step containing a double
-          // quote — Lincoln's own 'Edit into a Short' step, 17 Aug — terminated
-          // the onclick attribute mid-string and the tick went dead. Same
-          // armour the run sheet has always worn. (v183's lesson, finally
-          // applied to steps.)
-          const _uStep = encodeURIComponent(st).replace(/'/g, '%27');
-          const _uItem = encodeURIComponent(s).replace(/'/g, '%27');
+          // Read only: steps are ticked on the run sheet with their task (v451).
           const checked = !!(stepChecks[s] && stepChecks[s][st]);
           const _sdur = checked ? stepDur[s + '~|~' + st] : null;
           const _stime = _sdur ? `<span style="font-size:12px;color:var(--run-green);font-weight:600;white-space:nowrap;flex-shrink:0;">${fmtMin(_sdur)}</span>` : '';
-          return `<div onclick="toggleChecklistStep(decodeURIComponent('${_uItem}'),decodeURIComponent('${_uStep}'))" style="display:flex;align-items:center;gap:12px;padding:10px 0 10px 36px;cursor:pointer;">
-            <span style="font-size:20px;flex-shrink:0;color:${checked ? '#30d158' : 'var(--run-faint)'};">${checked ? '☑' : '☐'}</span>
+          return `<div style="display:flex;align-items:center;gap:12px;padding:8px 0 8px 12px;">
+            <span style="font-size:15px;flex-shrink:0;color:${checked ? '#30d158' : 'var(--run-faint)'};">${checked ? '✓' : '·'}</span>
             <span style="flex:1;font-size:15px;${checked ? 'color:var(--run-faint);text-decoration:line-through;' : 'color:var(--run-text2);'}">${_escHtml(st)}</span>${_stime}</div>`;
         }).join('');
         // Steps are editable mid-run — saved globally, so the jobs page gets them too.
-        html += `<div onclick="event.stopPropagation();openSubtaskStepsEditor(decodeURIComponent('${enc}'), (clockState&&clockState.task)||null)" style="padding:9px 0 9px 36px;color:var(--run-blue);font-size:13px;font-weight:600;cursor:pointer;">＋ Add step</div>`;
+        html += `<div onclick="event.stopPropagation();openSubtaskStepsEditor(decodeURIComponent('${enc}'), (clockState&&clockState.task)||null)" style="padding:9px 0 9px 12px;color:var(--run-blue);font-size:13px;font-weight:600;cursor:pointer;">＋ Add step</div>`;
       }
       return html;
     };
@@ -7469,7 +7487,9 @@ function renderRunChecklist() {
   // (four of them don't fit a phone). Tasks tab only, and only once something is
   // flagged, since flagged work is all the sheet lists.
   let runSheetHtml = '';
-  if (tab === 'tasks' && clockState && clockState.running && Object.keys(_sessionOrGlobalFlags(clockState.task)).length) {
+  // ⚠️ Always there while clocked in (v451): breaks and Clock Out live on the run sheet, so
+  // a job with nothing flagged still has to reach it.
+  if (clockState && clockState.running) {
     runSheetHtml = `<div onclick="openRunSheet()" style="display:flex;align-items:center;justify-content:center;gap:7px;margin:0 0 8px;padding:9px 12px;border-radius:10px;border:1px solid rgba(90,200,250,0.4);background:rgba(90,200,250,0.1);color:var(--run-blue);font-size:13px;font-weight:600;cursor:pointer;">📋 Run sheet — what finishes when</div>`;
   }
   const prevScroll = (document.getElementById('run-checklist-scroll') || {}).scrollTop || 0;
@@ -10022,6 +10042,9 @@ function openTimeModal(mode, taskInfo) {
   const ti = document.getElementById('time-earlier-input');
   if (ti) ti.value = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
 
+  // Break and clock-in/out are pressed on the run sheet now, so this sits above it.
+  { const _mt = document.getElementById('modal-time'), _rs = document.getElementById('modal-run-sheet');
+    if (_mt) _mt.style.zIndex = (_rs && _rs.classList.contains('open')) ? '370' : ''; }
   document.getElementById('modal-time-title').textContent =
     mode === 'in' ? 'Clock In' : mode === 'out' ? 'Clock Out' : mode === 'breakStart' ? 'Start Break' : mode === 'breakEnd' ? 'End Break' : 'Time';
   openModal('modal-time');
@@ -10227,6 +10250,7 @@ function confirmTime(choice) {
     // so anything computed at this instant falls back to the job's whole-run average
     // and answers a different question from the 🏁 forecast (which sums the tasks you
     // then flag). updateRunRing sets it once there's a flagged basis — see there.
+    _rsAfterClockIn();
   } else {
     clockOut(timeStr);
   }
@@ -13499,6 +13523,7 @@ function breakButtonTap() {
   openTimeModal(clockState.onBreak ? 'breakEnd' : 'breakStart');
 }
 function _breakBtnUI() {
+  try { _rsFootSync(); _rsLineSync(); } catch (e) {}
   const btn = document.getElementById('btn-pause');
   const overlay = document.getElementById('running-overlay');
   if (clockState && clockState.onBreak) {
@@ -13508,7 +13533,7 @@ function _breakBtnUI() {
   } else {
     if (btn) { btn.textContent = '☕ Start Break'; btn.classList.remove('on-pause'); }
     if (overlay) overlay.classList.remove('paused');
-    if (clockState) document.getElementById('run-clockedin-text').textContent = 'Clocked In @ ' + formatTimeAmPm(clockState.startTime);
+    if (clockState) document.getElementById('run-clockedin-text').textContent = 'Clocked in ' + formatTimeAmPm(clockState.startTime);
   }
 }
 // 'HH:MM' today → epoch ms
@@ -13529,6 +13554,7 @@ function applyBreakStart(timeStr) {
   clockState.breakTotal = clockState.breakTotal || 0;
   _storeSet('kr_clock', JSON.stringify(clockState));
   _breakBtnUI();
+  { const _rsOpen = document.getElementById('modal-run-sheet'); if (_rsOpen && _rsOpen.classList.contains('open')) _rsRender(); }
   showToast('Break started @ ' + formatTimeAmPm(clockState.breakStartTime));
 }
 // End the break at the chosen time (clamped to between its start and now); bank it.
@@ -20669,6 +20695,8 @@ function sharedJobApply(mode) {
 // ⚠️ Before hiding a screen, check what can only be reached THROUGH it and give
 // that its own door first. The Dashboard held the only route to the Times list.
 const KR_HIDDEN_FEATURES = [
+  { id: 'clock-dial', name: 'Clock dial', since: 'v451',
+    what: 'The round dial on the clock screen. Its time, percentage and finish moved to a straight line on the run sheet.' },
   { id: 'dashboard', name: 'Dashboard', since: 'v365',
     what: 'Weekly hours, getting faster, slipping past their rhythm, What got done and the hours charts.' },
   { id: 'robots', name: 'Robots', since: 'v366',
@@ -25344,6 +25372,48 @@ function _rsBigTime(ms) {
   const m = _rsHM(ms).match(/^(.*?)([ap]m)$/);
   return m ? `<b>${m[1]}</b><i>${m[2]}</i>` : `<b>${_rsHM(ms)}</b>`;
 }
+// 🕰 THE DIAL AS A STRAIGHT LINE (v451, Lincoln 1 Nov 2026). The same sums as the dial
+// (updateRunRing runs on, hidden, because the 🎯 hangs off it): time worked against the
+// forecast total. Patched every second by the clock tick, so a drag is never interrupted.
+function _rsLineHtml() {
+  return `<div class="rsn-line" id="rs-line"><div class="rsn-line-track"><span id="rs-line-fill" style="width:0;"></span></div>
+    <div class="rsn-line-row"><span id="rs-line-time"></span><span id="rs-line-in"></span><span id="rs-line-pct"></span></div></div>`;
+}
+function _rsLineSync() {
+  const line = document.getElementById('rs-line'), slim = document.getElementById('rs-slim-fill');
+  if ((!line && !slim) || !clockState || !clockState.running) return;
+  const pct = Math.max(0, Math.min(100, _rsRing.frac * 100)) + '%';
+  if (slim) { slim.style.width = pct; slim.parentNode.classList.toggle('over', _rsRing.over); }
+  if (!line) return;
+  const txt = id => (document.getElementById(id) || {}).textContent || '';
+  document.getElementById('rs-line-fill').style.width = pct;
+  line.classList.toggle('over', _rsRing.over);
+  document.getElementById('rs-line-time').textContent = txt('run-timer');
+  document.getElementById('rs-line-in').textContent = txt('run-clockedin-text');
+  document.getElementById('rs-line-pct').textContent = txt('run-ring-label').replace(/\s*🚩\s*$/, '');
+}
+// The sheet's own buttons: Running now breaks and clocks out, Planning clocks in.
+function _rsFootSync() {
+  const el = document.getElementById('rs-foot-acts'); if (!el) return;
+  const ctx = _rsCtx();
+  if (!ctx) { el.innerHTML = ''; return; }
+  if (ctx.kind === 'plan') { el.innerHTML = '<span class="rsn-fbtn in" onclick="_rsPlanClockIn()">Clock in</span>'; return; }
+  const brk = !!clockState.onBreak;
+  el.innerHTML = `<span class="rsn-fbtn brk${brk ? ' on' : ''}" onclick="breakButtonTap()">☕ ${brk ? 'End' : 'Start'} Break</span><span class="rsn-fbtn out" onclick="openTimeModal('out')">Clock Out</span>`;
+}
+// The same one-screen clock-in as a planner block. Cancelling it leaves you on this sheet.
+function _rsPlanClockIn() { if (_rsPlanId) _plannerStartPlan(_rsPlanId, true); }
+// Clocked in: everything you came through has done its job. A planned job goes straight to
+// the sheet you work from; with nothing flagged yet the clock screen is where you choose.
+function _rsAfterClockIn() {
+  if (!clockState || !clockState.running) return;
+  const rs = document.getElementById('modal-run-sheet');
+  if (rs && rs.classList.contains('open')) closeRunSheet();
+  ['modal-cl-organise', 'modal-planner-detail'].forEach(id => { const m = document.getElementById(id); if (m && m.classList.contains('open')) closeModal(id); });
+  _clOrganisePlanId = null;
+  const onJob = new Set(SUBTASKS[clockState.task] || []);
+  if (Object.keys(_sessionOrGlobalFlags(clockState.task)).some(t => onJob.has(t))) openRunSheet();
+}
 function _rsRunTop(job, planning) {
   return `<div class="rsn-top"><div class="rsn-nav"><span class="rsn-brand">groovework</span><span class="rsn-help" onclick="_rsHelpToggle()" title="How this screen works">?</span></div>`
     + (_rsHelpOpen ? `<div class="rsn-help-text">${planning ? _RS_PLAN_HINT : _RS_RUN_HINT}</div>` : '')
@@ -25371,6 +25441,7 @@ function _rsRender() {
   const ctx = _rsCtx();
   const _rsModal = document.getElementById('modal-run-sheet');
   if (_rsModal) _rsModal.classList.toggle('rs-run', !!ctx);
+  _rsFootSync();
   if (!ctx) {
     if (titleEl) titleEl.textContent = 'Run sheet';
     body.innerHTML = '<div style="padding:44px 0;text-align:center;color:var(--subtext);font-size:15px;">Clock in to see the run sheet.</div>';
@@ -25412,11 +25483,12 @@ function _rsRender() {
     : '';
   if (!rows.length) {
     if (titleEl) titleEl.textContent = ctx.job;
-    body.innerHTML = _rsRunTop(ctx.job, planning) + (banked
+    body.innerHTML = _rsRunTop(ctx.job, planning) + (planning ? '' : _rsLineHtml()) + (banked
       ? `<div style="padding:34px 6px;text-align:center;color:var(--subtext);font-size:15px;line-height:1.55;">Every flagged task is already done this run.<br>
          <span style="font-size:13px;">🔁 ${banked} task${banked === 1 ? '' : 's'} banked ${banked === 1 ? 'its' : 'their'} planned laps in an earlier session. Tap ${_rsReset} to run ${banked === 1 ? 'it' : 'them'} again, or flag something else.</span></div>`
       : `<div style="padding:38px 6px;text-align:center;color:var(--subtext);font-size:15px;line-height:1.55;">Nothing flagged yet.<br>
-         <span style="font-size:13px;">Swipe a task right to 🚩 flag it${planning ? ' on this block' : ' in ⤢ Organise'}. Flagged tasks are the ones you plan to do, and they are what this sheet lists.</span></div>`);
+         <span style="font-size:13px;">${planning ? 'Swipe a task right to 🚩 flag it on this block' : 'Tap a task on the clock screen to 🚩 flag it'}. Flagged tasks are the ones you plan to do, and they are what this sheet lists.</span></div>`);
+    _rsLineSync();
     return;
   }
   const doneN = rows.filter(r => r.isDone).length;
@@ -25453,7 +25525,6 @@ function _rsRender() {
   // itself; "0 of 3" reads as the sheet having lost your work.
   const _doneTxt = `${doneN + banked} of ${rows.length + banked} done`;
   const _stepsTxt = `${rows.length} step${rows.length === 1 ? '' : 's'}`;
-  const _runPct = Math.round(((doneN + banked) / (rows.length + banked)) * 100);
   const _finMs = lastPending ? lastPending.when : null;
   // ⚓ RUNNING: the sheet rests with the last finished row and the row you are on sitting
   // straight under the slim bar, so the order and break links scroll away with the list.
@@ -25466,12 +25537,13 @@ function _rsRender() {
   const head = `${_rsRunTop(null, planning)}
     <div class="rsn-fin"><div class="rsn-fin-l"><div class="rsn-lab">Projected finish</div><div class="rsn-time">${_rsBigTime(_finMs)}</div></div>
       ${tgt ? `<div class="rsn-tgt">${_rsIcon('dart')}<div class="rsn-time2">${_rsBigTime(tgt)}</div></div>` : ''}</div>
+    ${planning ? '' : _rsLineHtml()}
     ${planning ? `<div class="rsn-count">${_stepsTxt} from ${_rsHM(ctx.startMs)}</div>`
       : `<div class="rsn-job">${_escHtml(ctx.job)}</div><div class="rsn-count">${_doneTxt}</div>${bankedNote}`}
     <div class="cl-sticky-top rsn-pin${_addBrk ? '' : ' held'}">
       <div class="rsn-slim-job">${_escHtml(ctx.job)}</div>
       <div class="rsn-slim"><span class="rsn-time2">${_rsBigTime(_finMs)}</span>${tgt ? `<span class="rsn-slim-t">${_rsIcon('dart')}<span class="rsn-time3">${_rsBigTime(tgt)}</span></span>` : ''}<span class="rsn-slim-n">${planning ? _stepsTxt : _doneTxt}</span>${(planning && _addBrk) ? `<span class="rsn-slim-brk" onclick="_rsSetPlacing(true)" title="Add a break">${_rsIcon('coffee')}</span>` : ''}</div>
-      ${planning ? '' : `<div class="rsn-bar"><span style="width:${_runPct}%;"></span></div>`}
+      ${planning ? '' : `<div class="rsn-bar"><span id="rs-slim-fill" style="width:0;"></span></div>`}
       ${_moveBanner}${placingCancel}</div>
     <div class="rsn-sec${planning ? ' plan' : ''}"><span>${planning ? _escHtml(ctx.job) : 'Your session'}</span>${_orderLink}</div>
     ${_addBrk ? `<div class="rsn-addbrk" onclick="_rsSetPlacing(true)">${_rsIcon('coffee')}Add a break</div>` : ''}
@@ -25626,7 +25698,7 @@ function _rsRender() {
   // Title and body land in the same breath — nothing above this line touches the DOM.
   if (titleEl) titleEl.textContent = ctx.job;
   body.innerHTML = head + rowsHtml + _ins(rows.length);
-  if (!planning) { try { _pomoRefresh(); _pomoTick(); } catch (e) {} }   // ⏱ the countdown shows at once, not a second later
+  if (!planning) { try { _pomoRefresh(); _pomoTick(); } catch (e) {} _rsLineSync(); }   // ⏱ the countdown shows at once, not a second later
   _rsPinSync();
 }
 
@@ -26371,6 +26443,10 @@ function _rsBrkStart(id) {
   _rsGoRest(true);   // ⚓ the break is now the row you are on
 }
 function closeRunSheet() { clearTimeout(_rsRestTimer); _rsRestTimer = null; _rsFingerDown = false; closeModal('modal-run-sheet'); _rsPlanId = null; _rsPlacing = false; _rsMoveClear(); _rsMarkKey = null; _rsJustMoved = []; clearTimeout(_rsJustMovedTimer); }
+function _clTapFlag(item) {
+  if (Date.now() < _clSwipeBlockClickUntil) return;   // a swipe just finished — not a tap
+  if (clockState && clockState.running) toggleChecklistFlag(clockState.task, item);
+}
 function toggleChecklistFlag(task, item) {
   const pid = _clTargetPlanId();
   if (pid) {   // flagging within a planner block's arrangement
