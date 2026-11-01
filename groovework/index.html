@@ -2476,7 +2476,7 @@
   <button class="nav-tab" onclick="showScreen('planner',this)">
     <span class="nav-icon">🗓</span>Planner
   </button>
-  <button class="nav-tab active" onclick="showScreen('clock',this)">
+  <button class="nav-tab active" onclick="showScreen('clock',this,true)">
     <span class="nav-icon">⏱</span>Clock
   </button>
   <button class="nav-tab" onclick="showScreen('timesheets',this)">
@@ -3593,7 +3593,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.466';
+const APP_VERSION = '2026-06-21.467';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4577,7 +4577,10 @@ function scrollActiveTop() {
   _hideBackToTop();
 }
 // ════════════════════════════════
-function showScreen(id, tab) {
+// fromNav: the Clock button itself. Other code also lands on the clock (a clock-in, a
+// reminder), and only a person coming back through the button gets the run sheet.
+function showScreen(id, tab, fromNav) {
+  const _backToClock = fromNav && id === 'clock' && !document.getElementById('screen-clock').classList.contains('active');
   _hideBackToTop();
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
@@ -4599,6 +4602,9 @@ function showScreen(id, tab) {
     }
   }
   try { _orgDockSync(); } catch (e) {}
+  // ⏱ Back from another tab, back to the sheet you work from (v467). Close still leads to
+  // Organise, and with nothing flagged Organise is where you choose.
+  if (_backToClock && _rsHasWork()) openRunSheet();
 }
 
 // ════════════════════════════════
@@ -20567,9 +20573,9 @@ function deleteDirTask() {
 
 // Render directory when switching to that screen
 const _origShowScreen = showScreen;
-showScreen = function(id, tab) {
+showScreen = function(id, tab, fromNav) {
   if (id !== 'directory' && _dirSelecting) dirSelectEnd();   // leaving Jobs ends selecting
-  _origShowScreen(id, tab);
+  _origShowScreen(id, tab, fromNav);
   applyHiddenFeatures();
   // Screens that live behind the ☰ More menu keep that tab highlighted
   if (['dashboard', 'directory', 'equipment', 'settings'].includes(id)) {
@@ -25605,6 +25611,12 @@ function _rsFootSync() {
 }
 // The same one-screen clock-in as a planner block. Cancelling it leaves you on this sheet.
 function _rsPlanClockIn() { if (_rsPlanId) _plannerStartPlan(_rsPlanId, true); }
+// Clocked in with something flagged on this job, so the run sheet has rows to show.
+function _rsHasWork() {
+  if (!clockState || !clockState.running) return false;
+  const onJob = new Set(SUBTASKS[clockState.task] || []);
+  return Object.keys(_sessionOrGlobalFlags(clockState.task)).some(t => onJob.has(t));
+}
 // Clocked in: everything you came through has done its job. A planned job goes straight to
 // the sheet you work from; with nothing flagged yet the clock screen is where you choose.
 function _rsAfterClockIn() {
@@ -25613,11 +25625,10 @@ function _rsAfterClockIn() {
   if (rs && rs.classList.contains('open')) closeRunSheet();
   ['modal-cl-organise', 'modal-planner-detail'].forEach(id => { const m = document.getElementById(id); if (m && m.classList.contains('open')) closeModal(id); });
   _clOrganisePlanId = null;
-  const onJob = new Set(SUBTASKS[clockState.task] || []);
   _orgDockJob = null;   // the block's flags arrived after the first draw
   const _m = document.getElementById('modal-cl-organise'); if (_m) _m.classList.remove('docked');
   _orgDockSync(true);
-  if (Object.keys(_sessionOrGlobalFlags(clockState.task)).some(t => onJob.has(t))) openRunSheet();
+  if (_rsHasWork()) openRunSheet();
 }
 const _RS_TOOL_SVG = 'width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"';
 function _rsRunTools() {
