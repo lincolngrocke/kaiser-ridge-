@@ -891,6 +891,8 @@
   #modal-run-sheet.rs-run .rsn-pin.held { margin-top: 6px; }
   .rsn-slim-job { font-size: 11px; color: var(--rsn-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .rsn-slim { display: flex; align-items: center; gap: 12px; }
+  .rsn-slim-tap { cursor: pointer; }
+  .rsn-slim-tap .rsi-chev { width: 12px; height: 12px; margin-left: -4px; color: var(--rsn-blue); flex-shrink: 0; }
   .rsn-slim-t { display: inline-flex; align-items: center; gap: 4px; }
   .rsn-slim-t .rsi { width: 15px; height: 15px; }
   .rsn-slim-n { margin-left: auto; font-size: 12px; font-weight: 500; color: var(--rsn-sub); white-space: nowrap; }
@@ -3591,7 +3593,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.465';
+const APP_VERSION = '2026-06-21.466';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -25644,6 +25646,16 @@ function _rsPinSync(scId) {
   pin.classList.toggle('on', pin.getBoundingClientRect().top <= sc.getBoundingClientRect().top + 0.5);
 }
 
+// Tap the slim bar to see the whole top of the sheet again (v466, Lincoln 2 Nov 2026:
+// "rather than having to scroll to the top"). The running sheet then springs back to
+// its resting place after the usual 10 seconds.
+function _rsPinTop(scId) {
+  const sc = document.getElementById(scId);
+  if (!sc) return;
+  if (typeof sc.scrollTo === 'function') sc.scrollTo({ top: 0, behavior: 'smooth' }); else sc.scrollTop = 0;
+  _rsRestArm();
+}
+
 function _rsRender() {
   const body = document.getElementById('run-sheet-body');
   if (!body) return;
@@ -25752,8 +25764,8 @@ function _rsRender() {
     ${planning ? `<div class="rsn-count">${_stepsTxt} from ${_rsHM(ctx.startMs)}</div>`
       : `<div class="rsn-job">${_escHtml(ctx.job)}</div><div class="rsn-count rsn-count-row"><span>${_doneTxt}</span>${_RS_UNDO}</div>${bankedNote}`}
     <div class="cl-sticky-top rsn-pin${_addBrk ? '' : ' held'}">
-      <div class="rsn-slim-job">${_escHtml(ctx.job)}</div>
-      <div class="rsn-slim"><span class="rsn-time2">${_rsBigTime(_finMs)}</span>${tgt ? `<span class="rsn-slim-t">${_rsIcon('dart')}<span class="rsn-time3">${_rsBigTime(tgt)}</span></span>` : ''}<span class="rsn-slim-n">${planning ? _stepsTxt : _doneTxt}</span>${(planning && _addBrk) ? `<span class="rsn-slim-brk" onclick="_rsSetPlacing(true)" title="Add a break">${_rsIcon('coffee')}</span>` : ''}</div>
+      <div class="rsn-slim-tap" onclick="_rsPinTop('run-sheet-body')"><div class="rsn-slim-job">${_escHtml(ctx.job)}</div>
+      <div class="rsn-slim"><span class="rsn-time2">${_rsBigTime(_finMs)}</span>${tgt ? `<span class="rsn-slim-t">${_rsIcon('dart')}<span class="rsn-time3">${_rsBigTime(tgt)}</span></span>` : ''}<span class="rsn-slim-n">${planning ? _stepsTxt : _doneTxt}</span><span class="rsi rsi-chev open"></span>${(planning && _addBrk) ? `<span class="rsn-slim-brk" onclick="event.stopPropagation();_rsSetPlacing(true)" title="Add a break">${_rsIcon('coffee')}</span>` : ''}</div></div>
       ${planning ? '' : `<div class="rsn-bar"><span id="rs-slim-fill" style="width:0;"></span></div>`}
       ${_moveBanner}${placingCancel}</div>
     <div class="rsn-sec${planning ? ' plan' : ''}"><span>${planning ? _escHtml(ctx.job) : 'Your session'}</span>${_orderLink}</div>
@@ -27056,8 +27068,8 @@ function _renderClOrganiseBody() {
     + `${_docked ? '' : `<div class="rsn-kind">Organise${pid ? ' · Planning' : ''}</div>`}${pid ? '<div class="rsn-note">Arranges just this planned run. The job stays as it is.</div>' : ''}</div>`;
   const hero = _heroLab ? `<div class="rsn-fin"><div class="rsn-fin-l"><div class="rsn-lab">${_heroLab}</div><div class="rsn-time">${_heroTime}</div></div></div>
     <div class="rsn-note">${_heroSub}</div>${_heroWarn ? `<div class="rsn-warn">${_heroWarn}</div>` : ''}` : '';
-  const pin = `<div class="cl-sticky-top rsn-pin"><div class="rsn-slim-job">${_escHtml(task)}</div>
-    <div class="rsn-slim"><span class="rsn-time2">${_heroTime}</span><span class="rsn-slim-n">${_heroN ? _heroN + ' flagged' : ''}</span>${_rsOpenCall ? `<span class="rsn-slim-rs" onclick="${_rsOpenCall}">Run sheet</span>` : ''}</div></div>`;
+  const pin = `<div class="cl-sticky-top rsn-pin"><div class="rsn-slim-tap" onclick="_rsPinTop('cl-organise-body')"><div class="rsn-slim-job">${_escHtml(task)}</div>
+    <div class="rsn-slim"><span class="rsn-time2">${_heroTime}</span><span class="rsn-slim-n">${_heroN ? _heroN + ' flagged' : ''}</span><span class="rsi rsi-chev open"></span>${_rsOpenCall ? `<span class="rsn-slim-rs" onclick="event.stopPropagation();${_rsOpenCall}">Run sheet</span>` : ''}</div></div></div>`;
   const rsCtl = _rsOpenCall ? `<div class="rsn-rsbtn" onclick="${_rsOpenCall}">Run sheet · what finishes when</div>` : '';
   body.innerHTML = top + hero + pin + `<div class="rsn-sec plan"><span>${_escHtml(task)}</span></div>` + rsCtl + addCtl + bodyHtml;
   requestAnimationFrame(() => _rsPinSync('cl-organise-body'));
