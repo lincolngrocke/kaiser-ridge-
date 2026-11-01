@@ -907,6 +907,15 @@
   .rsn-card.lifted { background: var(--rsn-blue-bg); border-color: var(--rsn-blue); }
   .rsn-card.marked { border-color: var(--rsn-blue); box-shadow: 0 0 0 1px var(--rsn-blue); }
   .rsn-card.done { background: transparent; }
+  /* v459: Organise is the Clock tab's screen while clocked in. It docks under the top strip
+     (banners, hours, ✓ count) and above the tabs. Docked is NOT .open: plenty of code reads an
+     open sheet as "something is covering the app", and this is the app. */
+  #modal-cl-organise.docked { display: flex; z-index: 41 !important; top: var(--org-top, 90px); bottom: calc(var(--nav-height) + env(safe-area-inset-bottom)); background: none; }
+  #modal-cl-organise.docked .modal-sheet { height: 100% !important; padding: 0 !important; border-radius: 0; animation: none; transform: none; }
+  #modal-cl-organise.docked .rs-run-foot { display: none; }
+  body.org-home .run-hero, body.org-home #run-list-top, body.org-home #run-checklist, body.org-home .running-buttons { display: none !important; }
+  body.org-home .clock-running-overlay { background: #f6f6f3; }
+  body.dark.org-home .clock-running-overlay { background: #1c1c1e; }
   .rsn-oc { margin-bottom: 8px; cursor: pointer; }
   .rsn-oc.off { background: transparent; }
   .rsn-oc.off .rsn-title { color: var(--rsn-sub); }
@@ -915,6 +924,11 @@
   .rsn-last.none { font-style: italic; }
   .rsn-lap { display: inline-flex; align-items: center; height: 24px; box-sizing: border-box; border-radius: 12px; border: 1px solid var(--rsn-line); background: var(--rsn-card); font-size: 12px; font-weight: 700; color: var(--rsn-green); white-space: nowrap; }
   .rsn-lap span { padding: 0 8px; font-size: 16px; font-weight: 700; color: var(--rsn-sub); cursor: pointer; line-height: 1; }
+  .rsn-lap b { font-weight: 700; }
+  .rsn-lap.solo b { padding: 0 9px; }
+  .rsn-guide { font-size: 11px; font-weight: 600; color: var(--rsn-blue); cursor: pointer; white-space: nowrap; }
+  .rsn-add-step { padding: 7px 0 4px; font-size: 13px; font-weight: 600; color: var(--rsn-blue); cursor: pointer; }
+  .rsn-oc .rsn-steps { padding: 6px 0 2px; background: none; border-left: none; border-radius: 0; }
   .rsn-obatch { display: flex; align-items: center; gap: 7px; cursor: pointer; margin: 14px 0 8px; font-size: 15px; font-weight: 600; color: var(--rsn-text); }
   .rsn-obatch .rsi-box { color: var(--rsn-sub); }
   .rsn-obatch .rsi-chev { color: var(--rsn-sub); }
@@ -3562,7 +3576,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.458';
+const APP_VERSION = '2026-06-21.459';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4567,6 +4581,7 @@ function showScreen(id, tab) {
       overlay.classList.remove('active');
     }
   }
+  try { _orgDockSync(); } catch (e) {}
 }
 
 // ════════════════════════════════
@@ -4597,6 +4612,7 @@ function startTimerTick() {
       updateRunRing(netElapsed);
       _rsTickNowElapsed();   // keeps the run sheet's ▶ NOW figure live if the sheet is open
       _rsLineSync();
+      if (_orgDocked()) _orgDockTop();   // a banner may have come or gone above it
       try { _pomoTick(); } catch (e) {}   // ⏱ the current task's timer (v446)
       updateAtTimes();
     }
@@ -4956,6 +4972,7 @@ function renderClockState() {
   updateRestoreClockBanner();
   updateUndoClockOutBanner();
   updateSummary();
+  try { _orgDockSync(); } catch (e) { setTimeout(() => { try { _orgDockSync(); } catch (e2) {} }, 0); }   // at boot this can run before the sheet's code has
 }
 
 // ── Live checklist timing (running clock) ───────────────────────────────────
@@ -7522,6 +7539,7 @@ function renderRunChecklist() {
   // change here must move its times too.
   const _rsSheet = document.getElementById('modal-run-sheet');
   if (_rsSheet && _rsSheet.classList.contains('open')) _rsRender();
+  if (_orgDocked()) _renderClOrganiseBody();
 }
 
 // ── Per-item checklist averages (Dashboard → Checklist Item Times) ──────────
@@ -20731,6 +20749,8 @@ function sharedJobApply(mode) {
 // ⚠️ Before hiding a screen, check what can only be reached THROUGH it and give
 // that its own door first. The Dashboard held the only route to the Times list.
 const KR_HIDDEN_FEATURES = [
+  { id: 'clock-list', name: 'The old task list on the Clock tab', since: 'v459',
+    what: 'The list that sat under the dial. While clocked in the Clock tab now shows Organise instead.' },
   { id: 'back-to-top', name: 'The floating up arrow', since: 'v458',
     what: 'The round arrow that appeared after scrolling a long list, to jump back to the top.' },
   { id: 'job-comment', name: 'The + comment button', since: 'v453',
@@ -25454,6 +25474,9 @@ function _rsAfterClockIn() {
   ['modal-cl-organise', 'modal-planner-detail'].forEach(id => { const m = document.getElementById(id); if (m && m.classList.contains('open')) closeModal(id); });
   _clOrganisePlanId = null;
   const onJob = new Set(SUBTASKS[clockState.task] || []);
+  _orgDockJob = null;   // the block's flags arrived after the first draw
+  const _m = document.getElementById('modal-cl-organise'); if (_m) _m.classList.remove('docked');
+  _orgDockSync(true);
   if (Object.keys(_sessionOrGlobalFlags(clockState.task)).some(t => onJob.has(t))) openRunSheet();
 }
 const _RS_TOOL_SVG = 'width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"';
@@ -26542,7 +26565,7 @@ function toggleChecklistFlag(task, item) {
 function _refreshChecklistSurfaces(task) {
   if (clockState && clockState.running && clockState.task === task) { renderRunChecklist(); updateRunRing(); }   // ring estimate follows the flags
   const org = document.getElementById('modal-cl-organise');
-  if (org && org.classList.contains('open') && _clOrganiseTask === task) _renderClOrganiseBody();
+  if (org && (org.classList.contains('open') || org.classList.contains('docked')) && _clOrganiseTask === task) _renderClOrganiseBody();
 }
 // _clEditScope is pinned to 'plan' since v249 — the "🗂 Whole job" scope was
 // removed, so a planner-block Organise always arranges that block. Kept as the
@@ -26565,7 +26588,7 @@ function _clOrgEditTask(item) { if (_clOrganiseTask) openRunEdit('tasks', item, 
 // and the sheet redraws with it in view. Swipe it right to unflag if not.
 function _clOrgAfterAdd(job, task) {
   const org = document.getElementById('modal-cl-organise');
-  if (!org || !org.classList.contains('open') || _clOrganiseTask !== job) return;
+  if (!org || !(org.classList.contains('open') || org.classList.contains('docked')) || _clOrganiseTask !== job) return;
   try { if (!_editTargetFlags()[task]) toggleChecklistFlag(job, task); } catch (e) {}
   _clOrgCollapsed[_batchOfTask(job, task) || 'Unbatched'] = false;
   _renderClOrganiseBody();
@@ -26615,6 +26638,41 @@ function openChecklistOrganise(e) {
 // open and never refreshed, so the one sheet showed two different numbers: "4.28h
 // planned" up top and 6.13 in the field. Both are read from plan.durationHours; only
 // one of them was current.
+// ⭐ ONE SCREEN WHILE CLOCKED IN (v459, Lincoln 1 Nov 2026: keep "the one that displays 3
+// hours and 19 minutes"). Organise docks into the Clock tab and the old list is hidden in the
+// register as clock-list, so one switch brings it back. The overlay stays as the shell: its
+// strip holds the banners, hours and ✓ count, and the clock tick still runs from it.
+let _orgDockJob = null;
+function _orgDocked() { const m = document.getElementById('modal-cl-organise'); return !!(m && m.classList.contains('docked')); }
+function _orgDockTop() {
+  const m = document.getElementById('modal-cl-organise'), bar = document.querySelector('.run-toolbar');
+  if (m && bar) { const v = Math.round(bar.getBoundingClientRect().bottom) + 'px'; if (m.dataset.top !== v) { m.dataset.top = v; m.style.setProperty('--org-top', v); } }
+}
+function _orgDockSync(force) {
+  const m = document.getElementById('modal-cl-organise'), ov = document.getElementById('running-overlay');
+  if (!m || !ov) return;
+  const want = !!(clockState && clockState.running && clockState.task && ov.classList.contains('active') && !m.classList.contains('open') && featureHidden('clock-list'));
+  const was = m.classList.contains('docked');
+  document.body.classList.toggle('org-home', want);
+  if (!want) { if (was) { m.classList.remove('docked'); _clOrganiseTask = null; } return; }
+  if (!was || _clOrganiseTask !== clockState.task) {
+    _clOrganiseTask = clockState.task; _clOrganisePlanId = null;
+    if (_orgDockJob !== clockState.task) {
+      // A batch opens if it has flagged work, so a big job starts as a handful of headings.
+      _orgDockJob = clockState.task; _clOrgCollapsed = {};
+      const fl = _sessionOrGlobalFlags(clockState.task), rec = _batchRec(clockState.task);
+      if (rec) rec.order.concat(['Unbatched']).forEach(n => { _clOrgCollapsed[n] = !(SUBTASKS[clockState.task] || []).some(t => fl[t] && (n === 'Unbatched' ? !(rec.items[t] && rec.order.includes(rec.items[t])) : rec.items[t] === n)); });
+    }
+    m.classList.add('docked'); force = true;
+  }
+  _orgDockTop();
+  if (force) _renderClOrganiseBody();
+}
+function _orgToggleSteps(item) {
+  if (Date.now() < _clSwipeBlockClickUntil) return;
+  if (_expandedChecklistItems.has(item)) _expandedChecklistItems.delete(item); else _expandedChecklistItems.add(item);
+  _renderClOrganiseBody();
+}
 let _orgHelpOpen = false;
 function _orgHelpToggle() { _orgHelpOpen = !_orgHelpOpen; _renderClOrganiseBody(); }
 function _clOrgTapFlag(item) {
@@ -26625,6 +26683,7 @@ function closeClOrganise() {
   const pid = _clOrganisePlanId;
   _orgHelpOpen = false;
   closeModal('modal-cl-organise');
+  try { _orgDockSync(); } catch (e) {}
   const det = document.getElementById('modal-planner-detail');
   if (pid && det && det.classList.contains('open') && _plannerDetailId === pid) openPlannerDetail(pid);
 }
@@ -26662,6 +26721,11 @@ function _renderClOrganiseBody() {
   // with it (he never used it); _clSortByLastDone stays, unreached. The 🗓 "yesterday" on
   // each row stays: deciding what to flag, when it was last done still matters.
   let ordered = _orderedChecklistItems(task, all, flags, orderArg);
+  const _docked = _orgDocked();
+  // This run's ticks. A finished task leaves the list and waits under the ✓ count.
+  const _live = !_clOrganisePlanId && !!(clockState && clockState.running && clockState.task === task);
+  const _liveDone = (_live && Array.isArray(clockState.checklistDone)) ? clockState.checklistDone : [];
+  const _liveCarried = new Set((_live && Array.isArray(clockState.checklistCarried)) ? clockState.checklistCarried : []);
   const taskAttr = _attr(task);
   const flagged = ordered.filter(s => flags[s]);
   // Opened from a planner block → always arranges THAT block. The old
@@ -26702,7 +26766,7 @@ function _renderClOrganiseBody() {
       _heroLab = 'Flagged work'; _heroMins = _eSum; _heroN = _eN;
       _heroSub = `from ${_eN} flagged task${_eN === 1 ? '' : 's'}${_eLapped ? ' · 🔁 laps counted' : ''}`;
       _heroHint = ' The 🏁 finish time targets this, so flag or unflag to adjust.';
-    }
+    } else if (_docked) { _heroLab = 'Flagged work'; _heroSub = 'Tap a task to flag it'; }
   }
   const _bRec = _batchRec(task);
   const _hasBatches = !!(_bRec && _bRec.order.length);
@@ -26726,11 +26790,35 @@ function _renderClOrganiseBody() {
   const _lapAdjFn = _lapPlan ? '_clLapAdj' : '_clSessionLapAdj';
   const _oAvg = _taskEstMap(), _oCnt = _taskHistCountMap();   // built once, not per row (count stays measured)
   const _oLast = _checklistItemLastDone(task);   // 🗓 last-done per task, same one pass
+  const _oSteps = stepsResolver(task), _oGuide = guidesResolver(task), _oMm = _mediaMaps(task), _oTmr = getJobTimers();
+  const _oChecks = (_live && clockState.stepChecks) || {};
   const rowHtml = (s) => {
+    if (_live && _isTaskDoneNow(task, s, _liveDone)) return '';
+    if (_liveCarried.has(s)) {
+      const _ci = (clockState.checklistCarriedInfo || {})[s];
+      return `<div class="rsn-card rsn-oc done"><div class="rsn-head"><span class="rsn-tick">✓</span><span class="rsn-title">${_escHtml(s)}</span><span class="rsn-last">${(_ci && _ci.at) ? _timeShort(_ci.at) : 'earlier'}</span></div></div>`;
+    }
     const isFlagged = !!flags[s];
-    const lapChip = ((_lapPlan || _lapSess) && isFlagged && isRepeatTask(task, s))
-      ? `<span class="rsn-lap" ontouchstart="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation()"><span onclick="event.stopPropagation();${_lapAdjFn}(decodeURIComponent('${_lapEnc(s)}'), -1)">−</span>🔁 ${_lapPlan ? _plannedLapsFor(_lapPlan, s, _lapReps) : _sessionPlannedLaps(task, s)}<span onclick="event.stopPropagation();${_lapAdjFn}(decodeURIComponent('${_lapEnc(s)}'), 1)">+</span></span>`
-      : '';
+    // Counts down what is left of the plan, then back up past it. The number's own tap
+    // undoes the last lap, so intent (− +) and evidence stay side by side.
+    const _isRep = isRepeatTask(task, s), _reps = (_lapSess && _isRep) ? taskRepCount(task, s) : 0;
+    const _undo = _reps ? ` onclick="event.stopPropagation();undoTaskRep(decodeURIComponent('${_lapEnc(s)}'))" title="${_reps} done, tap to undo the last"` : '';
+    let _lapTxt = '';
+    if (_lapPlan && _isRep) _lapTxt = '🔁 ' + _plannedLapsFor(_lapPlan, s, _lapReps);
+    else if (_lapSess && _isRep) { const _t = _sessionPlannedLaps(task, s), _l = _t - _reps; _lapTxt = _l > 0 ? `🔁 ${_l} left` : (_reps === _t ? `✓ ${_t} done` : `✓ ${_t} +${_reps - _t}`); }
+    const lapChip = ((_lapPlan || _lapSess) && isFlagged && _isRep)
+      ? `<span class="rsn-lap" ontouchstart="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation()"><span onclick="event.stopPropagation();${_lapAdjFn}(decodeURIComponent('${_lapEnc(s)}'), -1)">−</span><b${_undo}>${_lapTxt}</b><span onclick="event.stopPropagation();${_lapAdjFn}(decodeURIComponent('${_lapEnc(s)}'), 1)">+</span></span>`
+      : (_reps ? `<span class="rsn-lap solo" ontouchstart="event.stopPropagation()" ontouchend="event.stopPropagation()"><b${_undo}>🔁 ${_reps}</b></span>` : '');
+    // What the old clock list carried, on the line that's already there.
+    const _st = _oSteps(s), _stOpen = _st.length && _expandedChecklistItems.has(s);
+    const _stBtn = _st.length ? `<span class="rsn-steps-btn" ontouchstart="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_orgToggleSteps(decodeURIComponent('${_lapEnc(s)}'))">${_rsIcon('list')}<span>${_st.length} step${_st.length === 1 ? '' : 's'}</span><span class="rsi rsi-chev${_stOpen ? ' open' : ''}"></span></span>` : '';
+    const _g = _oGuide(s);
+    const _gLink = _guideHasContent(_g) ? `<span class="rsn-guide" ontouchstart="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();viewSubtaskGuide(decodeURIComponent('${_lapEnc(s)}'), decodeURIComponent('${_lapEnc(task)}'))">${_g.url ? 'Watch' : 'Guide'}</span>` : '';
+    const _extras = _timerChip(task, s, _oTmr, 'var(--rsn-orange)') + _gLink + _taskMediaChips(task, s, 'var(--rsn-sub)', _oMm, true) + _stBtn;
+    const _cmts = (_live && clockState.itemComments && clockState.itemComments[s]) || [];
+    const _cmtHtml = _cmts.map(c => `<div class="rsn-cmt">💬 ${_escHtml(c.text)} <span>· ${_timeShort(c.at)}</span></div>`).join('');
+    // Steps are read here and ticked on the run sheet with their task.
+    const _stPanel = _stOpen ? `<div class="rsn-steps plan" onclick="event.stopPropagation()"><div class="rsn-steps-h">STEPS · ${_st.length}</div>${_st.map(st => { const on = !!(_oChecks[s] && _oChecks[s][st]); return `<div class="rsn-st${on ? ' ticked' : ''}"><span class="rsn-dot">${on ? '✓' : '·'}</span><span class="rsn-st-t">${_escHtml(st)}</span></div>`; }).join('')}<div class="rsn-add-step" onclick="event.stopPropagation();openSubtaskStepsEditor(decodeURIComponent('${_lapEnc(s)}'), decodeURIComponent('${_lapEnc(task)}'))">＋ Add step</div></div>` : '';
     // 🗓 WHEN THIS TASK WAS LAST DONE. Deciding what to flag for a planned run, "12 days
     // ago" is the fact that makes the decision. "~5m avg · 46×" says how long and how
     // often; it never said WHEN.
@@ -26738,7 +26826,8 @@ function _renderClOrganiseBody() {
     const _lastBit = _ld ? `<span class="rsn-last">${_agoWords(_ld)}</span>` : '<span class="rsn-last none">not done yet</span>';
     return `<div class="cl-row rsn-card rsn-oc${isFlagged ? '' : ' off'}" data-cl-item="${_attr(s)}" data-cl-task="${taskAttr}" data-cl-flagged="${isFlagged ? '1' : ''}" ontouchstart="clSwipeStart(event)" ontouchmove="clSwipeMove(event)" ontouchend="clSwipeEnd(event)" onclick="_clOrgTapFlag(decodeURIComponent('${_lapEnc(s)}'))">
       <div class="rsn-head">${_rsIcon('flag')}<span class="rsn-title">${_escHtml(s)}</span><span class="rsn-pencil" ontouchstart="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_clOrgEditTask(decodeURIComponent('${_lapEnc(s)}'))" title="edit this task">${_rsIcon('pencil')}</span></div>
-      <div class="rsn-foot">${_avgMeta(s, _oAvg, _oCnt)}${_lastBit}${lapChip}<span class="rsn-grip" onclick="event.stopPropagation()">${_rsIcon('grip')}</span></div></div>`;
+      ${_cmtHtml}
+      <div class="rsn-foot">${_avgMeta(s, _oAvg, _oCnt)}${_lastBit}${lapChip}${_extras}<span class="rsn-grip" onclick="event.stopPropagation()">${_rsIcon('grip')}</span></div>${_stPanel}</div>`;
   };
   // ▣ heading — tap to open/close the batch (chevron + task count). Still a drop
   // boundary: dropping a task under a heading re-homes it, so a collapsed batch is
@@ -26758,7 +26847,9 @@ function _renderClOrganiseBody() {
     let blocks = '';
     _orgSections(task, ordered, true).forEach(sec => {
       const col = !!_clOrgCollapsed[sec.name];
-      blocks += secHd(sec.name, sec.loose, sec.items.length, col) + (col ? '' : sec.items.map(rowHtml).join(''));
+      const _est = sec.items.reduce((t, s) => { const a = _oAvg[_normTaskKey(s)]; return t + (isFinite(a) && a > 0 ? a : 0); }, 0);
+      const _n = sec.items.length, _dn = sec.items.filter(s => _isTaskDoneNow(task, s, _liveDone) || _liveCarried.has(s) || (_live && isRepeatTask(task, s) && taskRepCount(task, s) > 0)).length;
+      blocks += secHd(sec.name, sec.loose, (_live ? _dn + '/' + _n : _n) + (_est ? ' · ~' + fmtMin(_est) : ''), col) + (col ? '' : sec.items.map(rowHtml).join(''));
     });
     bodyHtml = blocks || `<div style="padding:18px 0;color:var(--subtext);text-align:center;font-size:14px;">No tasks on this job yet.</div>`;
   } else {
@@ -26797,9 +26888,9 @@ function _renderClOrganiseBody() {
   // the JOB, so it is there on every run of it, the same as one made in Edit Job.
   const addCtl = `<div class="rsn-otools"><span onclick="_clOrgAddTask()">+ Add task</span>${isWorker() ? '' : `<span onclick="_clOrgNewBatch()">+ New batch</span>`}${collapseAllCtl}</div>`;
   const _heroTime = _heroMins == null ? '<b>—</b>' : (m => m ? `<b>~${m[1]}</b><i>${m[2]}</i>` : `<b>~${fmtMin(_heroMins)}</b>`)(String(fmtMin(_heroMins)).match(/^(.*?)\s*([a-z]+)$/));
-  const top = `<div class="rsn-top"><div class="rsn-nav"><span class="rsn-brand">groovework</span><span class="rsn-nav-r"><span class="rsn-help" onclick="_orgHelpToggle()" title="How this screen works">?</span></span></div>`
+  const top = `<div class="rsn-top"><div class="rsn-nav">${_docked ? '<span class="rsn-kind" style="margin:0;">Organise</span>' : '<span class="rsn-brand">groovework</span>'}<span class="rsn-nav-r"><span class="rsn-help" onclick="_orgHelpToggle()" title="How this screen works">?</span></span></div>`
     + (_orgHelpOpen ? `<div class="rsn-help-text">${_orgHint}</div>` : '')
-    + `<div class="rsn-kind">Organise${pid ? ' · Planning' : ''}</div>${pid ? '<div class="rsn-note">Arranges just this planned run. The job stays as it is.</div>' : ''}</div>`;
+    + `${_docked ? '' : `<div class="rsn-kind">Organise${pid ? ' · Planning' : ''}</div>`}${pid ? '<div class="rsn-note">Arranges just this planned run. The job stays as it is.</div>' : ''}</div>`;
   const hero = _heroLab ? `<div class="rsn-fin"><div class="rsn-fin-l"><div class="rsn-lab">${_heroLab}</div><div class="rsn-time">${_heroTime}</div></div></div>
     <div class="rsn-note">${_heroSub}</div>${_heroWarn ? `<div class="rsn-warn">${_heroWarn}</div>` : ''}` : '';
   const pin = `<div class="cl-sticky-top rsn-pin"><div class="rsn-slim-job">${_escHtml(task)}</div>
