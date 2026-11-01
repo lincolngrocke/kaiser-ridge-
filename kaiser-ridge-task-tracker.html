@@ -833,13 +833,13 @@
   #modal-run-sheet.rs-run, #modal-cl-organise {
     --rsn-bg: #f6f6f3; --rsn-card: #ffffff; --rsn-line: #e8eae5; --rsn-text: #202724; --rsn-sub: #777e79;
     --rsn-blue: #3478f6; --rsn-blue-bg: #eef4ff; --rsn-blue-line: #d7e6ff; --rsn-steps: #e6effe;
-    --rsn-check: #bfc4bf; --rsn-orange: #f26b00; --rsn-red: #d92d20; --rsn-green: #1a7f37;
+    --rsn-check: #bfc4bf; --rsn-orange-bg: #fff2e6; --rsn-orange: #f26b00; --rsn-red: #d92d20; --rsn-green: #1a7f37;
     background: var(--rsn-bg);
   }
   body.dark #modal-run-sheet.rs-run, body.dark #modal-cl-organise {
     --rsn-bg: #1c1c1e; --rsn-card: #2c2c2e; --rsn-line: #3a3a3c; --rsn-text: #f2f2f7; --rsn-sub: #a1a1a6;
     --rsn-blue: #5b9bff; --rsn-blue-bg: rgba(52,120,246,0.18); --rsn-blue-line: rgba(91,155,255,0.35); --rsn-steps: rgba(52,120,246,0.13);
-    --rsn-check: #636366; --rsn-orange: #ff9f0a; --rsn-red: #ff6257; --rsn-green: #4cd964;
+    --rsn-check: #636366; --rsn-orange-bg: rgba(255,159,10,0.16); --rsn-orange: #ff9f0a; --rsn-red: #ff6257; --rsn-green: #4cd964;
   }
   #modal-run-sheet.rs-run .modal-sheet, #modal-cl-organise .modal-sheet { height: 100vh !important; height: 100dvh !important; max-height: none !important; border-radius: 0; padding: env(safe-area-inset-top) 0 0 !important; background: var(--rsn-bg); color: var(--rsn-text); }
   #modal-run-sheet.rs-run .modal-handle, #modal-run-sheet.rs-run .rs-plan-head, #modal-cl-organise .modal-handle, #modal-cl-organise .rs-plan-head { display: none !important; }
@@ -908,6 +908,7 @@
   .rsn-row { margin-bottom: 8px; }
   .rsn-card { display: flex; flex-direction: column; gap: 5px; padding: 11px 12px 9px; background: var(--rsn-card); border: 1px solid var(--rsn-line); border-radius: 16px; }
   .rsn-card.now { background: var(--rsn-blue-bg); border-color: var(--rsn-blue); }
+  .rsn-card.now.brk-on { background: var(--rsn-orange-bg); border-color: var(--rsn-orange); }
   .rsn-card.lifted { background: var(--rsn-blue-bg); border-color: var(--rsn-blue); }
   .rsn-card.marked { border-color: var(--rsn-blue); box-shadow: 0 0 0 1px var(--rsn-blue); }
   .rsn-card.done { background: transparent; }
@@ -952,6 +953,8 @@
   .rsn-card.done .rsn-title { color: var(--rsn-sub); }
   .rsn-nowline { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 6px; font-size: 11px; font-weight: 600; color: var(--rsn-blue); }
   .rsn-nowline #rs-pomo-left { margin-left: 6px; white-space: nowrap; }
+  .rsn-nowline.brk { color: var(--rsn-orange); }
+  .rsn-nowline.brk .rsi { width: 15px; height: 15px; margin-right: 2px; }
   .rsn-nowline .rsi-flag { margin-right: 4px; }
   .rsn-head { display: flex; align-items: flex-start; gap: 9px; }
   .rsn-head > .rsi-flag { margin-top: 3px; }
@@ -977,8 +980,10 @@
   .rsn-steps-wrap { padding-top: 6px; }
   .rsn-steps { padding: 9px 12px 6px; background: var(--rsn-card); border-left: 3px solid var(--rsn-line); border-radius: 12px; }
   .rsn-steps.now { background: var(--rsn-steps); border-left-color: var(--rsn-blue); }
+  .rsn-steps.now.brk-on { background: var(--rsn-orange-bg); border-left-color: var(--rsn-orange); }
   .rsn-steps-h { font-size: 11px; font-weight: 600; color: var(--rsn-sub); margin-bottom: 3px; }
   .rsn-steps.now .rsn-steps-h { color: var(--rsn-blue); }
+  .rsn-steps.now.brk-on .rsn-steps-h { color: var(--rsn-orange); }
   .rsn-st { display: flex; align-items: flex-start; gap: 10px; padding: 6px 0; cursor: pointer; }
   .rsn-cb { width: 16px; height: 16px; box-sizing: border-box; flex-shrink: 0; margin-top: 1px; border: 1.5px solid var(--rsn-check); border-radius: 4px; background: var(--rsn-card); display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; line-height: 1; color: #fff; }
   .rsn-st.cur .rsn-cb { border-color: var(--rsn-blue); }
@@ -3593,7 +3598,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.467';
+const APP_VERSION = '2026-06-21.468';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -25913,8 +25918,13 @@ function _rsRender() {
     // data-rs-now / data-rs-done: where the sheet comes to rest. data-rs-quick: this row can take a
     // ⚡ left-swipe quick tick (the same rows a tap would tick).
     const _canQuick = r.tappable && !_rsMoveKey && !_rsPlacing;
-    const _cardCls = _lifted ? ' lifted' : (_marked ? ' marked' : (r.isNow ? ' now' : (r.isDone ? ' done' : '')));
-    const _nowLine = r.isNow
+    // ☕ On a break the row you are on says so (v468), and the card takes End Break's orange.
+    // _rsNowElapsedMin already counts the break here, so the minutes get the right name.
+    const _onBrk = r.isNow && !planning && !!clockState.onBreak;
+    const _cardCls = _lifted ? ' lifted' : (_marked ? ' marked' : (r.isNow ? (_onBrk ? ' now brk-on' : ' now') : (r.isDone ? ' done' : '')));
+    const _nowLine = _onBrk
+      ? `<div class="rsn-nowline brk">${_rsIcon('coffee')}<span>ON BREAK · <span id="rs-now-elapsed">${fmtMin(_rsNowElapsedMin())}</span></span></div>`
+      : r.isNow
       ? `<div class="rsn-nowline">${_rsIcon('flag')}<span class="rsi rsi-live"></span><span>RUNNING NOW · <span id="rs-now-elapsed">${fmtMin(_rsNowElapsedMin())}</span></span>${_rnc(timerBit)}</div>` : '';
     const _cmts = (!planning && _cmtRow[r.t] === r && clockState.itemComments && clockState.itemComments[r.t]) || [];
     const _cmtHtml = _cmts.map(c => `<div class="rsn-cmt">💬 ${_escHtml(c.text)} <span>· ${_timeShort(c.at)}</span></div>`).join('');
@@ -26003,7 +26013,7 @@ function _rsStepsHtml(r, ctx, stepsOf) {
     return `<div class="rsn-st${ticked ? ' ticked' : ''}${isCur ? ' cur' : ''}"${tap}>${mark}<span class="rsn-st-t">${_escHtml(s)}</span>${(ticked && when) ? `<span class="rsn-st-m">${when}</span>` : ''}</div>`;
   }).join('');
   const nDone = steps.filter(s => checks[s]).length;
-  return `<div class="rsn-steps${r.isNow ? ' now' : ''}${live ? '' : ' plan'}"><div class="rsn-steps-h">STEPS · ${live ? `${nDone} of ${steps.length} done` : steps.length}</div>${rows}</div>`;
+  return `<div class="rsn-steps${r.isNow ? ' now' : ''}${(r.isNow && live && clockState.onBreak) ? ' brk-on' : ''}${live ? '' : ' plan'}"><div class="rsn-steps-h">STEPS · ${live ? `${nDone} of ${steps.length} done` : steps.length}</div>${rows}</div>`;
 }
 
 // Which of a row's steps are ticked. The row in hand reads the live boxes. A FINISHED
