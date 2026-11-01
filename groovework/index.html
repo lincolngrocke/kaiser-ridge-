@@ -911,6 +911,8 @@
   .rsn-title { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 15px; font-weight: 500; line-height: 1.3; color: var(--rsn-text); }
   .rsn-tick { font-size: 14px; line-height: 1.4; color: var(--rsn-sub); flex-shrink: 0; }
   .rsn-pencil { color: var(--rsn-blue); flex-shrink: 0; cursor: pointer; padding: 10px 4px 10px 10px; margin: -8px -4px -10px 0; }
+  .rsn-cmt { font-size: 13px; line-height: 1.35; color: var(--rsn-text); overflow-wrap: anywhere; }
+  .rsn-cmt span { color: var(--rsn-sub); white-space: nowrap; }
   .rsn-mid { display: flex; align-items: center; gap: 8px; min-height: 16px; }
   .rsn-batch { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; color: var(--rsn-sub); }
   .rsn-batch > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3531,7 +3533,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.452';
+const APP_VERSION = '2026-06-21.453';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -8364,9 +8366,9 @@ function renderTimesheets() {
       ${e.notes ? (() => {
         const { notes, todos, tasks } = _tsNotesSplit(e.notes);
         const head = txt => `<div style="font-size:10px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--subtext);opacity:0.7;margin:8px 0 0;">${txt}</div>`;
-        const sec = (arr, label) => arr.length ? head(label) + `<div class="ts-entry-note" style="margin-top:2px;">${hl(arr.join('\n'))}</div>` : '';
+        const sec = (arr, label) => arr.length ? head(label) + `<div class="ts-entry-note" style="margin-top:2px;">${hl(_escHtml(arr.join('\n')))}</div>` : '';
         const h = sec(notes, 'Notes') + sec(todos, 'To-dos') + sec(tasks, 'Tasks');
-        return h || `<div class="ts-entry-note">${hl(e.notes)}</div>`;
+        return h || `<div class="ts-entry-note">${hl(_escHtml(e.notes))}</div>`;
       })() : ''}
       ${(e.commentPhotos && e.commentPhotos.length) ? _photosHtml({ photos: e.commentPhotos }, 80) : ''}
     </div>`;
@@ -20693,6 +20695,8 @@ function sharedJobApply(mode) {
 // ⚠️ Before hiding a screen, check what can only be reached THROUGH it and give
 // that its own door first. The Dashboard held the only route to the Times list.
 const KR_HIDDEN_FEATURES = [
+  { id: 'job-comment', name: 'The + comment button', since: 'v453',
+    what: 'A comment on the whole job. The Comment button on each task does this job now, and notes for the whole job are under the three dots.' },
   { id: 'clock-dial', name: 'Clock dial', since: 'v451',
     what: 'The round dial on the clock screen. Its time, percentage and finish moved to a straight line on the run sheet.' },
   { id: 'dashboard', name: 'Dashboard', since: 'v365',
@@ -25415,7 +25419,7 @@ function _rsAfterClockIn() {
 const _RS_TOOL_SVG = 'width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"';
 function _rsRunTools() {
   return (featureHidden('inbox') ? '' : `<span class="rsn-tool" onclick="openQuickCapture()" title="Capture a thought"><svg ${_RS_TOOL_SVG}><path d="M9 18h6M10 21h4M12 3a6 6 0 00-4 10.5c.8.7 1 1.2 1 2.5h6c0-1.3.2-1.8 1-2.5A6 6 0 0012 3z"/></svg></span>`)
-    + `<span class="rsn-tool" onclick="openNoteModal()" title="Add comment"><svg ${_RS_TOOL_SVG}><path d="M12 5v14M5 12h14"/></svg></span>`
+    + (featureHidden('job-comment') ? '' : `<span class="rsn-tool" onclick="openNoteModal()" title="Add comment"><svg ${_RS_TOOL_SVG}><path d="M12 5v14M5 12h14"/></svg></span>`)
     + `<span class="rsn-tool" onclick="openEditActive()" title="Edit entry"><svg ${_RS_TOOL_SVG}><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg></span>`;
 }
 const _RS_UNDO = '<span class="rsn-undo" onclick="undoClockIn()">Undo clock-in</span>';
@@ -25576,6 +25580,11 @@ function _rsRender() {
   // The chips below were written for the old dark rows, and the timer chip is shared with the
   // clock, so the sheet swaps their bright colours for its own readable ones here.
   const _rnc = s => s.replace(/#30d158/g, 'var(--rsn-green)').replace(/#ff9f0a/g, 'var(--rsn-orange)');
+  // 💬 A task's comments sit on one row, not on every lap: the first still to do, else the
+  // first. They were only ever shown on the clock list, so a comment left from this sheet
+  // saved with nothing to show for it until the timesheet.
+  const _cmtRow = {};
+  rows.forEach(r => { if (!r.brk && (!_cmtRow[r.t] || (_cmtRow[r.t].isDone && !r.isDone))) _cmtRow[r.t] = r; });
   const rowsHtml = rows.map((r, _i) => {
     // ☕ A break row: no batch, no average, no steps — it is time, not work. On the
     // clock, tapping it STARTS your break, and ending the break ticks it off, so one
@@ -25682,6 +25691,8 @@ function _rsRender() {
     const _cardCls = _lifted ? ' lifted' : (_marked ? ' marked' : (r.isNow ? ' now' : (r.isDone ? ' done' : '')));
     const _nowLine = r.isNow
       ? `<div class="rsn-nowline">${_rsIcon('flag')}<span class="rsi rsi-live"></span><span>RUNNING NOW · <span id="rs-now-elapsed">${fmtMin(_rsNowElapsedMin())}</span></span>${_rnc(timerBit)}</div>` : '';
+    const _cmts = (!planning && _cmtRow[r.t] === r && clockState.itemComments && clockState.itemComments[r.t]) || [];
+    const _cmtHtml = _cmts.map(c => `<div class="rsn-cmt">💬 ${_escHtml(c.text)} <span>· ${_timeShort(c.at)}</span></div>`).join('');
     const _lead = _rsHeldBadge(key) || (r.isNow ? '' : (r.isDone ? `<span class="rsn-tick">✓</span>` : _rsIcon('flag')));
     const _edit = (_rsMoveKey || _rsPlacing) ? '' : `<span class="rsn-pencil" ontouchstart="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_rsEditTask(decodeURIComponent('${_encArg(r.t)}'))" title="edit: photo, video, name">${_rsIcon('pencil')}</span>`;
     const _when = r.isDone
@@ -25695,6 +25706,7 @@ function _rsRender() {
     <div class="rsn-card${_cardCls}"${tap}>
       ${_nowLine}
       <div class="rsn-head">${_lead}<span class="rsn-title">${_escHtml(r.t)}</span>${_edit}</div>
+      ${_cmtHtml}
       <div class="rsn-mid">${markChip}${_batch}${_rnc(lap)}${_when}</div>
       <div class="rsn-foot">${_avgMeta(r.t, avgMap, cntMap)}${_rnc(actualChip + brkNote + (r.isNow ? '' : timerBit))}${_media}${_stepsBtn}
         <span class="rsn-grip" ontouchstart="event.stopPropagation()" ontouchmove="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_rsPickUp(decodeURIComponent('${_encArg(key)}'))" title="move this row">${_rsIcon('grip')}</span></div></div>
