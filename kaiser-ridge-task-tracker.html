@@ -3577,7 +3577,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.460';
+const APP_VERSION = '2026-06-21.461';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -9113,7 +9113,7 @@ let currentPin = null;
 function onLocationChange() {
   const loc = document.getElementById('f-location').value;
   const pinRow = document.getElementById('pin-row');
-  pinRow.style.display = loc === 'Property' ? 'flex' : 'none';
+  pinRow.style.display = (loc === 'Property' && !featureHidden('location')) ? 'flex' : 'none';   // no GPS while Locations is hidden
   if (loc !== 'Property') {
     currentPin = null;
     document.getElementById('pin-btn').innerHTML = '📍 Drop Pin';
@@ -9160,6 +9160,7 @@ function loadGoogleMaps(cb) {
 }
 
 function openPinMap() {
+  if (featureHidden('location')) return;
   const key = (localStorage.getItem('kr_gmaps_key') || '').trim();
   if (!key) {
     // No map key — fall back to current GPS location
