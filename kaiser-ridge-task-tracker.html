@@ -3591,7 +3591,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.464';
+const APP_VERSION = '2026-06-21.465';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -7260,7 +7260,7 @@ function renderRunChecklist() {
     // Hold the increment while a Done bubble is still floating — the number ticks
     // up only when the bubble lands (see _chipHold / flyDoneBubble), like it's swallowed.
     const shownN = Math.max(0, sessionDone - _chipHold);
-    if (shownN > 0) { chip.style.display = 'flex'; chip.innerHTML = '<span style="font-size:13px;">✓</span>' + shownN; }
+    if (shownN > 0 && !featureHidden('run-done')) { chip.style.display = 'flex'; chip.innerHTML = '<span style="font-size:13px;">✓</span>' + shownN; }
     else chip.style.display = 'none';
   }
 
@@ -20883,6 +20883,8 @@ function sharedJobApply(mode) {
 // ⚠️ Before hiding a screen, check what can only be reached THROUGH it and give
 // that its own door first. The Dashboard held the only route to the Times list.
 const KR_HIDDEN_FEATURES = [
+  { id: 'run-done', name: 'The green ✓ count on the Clock tab', since: 'v465',
+    what: 'The count of tasks finished this session and the list behind it. The run sheet shows each finished task with its time, and a tap there brings one back.' },
   { id: 'order-reset', name: 'Back to the learned order', since: 'v464',
     what: 'The link and its note on a run sheet you have arranged by hand. Hand arranging still works, and the learned order still sets where each new run starts.' },
   { id: 'clock-list', name: 'The old task list on the Clock tab', since: 'v459',
@@ -21024,7 +21026,7 @@ function setFeatureShown(id, on) {
   _storeSet('kr_unhidden', JSON.stringify(list));
   applyHiddenFeatures();
   if (id === 'reminders') { try { updateReminderBanners(); } catch (e) {} }
-  if (id === 'todos' || id === 'run-view' || id === 'reset-reps') { try { renderRunChecklist(); } catch (e) {} }
+  if (id === 'todos' || id === 'run-view' || id === 'reset-reps' || id === 'run-done') { try { renderRunChecklist(); } catch (e) {} }
   if (id === 'allday') { try { renderAllDayStrip(); if (_plannerMode === 'week') renderPlannerScreen(); } catch (e) {} }
   // Re-push today so its ✓ / ▶ events go (or come back) without waiting for an edit.
   if (id === 'caldone') { try { scheduleCalendarAutoPush(plannerDateStr(new Date()), 5000); } catch (e) {} }
@@ -26218,10 +26220,14 @@ function _rsUnflag(task) {
 // when the row swiped is its only row. The swiped row's own SLOT goes: the arranged
 // order drops its key and the later laps of that task close up behind it, so a lap
 // arranged at 1:50pm disappears from 1:50pm, not from wherever the last lap sat.
-// A ✓ lap is a record, not a plan, so it stays (tap it to bring it back instead).
+// A ✓ lap is a record, not a plan, so it stays (tap it to bring it back instead). A ✓
+// once-off the same (v465): with the green count hidden, this row is the only way back.
 function _rsSwipeOff(task, n) {
   const ctx = _rsCtx(); if (!ctx) return;
-  if (!isRepeatTask(ctx.job, task) || !(n > 0)) { _rsUnflag(task); return; }
+  if (!isRepeatTask(ctx.job, task) || !(n > 0)) {
+    if (ctx.doneAt(task, n)) { showToast('That task is done, so it stays. Tap it to bring it back.'); return; }
+    _rsUnflag(task); return;
+  }
   const mine = _rsInstances(ctx).filter(x => !x.brk && x.t === task);
   const me = mine.find(x => x.n === n);
   if (!me) return;
