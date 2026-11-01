@@ -3591,7 +3591,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.463';
+const APP_VERSION = '2026-06-21.464';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -20883,6 +20883,8 @@ function sharedJobApply(mode) {
 // ⚠️ Before hiding a screen, check what can only be reached THROUGH it and give
 // that its own door first. The Dashboard held the only route to the Times list.
 const KR_HIDDEN_FEATURES = [
+  { id: 'order-reset', name: 'Back to the learned order', since: 'v464',
+    what: 'The link and its note on a run sheet you have arranged by hand. Hand arranging still works, and the learned order still sets where each new run starts.' },
   { id: 'clock-list', name: 'The old task list on the Clock tab', since: 'v459',
     what: 'The list that sat under the dial. While clocked in the Clock tab now shows Organise instead.' },
   { id: 'back-to-top', name: 'The floating up arrow', since: 'v458',
@@ -25739,7 +25741,8 @@ function _rsRender() {
   // 📋 PLANNING: nothing gets ticked, so the slim bar has no progress line. It carries a ☕
   // instead, because Add a break was always within reach on the old pinned header.
   const _addBrk = !(_rsMoveKey || _rsPlacing);
-  const _orderLink = (ctx.order && _addBrk) ? `<span class="rsn-reset" onclick="_rsResetOrder()">↺ Back to the learned order</span>` : '';
+  const _orderBack = ctx.order && _addBrk && !featureHidden('order-reset');
+  const _orderLink = _orderBack ? `<span class="rsn-reset" onclick="_rsResetOrder()">↺ Back to the learned order</span>` : '';
   const head = `${_rsRunTop(null, planning)}
     <div class="rsn-fin"><div class="rsn-fin-l"><div class="rsn-lab">Projected finish</div><div class="rsn-time">${_rsBigTime(_finMs)}</div></div>
       ${tgt ? `<div class="rsn-tgt">${_rsIcon('dart')}<div class="rsn-time2">${_rsBigTime(tgt)}</div></div>` : ''}</div>
@@ -25753,7 +25756,7 @@ function _rsRender() {
       ${_moveBanner}${placingCancel}</div>
     <div class="rsn-sec${planning ? ' plan' : ''}"><span>${planning ? _escHtml(ctx.job) : 'Your session'}</span>${_orderLink}</div>
     ${_addBrk ? `<div class="rsn-addbrk" onclick="_rsSetPlacing(true)">${_rsIcon('coffee')}Add a break</div>` : ''}
-    ${(ctx.order && _addBrk) ? `<div class="rsn-order-note">The learned order is the order you ticked these off <b>last time you did this job</b>. You have arranged this one by hand, so it is following your order instead.</div>` : ''}`;
+    ${_orderBack ? `<div class="rsn-order-note">The learned order is the order you ticked these off <b>last time you did this job</b>. You have arranged this one by hand, so it is following your order instead.</div>` : ''}`;
   const avgMap = _taskEstMap(), cntMap = _taskHistCountMap();   // built once, not per row
   const _brks = ctx.kind === 'clock' ? _checklistBreakMins() : {};   // minutes of break sitting inside each done task
   // ⚠️ cntMap stays MEASURED — the ×N must never count a guess.
