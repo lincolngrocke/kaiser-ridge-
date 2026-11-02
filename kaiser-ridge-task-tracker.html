@@ -1176,6 +1176,32 @@
   .pw-daycol { position: relative; border-left: 1px solid var(--border); background-image: repeating-linear-gradient(to bottom, rgba(128,128,128,0.14) 0, rgba(128,128,128,0.14) 1px, transparent 1px, transparent var(--pw-hour, 32px)); }
   .pw-block { position: absolute; left: 2px; right: 2px; border-radius: 5px; padding: 2px 4px; font-size: 10px; font-weight: 700; color: #fff; overflow: hidden; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.18); line-height: 1.15; }
   .pw-block.pw-done { opacity: 0.72; }
+  /* 🎨 Soft job tones (v472, Lincoln 2 Nov 2026, from the run sheet's palette): each job keeps
+     its own colour as a light tint, a coloured edge and dark text, in place of a solid block
+     with white text. Same job → same colour as before (the hash in _plannerToneIdx).
+     Dark tints are solid (mixed over #1c1c1e), or the hour lines show through a block. */
+  .pt { background: var(--pt-bg) !important; color: var(--text) !important; border: 1px solid var(--pt-line); border-left: 4px solid var(--pt-edge); box-shadow: none; }
+  .pt .planner-block-meta, .pt .pt-sub { color: var(--subtext); opacity: 1; }
+  .pt .pt-brk { color: #f26b00; opacity: 1; }
+  body.dark .pt .pt-brk { color: #ff9f0a; }
+  .pt.pt-live { border: 2px solid var(--pt-edge); border-left-width: 4px; }
+  .pt-ghost { border-color: var(--pt-edge) !important; color: var(--pt-edge) !important; }
+  .pt-0 { --pt-edge: #3478f6; --pt-bg: #eef4ff; --pt-line: #d7e6ff; }
+  .pt-1 { --pt-edge: #1a7f37; --pt-bg: #e8f5ec; --pt-line: #b9dfc4; }
+  .pt-2 { --pt-edge: #f26b00; --pt-bg: #fff2e6; --pt-line: #f7d2b0; }
+  .pt-3 { --pt-edge: #8e44c9; --pt-bg: #f4ecfb; --pt-line: #dcc7ee; }
+  .pt-4 { --pt-edge: #d92d20; --pt-bg: #fdecea; --pt-line: #f5c6c0; }
+  .pt-5 { --pt-edge: #0e7c99; --pt-bg: #e6f5f9; --pt-line: #b8e1ec; }
+  .pt-6 { --pt-edge: #a87700; --pt-bg: #fff8db; --pt-line: #f1df9a; }
+  .pt-7 { --pt-edge: #d4521f; --pt-bg: #fdeee7; --pt-line: #f4c9b6; }
+  body.dark .pt-0 { --pt-edge: #5b9bff; --pt-bg: #202d45; --pt-line: #243c6a; }
+  body.dark .pt-1 { --pt-edge: #4cd964; --pt-bg: #203b29; --pt-line: #245833; }
+  body.dark .pt-2 { --pt-edge: #ff9f0a; --pt-bg: #453219; --pt-line: #6b4614; }
+  body.dark .pt-3 { --pt-edge: #c58af0; --pt-bg: #362641; --pt-line: #4f2f61; }
+  body.dark .pt-4 { --pt-edge: #ff6257; --pt-bg: #451f28; --pt-line: #6b2231; }
+  body.dark .pt-5 { --pt-edge: #5ac8fa; --pt-bg: #273b46; --pt-line: #32586b; }
+  body.dark .pt-6 { --pt-edge: #ffd60a; --pt-bg: #453c19; --pt-line: #6b5a14; }
+  body.dark .pt-7 { --pt-edge: #ff8a5c; --pt-bg: #452a22; --pt-line: #6b3826; }
   .pw-now { position: absolute; left: 0; right: 0; height: 2px; background: var(--red); z-index: 3; pointer-events: none; }
   .pw-rotate-hint { text-align: center; font-size: 12px; color: var(--subtext); padding: 7px 16px 2px; }
 </style>
@@ -3599,7 +3625,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.471';
+const APP_VERSION = '2026-06-21.472';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -22311,11 +22337,15 @@ const PLANNER_COLORS = [
   '#007AFF','#34C759','#FF9500','#AF52DE','#FF2D55','#5AC8FA','#FFCC00','#FF6B35'
 ];
 
-function plannerColorFor(task) {
+function _plannerToneIdx(task) {
   let hash = 0;
   for (let i = 0; i < task.length; i++) hash = task.charCodeAt(i) + ((hash << 5) - hash);
-  return PLANNER_COLORS[Math.abs(hash) % PLANNER_COLORS.length];
+  return Math.abs(hash) % PLANNER_COLORS.length;
 }
+function plannerColorFor(task) { return PLANNER_COLORS[_plannerToneIdx(task)]; }
+// The class that gives a block its job's soft tone (v472). Each slot of PLANNER_COLORS has a
+// matching .pt-N in the stylesheet, so a job keeps the colour family it always had.
+function plannerToneFor(task) { return 'pt pt-' + _plannerToneIdx(String(task || '')); }
 
 function savePlanner() {
   _storeSet(plannerStoreKey(), JSON.stringify(_plannerPlans));
@@ -22802,10 +22832,9 @@ function _pwBlock(col, startTime, durationHours, label, onTap, done) {
   const topMins = (h - PLANNER_START_HOUR) * 60 + m;
   if (topMins < 0 || topMins > (PLANNER_END_HOUR - PLANNER_START_HOUR) * 60) return;
   const b = document.createElement('div');
-  b.className = 'pw-block' + (done ? ' pw-done' : '');
+  b.className = 'pw-block ' + plannerToneFor(label.replace(/ \(now\)$/, '')) + (done ? ' pw-done' : '');
   b.style.top = (topMins / 60 * WEEK_HOUR_PX) + 'px';
   b.style.height = Math.max(13, (durationHours || 0.25) * WEEK_HOUR_PX - 2) + 'px';
-  b.style.background = plannerColorFor(label.replace(/ \(now\)$/, ''));
   b.textContent = label;
   b.onclick = onTap;
   col.appendChild(b);
@@ -22905,9 +22934,9 @@ function renderAllDayStrip() {
     const s = _dmyToDate(p.date), e = _dmyToDate(p.endDate || p.date);
     const multi = e.getTime() > s.getTime();
     const range = multi ? `${s.getDate()} ${s.toLocaleString('en-AU', { month: 'short' })} – ${e.getDate()} ${e.toLocaleString('en-AU', { month: 'short' })}` : '';
-    return `<div onclick="openAllDayModal('${p.id}')" style="background:${plannerColorFor(p.task)};color:#fff;border-radius:8px;padding:7px 10px;margin-bottom:4px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:8px;">
+    return `<div class="${plannerToneFor(p.task)}" onclick="openAllDayModal('${p.id}')" style="border-radius:8px;padding:7px 10px;margin-bottom:4px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:8px;">
       <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_escHtml(p.task)}</span>
-      ${(range || p.bookingId) ? `<span style="font-size:11px;opacity:0.9;flex-shrink:0;">${p.bookingId ? '\u{1F6CE}\uFE0F ' : ''}${range}</span>` : ''}</div>`;
+      ${(range || p.bookingId) ? `<span class="pt-sub" style="font-size:11px;flex-shrink:0;">${p.bookingId ? '\u{1F6CE}\uFE0F ' : ''}${range}</span>` : ''}</div>`;
   }).join('');
   const addPill = canAdd ? `<div style="text-align:right;"><span onclick="openAllDayModal()" style="display:inline-block;color:var(--blue);font-size:12px;font-weight:600;cursor:pointer;padding:3px 2px;">＋ All-day / booking</span></div>` : '';
   el.innerHTML = bars + addPill;
@@ -22965,7 +22994,8 @@ function renderPlannerWeek() {
   });
   _adWeek.forEach(x => {
     const bar = document.createElement('div');
-    bar.style.cssText = `grid-row:${2 + x.lane};grid-column:${2 + x.c0} / ${3 + x.c1};position:sticky;top:${45 + x.lane * 24}px;z-index:5;margin:2px 3px;background:${plannerColorFor(x.p.task)};color:#fff;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.18);`;   // per-lane sticky offset — otherwise every lane pins to the same y when scrolled and they pile onto one line
+    bar.style.cssText = `grid-row:${2 + x.lane};grid-column:${2 + x.c0} / ${3 + x.c1};position:sticky;top:${45 + x.lane * 24}px;z-index:5;margin:2px 3px;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.18);`;   // per-lane sticky offset — otherwise every lane pins to the same y when scrolled and they pile onto one line
+    bar.className = plannerToneFor(x.p.task);
     bar.textContent = (x.s < _wsT ? '‹ ' : '') + x.p.task + (x.e > _weT ? ' ›' : '');
     bar.onclick = () => openAllDayModal(x.p.id);
     grid.appendChild(bar);
@@ -23831,7 +23861,7 @@ function reflowPlannerBlocks(grid) {
 //   • Finished job: the breaks actually taken (entry.breaks: start/end).
 function _plannerBreakLines(list) {
   return (list || []).sort((a, b) => a.ms - b.ms).map(b =>
-    '<div style="font-size:10px;opacity:0.95;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">☕ '
+    '<div class="pt-brk" style="font-size:10px;opacity:0.95;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">☕ '
       + (b.ahead ? '~' : '') + _rsHM(b.ms) + ' · ' + (b.now ? 'on break now' : fmtMin(b.mins)) + '</div>').join('');
 }
 function _rsRowsFor(planId) {   // the run sheet's rows for a block (planId) or the running job (null)
@@ -23878,7 +23908,8 @@ function renderPlannerBlock(plan, grid) {
   block.dataset.planId = plan.id;
   block.dataset.natTop = topPx;
   block.dataset.h = heightPx;
-  block.style.cssText = `top:${topPx}px;height:${heightPx}px;left:56px;right:4px;background:${plannerColorFor(plan.task)};z-index:3;`;
+  block.style.cssText = `top:${topPx}px;height:${heightPx}px;left:56px;right:4px;z-index:3;`;
+  block.classList.add(...plannerToneFor(plan.task).split(' '));
 
   // End time: add duration to actual start hour (not grid-relative)
   const endTotalMins = h * 60 + m + plan.durationHours * 60;
@@ -23931,23 +23962,20 @@ function renderPlannerDoneBlock(entry, grid) {
 
   const topPx    = startMins / 60 * PLANNER_HOUR_PX;
   const heightPx = Math.max(30, Math.max(0, endMins - startMins) / 60 * PLANNER_HOUR_PX);
-  const color    = plannerColorFor(entry.task);
-
   const startStr = formatTimeAmPm(entry.clockIn);
   const endStr   = formatTimeAmPm(entry.clockOut);
 
   const block = document.createElement('div');
-  block.className = 'pl-task-block';
+  block.className = 'pl-task-block ' + plannerToneFor(entry.task);
   block.dataset.natTop = topPx;
   block.dataset.h = heightPx;
   block.style.cssText = `position:absolute;top:${topPx}px;height:${heightPx}px;left:56px;right:4px;
-    border-radius:8px;padding:4px 8px;font-size:12px;color:#fff;overflow:hidden;z-index:1;
-    background:${color};`;
+    border-radius:8px;padding:4px 8px;font-size:12px;overflow:hidden;z-index:1;`;
   block.innerHTML = `
     <div style="font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
       ✓ ${entry.task}
     </div>
-    <div style="font-size:10px;opacity:0.9;margin-top:2px;">${startStr} – ${endStr} · ${entry.durationHours}h</div>${_plannerBreakLines(_doneBreaksFor(entry))}`;
+    <div class="pt-sub" style="font-size:10px;margin-top:2px;">${startStr} – ${endStr} · ${entry.durationHours}h</div>${_plannerBreakLines(_doneBreaksFor(entry))}`;
 
   block.addEventListener('click', () => openPlannerDoneDetail(entry));
 
@@ -24138,8 +24166,6 @@ function renderPlannerLiveBlock(cs, grid) {
 
   const topPx    = startMins / 60 * PLANNER_HOUR_PX;
   const heightPx = durationMins / 60 * PLANNER_HOUR_PX;
-  const color    = plannerColorFor(cs.task);
-
   const nowStr   = formatTimeAmPm(`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`);
   const startStr = formatTimeAmPm(cs.startTime);
 
@@ -24149,13 +24175,13 @@ function renderPlannerLiveBlock(cs, grid) {
   block.dataset.natTop = topPx;
   block.dataset.h = Math.max(30, heightPx);
   block.style.cssText = `position:absolute;top:${topPx}px;height:${Math.max(30, heightPx)}px;left:56px;right:4px;
-    border-radius:8px;padding:4px 8px;font-size:12px;color:#fff;overflow:hidden;z-index:2;
-    background:${color};border:2px solid #fff;`;
+    border-radius:8px;padding:4px 8px;font-size:12px;overflow:hidden;z-index:2;`;
+  block.className = plannerToneFor(cs.task) + ' pt-live';
   block.innerHTML = `
     <div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
       ⏱ ${cs.task}
     </div>
-    <div style="font-size:10px;opacity:0.9;margin-top:2px;">${startStr} – now (${nowStr})</div>${_plannerBreakLines(_liveBreaksFor(cs))}`;
+    <div class="pt-sub" style="font-size:10px;margin-top:2px;">${startStr} – now (${nowStr})</div>${_plannerBreakLines(_liveBreaksFor(cs))}`;
 
   grid.appendChild(block);
   _renderLiveForecastGhost(grid, nowMins);
@@ -24185,6 +24211,7 @@ function _renderLiveForecastGhost(grid, nowMins) {
   // slab of colour across the whole screen; a dashed edge says the same thing and
   // leaves the day readable behind it.
   const col = plannerColorFor(clockState.task);
+  g.className = plannerToneFor(clockState.task).replace('pt ', '') + ' pt-ghost';
   g.style.cssText = `position:absolute;top:${nowMins / 60 * PLANNER_HOUR_PX}px;height:${h}px;left:56px;right:4px;
     border-radius:8px;padding:3px 8px;font-size:10px;overflow:hidden;z-index:1;pointer-events:none;
     background:transparent;border:1px dashed ${col};color:${col};`;
@@ -27708,10 +27735,10 @@ function renderPlannerHolding(dateStr) {
       const dur = Number(p.durationHours) || 1;
       const durStr = dur >= 1 ? (Math.round(dur * 10) / 10) + 'h' : Math.round(dur * 60) + 'm';
       const safe = String(p.task || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
-      return `<div data-park-id="${p.id}" ontouchstart="parkedChipTouchStart(event,'${p.id}')" onclick="plannerStartParked('${p.id}')" style="position:relative;background:${plannerColorFor(p.task)};color:#fff;border-radius:8px;padding:6px;margin-bottom:6px;font-size:11px;cursor:pointer;touch-action:none;">
-        <button onclick="event.stopPropagation();removeParkedBlock('${p.id}')" ontouchstart="event.stopPropagation()" title="Remove from holding" style="position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,0.4);color:#fff;border:none;font-size:11px;line-height:1;cursor:pointer;padding:0;">✕</button>
+      return `<div data-park-id="${p.id}" ontouchstart="parkedChipTouchStart(event,'${p.id}')" onclick="plannerStartParked('${p.id}')" class="${plannerToneFor(p.task)}" style="position:relative;border-radius:8px;padding:6px;margin-bottom:6px;font-size:11px;cursor:pointer;touch-action:none;">
+        <button onclick="event.stopPropagation();removeParkedBlock('${p.id}')" ontouchstart="event.stopPropagation()" title="Remove from holding" style="position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:var(--pt-edge);color:#fff;border:none;font-size:11px;line-height:1;cursor:pointer;padding:0;">✕</button>
         <div style="font-weight:700;line-height:1.2;padding-right:14px;">${safe}</div>
-        <div style="opacity:0.9;margin-top:2px;">${durStr}${(p.leftover && _leftoverCount(p)) ? ' \u00b7 ' + _leftoverCount(p) + ' left' : ''}</div>
+        <div class="pt-sub" style="margin-top:2px;">${durStr}${(p.leftover && _leftoverCount(p)) ? ' \u00b7 ' + _leftoverCount(p) + ' left' : ''}</div>
       </div>`;
     }).join('');
 }
