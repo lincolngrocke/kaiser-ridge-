@@ -1190,7 +1190,10 @@
   .pt .pt-brk { color: #f26b00; opacity: 1; }
   body.dark .pt .pt-brk { color: #ff9f0a; }
   .pt.pt-live { border: 2px solid var(--pt-edge); border-left-width: 4px; }
-  .pt-ghost { border-color: var(--pt-edge) !important; color: var(--pt-edge) !important; }
+  /* The running job's forecast (v476, Lincoln 3 Nov 2026: "a little bit light"): a 22% wash of
+     the job's own colour under a 2px dashed edge, so it reads in every tone, light and dark. */
+  .pt-ghost { border-color: var(--pt-edge) !important; color: var(--pt-edge) !important; border-width: 2px !important;
+    background: color-mix(in srgb, var(--pt-edge) 22%, transparent) !important; }
   .pt-0 { --pt-edge: #3478f6; --pt-bg: #eef4ff; --pt-line: #d7e6ff; }
   .pt-1 { --pt-edge: #1a7f37; --pt-bg: #e8f5ec; --pt-line: #b9dfc4; }
   .pt-2 { --pt-edge: #f26b00; --pt-bg: #fff2e6; --pt-line: #f7d2b0; }
@@ -3630,7 +3633,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.475';
+const APP_VERSION = '2026-06-21.476';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
