@@ -3625,7 +3625,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.472';
+const APP_VERSION = '2026-06-21.473';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -17056,8 +17056,25 @@ function timerFor(job, task, m) { const v = job && ((m || getJobTimers())[job] |
 function setTimerFor(job, task, mins) {
   if (!job || !task) return;
   const m = getJobTimers(); const own = m[job] || (m[job] = {});
+  const before = own[task] || 0;
   if (mins > 0) own[task] = Math.round(mins); else { delete own[task]; if (!Object.keys(own).length) delete m[job]; }
   saveJobTimers(m);
+  if ((own[task] || 0) !== before) _resizeBlocksForTask(job, task);
+}
+// ⏱ A timer change re-sizes every planned block of the job that has the task flagged
+// (v473). Lincoln, 2 Nov 2026: a 180m timer, yet tomorrow's Tidy shed block still read
+// 2h 20m, because a block was only re-measured when its Organise opened. The block is
+// re-measured exactly as Organise would, so it can never disagree with its run sheet.
+function _resizeBlocksForTask(job, task) {
+  const pcm = getPlannerChecklist();
+  let n = 0;
+  _plannerPlans.forEach(p => {
+    if (p.task !== job || p.allDay) return;
+    const rec = pcm[p.id];
+    if (rec && rec.flags && rec.flags[task] && _applyBlockEstimate(p.id)) n++;
+  });
+  if (n) { try { if (document.getElementById('screen-planner').classList.contains('active')) renderPlannerScreen(); } catch (e) {} }   // the planner redraws itself when opened
+  return n;
 }
 // The minutes a forecast should use: the timer when the task has one, else the learned
 // estimate. One helper so the run sheet, the planner block and the 🏁 all agree.
