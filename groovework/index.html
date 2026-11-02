@@ -3625,7 +3625,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.473';
+const APP_VERSION = '2026-06-21.474';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -27273,6 +27273,17 @@ function openPlannerDetail(planId) {
   // then today again. With the headings hidden that reads as random order, which is
   // exactly how Lincoln read it. `_pdHeads` marks where each batch starts.
   const _pdHeads = {};
+  // 🚩 FLAGGED WORK FIRST, IN RUN SHEET ORDER (v474). Lincoln, 2 Nov 2026: the Serene
+  // changeover's one flagged task sat at the bottom, because flags only floated to the top
+  // of their own batch. The flagged tasks are the planned run, so they lead, in the order
+  // the run sheet will do them; everything else follows by batch as before.
+  const _pdFlag = [];
+  try { _rsRowsFor(planId).forEach(r => { if (!r.brk && clFlags[r.t] && orderedSubs.includes(r.t) && !_pdFlag.includes(r.t)) _pdFlag.push(r.t); }); } catch (e) {}
+  orderedSubs.forEach(t => { if (clFlags[t] && !_pdFlag.includes(t)) _pdFlag.push(t); });
+  if (_pdFlag.length) {
+    _pdHeads[_pdFlag[0]] = '🚩 Flagged · ' + _pdFlag.length;
+    orderedSubs = orderedSubs.filter(t => !_pdFlag.includes(t));
+  }
   const _pdBRec = _batchRec(plan.task);
   if (_pdBRec && _pdBRec.order.length && orderedSubs.length) {
     const _used = new Set(), _seq = [];
@@ -27280,16 +27291,18 @@ function openPlannerDetail(planId) {
       const mem = orderedSubs.filter(s => _pdBRec.items[s] === bn && !_used.has(s));
       if (!mem.length) return;
       const sorted = _pdRecency(mem);
-      _pdHeads[sorted[0]] = bn;
+      _pdHeads[sorted[0]] = '▣ ' + bn;
       sorted.forEach(s => { _used.add(s); _seq.push(s); });
     });
     const rest = _pdRecency(orderedSubs.filter(s => !_used.has(s)));
-    if (rest.length && _seq.length) _pdHeads[rest[0]] = 'Unbatched';
+    if (rest.length && _seq.length) _pdHeads[rest[0]] = '▣ Unbatched';
     rest.forEach(s => _seq.push(s));
     orderedSubs = _seq;
   } else if (orderedSubs.length) {
     orderedSubs = _pdRecency(orderedSubs);   // no batches: same rule over the whole list
+    if (_pdFlag.length) _pdHeads[orderedSubs[0]] = 'Not flagged';
   }
+  orderedSubs = _pdFlag.concat(orderedSubs);
   const subtaskHtml = subtasks.length > 0
     ? `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
@@ -27304,7 +27317,7 @@ function openPlannerDetail(planId) {
           const _ldLine = _ld ? `<div style="font-size:11px;color:#616a7e;margin-top:1px;">🗓 ${_agoWords(_ld)}</div>`
                               : `<div style="font-size:11px;color:#4a5165;margin-top:1px;font-style:italic;">🗓 not done yet</div>`;
           const _hd = _pdHeads[s]
-            ? `<div style="display:flex;align-items:center;gap:6px;margin:12px 0 6px;font-size:11px;font-weight:700;color:var(--subtext);letter-spacing:0.4px;text-transform:uppercase;">▣ ${_pdHeads[s]}</div>`
+            ? `<div style="display:flex;align-items:center;gap:6px;margin:12px 0 6px;font-size:11px;font-weight:700;color:var(--subtext);letter-spacing:0.4px;text-transform:uppercase;">${_pdHeads[s]}</div>`
             : '';
           return `${_hd}<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:7px;">
           <span style="color:var(--subtext);font-size:14px;margin-top:1px;">${clFlags[s] ? '🚩' : '☐'}</span>
