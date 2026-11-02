@@ -870,6 +870,7 @@
   .rsn-line-track span { display: block; height: 100%; min-width: 8px; border-radius: 4px; background: linear-gradient(90deg, var(--rsn-blue), var(--rsn-green)); transition: width 0.95s linear; }
   .rsn-line.over .rsn-line-track span { background: var(--rsn-orange); }
   .rsn-line-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 5px; font-size: 12px; color: var(--rsn-sub); }
+  .rsn-line-brk { color: var(--rsn-orange); font-weight: 600; white-space: nowrap; }
   #rs-line-time { font-size: 15px; font-weight: 600; color: var(--rsn-text); font-variant-numeric: tabular-nums; }
   #rs-line-pct { font-weight: 600; color: var(--rsn-blue); white-space: nowrap; }
   .rsn-line.over #rs-line-pct { color: var(--rsn-orange); }
@@ -3598,7 +3599,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.468';
+const APP_VERSION = '2026-06-21.469';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5062,20 +5063,6 @@ function _computeChecklistDurations(sorted, clockInMs, breaks, outBreaks) {
     i = j + 1;
   }
   return out;
-}
-// Minutes of break sitting inside each task's span this session.
-function _checklistBreakMins() {
-  if (!clockState) return {};
-  const done = (Array.isArray(clockState.checklistDone) ? clockState.checklistDone : []).filter(d => !d.carried);
-  const pinDone = clockState.pinDone || {};
-  const breaks = Array.isArray(clockState.breaks) ? clockState.breaks.slice() : [];
-  if (clockState.onBreak && clockState.breakStartMs) breaks.push({ start: clockState.breakStartMs, end: Date.now() });
-  const events = done.map(d => ({ item: _occKey(d), at: d.at, quick: !!d.quick }))
-    .concat(Object.keys(pinDone).map(id => ({ item: 'pin:' + id, at: pinDone[id] })))
-    .sort((a, b) => new Date(a.at) - new Date(b.at));
-  const outB = {};
-  _computeChecklistDurations(events, _clockInEpoch(), breaks, outB);
-  return outB;
 }
 // Checklist display order: 'manual' (editor order) or 'typical' (avg completion
 // order across this task's recent entries). Display-only; never changes SUBTASKS.
@@ -25495,6 +25482,26 @@ function _rsRows(ctx) {
   });
 }
 
+// { rowKey: [{ start, mins }] } A finished break sits on the task you were on when it
+// began: the first row ticked after it, else the row you are on now. A planned break has
+// its own row, so it is left out here or it would show twice.
+function _rsBreakMap(rows) {
+  const out = {};
+  if (!clockState) return out;
+  const planned = new Set(Object.values(clockState.brkDone || {}).map(d => d && d.start));
+  const tasks = rows.filter(r => !r.brk);
+  const ticked = tasks.filter(r => r.doneAt).sort((a, b) => new Date(a.doneAt) - new Date(b.doneAt));
+  const fallback = tasks.find(r => r.isNow) || ticked[ticked.length - 1];
+  (clockState.breaks || []).forEach(b => {
+    if (!b || !b.start || !b.end || planned.has(b.start)) return;
+    const mins = Math.round((b.end - b.start) / 60000);
+    if (mins < 1) return;
+    const row = ticked.find(r => new Date(r.doneAt).getTime() > b.start) || fallback;
+    if (row) (out[_rsKey(row.t, row.n)] = out[_rsKey(row.t, row.n)] || []).push({ start: b.start, mins });
+  });
+  return out;
+}
+
 // The 🏁 forecast finish as a timestamp — the same two branches the ring uses, so
 // the planner's projection and the clock's finish time can't drift apart. Live
 // (per-task) forecast when there's a flagged basis, otherwise clock-in + estimate.
@@ -25602,7 +25609,10 @@ function _rsLineSync() {
   document.getElementById('rs-line-fill').style.width = pct;
   line.classList.toggle('over', _rsRing.over);
   document.getElementById('rs-line-time').textContent = txt('run-timer');
-  document.getElementById('rs-line-in').textContent = txt('run-clockedin-text');
+  // ☕ The session's break total beside clock-in, once one has been taken (v469).
+  const _brkMins = clockState.onBreak ? 0 : Math.round(_breakNowMs() / 60000);
+  document.getElementById('rs-line-in').innerHTML = _escHtml(txt('run-clockedin-text'))
+    + (_brkMins >= 1 ? ` · <span class="rsn-line-brk">${fmtMin(_brkMins)} break</span>` : '');
   document.getElementById('rs-line-pct').textContent = txt('run-ring-label').replace(/\s*🚩\s*$/, '');
 }
 // The sheet's own buttons: Running now breaks and clocks out, Planning clocks in.
@@ -25788,7 +25798,7 @@ function _rsRender() {
     ${_addBrk ? `<div class="rsn-addbrk" onclick="_rsSetPlacing(true)">${_rsIcon('coffee')}Add a break</div>` : ''}
     ${_orderBack ? `<div class="rsn-order-note">The learned order is the order you ticked these off <b>last time you did this job</b>. You have arranged this one by hand, so it is following your order instead.</div>` : ''}`;
   const avgMap = _taskEstMap(), cntMap = _taskHistCountMap();   // built once, not per row
-  const _brks = ctx.kind === 'clock' ? _checklistBreakMins() : {};   // minutes of break sitting inside each done task
+  const _brkOn = ctx.kind === 'clock' ? _rsBreakMap(rows) : {};   // ☕ finished breaks, by row
   // ⚠️ cntMap stays MEASURED — the ×N must never count a guess.
   // ▣ which batch each task belongs to, and — once ticked — how long it ACTUALLY
   // took. The actual sits beside the average on the meta line, so the comparison
@@ -25881,9 +25891,12 @@ function _rsRender() {
     // was not: 76 minutes elapsed, 7 deducted, 69 shown. The figure was right and
     // unreadable. ⭐ When a number is correct but surprising, say what was taken
     // out of it, on the number itself.
-    const _brkIn = r.isDone ? _brks[_dk] : null;
-    const brkNote = (isFinite(_brkIn) && _brkIn >= 1)
-      ? `<span style="font-size:11px;color:#ff9f0a;flex-shrink:0;" title="a break inside this task, already deducted">☕ ${fmtMin(_brkIn)} out</span>` : '';
+    // v469, Lincoln 2 Nov 2026: no record of where a break was taken once it ended. So it
+    // says when and how long, and shows as soon as the break ends, not only after the tick.
+    const _myBrks = _brkOn[_rsKey(r.t, r.n)] || [];
+    const brkNote = !_myBrks.length ? '' : `<span style="font-size:11px;color:var(--rsn-orange);flex-shrink:0;" title="a break taken during this task, already deducted">${_myBrks.length > 2
+      ? `☕ ${_myBrks.length} breaks · ${fmtMin(_myBrks.reduce((n, b) => n + b.mins, 0))}`
+      : _myBrks.map(b => `☕ ${_rsHM(b.start)} · ${fmtMin(b.mins)}`).join(' &nbsp; ')}</span>`;
     // ⚡ A quick tick says so, 0m included (v431): "✓ 0m quick" is the receipt that the
     // swipe landed and the task before it kept its time.
     const _isQuick = r.isDone && ctx.kind === 'clock' && _rsTickIsQuick(r);
