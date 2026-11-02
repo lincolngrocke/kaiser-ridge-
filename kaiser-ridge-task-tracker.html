@@ -3599,7 +3599,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.469';
+const APP_VERSION = '2026-06-21.470';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -11103,9 +11103,37 @@ function _idbOpen() {
       if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
       if (!db.objectStoreNames.contains('photos')) db.createObjectStore('photos');
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      const db = req.result;
+      db.onclose = () => { if (_idb === db) _idbReconnect(); };   // the phone closed it on us
+      resolve(db);
+    };
     req.onerror = () => reject(req.error);
   });
+}
+// ⭐ A DEAD CONNECTION NEVER HEALS BY ITSELF (v470). 2 Nov 2026, 5:31pm: NOT SAVED on
+// Lincoln's phone, and Try saving again could not clear it. The app opened one connection
+// at launch and every retry used that same one, so once iOS dropped it no write could
+// land until a restart, and a restart empties RAM. Now a failed write reconnects first.
+// Reproduced by closing the connection: v469 stuck, this heals. The cause on his phone
+// was not confirmed, so _idbLogFail keeps the reason for the next time it happens.
+let _idbReopening = null;
+function _idbReconnect() {
+  if (_idbReopening) return _idbReopening;
+  const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('idb reopen timeout')), 5000));
+  _idbReopening = Promise.race([_idbOpen(), timeout])
+    .then(db => { const old = _idb; _idb = db; try { if (old) old.close(); } catch (e) {} return true; })
+    .catch(e => { _idbLogFail('', 'reopen', e); return false; })
+    .then(ok => { _idbReopening = null; return ok; });
+  return _idbReopening;
+}
+// The last 20 failures, on this phone only. An App State export carries them.
+function _idbLogFail(key, why, err) {
+  try {
+    const log = JSON.parse(localStorage.getItem('kr_idb_fail_log') || '[]');
+    log.push({ at: new Date().toISOString(), key, why, err: err ? (err.name || '') + ': ' + (err.message || '') : '' });
+    localStorage.setItem('kr_idb_fail_log', JSON.stringify(log.slice(-20)));
+  } catch (e) {}
 }
 // ⭐ EVERY IndexedDB WRITE IS VERIFIED. This lost a full day's work on 2026-08-07.
 // The old version fired the transaction and never looked at the outcome: it hooked
@@ -11125,8 +11153,9 @@ function _idbSet(key, val, isRetry) {
   // The store was never read this launch, so RAM holds an empty stand-in. Writing
   // it would replace the real data with that stand-in. See _krdbBoot.
   if (_kvUnread) { _idbUnsaved[key] = 'unread'; return; }
-  const fail = (why) => {
+  const fail = (why, err) => {
     _idbUnsaved[key] = why;
+    _idbLogFail(key, why, err);
     // ⭐ RETRY ONCE, AUTOMATICALLY. iOS aborts an in-flight transaction whenever it
     // suspends the app, and that abort is almost always transient: the same write
     // succeeds a moment later. Without this, a routine overnight suspension leaves a
@@ -11140,7 +11169,8 @@ function _idbSet(key, val, isRetry) {
       _idbRetrying[key] = 1;
       setTimeout(() => {
         delete _idbRetrying[key];
-        if (key in _idbUnsaved) _idbSet(key, (key in _kv) ? _kv[key] : val, true);
+        if (!(key in _idbUnsaved)) return;
+        _idbReconnect().then(() => { if (key in _idbUnsaved) _idbSet(key, (key in _kv) ? _kv[key] : val, true); });
       }, 400);
     }
     try { updateStorageAlarm(); } catch (e) {}
@@ -11150,9 +11180,9 @@ function _idbSet(key, val, isRetry) {
     const tx = _idb.transaction('kv', 'readwrite');
     tx.objectStore('kv').put(val, key);
     tx.oncomplete = ok;          // the ONLY path that means "on disk"
-    tx.onerror = () => fail('error');
-    tx.onabort = () => fail('aborted');   // the one the old code missed
-  } catch (e) { fail('threw'); }
+    tx.onerror = () => fail('error', tx.error);
+    tx.onabort = () => fail('aborted', tx.error);   // the one the old code missed
+  } catch (e) { fail('threw', e); }
 }
 function _idbUnsavedKeys() { return Object.keys(_idbUnsaved); }
 // ⭐ THE ONLY SAFE WAY TO PUT USER TEXT INTO AN onclick. The attribute is delimited by
@@ -11168,12 +11198,14 @@ function _encArg(v) { return encodeURIComponent(String(v == null ? '' : v)).repl
 function _retryUnsavedWrites(silent) {
   const keys = _idbUnsavedKeys();
   if (!keys.length) { if (!silent) showToast('Everything is saved ✓'); return; }
-  keys.forEach(k => { if (k in _kv) _idbSet(k, _kv[k], true); });   // isRetry → one attempt per tap
   if (!silent) showToast('Retrying ' + keys.length + ' save' + (keys.length === 1 ? '' : 's') + '…');
-  setTimeout(() => {
-    const left = _idbUnsavedKeys();
-    if (!silent) showToast(left.length ? 'Still not saving — export a backup and send it to Claude' : '✓ Saved');
-  }, 900);
+  _idbReconnect().then(() => {
+    _idbUnsavedKeys().forEach(k => { if (k in _kv) _idbSet(k, _kv[k], true); });   // isRetry → one attempt per tap
+    setTimeout(() => {
+      const left = _idbUnsavedKeys();
+      if (!silent) showToast(left.length ? 'Still not saving — export a backup and send it to Claude' : '✓ Saved');
+    }, 900);
+  });
 }
 // Coming back to the app is the moment a suspended-mid-write abort can be repaired,
 // so try silently. This is the one that should mean Lincoln never sees the banner
