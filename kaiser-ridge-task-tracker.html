@@ -3599,7 +3599,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.470';
+const APP_VERSION = '2026-06-21.471';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5347,14 +5347,20 @@ function unhideTask(job, item) {
   _refreshHiddenSurfaces(job);
   showToast('👁 Back on the list');
 }
+// Asks first, then offers Undo (v471). Lincoln, 2 Nov 2026, tapped Show all wanting only to
+// look, and six tasks came back with no way to hide them again short of swiping each one.
 function unhideAllTasks(job) {
   const all = getHiddenTasks();
-  const n = (all[job] || []).length;
+  const prev = (all[job] || []).slice(), n = prev.length;
   if (!n) return;
+  if (!confirm('Bring all ' + n + ' hidden task' + (n === 1 ? '' : 's') + ' back onto the list?\n\nTo just look at them, tap “Hidden · ' + n + '” instead.')) return;
   delete all[job];
   saveHiddenTasks(all);
   _refreshHiddenSurfaces(job);
-  showToast('👁 ' + n + ' task' + (n === 1 ? '' : 's') + ' back on the list');
+  showUndoToast('👁 ' + n + ' task' + (n === 1 ? '' : 's') + ' back on the list', () => {
+    const a = getHiddenTasks(); a[job] = Array.from(new Set((a[job] || []).concat(prev)));
+    saveHiddenTasks(a); _refreshHiddenSurfaces(job);
+  }, 10000);
 }
 // ⭐ HIDDEN TASKS SHOW WHEREVER THE JOB'S TASKS ARE LISTED (v444). Lincoln, 29 Oct 2026:
 // Ethan swiped the 8 "Inside tiny house" tasks of the Kaiser changeover the wrong way,
