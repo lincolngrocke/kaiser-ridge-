@@ -3633,7 +3633,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.476';
+const APP_VERSION = '2026-06-21.477';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -10302,6 +10302,14 @@ function confirmTime(choice) {
 
   if (_timeModalMode === 'in') {
     const taskInfo = _pendingTaskInfo || {};
+    // 📋 A job-list clock-in picks up today's planned block of that job (v477), exactly
+    // as if the block had been tapped, so its tasks, order and breaks ride onto the clock
+    // and the block is consumed. Without this the block sat on the planner with every task
+    // still owing while the ticks went on a separate run (Lincoln, 4 Nov 2026: "There were
+    // only 5 tasks left to finish, but it says there are 14 left").
+    const _adopt = (taskInfo._planId == null && !Array.isArray(taskInfo._resumeCarried)
+      && !(taskInfo._resumeFlags && Object.keys(taskInfo._resumeFlags).length)) ? _todayPlanFor(taskInfo.task) : null;
+    if (_adopt) taskInfo._planId = _adopt.id;
     const now = new Date();
     const [h, m] = timeStr.split(':').map(Number);
     // A "now" clock-in starts the timer at 0:00 — anchoring to the minute
@@ -10447,7 +10455,7 @@ function confirmTime(choice) {
       _plannerPlans = _plannerPlans.filter(p => p.id !== taskInfo._planId);
       savePlanner();
       showScreen('clock', document.querySelector(".nav-tab[onclick*=\"'clock'\"]"));
-      showToast('Clocked in — ' + clockState.task);
+      showToast('Clocked in — ' + clockState.task + (_adopt ? ' · using your ' + (_adopt.parked ? 'holding bay' : formatTimeAmPm(_adopt.startTime)) + ' plan' : ''));
     } else if (!Array.isArray(taskInfo._resumeCarried)) {
       // ⭐ Leftover block, rule 3. Clocked into the job from the JOB LIST while its
       // unfinished tasks sit in the holding bay: offer to pick them up, and take the
@@ -27622,6 +27630,24 @@ function confirmPlannerMove() {
 // ── Reorder a day's tasks (▲▼), then lay them back-to-back keeping durations ──
 let _reorderItems = [];
 function _planStartMins(p) { const [h, m] = String(p.startTime || '0:0').split(':').map(Number); return (h || 0) * 60 + (m || 0); }
+// The block a job-list clock-in should pick up (v477): this job, today, on MY planner, and
+// close to now. A placed block counts when now falls inside it or within 2 hours either
+// side of its start; the nearest one wins. Failing that, a block of the job waiting in
+// today's holding bay. ⚠️ The 2-hour window is what stops a quick 7am dip into Household
+// chores from eating the 5pm block. A leftover is never picked here: rule 3 offers it.
+function _todayPlanFor(job) {
+  if (!job || (typeof _plannerView !== 'undefined' && _plannerView !== 'me')) return null;
+  const today = plannerDateStr(new Date());
+  const mine = _plannerPlans.filter(p => p && p.task === job && p.date === today && !p.leftover && !p.allDay);
+  if (!mine.length) return null;
+  const d = new Date(), nowM = d.getHours() * 60 + d.getMinutes();
+  const near = mine.filter(p => !p.parked).map(p => {
+    const s = _planStartMins(p), e = s + (p.durationHours || 0) * 60;
+    return { p, gap: (nowM >= s && nowM <= e) ? 0 : Math.abs(nowM - s) };
+  }).filter(x => x.gap <= 120).sort((a, b) => a.gap - b.gap);
+  if (near.length) return near[0].p;
+  return mine.find(p => p.parked) || null;
+}
 function openPlannerReorder() {
   const dateStr = plannerDateStr(_plannerDate);
   _reorderItems = _plannerPlans.filter(p => p.date === dateStr && !p.parked && !p.allDay).slice().sort((a, b) => _planStartMins(a) - _planStartMins(b));
