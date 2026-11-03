@@ -955,6 +955,10 @@
   .rsn-nowline { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 6px; font-size: 11px; font-weight: 600; color: var(--rsn-blue); }
   .rsn-nowline #rs-pomo-left { margin-left: 6px; white-space: nowrap; }
   .rsn-nowline.brk { color: var(--rsn-orange); }
+  /* ON TASK (v478, Lincoln 4 Nov 2026): green, a size up, and a live m:ss that doesn't jitter. */
+  .rsn-nowline.on { color: var(--rsn-green); font-size: 13px; font-weight: 700; }
+  .rsn-nowline.on #rs-now-elapsed { font-variant-numeric: tabular-nums; }
+  .rsn-nowline.on .rsi-live { width: 7px; height: 7px; }
   .rsn-nowline.brk .rsi { width: 15px; height: 15px; margin-right: 2px; }
   .rsn-nowline .rsi-flag { margin-right: 4px; }
   .rsn-head { display: flex; align-items: flex-start; gap: 9px; }
@@ -3633,7 +3637,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.477';
+const APP_VERSION = '2026-06-21.478';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -25727,7 +25731,12 @@ function _rsNowElapsedMin() {
 // re-rendering the list (a re-render mid-drag would drop the row being held).
 function _rsTickNowElapsed() {
   const el = document.getElementById('rs-now-elapsed');
-  if (el) el.textContent = fmtMin(_rsNowElapsedMin());
+  if (el) el.textContent = el.dataset.secs ? _fmtMinSec(_rsNowElapsedMin()) : fmtMin(_rsNowElapsedMin());
+}
+// ON TASK counts minutes AND seconds (v478, Lincoln 4 Nov 2026): 0:07, 12:40, 1:05:09.
+function _fmtMinSec(min) {
+  const s = Math.max(0, Math.floor(min * 60)), h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, ss = String(s % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
 }
 
 // planId → plan the job before it starts; no arg → the job you're clocked into.
@@ -26109,7 +26118,7 @@ function _rsRender() {
     const _nowLine = _onBrk
       ? `<div class="rsn-nowline brk">${_rsIcon('coffee')}<span>ON BREAK · <span id="rs-now-elapsed">${fmtMin(_rsNowElapsedMin())}</span></span></div>`
       : r.isNow
-      ? `<div class="rsn-nowline">${_rsIcon('flag')}<span class="rsi rsi-live"></span><span>RUNNING NOW · <span id="rs-now-elapsed">${fmtMin(_rsNowElapsedMin())}</span></span>${_rnc(timerBit)}</div>` : '';
+      ? `<div class="rsn-nowline on">${_rsIcon('flag')}<span class="rsi rsi-live"></span><span>ON TASK · <span id="rs-now-elapsed" data-secs="1">${_fmtMinSec(_rsNowElapsedMin())}</span></span>${_rnc(timerBit)}</div>` : '';
     const _cmts = (!planning && _cmtRow[r.t] === r && clockState.itemComments && clockState.itemComments[r.t]) || [];
     const _cmtHtml = _cmts.map(c => `<div class="rsn-cmt">💬 ${_escHtml(c.text)} <span>· ${_timeShort(c.at)}</span></div>`).join('');
     const _lead = _rsHeldBadge(key) || (r.isNow ? '' : (r.isDone ? `<span class="rsn-tick">✓</span>` : _rsIcon('flag')));
