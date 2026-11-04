@@ -3169,6 +3169,7 @@
         </div>
         <div id="dir-subtask-list"></div>
         <button onclick="openSubtaskPicker()" style="margin-top:8px;background:none;border:1px dashed var(--border);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">+ Add Task</button>
+        <button onclick="openPasteList()" style="margin-top:8px;background:none;border:1px dashed var(--border);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">📋 Paste a list</button>
         <button id="dir-restore-subtasks-btn" onclick="restoreDefaultSubtasks()" style="display:none;margin-top:8px;background:none;border:1px dashed var(--blue);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">↺ Restore Default Tasks</button>
         <button onclick="openCopyBatches()" style="margin-top:8px;background:none;border:1px dashed var(--blue);border-radius:8px;width:100%;padding:10px;color:var(--blue);font-size:14px;cursor:pointer;">⧉ Copy Batches to Other Jobs…</button>
         <!-- "⧉ Copy Tasks to Other Jobs…" (openCopyChecklist) RETIRED v439: it replaced each
@@ -3443,6 +3444,28 @@
 </div>
 
 <!-- ══════════════ BATCH TASK PICKER ══════════════ -->
+<!-- ══════════════ PASTE A LIST (v480) — many tasks and batches onto a job at once ══════════════ -->
+<div class="modal-backdrop" id="modal-paste-list" style="z-index:400;">
+  <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:88vh;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;padding:16px 20px 8px;">
+      <button onclick="closeModal('modal-paste-list')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:0;width:60px;text-align:left;">Cancel</button>
+      <span style="font-size:17px;font-weight:600;flex:1;text-align:center;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Paste a list</span>
+      <span style="width:60px;"></span>
+    </div>
+    <div style="padding:0 20px 8px;font-size:12px;line-height:1.45;color:var(--subtext);">One task per line. A line like <b>Batch: Website</b> starts a batch, and the tasks under it go in it. Tasks listed under <b>Remove:</b> come off the job. Numbers and dashes at the start of a line are dropped.</div>
+    <div style="padding:0 20px 12px;flex:1;min-height:0;display:flex;flex-direction:column;gap:12px;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;">
+      <textarea id="paste-list-text" oninput="pasteListPreview()" placeholder="Batch: Website&#10;1. Finish the site&#10;2. Publish it&#10;&#10;Remove:&#10;An old task"
+        autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false"
+        style="width:100%;box-sizing:border-box;min-height:190px;flex-shrink:0;padding:12px 14px;border:1px solid var(--border);border-radius:12px;font-size:16px;line-height:1.4;color:var(--text);background:var(--bg);outline:none;resize:vertical;font-family:inherit;"></textarea>
+      <div id="paste-list-preview" style="font-size:13px;line-height:1.5;color:var(--text);"></div>
+    </div>
+    <div style="padding:10px 20px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--border);">
+      <div id="paste-list-msg" style="font-size:13px;line-height:1.4;margin-bottom:6px;"></div>
+      <button id="paste-list-go" onclick="pasteListApply()" style="width:100%;padding:14px;border:none;border-radius:12px;background:var(--blue);color:#fff;font-size:16px;font-weight:600;cursor:pointer;">Back up, then make these changes</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="modal-batch-tasks" style="z-index:400;">
   <div style="background:var(--card);border-radius:20px 20px 0 0;position:absolute;bottom:0;left:0;right:0;height:80vh;display:flex;flex-direction:column;">
     <div style="display:flex;align-items:center;padding:16px 20px 8px;">
@@ -3653,7 +3676,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.479';
+const APP_VERSION = '2026-06-21.480';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -16807,6 +16830,154 @@ function addTaskToBatchNew() {
   renderBatchTaskPicker();
   renderDirSubtaskList();
   showToast('＋ Added to ▣ ' + _batchPickTarget);
+}
+// 📋 PASTE A LIST (v480). Lincoln, 4 Nov 2026: "add this launch list to my Groovework Launch
+// job in one go, so I don't have to type each task", with old tasks to delete and "back up my
+// data first". A "Batch: name" line starts a batch, lines under "Remove:" come off the job, and
+// every other line is a task with its "1." or "-" dropped. Additive by default: a task already on
+// the job keeps its name and its times; listed under a batch, it moves into that batch at its
+// place in the list (the list is the order he asked for). ⭐ Nothing changes until a backup
+// has LANDED (Drive when it is set up, else the copy kept on this phone), and then the change goes
+// through the editor's own list and Save, so the batch prune, sync and backup all run as usual.
+let _pasteListBusy = false;
+function _plKey(s) { return String(s).toLowerCase().replace(/[—–-]+/g, '-').replace(/\s+/g, ' ').trim(); }
+function _plUnquote(s) { const m = String(s).match(/^["“‘'](.*)["”’']$/); return (m ? m[1] : s).trim(); }
+function _pasteListParse(text) {
+  const out = { loose: [], batches: [], remove: [] };
+  let cur = null, mode = 'add';
+  String(text || '').split(/\r?\n/).forEach(raw => {
+    const line = _plUnquote(raw.replace(/^\s*(?:[-*•▣]|\d+[.)])\s+/, '').trim());
+    if (!line) return;
+    const h = line.match(/^(batch|remove|delete)\s*:\s*(.*)$/i);
+    if (h) {
+      const rest = _plUnquote(h[2]);
+      if (/^batch$/i.test(h[1])) {
+        mode = 'add';
+        cur = (rest && rest.toLowerCase() !== 'unbatched') ? { name: rest, tasks: [] } : null;
+        if (cur) out.batches.push(cur);
+      } else { mode = 'remove'; cur = null; if (rest) out.remove.push(rest); }
+      return;
+    }
+    if (mode === 'remove') out.remove.push(line);
+    else (cur ? cur.tasks : out.loose).push(line);
+  });
+  return out;
+}
+// What the paste would do to the job as it stands in the editor right now.
+function _pasteListPlan(p) {
+  const rec = _batchRec(_dirJobName()) || { order: [], items: {} };
+  const have = new Map(_subtaskItems.map(s => [_plKey(s), s]));
+  const bHave = new Map(rec.order.map(b => [b.toLowerCase(), b]));
+  const plan = { newBatches: [], add: [], move: [], remove: [], missing: [] }, seen = new Set();
+  // add: the list in order. An entry with `had` is a task the job already has: same name, same
+  // history, just placed where the list puts it.
+  const add = (t, batch) => {
+    const k = _plKey(t);
+    if (seen.has(k)) return;
+    seen.add(k);
+    if (have.has(k)) { const real = have.get(k); plan.add.push({ t: real, batch, had: true }); plan.move.push(real); }
+    else plan.add.push({ t: t.charAt(0).toUpperCase() + t.slice(1), batch });
+  };
+  p.loose.forEach(t => add(t, null));
+  p.batches.forEach(b => {
+    const name = bHave.get(b.name.toLowerCase()) || b.name;
+    if (!bHave.has(b.name.toLowerCase()) && !plan.newBatches.includes(name)) plan.newBatches.push(name);
+    b.tasks.forEach(t => add(t, name));
+  });
+  p.remove.forEach(t => {
+    const real = have.get(_plKey(t));
+    if (!real) plan.missing.push(t);
+    else if (!plan.remove.includes(real) && !seen.has(_plKey(t))) plan.remove.push(real);
+  });
+  return plan;
+}
+function openPasteList() {
+  if (isWorker()) { showToast('Jobs are set up by the manager'); return; }
+  if (!_dirJobName()) { showToast('Save the job first, then paste a list'); return; }
+  document.getElementById('paste-list-text').value = '';
+  document.getElementById('paste-list-msg').textContent = '';
+  pasteListPreview();
+  openModal('modal-paste-list');
+}
+function pasteListPreview() {
+  const el = document.getElementById('paste-list-preview'); if (!el) return;
+  const plan = _pasteListPlan(_pasteListParse(document.getElementById('paste-list-text').value));
+  const esc = _escHtml, n = (k, w) => k + ' ' + w + (k === 1 ? '' : (w === 'batch' ? 'es' : 's'));
+  const lines = [];
+  if (plan.newBatches.length) lines.push(`<b>Adds ${n(plan.newBatches.length, 'batch')}:</b> ${plan.newBatches.map(esc).join(', ')}`);
+  const _new = plan.add.filter(a => !a.had);
+  if (_new.length) {
+    const per = {}; _new.forEach(a => { const k = a.batch || ''; per[k] = (per[k] || 0) + 1; });
+    const parts = Object.keys(per).map(k => (k ? esc(k) : 'no batch') + ' ' + per[k]);
+    lines.push(`<b>Adds ${n(_new.length, 'task')}</b> in this order, with no estimates (${parts.join(', ')})`);
+  }
+  if (plan.move.length) lines.push(`<b>Already on this job, moved to their place in the list:</b> ${plan.move.map(esc).join(', ')}. They keep their names and times.`);
+  if (plan.remove.length) lines.push(`<b>Removes ${n(plan.remove.length, 'task')}:</b> ${plan.remove.map(esc).join(', ')}. Their past times stay in your timesheets.`);
+  if (plan.missing.length) lines.push(`<span style="color:var(--orange,#f26b00);">Not on this job, so nothing to remove: ${plan.missing.map(esc).join(', ')}</span>`);
+  el.innerHTML = lines.length ? lines.map(l => `<div style="margin-bottom:6px;">${l}</div>`).join('') : '<span style="color:var(--subtext);">Paste your list above to see what it will do.</span>';
+  const go = document.getElementById('paste-list-go');
+  const any = plan.newBatches.length || plan.add.length || plan.remove.length;
+  if (go && !_pasteListBusy) { go.disabled = !any; go.style.opacity = any ? '1' : '0.45'; }
+}
+// ⭐ The backup must LAND before anything changes. Drive when it is set up (its result is read
+// back from the attempt record, since autoBackupToDrive reports nothing); else the copy on this
+// phone, which the restore list offers back.
+async function _pasteListBackup() {
+  try { autoBackup(true); } catch (e) {}
+  if (!localStorage.getItem('kr_sheet_url')) {
+    return localStorage.getItem('kr_last_backup') ? { ok: true, where: 'on this phone' } : { ok: false, why: 'There was no room to keep a copy on this phone.' };
+  }
+  const t0 = Date.now();
+  for (let i = 0; i < 150 && _driveBackupBusy; i++) await new Promise(r => setTimeout(r, 1000));   // one already going: let it finish
+  await autoBackupToDrive(false);
+  let tr = {};
+  try { tr = JSON.parse(localStorage.getItem('kr_drive_backup_try') || '{}'); } catch (e) {}
+  if (tr.ok && Date.parse(tr.at) >= t0) return { ok: true, where: 'in Google Drive' };
+  return { ok: false, why: (tr.at && Date.parse(tr.at) >= t0 && tr.why) ? tr.why + '.' : 'Check you are online, then try again.' };
+}
+async function pasteListApply() {
+  if (_pasteListBusy || isWorker()) return;
+  const job = _dirJobName(); if (!job) return;
+  const text = document.getElementById('paste-list-text').value;
+  const msg = document.getElementById('paste-list-msg'), go = document.getElementById('paste-list-go');
+  const _p0 = _pasteListPlan(_pasteListParse(text));
+  if (!_p0.add.length && !_p0.remove.length && !_p0.newBatches.length) return;
+  _pasteListBusy = true;
+  go.disabled = true; go.style.opacity = '0.6'; go.textContent = 'Backing up…';
+  msg.style.color = 'var(--subtext)'; msg.textContent = 'Backing up your data first. This can take up to a minute.';
+  let bk;
+  try { bk = await _pasteListBackup(); } catch (e) { bk = { ok: false, why: 'Check you are online, then try again.' }; }
+  _pasteListBusy = false;
+  go.textContent = 'Back up, then make these changes';
+  if (!bk.ok) {
+    go.disabled = false; go.style.opacity = '1';
+    msg.style.color = 'var(--red)'; msg.textContent = 'The backup did not go through, so nothing has changed. ' + bk.why;
+    return;
+  }
+  // Planned again against the editor as it is NOW: the backup took a while.
+  const plan = _pasteListPlan(_pasteListParse(text));
+  const all = getTaskBatches();
+  const rec = all[job] || (all[job] = { order: [], items: {} });
+  rec.order = Array.isArray(rec.order) ? rec.order : []; rec.items = rec.items || {};
+  plan.newBatches.forEach(b => { if (!rec.order.includes(b)) rec.order.push(b); });
+  plan.remove.forEach(t => { delete rec.items[t]; });
+  plan.add.forEach(a => { if (a.batch) rec.items[a.t] = a.batch; else if (a.had) delete rec.items[a.t]; });
+  if (!saveTaskBatches(all)) {   // a write is not saved until it says so
+    go.disabled = false; go.style.opacity = '1';
+    msg.style.color = 'var(--red)'; msg.textContent = 'Could not save the batches, so nothing has changed. Try again.';
+    return;
+  }
+  plan.remove.concat(plan.move).forEach(t => { const i = _subtaskItems.indexOf(t); if (i >= 0) _subtaskItems.splice(i, 1); });
+  plan.add.forEach(a => _subtaskItems.push(a.t));
+  closeModal('modal-paste-list');
+  saveDirTask();   // the editor's own Save: the job's task list, the batch prune, sync and backup
+  const bits = [];
+  if (plan.newBatches.length) bits.push(plan.newBatches.length + ' batch' + (plan.newBatches.length === 1 ? '' : 'es'));
+  const nNew = plan.add.length - plan.move.length;
+  if (nNew) bits.push(nNew + ' task' + (nNew === 1 ? '' : 's') + ' added');
+  if (plan.move.length) bits.push(plan.move.length + ' moved');
+  if (plan.remove.length) bits.push(plan.remove.length + ' removed');
+  setTimeout(() => showToast('Backed up ' + bk.where + ' · ' + bits.join(' · ')), 1400);
 }
 function renderBatchTaskPicker() {
   const job = _dirJobName();
