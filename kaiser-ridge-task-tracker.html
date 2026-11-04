@@ -850,8 +850,14 @@
   #rs-foot-acts:empty { display: none; }
   .rsn-fbtn { flex: 1; min-width: 0; height: 44px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; border-radius: 12px; font-size: 14px; font-weight: 700; white-space: nowrap; cursor: pointer; }
   .rsn-fbtn.brk { border: 1px solid rgba(242,107,0,0.3); color: var(--rsn-orange); background: var(--rsn-card); }
+  .rsn-fbtn.brk .rsi { width: 16px; height: 16px; margin-right: 3px; }
   .rsn-fbtn.brk.on { background: var(--rsn-orange); border-color: var(--rsn-orange); color: #fff; }
-  .rsn-fbtn.out { background: var(--rsn-red); color: #fff; }
+  .rsn-fbtn.out { background: var(--rsn-text); color: var(--rsn-bg); }
+  /* v479: Times (Jobs / Tasks averages) opens full screen, like the run sheet. It is a long list
+     you read, and as a part-height sheet it showed nine rows over a greyed Timesheets screen. */
+  #modal-checklist-avg .modal-sheet { height: 100vh; height: 100dvh; max-height: none; max-width: none; border-radius: 0; box-sizing: border-box; padding: calc(env(safe-area-inset-top) + 14px) 0 0 !important; display: flex; flex-direction: column; overflow: hidden; }
+  #modal-checklist-avg .modal-handle { display: none; }
+  #modal-checklist-avg #checklist-avg-list { max-height: none !important; flex: 1; min-height: 0; padding-bottom: env(safe-area-inset-bottom); -webkit-overflow-scrolling: touch; overflow-x: hidden; }
   .rsn-fbtn.in { background: var(--rsn-green); color: #fff; }
   .rsn-close { min-width: 74px; height: 44px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--rsn-line); border-radius: 12px; font-size: 14px; font-weight: 600; color: var(--rsn-sub); cursor: pointer; }
   .rsn-top { padding-top: 10px; }
@@ -877,6 +883,8 @@
   .rsn-lab { font-size: 13px; font-weight: 500; color: var(--rsn-sub); }
   .rsn-time { display: flex; align-items: baseline; gap: 4px; line-height: 1.05; }
   .rsn-time b { font-size: 52px; font-weight: 700; color: var(--rsn-text); letter-spacing: -0.5px; }
+  .rsn-noest { font-size: 17px; font-weight: 600; line-height: 1.3; color: var(--rsn-sub); padding: 6px 0 4px; }
+  .rsn-noest.sm { font-size: 13px; padding: 0; }
   .rsn-time i { font-size: 20px; font-style: normal; font-weight: 500; color: var(--rsn-sub); }
   .rsn-tgt { display: flex; flex-direction: column; align-items: center; gap: 2px; padding-bottom: 4px; }
   .rsn-time2 { display: inline-flex; align-items: baseline; gap: 3px; }
@@ -925,7 +933,7 @@
   .rsn-oc { margin-bottom: 8px; cursor: pointer; }
   .rsn-oc.off { background: transparent; }
   .rsn-oc.off .rsn-title { color: var(--rsn-sub); }
-  .rsn-oc.off .rsi-flag { color: var(--rsn-check); }
+  .rsn-oc.off .rsi-go { color: var(--rsn-check); }
   .rsn-last { font-size: 12px; color: var(--rsn-sub); white-space: nowrap; }
   .rsn-last.none { font-style: italic; }
   .rsn-lap { display: inline-flex; align-items: center; height: 24px; box-sizing: border-box; border-radius: 12px; border: 1px solid var(--rsn-line); background: var(--rsn-card); font-size: 12px; font-weight: 700; color: var(--rsn-green); white-space: nowrap; }
@@ -943,7 +951,7 @@
   .rsn-obatch-c { font-size: 12px; font-weight: 600; color: var(--rsn-sub); background: var(--rsn-line); border-radius: 10px; padding: 1px 9px; flex-shrink: 0; }
   .rsn-obatch .rsi-grip { color: var(--rsn-check); }
   .rsn-ohead { font-size: 13px; font-weight: 700; color: var(--rsn-sub); margin: 14px 0 8px; }
-  .rsn-ohead.flag { color: var(--rsn-orange); }
+  .rsn-ohead.flag { color: var(--rsn-green); }
   .rsn-note { font-size: 12px; line-height: 1.4; color: var(--rsn-sub); margin-top: 1px; }
   .rsn-warn { font-size: 12px; line-height: 1.4; font-weight: 600; color: var(--rsn-orange); margin-top: 3px; }
   .rsn-rsbtn { height: 40px; display: flex; align-items: center; justify-content: center; border-radius: 14px; background: var(--rsn-blue-bg); border: 1px solid var(--rsn-blue-line); color: var(--rsn-blue); font-size: 13px; font-weight: 600; cursor: pointer; margin-bottom: 8px; }
@@ -960,9 +968,9 @@
   .rsn-nowline.on #rs-now-elapsed { font-variant-numeric: tabular-nums; }
   .rsn-nowline.on .rsi-live { width: 7px; height: 7px; }
   .rsn-nowline.brk .rsi { width: 15px; height: 15px; margin-right: 2px; }
-  .rsn-nowline .rsi-flag { margin-right: 4px; }
+  .rsn-nowline .rsi-going { margin-right: 2px; }
   .rsn-head { display: flex; align-items: flex-start; gap: 9px; }
-  .rsn-head > .rsi-flag { margin-top: 3px; }
+  .rsn-head > .rsi-go, .rsn-head > .rsi-going { margin-top: 3px; }
   .rsn-title { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 15px; font-weight: 500; line-height: 1.3; color: var(--rsn-text); }
   .rsn-tick { font-size: 14px; line-height: 1.4; color: var(--rsn-sub); flex-shrink: 0; }
   .rsn-pencil { color: var(--rsn-blue); flex-shrink: 0; cursor: pointer; padding: 10px 4px 10px 10px; margin: -8px -4px -10px 0; }
@@ -1009,13 +1017,21 @@
   .rsn-brk-sub { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 18px; }
   .rsn-brk-meta { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; min-width: 0; }
   .rsi { display: inline-block; width: 14px; height: 14px; flex-shrink: 0; background: currentColor; -webkit-mask: var(--rsi) center / contain no-repeat; mask: var(--rsi) center / contain no-repeat; }
-  .rsi-flag { color: var(--rsn-red); }
+  /* ▶ v479: the play mark replaces the red flag. Grey outline = not added (Organise), green
+     outline = on the run sheet, filled green = being timed now. Red is kept for real alerts. The
+     fallbacks are for the screens outside the run sheet's palette. */
+  .rsi-go, .rsi-going { color: var(--rsn-green, #1a7f37); }
+  body.dark .rsi-go, body.dark .rsi-going { color: var(--rsn-green, #4cd964); }
+  .rsi-go.off { color: var(--rsn-check, #bfc4bf); }
+  body.dark .rsi-go.off { color: var(--rsn-check, #636366); }
+  .rsi-inl { vertical-align: -1px; margin-right: 5px; }
   .rsi-live { width: 6px; height: 6px; }
   .rsi-pencil { color: var(--rsn-blue); }
   .rsi-chev { width: 10px; height: 10px; transform: rotate(-90deg); }
   .rsi-chev.open { transform: none; }
   .rsi-dart { width: 22px; height: 22px; -webkit-mask: none; mask: none; background: var(--rsi) center / contain no-repeat; }
-  .rsi-flag { --rsi: url("data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjE0IiBoZWlnaHQ9IjE0IiB2aWV3Qm94PSIwIDAgMTQgMTQiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGlkPSJmbGFnIj4KPHBhdGggaWQ9IlZlY3RvciIgZD0iTTIuMzMzOCAxMi44MzM4VjkuMDU4MTdNMi4zMzM4IDkuMDU4MTdWMi4zMzI5NkMyLjMzMzggMi4yNDIzOSAyLjM1NDg4IDIuMTUzMDcgMi4zOTUzOCAyLjA3MjA2QzIuNDM1ODcgMS45OTEwNiAyLjQ5NDY3IDEuOTIwNiAyLjU2NzExIDEuODY2MjZDMy4xNzI4OSAxLjQxMTg0IDMuOTA5NjggMS4xNjYyIDQuNjY2OSAxLjE2NjJDNi40MTY3MiAxLjE2NjIgNy41ODMyOCAyLjMzMjk2IDguOTQ0MDYgMi4zMzI5NkM5LjcyMTc2IDIuMzMyOTYgMTAuMzE4MSAyLjE3NzM5IDEwLjczMyAxLjg2NjI2QzEwLjgxOTYgMS44MDEyNSAxMC45MjI3IDEuNzYxNjcgMTEuMDMwNSAxLjc1MTk0QzExLjEzODQgMS43NDIyMSAxMS4yNDY5IDEuNzYyNzIgMTEuMzQzOCAxLjgxMTE3QzExLjQ0MDcgMS44NTk2MiAxMS41MjIxIDEuOTM0MSAxMS41NzkxIDIuMDI2MjZDMTEuNjM2IDIuMTE4NDIgMTEuNjY2MiAyLjIyNDYyIDExLjY2NjIgMi4zMzI5NlY4LjE2Njc2QzExLjY2NjIgOC4yNTczMyAxMS42NDUxIDguMzQ2NjUgMTEuNjA0NiA4LjQyNzY2QzExLjU2NDEgOC41MDg2NiAxMS41MDUzIDguNTc5MTIgMTEuNDMyOSA4LjYzMzQ2QzEwLjgyNzEgOS4wODc4OCAxMC4wOTAzIDkuMzMzNTIgOS4zMzMxIDkuMzMzNTJDNy41ODMyNyA5LjMzMzUyIDYuNDE2NzIgOC4xNjY3NiA0LjY2NjkgOC4xNjY3NkMzLjgwNjA1IDguMTY2NzggMi45NzU0MiA4LjQ4NDE0IDIuMzMzOCA5LjA1ODE3WiIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZT0iI0Q5MkQyMCIvPgo8L2c+Cjwvc3ZnPgo="); }
+  .rsi-go { --rsi: url("data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTQiIGhlaWdodD0iMTQiIHZpZXdCb3g9IjAgMCAxNCAxNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNNC4yIDIuNkM0LjIgMi4xIDQuNzUgMS44IDUuMTcgMi4wN0wxMS40IDYuNDdDMTEuNzcgNi43MyAxMS43NyA3LjI3IDExLjQgNy41M0w1LjE3IDExLjkzQzQuNzUgMTIuMiA0LjIgMTEuOSA0LjIgMTEuNFoiIHN0cm9rZT0iIzFBN0YzNyIgc3Ryb2tlLXdpZHRoPSIxLjciIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz48L3N2Zz4="); }
+  .rsi-going { --rsi: url("data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTQiIGhlaWdodD0iMTQiIHZpZXdCb3g9IjAgMCAxNCAxNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNNC4yIDIuNkM0LjIgMi4xIDQuNzUgMS44IDUuMTcgMi4wN0wxMS40IDYuNDdDMTEuNzcgNi43MyAxMS43NyA3LjI3IDExLjQgNy41M0w1LjE3IDExLjkzQzQuNzUgMTIuMiA0LjIgMTEuOSA0LjIgMTEuNFoiIGZpbGw9IiMxQTdGMzciIHN0cm9rZT0iIzFBN0YzNyIgc3Ryb2tlLXdpZHRoPSIxLjciIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz48L3N2Zz4="); }
   .rsi-coffee { --rsi: url("data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjE0IiBoZWlnaHQ9IjE0IiB2aWV3Qm94PSIwIDAgMTQgMTQiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGlkPSJjb2ZmZWUiIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8wXzE2KSI+CjxwYXRoIGlkPSJWZWN0b3IiIGQ9Ik01LjgzMzUgMS4xNjYyVjIuMzMyOTJNOC4xNjY5NCAxLjE2NjJWMi4zMzI5Mk05LjMzMzY1IDQuNjY2MzVDOS40ODgzNyA0LjY2NjM1IDkuNjM2NzUgNC43Mjc4MSA5Ljc0NjE1IDQuODM3MjFDOS44NTU1NSA0Ljk0NjYxIDkuOTE3MDEgNS4wOTQ5OSA5LjkxNzAxIDUuMjQ5N1Y5LjMzMzIxTTkuMzMzNjUgNC42NjYzNUgyLjMzMzM2QzIuMTc4NjQgNC42NjYzNSAyLjAzMDI2IDQuNzI3ODEgMS45MjA4NiA0LjgzNzIxQzEuODExNDYgNC45NDY2MSAxLjc1IDUuMDk0OTkgMS43NSA1LjI0OTdWOS45MTY1N0MxLjc1IDEwLjUzNTQgMS45OTU4NCAxMS4xMjg5IDIuNDMzNDUgMTEuNTY2NkMyLjg3MTA1IDEyLjAwNDIgMy40NjQ1NyAxMi4yNSA0LjA4MzQzIDEyLjI1SDcuNTgzNThDOC4yMDI0NCAxMi4yNSA4Ljc5NTk2IDEyLjAwNDIgOS4yMzM1NiAxMS41NjY2QzkuNjcxMTcgMTEuMTI4OSA5LjkxNzAxIDEwLjUzNTQgOS45MTcwMSA5LjkxNjU3VjkuMzMzMjFNOS4zMzM2NSA0LjY2NjM1SDEwLjUwMDRDMTEuMTE5MiA0LjY2NjM1IDExLjcxMjcgNC45MTIxOSAxMi4xNTA0IDUuMzQ5NzlDMTIuNTg4IDUuNzg3NCAxMi44MzM4IDYuMzgwOTEgMTIuODMzOCA2Ljk5OTc4QzEyLjgzMzggNy42MTg2NCAxMi41ODggOC4yMTIxNiAxMi4xNTA0IDguNjQ5NzZDMTEuNzEyNyA5LjA4NzM3IDExLjExOTIgOS4zMzMyMSAxMC41MDA0IDkuMzMzMjFIOS45MTcwMU0zLjUwMDA3IDEuMTY2MlYyLjMzMjkyIiBzdHJva2Utd2lkdGg9IjEuNiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2U9IiNGMjZCMDAiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8wXzE2Ij4KPHJlY3Qgd2lkdGg9IjE0IiBoZWlnaHQ9IjE0IiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo="); }
   .rsi-box { --rsi: url("data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjEyIiBoZWlnaHQ9IjEyIiB2aWV3Qm94PSIwIDAgMTIgMTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGlkPSJib3giIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8wXzI0KSI+CjxwYXRoIGlkPSJWZWN0b3IiIGQ9Ik0xLjY0OTkgMy40OTk5N0w1Ljk5OTkgNi4wMDAxMU01Ljk5OTkgNi4wMDAxMUwxMC4zNDk5IDMuNDk5OTdNNS45OTk5IDYuMDAwMTFMNiAxMC45OTkzTTYgMTAuOTk5M1YxMS4wMDA0TTYgMTAuOTk5M0M1LjgyNDQ2IDEwLjk5OTMgNS42NTIwMiAxMC45NTMxIDUuNSAxMC44NjUzTDIgOC44NjUyM0MxLjg0ODEzIDguNzc3NTQgMS43MjE5OSA4LjY1MTQ2IDEuNjM0MjMgOC40OTk2M0MxLjU0NjQ3IDguMzQ3NzkgMS41MDAxOCA4LjE3NTU1IDEuNSA4LjAwMDE4VjMuOTk5OTVDMS41MDAxOCAzLjgyNDU3IDEuNTQ2NDcgMy42NTIzMyAxLjYzNDIzIDMuNTAwNUMxLjcyMTk5IDMuMzQ4NjcgMS44NDgxMyAzLjIyMjU4IDIgMy4xMzQ5TDUuNSAxLjEzNDc4QzUuNjUyMDIgMS4wNDcwMSA1LjgyNDQ2IDEuMDAwOCA2IDEuMDAwOEM2LjE3NTU0IDEuMDAwOCA2LjM0Nzk4IDEuMDQ3MDEgNi41IDEuMTM0NzhMMTAgMy4xMzQ5QzEwLjE1MTkgMy4yMjI1OCAxMC4yNzggMy4zNDg2NyAxMC4zNjU4IDMuNTAwNUMxMC40NTM1IDMuNjUyMzMgMTAuNDk5OCAzLjgyNDU3IDEwLjUgMy45OTk5NVY4LjAwMDE4QzEwLjQ5OTggOC4xNzU1NSAxMC40NTM1IDguMzQ3NzkgMTAuMzY1OCA4LjQ5OTYzQzEwLjI3OCA4LjY1MTQ2IDEwLjE1MTkgOC43Nzc1NCAxMCA4Ljg2NTIzTDYuNSAxMC44NjUzQzYuMzQ3OTggMTAuOTUzMSA2LjE3NTU0IDEwLjk5OTMgNiAxMC45OTkzWiIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZT0iIzc3N0U3OSIvPgo8L2c+CjxkZWZzPgo8Y2xpcFBhdGggaWQ9ImNsaXAwXzBfMjQiPgo8cmVjdCB3aWR0aD0iMTIiIGhlaWdodD0iMTIiIGZpbGw9IndoaXRlIi8+CjwvY2xpcFBhdGg+CjwvZGVmcz4KPC9zdmc+Cg=="); }
   .rsi-pencil { --rsi: url("data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjE0IiBoZWlnaHQ9IjE0IiB2aWV3Qm94PSIwIDAgMTQgMTQiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGlkPSJwZW5jaWwiIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8wXzE4KSI+CjxwYXRoIGlkPSJWZWN0b3IiIGQ9Ik04Ljc1MDIxIDIuOTE2MTdMOC43NTQyNCAyLjkyMDJNOC43NTQyNCAyLjkyMDJMMTEuMDc5OSA1LjI0NTU3TTguNzU0MjQgMi45MjAyTDEwLjAyNjYgMS42NDc2NkMxMC4zMzUxIDEuMzM5MzMgMTAuNzUzNCAxLjE2NjE1IDExLjE4OTUgMS4xNjYyQzExLjYyNTcgMS4xNjYyNSAxMi4wNDM5IDEuMzM5NTUgMTIuMzUyMyAxLjY0Nzk2QzEyLjY2MDYgMS45NTYzNiAxMi44MzM5IDIuMzc0NjIgMTIuODMzOCAyLjgxMDczQzEyLjgzMzcgMy4yNDY4MyAxMi42NjA0IDMuNjY1MDQgMTIuMzUyIDMuOTczMzdMMTEuMDc5OSA1LjI0NTU3TTguNzU0MjQgMi45MjAyTDIuMjQwNzYgOS40MzQ0NUMyLjEwNTMxIDkuNTY5NDkgMi4wMDUxNCA5LjczNTc1IDEuOTQ5MDcgOS45MTg2MUwxLjE3ODQxIDEyLjQ1NzJDMS4xNjMzNCAxMi41MDc3IDEuMTYyMiAxMi41NjEzIDEuMTc1MTIgMTIuNjEyM0MxLjE4ODA0IDEyLjY2MzMgMS4yMTQ1NCAxMi43MDk5IDEuMjUxOCAxMi43NDcxQzEuMjg5MDYgMTIuNzg0MyAxLjMzNTcxIDEyLjgxMDggMS4zODY3NyAxMi44MjM2QzEuNDM3ODQgMTIuODM2NCAxLjQ5MTQzIDEyLjgzNTIgMS41NDE4NiAxMi44MjAxTDQuMDgxMzQgMTIuMDUwMUM0LjI2NDA0IDExLjk5NDUgNC40MzAzIDExLjg5NSA0LjU2NTU1IDExLjc2MDJMMTEuMDc5OSA1LjI0NTU3TTExLjA3OTkgNS4yNDU1N0wxMS4wODM4IDUuMjQ5NDYiIHN0cm9rZS13aWR0aD0iMS42IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZT0iIzM0NzhGNiIvPgo8L2c+CjxkZWZzPgo8Y2xpcFBhdGggaWQ9ImNsaXAwXzBfMTgiPgo8cmVjdCB3aWR0aD0iMTQiIGhlaWdodD0iMTQiIGZpbGw9IndoaXRlIi8+CjwvY2xpcFBhdGg+CjwvZGVmcz4KPC9zdmc+Cg=="); }
@@ -1025,7 +1041,7 @@
   .rsi-chev { --rsi: url("data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjEwIiBoZWlnaHQ9IjEwIiB2aWV3Qm94PSIwIDAgMTAgMTAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGlkPSJjaGV2cm9uLWRvd24iPgo8cGF0aCBpZD0iVmVjdG9yIiBkPSJNMi41IDMuNzVMNSA2LjI1TDcuNSAzLjc1IiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlPSIjMzQ3OEY2Ii8+CjwvZz4KPC9zdmc+Cg=="); }
   .rsi-grip { --rsi: url("data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjE0IiBoZWlnaHQ9IjE0IiB2aWV3Qm94PSIwIDAgMTQgMTQiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGlkPSJncmlwLXZlcnRpY2FsIj4KPHBhdGggaWQ9IlZlY3RvciIgZD0iTTUuODMzMSA3QzUuODMzMSA3LjMyMjEzIDUuNTcxODggNy41ODMyNyA1LjI0OTY1IDcuNTgzMjdDNC45Mjc0MiA3LjU4MzI3IDQuNjY2MiA3LjMyMjEzIDQuNjY2MiA3QzQuNjY2MiA2LjY3Nzg3IDQuOTI3NDIgNi40MTY3MiA1LjI0OTY1IDYuNDE2NzJDNS41NzE4OCA2LjQxNjcyIDUuODMzMSA2LjY3Nzg3IDUuODMzMSA3Wk01LjgzMzEgMi45MTcwOEM1LjgzMzEgMy4yMzkyMSA1LjU3MTg4IDMuNTAwMzUgNS4yNDk2NSAzLjUwMDM1QzQuOTI3NDIgMy41MDAzNSA0LjY2NjIgMy4yMzkyMSA0LjY2NjIgMi45MTcwOEM0LjY2NjIgMi41OTQ5NCA0LjkyNzQyIDIuMzMzOCA1LjI0OTY1IDIuMzMzOEM1LjU3MTg4IDIuMzMzOCA1LjgzMzEgMi41OTQ5NCA1LjgzMzEgMi45MTcwOFpNNS44MzMxIDExLjA4MjlDNS44MzMxIDExLjQwNTEgNS41NzE4OCAxMS42NjYyIDUuMjQ5NjUgMTEuNjY2MkM0LjkyNzQyIDExLjY2NjIgNC42NjYyIDExLjQwNTEgNC42NjYyIDExLjA4MjlDNC42NjYyIDEwLjc2MDggNC45Mjc0MiAxMC40OTk2IDUuMjQ5NjUgMTAuNDk5NkM1LjU3MTg4IDEwLjQ5OTYgNS44MzMxIDEwLjc2MDggNS44MzMxIDExLjA4MjlaTTkuMzMzOCA3QzkuMzMzOCA3LjMyMjEzIDkuMDcyNTggNy41ODMyNyA4Ljc1MDM1IDcuNTgzMjdDOC40MjgxMiA3LjU4MzI3IDguMTY2OSA3LjMyMjEzIDguMTY2OSA3QzguMTY2OSA2LjY3Nzg3IDguNDI4MTIgNi40MTY3MiA4Ljc1MDM1IDYuNDE2NzJDOS4wNzI1OCA2LjQxNjcyIDkuMzMzOCA2LjY3Nzg3IDkuMzMzOCA3Wk05LjMzMzggMi45MTcwOEM5LjMzMzggMy4yMzkyMSA5LjA3MjU4IDMuNTAwMzUgOC43NTAzNSAzLjUwMDM1QzguNDI4MTIgMy41MDAzNSA4LjE2NjkgMy4yMzkyMSA4LjE2NjkgMi45MTcwOEM4LjE2NjkgMi41OTQ5NCA4LjQyODEyIDIuMzMzOCA4Ljc1MDM1IDIuMzMzOEM5LjA3MjU4IDIuMzMzOCA5LjMzMzggMi41OTQ5NCA5LjMzMzggMi45MTcwOFpNOS4zMzM4IDExLjA4MjlDOS4zMzM4IDExLjQwNTEgOS4wNzI1OCAxMS42NjYyIDguNzUwMzUgMTEuNjY2MkM4LjQyODEyIDExLjY2NjIgOC4xNjY5IDExLjQwNTEgOC4xNjY5IDExLjA4MjlDOC4xNjY5IDEwLjc2MDggOC40MjgxMiAxMC40OTk2IDguNzUwMzUgMTAuNDk5NkM5LjA3MjU4IDEwLjQ5OTYgOS4zMzM4IDEwLjc2MDggOS4zMzM4IDExLjA4MjlaIiBzdHJva2Utd2lkdGg9IjEuNiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2U9IiNCRkM0QkYiLz4KPC9nPgo8L3N2Zz4K"); }
   .rsi-live { --rsi: url("data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjYiIGhlaWdodD0iNiIgdmlld0JveD0iMCAwIDYgNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBpZD0iTGl2ZSBpbmRpY2F0b3IiIGN4PSIzIiBjeT0iMyIgcj0iMyIgZmlsbD0iIzM0NzhGNiIvPgo8L3N2Zz4K"); }
-  .rsi-dart { --rsi: url("data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjIyIiBoZWlnaHQ9IjIyIiB2aWV3Qm94PSIwIDAgMjIgMjIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGlkPSJGcmFtZSI+CjxwYXRoIGlkPSJWZWN0b3IiIGQ9Ik04LjcwODMzIDIwLjE2NjdDMTIuNzU4NCAyMC4xNjY3IDE2LjA0MTcgMTYuODgzNCAxNi4wNDE3IDEyLjgzMzNDMTYuMDQxNyA4Ljc4MzI1IDEyLjc1ODQgNS41IDguNzA4MzMgNS41QzQuNjU4MjUgNS41IDEuMzc1IDguNzgzMjUgMS4zNzUgMTIuODMzM0MxLjM3NSAxNi44ODM0IDQuNjU4MjUgMjAuMTY2NyA4LjcwODMzIDIwLjE2NjdaIiBmaWxsPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIxLjYiIHN0cm9rZT0iI0Q5MkQyMCIvPgo8cGF0aCBpZD0iVmVjdG9yXzIiIGQ9Ik0xMy4yOTE3IDEyLjgzMzNDMTMuMjkxNyAxNS4zNjQ2IDExLjIzOTYgMTcuNDE2NyA4LjcwODMzIDE3LjQxNjdDNi4xNzcwMyAxNy40MTY3IDQuMTI1IDE1LjM2NDYgNC4xMjUgMTIuODMzM0M0LjEyNSAxMC4zMDIgNi4xNzcwMyA4LjI1IDguNzA4MzMgOC4yNUMxMS4yMzk2IDguMjUgMTMuMjkxNyAxMC4zMDIgMTMuMjkxNyAxMi44MzMzWiIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZT0iI0Q5MkQyMCIvPgo8cGF0aCBpZD0iVmVjdG9yXzMiIGQ9Ik04LjcwODMzIDE0LjY2NjdDOS43MjA4NiAxNC42NjY3IDEwLjU0MTcgMTMuODQ1OSAxMC41NDE3IDEyLjgzMzNDMTAuNTQxNyAxMS44MjA4IDkuNzIwODYgMTEgOC43MDgzMyAxMUM3LjY5NTgxIDExIDYuODc1IDExLjgyMDggNi44NzUgMTIuODMzM0M2Ljg3NSAxMy44NDU5IDcuNjk1ODEgMTQuNjY2NyA4LjcwODMzIDE0LjY2NjdaIiBmaWxsPSIjRDkyRDIwIi8+CjxwYXRoIGlkPSJWZWN0b3JfNCIgZD0iTTguNzA4MzMgMTIuODMzM0wxOC4zMzMzIDMuMjA4MzMiIHN0cm9rZS13aWR0aD0iMS44IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZT0iIzI2MzQ0MyIvPgo8cGF0aCBpZD0iVmVjdG9yXzUiIGQ9Ik0xNC42NjY3IDMuMjA4MzNIMTguMzMzM1Y2Ljg3NUwyMS4wODMzIDQuMTI1TDIwLjYyNSAwLjkxNjY2N0wxNy40MTY3IDAuNDU4MzMzTDE0LjY2NjcgMy4yMDgzM1oiIGZpbGw9IiMzNDc4RjYiLz4KPHBhdGggaWQ9IlZlY3Rvcl82IiBkPSJNOC43MDgzMyAxMi44MzMzTDkuMzUgOS40NDE2N0wxMi4xIDEyLjE5MTdMOC43MDgzMyAxMi44MzMzWiIgZmlsbD0iIzI2MzQ0MyIvPgo8L2c+Cjwvc3ZnPgo="); }
+  .rsi-dart { --rsi: url("data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjIyIiBoZWlnaHQ9IjIyIiB2aWV3Qm94PSIwIDAgMjIgMjIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGlkPSJGcmFtZSI+CjxwYXRoIGlkPSJWZWN0b3IiIGQ9Ik04LjcwODMzIDIwLjE2NjdDMTIuNzU4NCAyMC4xNjY3IDE2LjA0MTcgMTYuODgzNCAxNi4wNDE3IDEyLjgzMzNDMTYuMDQxNyA4Ljc4MzI1IDEyLjc1ODQgNS41IDguNzA4MzMgNS41QzQuNjU4MjUgNS41IDEuMzc1IDguNzgzMjUgMS4zNzUgMTIuODMzM0MxLjM3NSAxNi44ODM0IDQuNjU4MjUgMjAuMTY2NyA4LjcwODMzIDIwLjE2NjdaIiBmaWxsPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIxLjYiIHN0cm9rZT0iIzM0NzhGNiIvPgo8cGF0aCBpZD0iVmVjdG9yXzIiIGQ9Ik0xMy4yOTE3IDEyLjgzMzNDMTMuMjkxNyAxNS4zNjQ2IDExLjIzOTYgMTcuNDE2NyA4LjcwODMzIDE3LjQxNjdDNi4xNzcwMyAxNy40MTY3IDQuMTI1IDE1LjM2NDYgNC4xMjUgMTIuODMzM0M0LjEyNSAxMC4zMDIgNi4xNzcwMyA4LjI1IDguNzA4MzMgOC4yNUMxMS4yMzk2IDguMjUgMTMuMjkxNyAxMC4zMDIgMTMuMjkxNyAxMi44MzMzWiIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZT0iIzM0NzhGNiIvPgo8cGF0aCBpZD0iVmVjdG9yXzMiIGQ9Ik04LjcwODMzIDE0LjY2NjdDOS43MjA4NiAxNC42NjY3IDEwLjU0MTcgMTMuODQ1OSAxMC41NDE3IDEyLjgzMzNDMTAuNTQxNyAxMS44MjA4IDkuNzIwODYgMTEgOC43MDgzMyAxMUM3LjY5NTgxIDExIDYuODc1IDExLjgyMDggNi44NzUgMTIuODMzM0M2Ljg3NSAxMy44NDU5IDcuNjk1ODEgMTQuNjY2NyA4LjcwODMzIDE0LjY2NjdaIiBmaWxsPSIjMzQ3OEY2Ii8+CjxwYXRoIGlkPSJWZWN0b3JfNCIgZD0iTTguNzA4MzMgMTIuODMzM0wxOC4zMzMzIDMuMjA4MzMiIHN0cm9rZS13aWR0aD0iMS44IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZT0iIzI2MzQ0MyIvPgo8cGF0aCBpZD0iVmVjdG9yXzUiIGQ9Ik0xNC42NjY3IDMuMjA4MzNIMTguMzMzM1Y2Ljg3NUwyMS4wODMzIDQuMTI1TDIwLjYyNSAwLjkxNjY2N0wxNy40MTY3IDAuNDU4MzMzTDE0LjY2NjcgMy4yMDgzM1oiIGZpbGw9IiMzNDc4RjYiLz4KPHBhdGggaWQ9IlZlY3Rvcl82IiBkPSJNOC43MDgzMyAxMi44MzMzTDkuMzUgOS40NDE2N0wxMi4xIDEyLjE5MTdMOC43MDgzMyAxMi44MzMzWiIgZmlsbD0iIzI2MzQ0MyIvPgo8L2c+Cjwvc3ZnPgo="); }
   @media (prefers-reduced-motion: reduce) {
     .done-fly { animation: doneHold 3s linear forwards; }
     .run-done-chip.bump { animation: none; }
@@ -2304,7 +2320,7 @@
   <!-- v451: Start Break and Clock Out live on the run sheet. The strip stays because its
        padding is what holds the task list clear of the bottom nav. -->
   <div class="running-buttons">
-<button class="btn-pause" id="btn-pause" style="display:none;" onclick="breakButtonTap()">☕ Start Break</button>
+<button class="btn-pause" id="btn-pause" style="display:none;" onclick="breakButtonTap()"><span class="rsi rsi-coffee"></span> Start Break</button>
   </div>
 </div>
 
@@ -3637,7 +3653,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.478';
+const APP_VERSION = '2026-06-21.479';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4974,11 +4990,11 @@ function renderClockState() {
     const pauseBtn = document.getElementById('btn-pause');
     if (clockState.onBreak) {
       overlay.classList.add('paused');
-      if (pauseBtn) { pauseBtn.textContent = '☕ End Break'; pauseBtn.classList.add('on-pause'); }
+      if (pauseBtn) { pauseBtn.innerHTML = _rsIcon('coffee') + ' End Break'; pauseBtn.classList.add('on-pause'); }
       if (clEl) clEl.textContent = '☕ On break since ' + formatTimeAmPm(clockState.breakStartTime || clockState.startTime);
     } else {
       overlay.classList.remove('paused');
-      if (pauseBtn) { pauseBtn.textContent = '☕ Start Break'; pauseBtn.classList.remove('on-pause'); }
+      if (pauseBtn) { pauseBtn.innerHTML = _rsIcon('coffee') + ' Start Break'; pauseBtn.classList.remove('on-pause'); }
     }
     // Job title (the task) + a quiet meta line: location · group · avg count.
     const jtEl = document.getElementById('run-job-title');
@@ -7220,10 +7236,9 @@ function updateRunRing(netElapsedSec) {
   _rsRing = { frac, over };
   if (label) {
     label.style.color = over ? '#ff9f0a' : 'var(--run-blue)';
-    const _flagCue = _runEstCache.basis === 'flagged' ? ' 🚩' : '';   // estimate comes from the flagged tasks
     label.textContent = (live
       ? (Math.round(frac * 100) + '% of ~' + fmtEstHours(est / 3600))
-      : (over ? ('over ~' + fmtEstHours(est / 3600) + ' est') : (Math.round(frac * 100) + '% of ~' + fmtEstHours(est / 3600)))) + _flagCue;
+      : (over ? ('over ~' + fmtEstHours(est / 3600) + ' est') : (Math.round(frac * 100) + '% of ~' + fmtEstHours(est / 3600))));
   }
   // 🏁 Estimated finish CLOCK-TIME — the trust hook. Live mode forecasts from NOW
   // plus the work left, so it moves out if a task runs long and pulls in when you
@@ -7350,7 +7365,7 @@ function renderRunChecklist() {
       // ⚠️ These are SORT ORDERS, not filters. "Flagged" read as "show only flagged",
       // so when a run came back with its flags lost the view showed all 52 tasks and
       // looked broken rather than empty. "Flagged first" says what it does.
-      rows += `<div style="display:flex;gap:5px;align-items:center;padding:2px 0 8px;">${_gopt('batch', 'Batches')}${_gopt('flag', 'Flagged first')}</div>`;
+      rows += `<div style="display:flex;gap:5px;align-items:center;padding:2px 0 8px;">${_gopt('batch', 'Batches')}${_gopt('flag', 'Today’s work first')}</div>`;
     }
     // ↺ Reset reps — subtle, shown once any repeatable task has reps on this run.
     if (jobHasReps(clockState.task) && !featureHidden('reset-reps')) {
@@ -7392,7 +7407,7 @@ function renderRunChecklist() {
       const textTap = _expandable ? `toggleChecklistExpand(decodeURIComponent('${enc}'))` : `_clTapFlag(decodeURIComponent('${enc}'))`;
       const stepBadge = steps.length ? ` <span style="color:var(--run-faint);font-size:13px;">(${checkedCount}/${steps.length})</span>` : '';
       const _clamp = (_expandable && !expanded) ? 'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;' : '';
-      const textSpan = `<span onclick="${textTap}" style="flex:1;min-width:0;font-size:16px;cursor:pointer;${_clamp}${isDone ? 'color:var(--run-faint);text-decoration:line-through;' : 'color:var(--run-text2);'}">${flagged ? '🚩 ' : ''}${_escHtml(s)}${stepBadge}</span>`;
+      const textSpan = `<span onclick="${textTap}" style="flex:1;min-width:0;font-size:16px;cursor:pointer;${_clamp}${isDone ? 'color:var(--run-faint);text-decoration:line-through;' : 'color:var(--run-text2);'}">${flagged ? _goMark(true) : ''}${_escHtml(s)}${stepBadge}</span>`;
       const _avgMin = itemAvg[s.trim().replace(/\s+/g, ' ').toLowerCase()];
       const right = isDone
         ? `<span style="font-size:13px;color:var(--run-green);font-weight:600;white-space:nowrap;">${fmtMin(dur[s])}</span>`
@@ -7537,7 +7552,7 @@ function renderRunChecklist() {
           ontouchstart="clBatchSwipeStart(event)" ontouchmove="clBatchSwipeMove(event)" ontouchend="clBatchSwipeEnd(event)"
           onclick="toggleRunGroup(decodeURIComponent('${encodeURIComponent(g.key).replace(/'/g, '%27')}'), ${col})" style="display:flex;align-items:center;gap:8px;padding:15px 0 6px;cursor:pointer;">
           <span style="color:var(--run-sub);font-size:13px;">${col ? '▸' : '▾'}</span>
-          <span style="font-size:13px;font-weight:700;letter-spacing:0.3px;color:${g.loose ? 'var(--run-sub)' : (allDone ? '#30d158' : 'var(--run-text2)')};">${fl ? '🚩 ' : ''}${allDone ? '✓ ' : ''}${_escHtml(g.name)}</span>
+          <span style="font-size:13px;font-weight:700;letter-spacing:0.3px;color:${g.loose ? 'var(--run-sub)' : (allDone ? '#30d158' : 'var(--run-text2)')};">${fl ? _goMark(true) : ''}${allDone ? '✓ ' : ''}${_escHtml(g.name)}</span>
           <span style="font-size:11px;color:var(--run-faint);background:var(--run-fill1);border-radius:9px;padding:1px 7px;">${doneN}/${g.members.length}${est ? ' · ~' + fmtMin(est) : ''}</span>
           <span style="flex:1;"></span></div>`;
         return hd + (col ? '' : _batchBody(g.members));
@@ -13795,11 +13810,11 @@ function _breakBtnUI() {
   const btn = document.getElementById('btn-pause');
   const overlay = document.getElementById('running-overlay');
   if (clockState && clockState.onBreak) {
-    if (btn) { btn.textContent = '☕ End Break'; btn.classList.add('on-pause'); }
+    if (btn) { btn.innerHTML = _rsIcon('coffee') + ' End Break'; btn.classList.add('on-pause'); }
     if (overlay) overlay.classList.add('paused');
     document.getElementById('run-clockedin-text').textContent = '☕ On break since ' + formatTimeAmPm(clockState.breakStartTime);
   } else {
-    if (btn) { btn.textContent = '☕ Start Break'; btn.classList.remove('on-pause'); }
+    if (btn) { btn.innerHTML = _rsIcon('coffee') + ' Start Break'; btn.classList.remove('on-pause'); }
     if (overlay) overlay.classList.remove('paused');
     if (clockState) document.getElementById('run-clockedin-text').textContent = 'Clocked in ' + formatTimeAmPm(clockState.startTime);
   }
@@ -15857,8 +15872,8 @@ function renderDirSubtaskList(items) {
     const metaLine = metaBits.length ? `<div style="font-size:11px;color:var(--subtext);padding:0 0 3px 2px;">${metaBits.join(' · ')}</div>` : '';
     return `
     <div id="strow-${i}" ontouchstart="stSwipeStart(event,${i})" ontouchmove="stSwipeMove(event)" ontouchend="stSwipeEnd(event)"
-      style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);${_flagged ? 'background:rgba(255,214,10,0.08);' : ''}">
-      ${_flagged ? '<span style="font-size:13px;padding:4px 0 0;flex-shrink:0;">🚩</span>' : ''}
+      style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);${_flagged ? 'background:rgba(26,127,55,0.07);' : ''}">
+      ${_flagged ? '<span style="padding:5px 0 0;flex-shrink:0;"><span class="rsi rsi-go"></span></span>' : ''}
       <div style="color:var(--subtext);font-size:22px;padding:2px 4px 0;user-select:none;-webkit-user-select:none;cursor:grab;"
         ontouchstart="stTouchStart(event,${i})">≡</div>
       <div style="flex:1;min-width:0;">
@@ -16011,7 +16026,7 @@ let _stSrcIdx = null, _stClone = null, _stStartY = 0, _stDragging = false, _stRe
 let _stSwipe = null;
 function toggleEditorTaskFlag(i) {
   const job = _dirJobName();
-  if (!job) { showToast('Save the job first, then flag its tasks'); return; }
+  if (!job) { showToast('Save the job first, then add its tasks to the run sheet'); return; }
   const item = _subtaskItems[i]; if (!item) return;
   const all = getChecklistFlags();
   const f = all[job] || (all[job] = {});
@@ -16022,7 +16037,7 @@ function toggleEditorTaskFlag(i) {
   if (navigator.vibrate) { try { navigator.vibrate(12); } catch (e) {} }
   renderDirSubtaskList();
   if (clockState && clockState.running && clockState.task === job) renderRunChecklist();
-  showToast(on ? '🚩 Flagged to top' : 'Flag removed');
+  showToast(on ? 'Added to the run sheet' : 'Taken off the run sheet');
 }
 function stSwipeStart(event, i) {
   if (_stDragging) return;
@@ -16918,7 +16933,7 @@ function renderTaskActionsSheet() {
     (hasOrigin ? row('origin', 'ℹ️', 'History (from Inbox)', '') : '') +
     row('type', isRep ? '↻' : '1×', 'Type', isRep ? 'Repeatable — tap to make once-per-run' : 'Once per run — tap to make repeatable') +
     (featureHidden('reminders') ? '' : row('remind', '🔔', 'Reminder', remOn ? 'On' : 'Off')) +
-    row('flag', '🚩', flagged ? 'Remove flag' : 'Flag to top', '') +
+    row('flag', `<span class="rsi rsi-go${flagged ? '' : ' off'}" style="vertical-align:-1px;"></span>`, flagged ? 'Take off the run sheet' : 'Add to the run sheet', '') +
     row('delete', '✕', 'Delete task', '', true);
   return true;
 }
@@ -23961,7 +23976,7 @@ function renderPlannerBlock(plan, grid) {
   const _pov = getPlannerChecklist()[plan.id];
   const _blkFlags = (_pov && _pov.flags && Object.keys(_pov.flags).length) ? _pov.flags : (getChecklistFlags()[plan.task] || {});
   const _hasFlags = Object.keys(_blkFlags).length > 0 || (getTaskNotes()[plan.task] || []).some(p => p.flagged);
-  block.innerHTML = `<div class="planner-block-title">${_hasFlags ? '🚩 ' : ''}${plan.task}</div>
+  block.innerHTML = `<div class="planner-block-title">${_hasFlags ? _goMark(true) : ''}${plan.task}</div>
     <div class="planner-block-meta">${startStr} – ${endStr} · ${plan.durationHours}h</div>${_plannerBreakLines(_plannedBreaksFor(plan.id))}`;
 
   let _blockTouchStartTime = 0;
@@ -25766,6 +25781,8 @@ const _RS_PLAN_HINT = 'Tap a row to 📍 mark where things go, then tap ⠿ on t
 let _rsHelpOpen = false;
 function _rsHelpToggle() { _rsHelpOpen = !_rsHelpOpen; _rsRender(); }
 function _rsIcon(n) { return `<span class="rsi rsi-${n}"></span>`; }
+// ▶ The play mark inline in text, for the screens outside the run sheet: on = on the run, else grey.
+function _goMark(on) { return `<span class="rsi rsi-go rsi-inl${on ? '' : ' off'}"></span>`; }
 // "12:20am" → the digits and the am/pm at their two sizes. No forecast → "—", never a guess.
 function _rsBigTime(ms) {
   if (!ms) return '<b>—</b>';
@@ -25793,7 +25810,7 @@ function _rsLineSync() {
   const _brkMins = clockState.onBreak ? 0 : Math.round(_breakNowMs() / 60000);
   document.getElementById('rs-line-in').innerHTML = _escHtml(txt('run-clockedin-text'))
     + (_brkMins >= 1 ? ` · <span class="rsn-line-brk">${fmtMin(_brkMins)} break</span>` : '');
-  document.getElementById('rs-line-pct').textContent = txt('run-ring-label').replace(/\s*🚩\s*$/, '');
+  document.getElementById('rs-line-pct').textContent = txt('run-ring-label');
 }
 // The sheet's own buttons: Running now breaks and clocks out, Planning clocks in.
 function _rsFootSync() {
@@ -25802,7 +25819,7 @@ function _rsFootSync() {
   if (!ctx) { el.innerHTML = ''; return; }
   if (ctx.kind === 'plan') { el.innerHTML = '<span class="rsn-fbtn in" onclick="_rsPlanClockIn()">Clock in</span>'; return; }
   const brk = !!clockState.onBreak;
-  el.innerHTML = `<span class="rsn-fbtn brk${brk ? ' on' : ''}" onclick="breakButtonTap()">☕ ${brk ? 'End' : 'Start'} Break</span><span class="rsn-fbtn out" onclick="openTimeModal('out')">Clock Out</span>`;
+  el.innerHTML = `<span class="rsn-fbtn brk${brk ? ' on' : ''}" onclick="breakButtonTap()">${_rsIcon('coffee')}&nbsp;${brk ? 'End' : 'Start'} Break</span><span class="rsn-fbtn out" onclick="openTimeModal('out')">Clock Out</span>`;
 }
 // The same one-screen clock-in as a planner block. Cancelling it leaves you on this sheet.
 function _rsPlanClockIn() { if (_rsPlanId) _plannerStartPlan(_rsPlanId, true); }
@@ -25912,10 +25929,10 @@ function _rsRender() {
   if (!rows.length) {
     if (titleEl) titleEl.textContent = ctx.job;
     body.innerHTML = _rsRunTop(ctx.job, planning) + (planning ? '' : `${_rsLineHtml()}<div class="rsn-count rsn-count-row" style="margin-top:6px;"><span></span>${_RS_UNDO}</div>`) + (banked
-      ? `<div style="padding:34px 6px;text-align:center;color:var(--subtext);font-size:15px;line-height:1.55;">Every flagged task is already done this run.<br>
-         <span style="font-size:13px;">🔁 ${banked} task${banked === 1 ? '' : 's'} banked ${banked === 1 ? 'its' : 'their'} planned laps in an earlier session. Tap ${_rsReset} to run ${banked === 1 ? 'it' : 'them'} again, or flag something else.</span></div>`
-      : `<div style="padding:38px 6px;text-align:center;color:var(--subtext);font-size:15px;line-height:1.55;">Nothing flagged yet.<br>
-         <span style="font-size:13px;">${planning ? 'Swipe a task right to 🚩 flag it on this block' : 'Tap a task on the clock screen to 🚩 flag it'}. Flagged tasks are the ones you plan to do, and they are what this sheet lists.</span></div>`);
+      ? `<div style="padding:34px 6px;text-align:center;color:var(--subtext);font-size:15px;line-height:1.55;">Every task on the run sheet is already done this run.<br>
+         <span style="font-size:13px;">🔁 ${banked} task${banked === 1 ? '' : 's'} banked ${banked === 1 ? 'its' : 'their'} planned laps in an earlier session. Tap ${_rsReset} to run ${banked === 1 ? 'it' : 'them'} again, or add something else.</span></div>`
+      : `<div style="padding:38px 6px;text-align:center;color:var(--subtext);font-size:15px;line-height:1.55;">Nothing on the run sheet yet.<br>
+         <span style="font-size:13px;">${planning ? 'Tap a task in Organise to add it to this block' : 'Tap a task in Organise to add it to today'}. The tasks you add are the ones you plan to do, and they are what this sheet lists.</span></div>`);
     _rsLineSync();
     return;
   }
@@ -25954,6 +25971,8 @@ function _rsRender() {
   const _doneTxt = `${doneN + banked} of ${rows.length + banked} done`;
   const _stepsTxt = `${rows.length} step${rows.length === 1 ? '' : 's'}`;
   const _finMs = lastPending ? lastPending.when : null;
+  const _noEst = !_finMs && rows.some(r => !r.brk && !r.isDone);   // tasks to do, and not one has a time
+  const _finBig = _noEst ? '<span class="rsn-noest">Add times to see your finish</span>' : _rsBigTime(_finMs);
   // ⚓ RUNNING: the sheet rests with the last finished row and the row you are on sitting
   // straight under the slim bar, so the order and break links scroll away with the list.
   // The move banner and the break-placing cancel stay pinned: while one is in hand you
@@ -25964,14 +25983,14 @@ function _rsRender() {
   const _orderBack = ctx.order && _addBrk && !featureHidden('order-reset');
   const _orderLink = _orderBack ? `<span class="rsn-reset" onclick="_rsResetOrder()">↺ Back to the learned order</span>` : '';
   const head = `${_rsRunTop(null, planning)}
-    <div class="rsn-fin"><div class="rsn-fin-l"><div class="rsn-lab">Projected finish</div><div class="rsn-time">${_rsBigTime(_finMs)}</div></div>
+    <div class="rsn-fin"><div class="rsn-fin-l"><div class="rsn-lab">Projected finish</div><div class="rsn-time">${_finBig}</div></div>
       ${tgt ? `<div class="rsn-tgt">${_rsIcon('dart')}<div class="rsn-time2">${_rsBigTime(tgt)}</div></div>` : ''}</div>
     ${planning ? '' : _rsLineHtml()}
     ${planning ? `<div class="rsn-count">${_stepsTxt} from ${_rsHM(ctx.startMs)}</div>`
       : `<div class="rsn-job">${_escHtml(ctx.job)}</div><div class="rsn-count rsn-count-row"><span>${_doneTxt}</span>${_RS_UNDO}</div>${bankedNote}`}
     <div class="cl-sticky-top rsn-pin${_addBrk ? '' : ' held'}">
       <div class="rsn-slim-tap" onclick="_rsPinTop('run-sheet-body')"><div class="rsn-slim-job">${_escHtml(ctx.job)}</div>
-      <div class="rsn-slim"><span class="rsn-time2">${_rsBigTime(_finMs)}</span>${tgt ? `<span class="rsn-slim-t">${_rsIcon('dart')}<span class="rsn-time3">${_rsBigTime(tgt)}</span></span>` : ''}<span class="rsn-slim-n">${planning ? _stepsTxt : _doneTxt}</span><span class="rsi rsi-chev open"></span>${(planning && _addBrk) ? `<span class="rsn-slim-brk" onclick="event.stopPropagation();_rsSetPlacing(true)" title="Add a break">${_rsIcon('coffee')}</span>` : ''}</div></div>
+      <div class="rsn-slim"><span class="rsn-time2">${_noEst ? '<span class="rsn-noest sm">Add times</span>' : _rsBigTime(_finMs)}</span>${tgt ? `<span class="rsn-slim-t">${_rsIcon('dart')}<span class="rsn-time3">${_rsBigTime(tgt)}</span></span>` : ''}<span class="rsn-slim-n">${planning ? _stepsTxt : _doneTxt}</span><span class="rsi rsi-chev open"></span>${(planning && _addBrk) ? `<span class="rsn-slim-brk" onclick="event.stopPropagation();_rsSetPlacing(true)" title="Add a break">${_rsIcon('coffee')}</span>` : ''}</div></div>
       ${planning ? '' : `<div class="rsn-bar"><span id="rs-slim-fill" style="width:0;"></span></div>`}
       ${_moveBanner}${placingCancel}</div>
     <div class="rsn-sec${planning ? ' plan' : ''}"><span>${planning ? _escHtml(ctx.job) : 'Your session'}</span>${_orderLink}</div>
@@ -26118,10 +26137,10 @@ function _rsRender() {
     const _nowLine = _onBrk
       ? `<div class="rsn-nowline brk">${_rsIcon('coffee')}<span>ON BREAK · <span id="rs-now-elapsed">${fmtMin(_rsNowElapsedMin())}</span></span></div>`
       : r.isNow
-      ? `<div class="rsn-nowline on">${_rsIcon('flag')}<span class="rsi rsi-live"></span><span>ON TASK · <span id="rs-now-elapsed" data-secs="1">${_fmtMinSec(_rsNowElapsedMin())}</span></span>${_rnc(timerBit)}</div>` : '';
+      ? `<div class="rsn-nowline on">${_rsIcon('going')}<span>ON TASK · <span id="rs-now-elapsed" data-secs="1">${_fmtMinSec(_rsNowElapsedMin())}</span></span>${_rnc(timerBit)}</div>` : '';
     const _cmts = (!planning && _cmtRow[r.t] === r && clockState.itemComments && clockState.itemComments[r.t]) || [];
     const _cmtHtml = _cmts.map(c => `<div class="rsn-cmt">💬 ${_escHtml(c.text)} <span>· ${_timeShort(c.at)}</span></div>`).join('');
-    const _lead = _rsHeldBadge(key) || (r.isNow ? '' : (r.isDone ? `<span class="rsn-tick">✓</span>` : _rsIcon('flag')));
+    const _lead = _rsHeldBadge(key) || (r.isNow ? '' : (r.isDone ? `<span class="rsn-tick">✓</span>` : _rsIcon('go')));
     const _edit = (_rsMoveKey || _rsPlacing) ? '' : `<span class="rsn-pencil" ontouchstart="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_rsEditTask(decodeURIComponent('${_encArg(r.t)}'))" title="edit: photo, video, name">${_rsIcon('pencil')}</span>`;
     const _when = r.isDone
       ? `<span class="rsn-when done">${r.undoable ? '↺ ' : ''}✓ ${_rsHM(r.when)}</span>`
@@ -26916,7 +26935,7 @@ function toggleChecklistFlag(task, item) {
     if (f[item]) delete f[item]; else f[item] = Date.now();
     savePlannerChecklist(m);
     const est = _applyBlockEstimate(pid);   // re-size the block from the flagged tasks' history
-    showToast((nowFlagged ? '🚩 Flagged to top' : 'Flag removed') + (est ? ' · block ~' + fmtMin(est.mins) : ''));
+    showToast((nowFlagged ? 'Added to the run sheet' : 'Taken off the run sheet') + (est ? ' · block ~' + fmtMin(est.mins) : ''));
     _renderClOrganiseBody();
     if (typeof renderPlannerScreen === 'function') renderPlannerScreen();   // reflect the new duration on the timeline behind the sheet
     return;
@@ -26939,7 +26958,7 @@ function toggleChecklistFlag(task, item) {
   // While clocked into this job the ring's estimate follows the flags — say so.
   const _estCue = (clockState && clockState.running && clockState.task === task && _runEstSec() > 0 && _runEstCache.basis === 'flagged')
     ? ' · est ~' + fmtEstHours(_runEstSec() / 3600) : '';
-  showToast((nowFlagged ? '🚩 Flagged to top' : 'Flag removed') + _estCue);
+  showToast((nowFlagged ? (useSession ? 'Added to today' : 'Added to the run sheet') : (useSession ? 'Taken off today' : 'Taken off the run sheet')) + _estCue);
   _refreshChecklistSurfaces(task);
 }
 function _refreshChecklistSurfaces(task) {
@@ -27134,8 +27153,8 @@ function _renderClOrganiseBody() {
     if (est) {
       _heroMins = est.mins;
       _heroN = est.basis === 'flagged' ? est.n : 0;
-      _heroSub = (est.basis === 'flagged' ? 'from ' + est.n + ' flagged task' + (est.n === 1 ? '' : 's') + (est.lapped ? ' · 🔁 laps counted' : '') : 'from this job’s history') + ', auto-filled from your timed history';
-      if (est.basis === 'flagged' && est.missing > 0) _heroWarn = `${est.missing} flagged task${est.missing === 1 ? ' has' : 's have'} no time yet, so ${est.missing === 1 ? 'it adds' : 'they add'} nothing to this total. Tap ＋ est on a task below.`;
+      _heroSub = (est.basis === 'flagged' ? 'from ' + est.n + ' task' + (est.n === 1 ? '' : 's') + ' on the run sheet' + (est.lapped ? ' · 🔁 laps counted' : '') : 'from this job’s history') + ', auto-filled from your timed history';
+      if (est.basis === 'flagged' && est.missing > 0) _heroWarn = `${est.missing} task${est.missing === 1 ? ' has' : 's have'} no time yet, so ${est.missing === 1 ? 'it adds' : 'they add'} nothing to this total. Tap ＋ est on a task below.`;
     } else _heroSub = 'Nothing here has a time yet. Tap ＋ est on a task to estimate it, or clock this job once and the real times take over.';
   } else if (!_clOrganisePlanId && clockState && clockState.running && clockState.task === task) {
     // Clock-opened sheet: the same accumulating total the planner shows — the sum
@@ -27151,14 +27170,14 @@ function _renderClOrganiseBody() {
       if (isFinite(a) && a > 0) { const l = _eLt[item] >= 1 ? _eLt[item] : 1; _eSum += a * l; _eN++; if (l > 1) _eLapped = true; }
     });
     if (_eN > 0 && _eSum > 0) {
-      _heroLab = 'Flagged work'; _heroMins = _eSum; _heroN = _eN;
-      _heroSub = `from ${_eN} flagged task${_eN === 1 ? '' : 's'}${_eLapped ? ' · 🔁 laps counted' : ''}`;
-      _heroHint = ' The 🏁 finish time targets this, so flag or unflag to adjust.';
-    } else if (_docked) { _heroLab = 'Flagged work'; _heroSub = 'Tap a task to flag it'; }
+      _heroLab = 'Today’s work'; _heroMins = _eSum; _heroN = _eN;
+      _heroSub = `from ${_eN} task${_eN === 1 ? '' : 's'}${_eLapped ? ' · 🔁 laps counted' : ''}`;
+      _heroHint = ' The 🏁 finish time targets this, so add or take off tasks to adjust.';
+    } else if (_docked) { _heroLab = 'Today’s work'; _heroSub = 'Tap a task to add it to today'; }
   }
   const _bRec = _batchRec(task);
   const _hasBatches = !!(_bRec && _bRec.order.length);
-  const _orgHint = `Tap a task to 🚩 flag it or take the flag off${_hasBatches ? ': it stays in its batch, floated to the top' : ''}. Hold &amp; drag any task to set the order it’s done in, and swipe one left to 🙈 hide it.${_hasBatches ? ' Tap a batch heading to open or close it, hold &amp; drag a heading to reorder batches, and drag a task under a heading to move it there.' : ''}${_heroHint}`
+  const _orgHint = `Tap a task to add it to ${_live ? 'today' : 'the run sheet'} (green ▶) or take it off (grey)${_hasBatches ? ': it stays in its batch, floated to the top' : ''}. The filled ▶ is the task being timed now. Hold &amp; drag any task to set the order it’s done in, and swipe one left to 🙈 hide it.${_hasBatches ? ' Tap a batch heading to open or close it, hold &amp; drag a heading to reorder batches, and drag a task under a heading to move it there.' : ''}${_heroHint}`
     // ⭐ ON DEMAND, NOT AUTOMATIC. The running clock re-sorts its unflagged tail by
     // last-completed on every render, and that is right there because the clock is
     // a browse-and-pick surface. HERE, dragging is the whole point of the screen —
@@ -27180,6 +27199,9 @@ function _renderClOrganiseBody() {
   const _oLast = _checklistItemLastDone(task);   // 🗓 last-done per task, same one pass
   const _oSteps = learnedStepsResolver(task), _oGuide = guidesResolver(task), _oMm = _mediaMaps(task), _oTmr = getJobTimers();
   const _oChecks = (_live && clockState.stepChecks) || {};
+  // ▶ The task the run sheet is timing right now wears the filled mark (none on a break).
+  let _oNowT = null;
+  if (_live && !clockState.onBreak) { try { const n = _rsRowsFor(null).find(r => r.isNow); _oNowT = (n && !n.brk) ? n.t : null; } catch (e) {} }
   const rowHtml = (s) => {
     if (_live && _isTaskDoneNow(task, s, _liveDone)) return '';
     if (_liveCarried.has(s)) {
@@ -27214,7 +27236,7 @@ function _renderClOrganiseBody() {
     const _ld = _oLast[s];
     const _lastBit = _ld ? `<span class="rsn-last">${_agoWords(_ld)}</span>` : '<span class="rsn-last none">not done yet</span>';
     return `<div class="cl-row rsn-card rsn-oc${isFlagged ? '' : ' off'}" data-cl-item="${_attr(s)}" data-cl-task="${taskAttr}" data-cl-flagged="${isFlagged ? '1' : ''}" ontouchstart="clSwipeStart(event)" ontouchmove="clSwipeMove(event)" ontouchend="clSwipeEnd(event)" onclick="_clOrgTapFlag(decodeURIComponent('${_lapEnc(s)}'))">
-      <div class="rsn-head">${_rsIcon('flag')}<span class="rsn-title">${_escHtml(s)}</span><span class="rsn-pencil" ontouchstart="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_clOrgEditTask(decodeURIComponent('${_lapEnc(s)}'))" title="edit this task">${_rsIcon('pencil')}</span></div>
+      <div class="rsn-head">${_rsIcon(isFlagged && s === _oNowT ? 'going' : 'go')}<span class="rsn-title">${_escHtml(s)}</span><span class="rsn-pencil" ontouchstart="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_clOrgEditTask(decodeURIComponent('${_lapEnc(s)}'))" title="edit this task">${_rsIcon('pencil')}</span></div>
       ${_cmtHtml}
       <div class="rsn-foot">${_avgMeta(s, _oAvg, _oCnt)}${_lastBit}${lapChip}${_extras}<span class="rsn-grip" onclick="event.stopPropagation()">${_rsIcon('grip')}</span></div>${_stPanel}</div>`;
   };
@@ -27244,8 +27266,8 @@ function _renderClOrganiseBody() {
   } else {
     // No batches: flagged float into a top "done first" section, then the rest.
     const flaggedBlock = flagged.length
-      ? `<div class="rsn-ohead flag">🚩 Flagged · done first</div>${flagged.map(rowHtml).join('')}`
-      : `<div style="padding:18px 0;color:var(--subtext);text-align:center;font-size:14px;">No flagged items yet. Tap a task to flag it.</div>`;
+      ? `<div class="rsn-ohead flag">${_live ? 'Today’s work' : 'On the run sheet'} · done first</div>${flagged.map(rowHtml).join('')}`
+      : `<div style="padding:18px 0;color:var(--subtext);text-align:center;font-size:14px;">Nothing added yet. ${_live ? 'Tap a task to add it to today.' : 'Tap a task to add it to the run sheet.'}</div>`;
     const rest = ordered.filter(s => !flags[s]);
     const restBlock = rest.length
       ? `<div class="rsn-ohead">Rest of the tasks</div>${rest.map(rowHtml).join('')}`
@@ -27283,7 +27305,7 @@ function _renderClOrganiseBody() {
   const hero = _heroLab ? `<div class="rsn-fin"><div class="rsn-fin-l"><div class="rsn-lab">${_heroLab}</div><div class="rsn-time">${_heroTime}</div></div></div>
     <div class="rsn-note">${_heroSub}</div>${_heroWarn ? `<div class="rsn-warn">${_heroWarn}</div>` : ''}` : '';
   const pin = `<div class="cl-sticky-top rsn-pin"><div class="rsn-slim-tap" onclick="_rsPinTop('cl-organise-body')"><div class="rsn-slim-job">${_escHtml(task)}</div>
-    <div class="rsn-slim"><span class="rsn-time2">${_heroTime}</span><span class="rsn-slim-n">${_heroN ? _heroN + ' flagged' : ''}</span><span class="rsi rsi-chev open"></span>${_rsOpenCall ? `<span class="rsn-slim-rs" onclick="event.stopPropagation();${_rsOpenCall}">Run sheet</span>` : ''}</div></div></div>`;
+    <div class="rsn-slim"><span class="rsn-time2">${_heroTime}</span><span class="rsn-slim-n">${_heroN ? _heroN + ' task' + (_heroN === 1 ? '' : 's') : ''}</span><span class="rsi rsi-chev open"></span>${_rsOpenCall ? `<span class="rsn-slim-rs" onclick="event.stopPropagation();${_rsOpenCall}">Run sheet</span>` : ''}</div></div></div>`;
   const rsCtl = _rsOpenCall ? `<div class="rsn-rsbtn" onclick="${_rsOpenCall}">Run sheet · what finishes when</div>` : '';
   body.innerHTML = top + hero + pin + `<div class="rsn-sec plan"><span>${_escHtml(task)}</span></div>` + rsCtl + addCtl + bodyHtml;
   requestAnimationFrame(() => _rsPinSync('cl-organise-body'));
@@ -27379,7 +27401,7 @@ function openPlannerDetail(planId) {
   try { _rsRowsFor(planId).forEach(r => { if (!r.brk && clFlags[r.t] && orderedSubs.includes(r.t) && !_pdFlag.includes(r.t)) _pdFlag.push(r.t); }); } catch (e) {}
   orderedSubs.forEach(t => { if (clFlags[t] && !_pdFlag.includes(t)) _pdFlag.push(t); });
   if (_pdFlag.length) {
-    _pdHeads[_pdFlag[0]] = '🚩 Flagged · ' + _pdFlag.length;
+    _pdHeads[_pdFlag[0]] = 'On the run sheet · ' + _pdFlag.length;
     orderedSubs = orderedSubs.filter(t => !_pdFlag.includes(t));
   }
   const _pdBRec = _batchRec(plan.task);
@@ -27418,7 +27440,7 @@ function openPlannerDetail(planId) {
             ? `<div style="display:flex;align-items:center;gap:6px;margin:12px 0 6px;font-size:11px;font-weight:700;color:var(--subtext);letter-spacing:0.4px;text-transform:uppercase;">${_pdHeads[s]}</div>`
             : '';
           return `${_hd}<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:7px;">
-          <span style="color:var(--subtext);font-size:14px;margin-top:1px;">${clFlags[s] ? '🚩' : '☐'}</span>
+          <span style="margin-top:2px;flex-shrink:0;"><span class="rsi rsi-go${clFlags[s] ? '' : ' off'}"></span></span>
           <div style="min-width:0;flex:1;">
           <span style="font-size:14px;color:var(--text);">${s}${_laps > 1 ? ` <span style="font-size:12px;font-weight:700;color:#30d158;">🔁×${_laps}</span>` : ''}</span>${_ldLine}</div>
         </div>`; }).join('')}
@@ -27535,7 +27557,7 @@ function copyPlannerBlock() {
   const nLaps  = _plannerClipboardArr && _plannerClipboardArr.laps ? Object.keys(_plannerClipboardArr.laps).filter(k => _plannerClipboardArr.laps[k] > 1).length : 0;
   closeModal('modal-planner-detail');
   renderPlannerScreen();                          // reveals the 📋 Paste button
-  showToast('Copied' + (nFlags ? ' with ' + nFlags + ' 🚩 flagged task' + (nFlags === 1 ? '' : 's') : '') + (nLaps ? ' · 🔁 laps' : '') + ' — open a day and tap 📋 Paste');
+  showToast('Copied' + (nFlags ? ' with ' + nFlags + ' task' + (nFlags === 1 ? '' : 's') + ' on the run sheet' : '') + (nLaps ? ' · 🔁 laps' : '') + ' — open a day and tap 📋 Paste');
 }
 function pastePlannerBlock() {
   if (!_plannerClipboard) { showToast('Nothing copied yet'); return; }
@@ -27556,7 +27578,7 @@ function pastePlannerBlock() {
   }
   scheduleCalendarAutoPush(block.date);
   renderPlannerScreen();
-  showToast('Pasted into ' + _plannerDate.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) + (nFlags ? ' · ' + nFlags + ' 🚩 carried' : ''));
+  showToast('Pasted into ' + _plannerDate.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) + (nFlags ? ' · ' + nFlags + ' task' + (nFlags === 1 ? '' : 's') + ' carried' : ''));
 }
 
 // ── Move a planned task to another day (lands parked in that day's holding) ──
