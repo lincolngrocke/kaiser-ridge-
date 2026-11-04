@@ -3676,7 +3676,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.480';
+const APP_VERSION = '2026-06-21.481';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5285,16 +5285,20 @@ function _orderedChecklistItems(task, items, flagsArg, orderArg) {
 // only, never the running session: the order must not shift under you as you tick.
 // Robot runs never count. Cached per job on the entries revision (the clock reads it
 // on every render).
-let _tickRankCache = { rev: -1, map: {} };
+// A moved task ranks by its ticks on the job it came from too (_movedFrom, v481), so the
+// cache also turns over when a move is saved.
+let _tickRankCache = { rev: -1, moves: null, map: {} };
 function _tickRank(task) {
   if (!task) return {};
-  if (_tickRankCache.rev !== _entriesRev) _tickRankCache = { rev: _entriesRev, map: {} };
+  const _mv = localStorage.getItem('kr_task_moves') || '';
+  if (_tickRankCache.rev !== _entriesRev || _tickRankCache.moves !== _mv) _tickRankCache = { rev: _entriesRev, moves: _mv, map: {} };
   if (_tickRankCache.map[task]) return _tickRankCache.map[task];
   const dayOf = ms => { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); };
-  const out = {};
+  const out = {}, moved = _movedFrom(task), srcJobs = new Set([].concat(...Object.values(moved)));
   entries.forEach(e => {
-    if (!e || e.bot || e.task !== task || !Array.isArray(e.checklist)) return;
+    if (!e || e.bot || !Array.isArray(e.checklist) || (e.task !== task && !srcJobs.has(e.task))) return;
     e.checklist.forEach(d => {
+      if (!d || !d.item || !_tickIsJobs(task, moved, e, d.item)) return;
       const t = d && d.item ? new Date(d.at).getTime() : NaN;
       if (!isFinite(t)) return;
       const day = dayOf(t), r = out[d.item];
@@ -5895,13 +5899,33 @@ function _byRecentDayThenOrder(last) {
     return (day(tb) - day(ta)) || (ta - tb);
   };
 }
+// ⇄ A MOVED TASK BRINGS ITS HISTORY (v481). Lincoln, 5 Nov 2026: moving his Personal
+// grooming tasks into Household chores showed every one "not done yet", though their
+// averages came across. Last done and the learned order are per job on purpose (the
+// tiny-house change-overs share task text), so a task borrows ticks only from the jobs
+// it was MOVED out of, read from the move trail (kr_task_moves). A job that merely has
+// a task of the same name lends nothing. { task: [jobs it came from] }.
+function _movedFrom(job) {
+  const out = {}, pre = job + '\u0001', moves = getTaskMoves();
+  Object.keys(moves).forEach(k => {
+    if (k.indexOf(pre) !== 0) return;
+    const m = moves[k];
+    const trail = (m && Array.isArray(m.trail) && m.trail.length) ? m.trail : (m && m.from ? [m.from] : []);
+    const src = trail.filter(j => j && j !== job);
+    if (src.length) out[k.slice(pre.length)] = src;
+  });
+  return out;
+}
+// Does this timesheet's tick of `item` count for `job`: its own run, or a job the task moved out of.
+function _tickIsJobs(job, moved, e, item) { return e.task === job || !!(moved[item] && moved[item].includes(e.task)); }
 function _checklistItemLastDone(job) {
   const map = {};
   if (!job) return map;
+  const moved = _movedFrom(job), srcJobs = new Set([].concat(...Object.values(moved)));
   entries.forEach(e => {
-    if (e.task !== job || !Array.isArray(e.checklist)) return;
+    if (!e || !Array.isArray(e.checklist) || (e.task !== job && !srcJobs.has(e.task))) return;
     e.checklist.forEach(d => {
-      if (!d || !d.item || !d.at) return;
+      if (!d || !d.item || !d.at || !_tickIsJobs(job, moved, e, d.item)) return;
       const t = new Date(d.at).getTime();
       if (!isNaN(t) && (!map[d.item] || t > map[d.item])) map[d.item] = t;
     });
