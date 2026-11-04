@@ -3676,7 +3676,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.482';
+const APP_VERSION = '2026-06-21.483';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -26193,6 +26193,7 @@ function _rsRender() {
     ${_addBrk ? `<div class="rsn-addbrk" onclick="_rsSetPlacing(true)">${_rsIcon('coffee')}Add a break</div>` : ''}
     ${_orderBack ? `<div class="rsn-order-note">The learned order is the order you ticked these off <b>last time you did this job</b>. You have arranged this one by hand, so it is following your order instead.</div>` : ''}`;
   const avgMap = _taskEstMap(), cntMap = _taskHistCountMap();   // built once, not per row
+  const _lastMap = _checklistItemLastDone(ctx.job);   // 🗓 when each task was last done, as on Organise (v483)
   const _brkOn = ctx.kind === 'clock' ? _rsBreakMap(rows) : {};   // ☕ finished breaks, by row
   // ⚠️ cntMap stays MEASURED — the ×N must never count a guess.
   // ▣ which batch each task belongs to, and — once ticked — how long it ACTUALLY
@@ -26345,13 +26346,18 @@ function _rsRender() {
     const _stepsBtn = nSteps
       ? `<span class="rsn-steps-btn${_stTicked >= nSteps ? ' all' : ''}" onclick="event.stopPropagation();_rsToggleSteps(decodeURIComponent('${encodeURIComponent(key).replace(/'/g, '%27')}'))">${_rsIcon('list')}<span>${_stWords}</span><span class="rsi rsi-chev${open ? ' open' : ''}"></span></span>` : '';
     const _media = _taskMediaChips(ctx.job, r.t, 'var(--rsn-sub)', _mm, true);
+    // 🗓 LAST DONE, as on Organise (v483). Lincoln, 5 Nov 2026: the run sheet "should display
+    // when that task was last done, like it does on the Organise sheet". Only on rows still
+    // to do: a ticked row already says when, with its ✓ time.
+    const _ld = r.isDone ? null : _lastMap[r.t];
+    const _lastBit = r.isDone ? '' : (_ld ? `<span class="rsn-last">${_agoWords(_ld)}</span>` : '<span class="rsn-last none">not done yet</span>');
     return `${_ins(_i)}<div class="rs-row rsn-row" data-rs-key="${_attr(key)}"${r.isNow ? ' data-rs-now="1"' : ''}${r.isDone ? ' data-rs-done="1"' : ''}${_canQuick ? ' data-rs-quick="1"' : ''} ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)">
     <div class="rsn-card${_cardCls}"${tap}>
       ${_nowLine}
       <div class="rsn-head">${_lead}<span class="rsn-title">${_escHtml(r.t)}</span>${_edit}</div>
       ${_cmtHtml}
       <div class="rsn-mid">${markChip}${_batch}${_rnc(lap)}${_when}</div>
-      <div class="rsn-foot">${_avgMeta(r.t, avgMap, cntMap)}${_rnc(actualChip + brkNote + (r.isNow ? '' : timerBit))}${_media}${_stepsBtn}
+      <div class="rsn-foot">${_avgMeta(r.t, avgMap, cntMap)}${_lastBit}${_rnc(actualChip + brkNote + (r.isNow ? '' : timerBit))}${_media}${_stepsBtn}
         <span class="rsn-grip" ontouchstart="event.stopPropagation()" ontouchmove="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_rsPickUp(decodeURIComponent('${_encArg(key)}'))" title="move this row">${_rsIcon('grip')}</span></div></div>
     ${open ? `<div class="rsn-steps-wrap">${_rsStepsHtml(r, ctx, stepsOf)}</div>` : ''}</div>`;
   }).join('');
