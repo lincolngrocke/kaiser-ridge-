@@ -3676,7 +3676,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.483';
+const APP_VERSION = '2026-06-21.484';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -26165,9 +26165,17 @@ function _rsRender() {
   // you came from. "3 of 6" matches the Organise sheet and the gap explains
   // itself; "0 of 3" reads as the sheet having lost your work.
   const _doneTxt = `${doneN + banked} of ${rows.length + banked} done`;
-  const _stepsTxt = `${rows.length} step${rows.length === 1 ? '' : 's'}`;
+  // v484, Lincoln 5 Nov 2026: planning a job "should give you a total amount of minutes". The
+  // total is start to projected finish, so it always agrees with the big time above it (breaks
+  // planned in are part of the block). The rows are tasks, so they are counted and named as
+  // tasks: a step is the level below a task.
+  const _nTasks = rows.filter(r => !r.brk).length;
+  const _stepsTxt = `${_nTasks} task${_nTasks === 1 ? '' : 's'}`;
   const _finMs = lastPending ? lastPending.when : null;
   const _noEst = !_finMs && rows.some(r => !r.brk && !r.isDone);   // tasks to do, and not one has a time
+  // Whole minutes of each clock time as shown, so 10:15 to 11:36 reads 1h 21m, never 1h 22m.
+  const _planMins = (planning && _finMs && ctx.startMs) ? Math.floor(_finMs / 60000) - Math.floor(ctx.startMs / 60000) : 0;
+  const _planTotal = _planMins > 0 ? ` · ~${fmtMin(_planMins)}` : '';
   const _finBig = _noEst ? '<span class="rsn-noest">Add times to see your finish</span>' : _rsBigTime(_finMs);
   // ⚓ RUNNING: the sheet rests with the last finished row and the row you are on sitting
   // straight under the slim bar, so the order and break links scroll away with the list.
@@ -26182,11 +26190,11 @@ function _rsRender() {
     <div class="rsn-fin"><div class="rsn-fin-l"><div class="rsn-lab">Projected finish</div><div class="rsn-time">${_finBig}</div></div>
       ${tgt ? `<div class="rsn-tgt">${_rsIcon('dart')}<div class="rsn-time2">${_rsBigTime(tgt)}</div></div>` : ''}</div>
     ${planning ? '' : _rsLineHtml()}
-    ${planning ? `<div class="rsn-count">${_stepsTxt} from ${_rsHM(ctx.startMs)}</div>`
+    ${planning ? `<div class="rsn-count">${_stepsTxt}${_planTotal} · from ${_rsHM(ctx.startMs)}</div>`
       : `<div class="rsn-job">${_escHtml(ctx.job)}</div><div class="rsn-count rsn-count-row"><span>${_doneTxt}</span>${_RS_UNDO}</div>${bankedNote}`}
     <div class="cl-sticky-top rsn-pin${_addBrk ? '' : ' held'}">
       <div class="rsn-slim-tap" onclick="_rsPinTop('run-sheet-body')"><div class="rsn-slim-job">${_escHtml(ctx.job)}</div>
-      <div class="rsn-slim"><span class="rsn-time2">${_noEst ? '<span class="rsn-noest sm">Add times</span>' : _rsBigTime(_finMs)}</span>${tgt ? `<span class="rsn-slim-t">${_rsIcon('dart')}<span class="rsn-time3">${_rsBigTime(tgt)}</span></span>` : ''}<span class="rsn-slim-n">${planning ? _stepsTxt : _doneTxt}</span><span class="rsi rsi-chev open"></span>${(planning && _addBrk) ? `<span class="rsn-slim-brk" onclick="event.stopPropagation();_rsSetPlacing(true)" title="Add a break">${_rsIcon('coffee')}</span>` : ''}</div></div>
+      <div class="rsn-slim"><span class="rsn-time2">${_noEst ? '<span class="rsn-noest sm">Add times</span>' : _rsBigTime(_finMs)}</span>${tgt ? `<span class="rsn-slim-t">${_rsIcon('dart')}<span class="rsn-time3">${_rsBigTime(tgt)}</span></span>` : ''}<span class="rsn-slim-n">${planning ? (_planMins > 0 ? `~${fmtMin(_planMins)} total` : _stepsTxt) : _doneTxt}</span><span class="rsi rsi-chev open"></span>${(planning && _addBrk) ? `<span class="rsn-slim-brk" onclick="event.stopPropagation();_rsSetPlacing(true)" title="Add a break">${_rsIcon('coffee')}</span>` : ''}</div></div>
       ${planning ? '' : `<div class="rsn-bar"><span id="rs-slim-fill" style="width:0;"></span></div>`}
       ${_moveBanner}${placingCancel}</div>
     <div class="rsn-sec${planning ? ' plan' : ''}"><span>${planning ? _escHtml(ctx.job) : 'Your session'}</span>${_orderLink}</div>
