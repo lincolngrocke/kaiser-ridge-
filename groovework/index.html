@@ -3676,7 +3676,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.484';
+const APP_VERSION = '2026-06-21.485';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -26171,7 +26171,13 @@ function _rsRender() {
   // tasks: a step is the level below a task.
   const _nTasks = rows.filter(r => !r.brk).length;
   const _stepsTxt = `${_nTasks} task${_nTasks === 1 ? '' : 's'}`;
-  const _finMs = lastPending ? lastPending.when : null;
+  // 🏁 FINISHED (v485, Lincoln 6 Nov 2026). With every task ticked there is nothing left to
+  // project, so the big time read "—". It now says when you finished: the last tick, sitting
+  // beside 🎯 so the two compare at a glance. A break still waiting doesn't stop the job
+  // being done.
+  const _allDone = !planning && rows.some(r => !r.brk) && rows.every(r => r.brk || r.isDone);
+  const _doneMs = _allDone ? Math.max(...rows.filter(r => !r.brk && r.when).map(r => r.when)) : 0;
+  const _finMs = (_allDone && _doneMs > 0) ? _doneMs : (lastPending ? lastPending.when : null);
   const _noEst = !_finMs && rows.some(r => !r.brk && !r.isDone);   // tasks to do, and not one has a time
   // Whole minutes of each clock time as shown, so 10:15 to 11:36 reads 1h 21m, never 1h 22m.
   const _planMins = (planning && _finMs && ctx.startMs) ? Math.floor(_finMs / 60000) - Math.floor(ctx.startMs / 60000) : 0;
@@ -26187,7 +26193,7 @@ function _rsRender() {
   const _orderBack = ctx.order && _addBrk && !featureHidden('order-reset');
   const _orderLink = _orderBack ? `<span class="rsn-reset" onclick="_rsResetOrder()">↺ Back to the learned order</span>` : '';
   const head = `${_rsRunTop(null, planning)}
-    <div class="rsn-fin"><div class="rsn-fin-l"><div class="rsn-lab">Projected finish</div><div class="rsn-time">${_finBig}</div></div>
+    <div class="rsn-fin"><div class="rsn-fin-l"><div class="rsn-lab">${_allDone ? 'Finished' : 'Projected finish'}</div><div class="rsn-time">${_finBig}</div></div>
       ${tgt ? `<div class="rsn-tgt">${_rsIcon('dart')}<div class="rsn-time2">${_rsBigTime(tgt)}</div></div>` : ''}</div>
     ${planning ? '' : _rsLineHtml()}
     ${planning ? `<div class="rsn-count">${_stepsTxt}${_planTotal} · from ${_rsHM(ctx.startMs)}</div>`
