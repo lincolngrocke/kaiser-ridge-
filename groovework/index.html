@@ -3676,7 +3676,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.485';
+const APP_VERSION = '2026-06-21.486';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5686,9 +5686,9 @@ function _runOutstanding(job, flags, done, lapTargets) {
   let left = 0;
   Object.keys(flags || {}).forEach(item => {
     if (isRepeatTask(job, item)) {
-      const target = lt[item] || 0;
+      const target = lt[item] >= 1 ? lt[item] : 1;   // no target = one lap (see _leftoverRemaining)
       const ticks = (done || []).filter(d => d.item === item).length;
-      if (!target || ticks < target) left++;
+      if (ticks < target) left++;
     } else if (!_isTaskDoneNow(job, item, done || [])) left++;
   });
   return left;
@@ -5751,13 +5751,17 @@ function _leftoverClear(job) {
 }
 // What is still owing out of a run: once-off tasks not ticked, and repeat tasks
 // with laps left against their target (the remaining laps become the block's laps).
+// ⚠️ A repeat task with no lap target is ONE lap, the same as the run sheet, the ring and
+// the finish time count it. v485 and earlier read "no target" as never done, so a ticked
+// Organise tasks or Make a coffee was parked in the holding bay as still to do while the run
+// sheet said 5 of 5 done (Lincoln, 7 Nov 2026).
 function _leftoverRemaining(job, flags, done, lapTargets) {
   const lt = lapTargets || {}, rem = {}, laps = {};
   Object.keys(flags || {}).forEach(item => {
     if (isRepeatTask(job, item)) {
       const target = lt[item] || 0;
       const ticks = (done || []).filter(d => d.item === item).length;
-      if (!target) { rem[item] = flags[item]; }
+      if (!target) { if (!ticks) rem[item] = flags[item]; }
       else if (ticks < target) { rem[item] = flags[item]; laps[item] = target - ticks; }
     } else if (!_isTaskDoneNow(job, item, done || [])) rem[item] = flags[item];
   });
@@ -5831,8 +5835,9 @@ function _maybeOfferResume(job) {
   // run still being owed, on show, so it is not stale however old it is, and
   // clearing it without asking would lose the plan silently (rule 3).
   if (!_leftoverWasHere && Date.now() - new Date(rec.at).getTime() > RUN_RESUME_MS) { clearRunResume(job); return; }
-  _resumeRec = rec;
   const left  = _runOutstanding(job, rec.flags, rec.done || [], rec.lapTargets);
+  if (!left) { clearRunResume(job); return; }   // a record saved before v486 can owe nothing
+  _resumeRec = rec;
   const doneN = (rec.done || []).length;
   document.getElementById('resume-run-when').textContent = _resumeWhenLabel(rec.at);
   document.getElementById('resume-run-left').textContent = left;
