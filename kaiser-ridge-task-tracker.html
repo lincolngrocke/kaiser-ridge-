@@ -2398,7 +2398,7 @@
       <div class="job-heading" id="time-job-name" style="font-size:20px;font-weight:700;color:var(--text);line-height:1.25;flex-shrink:0;"></div>
       <div id="time-job-sub" style="font-size:13px;color:var(--subtext);margin:3px 0 8px;flex-shrink:0;"></div>
       <div id="time-job-tools" style="display:none;flex-shrink:0;justify-content:flex-end;align-items:center;gap:8px;padding:0 0 8px;">
-        <span id="time-job-add" onclick="_ciAddTask()" style="margin-right:auto;font-size:14px;font-weight:600;color:var(--blue);cursor:pointer;padding:4px 0;white-space:nowrap;">＋ Add task</span>
+        <span id="time-job-add" onclick="_ciAddTask()" style="font-size:14px;font-weight:600;color:var(--blue);cursor:pointer;padding:4px 0;white-space:nowrap;">＋ Add task</span><span id="time-job-batch" onclick="_ciNewBatch()" style="display:none;margin-left:6px;font-size:14px;font-weight:600;color:var(--blue);cursor:pointer;padding:4px 0;white-space:nowrap;">＋ Batch</span><span style="flex:1;"></span>
         <span id="time-job-expand" onclick="_ciSetMode('open')" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;border:1px solid var(--blue);border-radius:14px;padding:4px 12px;">Expand</span><span id="time-job-full" onclick="_ciSetMode('full')" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;border:1px solid var(--blue);border-radius:14px;padding:4px 12px;">Expand all</span>
       </div>
       <div id="time-job-tasks" style="flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;border-top:1px solid var(--border);border-bottom:1px solid var(--border);"></div>
@@ -2706,7 +2706,7 @@
         <div class="job-heading" id="pa-job-name" style="font-size:20px;font-weight:700;color:var(--text);line-height:1.25;flex-shrink:0;"></div>
         <div id="pa-job-sub" style="font-size:13px;color:var(--subtext);margin:3px 0 8px;flex-shrink:0;"></div>
         <div id="pa-job-tools" style="display:none;flex-shrink:0;justify-content:flex-end;align-items:center;gap:8px;padding:0 0 8px;">
-          <span id="pa-job-add" onclick="_ciAddTask()" style="margin-right:auto;font-size:14px;font-weight:600;color:var(--blue);cursor:pointer;padding:4px 0;white-space:nowrap;">＋ Add task</span>
+          <span id="pa-job-add" onclick="_ciAddTask()" style="font-size:14px;font-weight:600;color:var(--blue);cursor:pointer;padding:4px 0;white-space:nowrap;">＋ Add task</span><span id="pa-job-batch" onclick="_ciNewBatch()" style="display:none;margin-left:6px;font-size:14px;font-weight:600;color:var(--blue);cursor:pointer;padding:4px 0;white-space:nowrap;">＋ Batch</span><span style="flex:1;"></span>
           <span id="pa-job-expand" onclick="_ciSetMode('open')" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;border:1px solid var(--blue);border-radius:14px;padding:4px 12px;">Expand</span><span id="pa-job-full" onclick="_ciSetMode('full')" style="font-size:13px;font-weight:600;color:var(--blue);cursor:pointer;border:1px solid var(--blue);border-radius:14px;padding:4px 12px;">Expand all</span>
         </div>
         <div id="pa-job-tasks" style="flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;border-top:1px solid var(--border);border-bottom:1px solid var(--border);"></div>
@@ -3676,7 +3676,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.486';
+const APP_VERSION = '2026-06-21.487';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -10061,8 +10061,24 @@ function _ciShowAddOnly(host) {
   const t = document.getElementById(host + '-tools'); if (t) t.style.display = 'flex';
   ['-expand', '-full'].forEach(x => { const b = document.getElementById(host + x); if (b) b.style.display = 'none'; });
   const a = document.getElementById(host + '-add'); if (a) a.style.display = '';
+  const b = document.getElementById(host + '-batch'); if (b) b.style.display = 'none';   // no tasks yet to put in one
 }
 function _ciAddTask() { if (_ciAddJob) openRunAdd('tasks', _ciAddJob); }
+// ▣ ＋ BATCH FROM THE JOB PREVIEW (v487). Lincoln, 7 Nov 2026: "We need to be able to add
+// a batch from this screen." The same batch the Organise sheet's + New batch makes. It
+// lands as an empty heading with every section open, so the tasks are right there to hold
+// and drag onto it (v421's drag).
+function _ciNewBatch() {
+  const job = _ciAddJob;
+  if (!job || !_ciCtx || _ciCtx.job !== job) return;
+  const name = _newBatchFor(job); if (!name) return;
+  _ciRefreshAfterAdd(job, null);
+  _ciOpen = {}; _ciWrap = false; _ciSections().forEach((x, i) => { _ciOpen[i] = true; });
+  _ciRenderList(false);
+  const hd = [...document.querySelectorAll('#' + _ciHost + '-tasks [data-ci-batch]')].find(h => h.dataset.ciBatch === name);
+  if (hd) hd.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  showToast('▣ ' + name + ': hold a task and drag it onto the heading');
+}
 // ⠿ HOLD A TASK, DRAG IT ONTO A BATCH HEADING (v421). Lincoln, 24 Oct 2026, having added
 // "Replace broken toilet seat" from the preview: "I want to be able to drop it into
 // Maintenance." Hold for a moment to lift the row (a quick swipe still scrolls), drag
@@ -10143,8 +10159,11 @@ function _ciRefreshAfterAdd(job, added) {
 function _ciSections() {
   if (!_ciCtx) return [];
   let secs = [{ name: null, loose: false, items: _ciCtx.items }];
-  try { secs = _orgSections(_ciCtx.job, _ciCtx.items) || secs; } catch (e) {}
-  return secs.filter(sec => sec.items && sec.items.length);
+  // A plain job preview shows an EMPTY batch's heading too, so one just made is something to
+  // drag tasks onto. A plan or a resume lists only what it holds.
+  const plain = !!(_ciAddJob && _ciAddJob === _ciCtx.job && !_ciCtx.done && !_ciCtx.lapsFor);
+  try { secs = _orgSections(_ciCtx.job, _ciCtx.items, plain) || secs; } catch (e) {}
+  return secs.filter(sec => sec.items && (sec.items.length || (plain && sec.name && !sec.loose)));
 }
 function _ciToggle(i) { if (Date.now() < _clSwipeBlockClickUntil) return; _ciOpen[i] = !_ciOpen[i]; _ciRenderList(false); }
 function _ciSetMode(mode) {
@@ -10168,6 +10187,8 @@ function _ciRenderList(resetScroll) {
   if (tools) tools.style.display = (batched || _ciCtx.items.length) ? 'flex' : 'none';
   const _addBtn = document.getElementById(_ciHost + '-add');
   if (_addBtn) _addBtn.style.display = (_ciAddJob && _ciAddJob === _ciCtx.job) ? '' : 'none';
+  const _batchBtn = document.getElementById(_ciHost + '-batch');
+  if (_batchBtn) _batchBtn.style.display = (_ciAddJob && _ciAddJob === _ciCtx.job && !_ciCtx.done && !_ciCtx.lapsFor && !isWorker()) ? '' : 'none';
   const exBtn = document.getElementById(_ciHost + '-expand'), fullBtn = document.getElementById(_ciHost + '-full');
   if (exBtn) exBtn.style.display = batched ? '' : 'none';
   const _allOpenNow = !batched || secs.every((x, i) => _ciOpen[i]);
@@ -10184,7 +10205,7 @@ function _ciRenderList(resetScroll) {
       let mins = 0, untimed = 0, nDone = 0;
       sec.items.forEach(t => { if (doneOf(t)) { nDone++; return; } const a = est[_normTaskKey(t)]; if (isFinite(a) && a > 0) mins += a * laps(t); else untimed++; });
       // On a resume the count reads "3 of 7 done" and the time is what is LEFT.
-      const count = _ciCtx.done ? (nDone + ' of ' + sec.items.length + ' done') : (sec.items.length + ' task' + (sec.items.length === 1 ? '' : 's'));
+      const count = _ciCtx.done ? (nDone + ' of ' + sec.items.length + ' done') : (sec.items.length ? sec.items.length + ' task' + (sec.items.length === 1 ? '' : 's') : 'empty');
       const meta = (_ciCtx.done && nDone === sec.items.length) ? ('\u2713 all ' + sec.items.length + ' done') : count + (mins > 0 ? ' \u00b7 ~' + fmtMin(mins) + (_ciCtx.done ? ' left' : '') : '') + (untimed && mins > 0 ? ' +' : '');
       // Expand all shows the whole batch name too, over two lines if it needs them.
       const hRow = _ciWrap ? 'align-items:flex-start;min-height:42px;padding:11px 0;box-sizing:border-box;' : 'align-items:center;height:42px;';
@@ -27534,20 +27555,27 @@ function _renderClOrganiseBody() {
 // Make a batch from the Organise sheet. It lands at the end of the job's batch list,
 // open and empty, and the sheet scrolls to it so the next move (dragging tasks under
 // it) needs no hunting.
-function _clOrgNewBatch() {
-  if (isWorker()) { showToast('Batches are set up by the manager'); return; }
-  const job = _clOrganiseTask; if (!job) return;
+// Asks for a name and adds an empty batch to the job: the one prompt the Organise sheet and
+// the job preview share. Returns the new name, or null when nothing was made.
+function _newBatchFor(job) {
+  if (isWorker()) { showToast('Batches are set up by the manager'); return null; }
+  if (!job) return null;
   const name = (prompt('New batch name (e.g. Loading truck)') || '').trim();
-  if (!name) return;
+  if (!name) return null;
   const all = getTaskBatches();
   const rec = all[job] || (all[job] = { order: [], items: {} });
   rec.order = Array.isArray(rec.order) ? rec.order : []; rec.items = rec.items || {};
-  if (rec.order.some(b => b.toLowerCase() === name.toLowerCase())) { showToast('That batch already exists'); return; }
-  if (name.toLowerCase() === 'unbatched') { showToast('Pick another name: “Unbatched” is taken'); return; }
+  if (rec.order.some(b => b.toLowerCase() === name.toLowerCase())) { showToast('That batch already exists'); return null; }
+  if (name.toLowerCase() === 'unbatched') { showToast('Pick another name: “Unbatched” is taken'); return null; }
   rec.order.push(name);
   saveTaskBatches(all);
-  delete _clOrgCollapsed[name];
   autoBackup();
+  return name;
+}
+function _clOrgNewBatch() {
+  const job = _clOrganiseTask, name = _newBatchFor(job);
+  if (!name) return;
+  delete _clOrgCollapsed[name];
   _renderClOrganiseBody();
   try { _refreshChecklistSurfaces(job); } catch (e) {}
   const hd = [...document.querySelectorAll('#cl-organise-body [data-batch-sec]')].find(h => h.dataset.batchName === name);
