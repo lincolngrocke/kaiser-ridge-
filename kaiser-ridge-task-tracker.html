@@ -3677,7 +3677,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.488';
+const APP_VERSION = '2026-06-21.489';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -7210,10 +7210,42 @@ function _syncProvisionalTarget() {
   if (!clockState || !clockState.running || _runPlanStarted()) return;
   const _t = _runForecastFinishMs();
   const _b = _breakNowMs();
-  if (_t && (clockState.targetMs !== _t || clockState.targetBreakMs0 !== _b)) {
-    clockState.targetMs = _t; clockState.targetBreakMs0 = _b;
+  const _p = _targetBrkSnapshot();
+  if (_t && (clockState.targetMs !== _t || clockState.targetBreakMs0 !== _b || JSON.stringify(clockState.targetBrkPlan) !== JSON.stringify(_p))) {
+    clockState.targetMs = _t; clockState.targetBreakMs0 = _b; clockState.targetBrkPlan = _p;
     _storeSet('kr_clock', JSON.stringify(clockState));
   }
+}
+// ☕ PLANNED BREAKS ARE ALREADY IN THE TARGET (v489, Lincoln 11 Nov 2026). The 🎯 is set
+// from a forecast that costs every planned break still to come, then v272 slid it by all
+// break time taken after that, so taking a PLANNED break pushed 🎯 out a second time
+// (carting straw: two planned breaks, 🎯 5:23pm → 5:40pm). The planned breaks costed at the
+// moment the target was set are kept here as {id: minutes}; _targetDisplayMs gives that much
+// back for each one taken, so only a break nobody planned, or the minutes a planned one runs
+// over, moves 🎯.
+function _targetBrkSnapshot() {
+  const out = {}, done = (clockState && clockState.brkDone) || {};
+  ((clockState && clockState.plannedBreaks) || []).forEach(b => {
+    if (b && b.id && !done[b.id] && b.id !== clockState.brkActiveId) out[b.id] = b.mins || 0;
+  });
+  return out;
+}
+function _targetPlannedCreditMs() {
+  if (!clockState) return 0;
+  // A session whose target was set before v489 kept no list: its planned breaks are the
+  // best guess at what the target already costed.
+  let plan = clockState.targetBrkPlan;
+  if (!plan) { plan = {}; (clockState.plannedBreaks || []).forEach(b => { if (b && b.id) plan[b.id] = b.mins || 0; }); }
+  const bd = clockState.brkDone || {};
+  let credit = 0;
+  Object.keys(plan).forEach(id => {
+    const d = bd[id];
+    let took = 0;
+    if (d) took = (isFinite(d.start) && isFinite(d.end)) ? d.end - d.start : (d.mins || 0) * 60000;
+    else if (clockState.onBreak && clockState.brkActiveId === id && clockState.breakStartMs) took = Math.max(0, Date.now() - clockState.breakStartMs);
+    credit += Math.min(took, (plan[id] || 0) * 60000);
+  });
+  return credit;
 }
 var _rsRing = { frac: 0, over: false };   // what the dial worked out, for the run sheet's line
 function updateRunRing(netElapsedSec) {
@@ -10543,6 +10575,7 @@ function confirmTime(choice) {
         clockState.targetMs = _rsPlanStartMs(_tp) + _tp.durationHours * 3600000;
         clockState.targetFromPlan = true;
         clockState.targetBreakMs0 = 0;   // no breaks exist yet at clock-in — every future break slides the display
+        clockState.targetBrkPlan = _targetBrkSnapshot();   // …except the planned ones the block already costed (v489)
         _storeSet('kr_clock', JSON.stringify(clockState));
       }
       _plannerPlans = _plannerPlans.filter(p => p.id !== taskInfo._planId);
@@ -25949,7 +25982,7 @@ function _targetDisplayMs() {
     clockState.targetBreakMs0 = _breakNowMs();
     _storeSet('kr_clock', JSON.stringify(clockState));
   }
-  return clockState.targetMs + Math.max(0, _breakNowMs() - clockState.targetBreakMs0);
+  return clockState.targetMs + Math.max(0, _breakNowMs() - clockState.targetBreakMs0 - _targetPlannedCreditMs());
 }
 
 // How long you've been on the current row: time since the last tick, minus any of it
