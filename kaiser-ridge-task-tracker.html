@@ -733,7 +733,9 @@
     padding: 10px 20px;
     border-radius: 20px;
     font-size: 14px;
-    z-index: 200;
+    /* Above every sheet (the highest is 2100), below the red emergency banners. At 200 the
+       sign-in screen (901) hid "Check your email", so Email me a sign-in link looked dead (v490). */
+    z-index: 2200;
     opacity: 0;
     transition: opacity 0.2s;
     pointer-events: none;
@@ -753,7 +755,7 @@
     color: var(--text);
     padding: 8px 8px 8px 16px;
     border-radius: 14px;
-    z-index: 720;
+    z-index: 2200;   /* above every sheet, like .toast (v490) */
     opacity: 0;
     transition: opacity 0.2s;
     pointer-events: none;
@@ -3677,7 +3679,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.489';
+const APP_VERSION = '2026-06-21.490';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5411,12 +5413,12 @@ function hideTask(job, item) {
   const sess = !!(clockState && clockState.running && clockState.task === job && clockState.flagOverride);
   const hadS = sess ? clockState.flagOverride[item] : undefined;
   if (hadS !== undefined) { delete clockState.flagOverride[item]; _storeSet('kr_clock', JSON.stringify(clockState)); }
-  _refreshChecklistSurfaces(job);
+  _refreshHiddenSurfaces(job);   // Edit Job folds it away too (v490)
   showUndoToast('Hidden: ' + item, () => {
     const a2 = getHiddenTasks(); if (a2[job]) { a2[job] = a2[job].filter(x => x !== item); if (!a2[job].length) delete a2[job]; saveHiddenTasks(a2); }
     if (hadG !== undefined) { const g2 = getChecklistFlags(); (g2[job] || (g2[job] = {}))[item] = hadG; saveChecklistFlags(g2); }
     if (hadS !== undefined && clockState && clockState.task === job) { (clockState.flagOverride || (clockState.flagOverride = {}))[item] = hadS; _storeSet('kr_clock', JSON.stringify(clockState)); }
-    _refreshChecklistSurfaces(job);
+    _refreshHiddenSurfaces(job);
     showToast('↺ Back on the list');
   }, 5000, 'It’s under Hidden at the foot of the list');
 }
@@ -5451,7 +5453,8 @@ function unhideAllTasks(job) {
 // tasks, they need to be shown everywhere to make them easier to bring back."
 // So the clock list, the Clock in and Add to planner previews and Organise each end
 // with the same folded "🙈 Hidden · N" line (open it: each task with its batch and a
-// Show, plus Show all), and Edit Job marks a hidden task where it sits.
+// Show, plus Show all). Edit Job ends with it too since v490 (it used to mark a hidden
+// task where it sat), and hides from there: ⋯ Hide from the list, or swipe left.
 let _hidOpen = {};   // surface|job → the Hidden line is open
 function _hiddenOf(job) { return (getHiddenTasks()[job] || []).filter(s => (SUBTASKS[job] || []).includes(s)); }
 function _hidToggle(key) { _hidOpen[key] = !_hidOpen[key]; _refreshHiddenSurfaces(key.slice(key.indexOf('|') + 1)); }
@@ -15942,7 +15945,11 @@ function renderDirSubtaskList(items) {
   // clock uses. Display order only: each row keeps its true index into _subtaskItems,
   // so editing, deleting, reordering and the saved order are all unaffected.
   const _clFlags = (_jn && getChecklistFlags()[_jn]) || {};
-  const _pairs = _subtaskItems.map((s, i) => ({ s, i }));
+  // 🙈 HIDDEN HERE TOO (v490). Lincoln, 12 Nov 2026: a task hidden on the planning or run
+  // sheet "should also be hidden automatically on the job screen". It leaves the list for the
+  // same folded Hidden line every other list ends with. The row keeps its place in
+  // _subtaskItems, so saving, ordering and batches carry it untouched.
+  const _pairs = _subtaskItems.map((s, i) => ({ s, i })).filter(p => !_hidHere.has(p.s));
   const _display = _pairs.filter(p => _clFlags[p.s]).concat(_pairs.filter(p => !_clFlags[p.s]));
   const _rowFor = ({ s, i }) => {
     // One ⋯ replaces the old six-button strip (steps/guide/history/type/reminder/✕)
@@ -15972,10 +15979,7 @@ function renderDirSubtaskList(items) {
     // 📷 ▶️ This job's photos and video for the task, tappable to view (v441).
     const _media = _jn ? _taskMediaChips(_jn, s, 'var(--blue)', _mmDir) : '';
     if (_media) metaBits.push(_media);
-    // 🙈 Hidden from the clock list on this phone (v444): say so where it sits, and
-    // bring it back with one tap.
     { const _tc = _jn ? _timerChip(_jn, s) : ''; if (_tc) metaBits.push(_tc); }   // ⏱ v446
-    if (_hidHere.has(s)) metaBits.push(`<span onclick="event.stopPropagation();unhideTask(decodeURIComponent('${encodeURIComponent(_jn).replace(/'/g, '%27')}'),decodeURIComponent('${encodeURIComponent(s).replace(/'/g, '%27')}'))" ontouchstart="event.stopPropagation()" style="color:#ff9f0a;font-weight:700;cursor:pointer;">🙈 hidden · Show</span>`);
     const metaLine = metaBits.length ? `<div style="font-size:11px;color:var(--subtext);padding:0 0 3px 2px;">${metaBits.join(' · ')}</div>` : '';
     return `
     <div id="strow-${i}" ontouchstart="stSwipeStart(event,${i})" ontouchmove="stSwipeMove(event)" ontouchend="stSwipeEnd(event)"
@@ -16032,6 +16036,7 @@ function renderDirSubtaskList(items) {
     if (_bTools) _bTools.style.display = 'none';
     _listHtml = _display.map(_rowFor).join('');
   }
+  if (_jn) _listHtml += _hiddenTasksHtml(_jn, 'dir', false);
   document.getElementById('dir-subtask-list').innerHTML = _listHtml;
   _sizeDirSubtaskInputs();
 }
@@ -16150,16 +16155,20 @@ function stSwipeStart(event, i) {
   if (_stDragging) return;
   _stSwipe = { i, row: document.getElementById('strow-' + i), x: event.touches[0].clientX, y: event.touches[0].clientY, moved: false };
 }
+// Swipe RIGHT = run sheet flag. Swipe LEFT = hide (v490), the same gesture that hides a
+// task on the clock and in Organise. Left only works on a task the saved job already has:
+// hiding goes by the job's task list, so a row typed but not yet saved has nothing to hide.
+function _dirCanHide(i) { const jn = _dirJobName(), s = _subtaskItems[i]; return !!(jn && s && (SUBTASKS[jn] || []).includes(s)); }
 function stSwipeMove(event) {
   if (_stDragging || !_stSwipe || !_stSwipe.row) return;
   const dx = event.touches[0].clientX - _stSwipe.x, dy = event.touches[0].clientY - _stSwipe.y;
-  if (!_stSwipe.moved && (Math.abs(dy) > Math.abs(dx) || dx < 0)) { _stSwipe = null; return; }   // scroll / left-swipe
-  if (dx > 6) {
+  if (!_stSwipe.moved && (Math.abs(dy) > Math.abs(dx) || (dx < 0 && !_dirCanHide(_stSwipe.i)))) { _stSwipe = null; return; }   // scroll, or nothing to hide
+  if (Math.abs(dx) > 6) {
     _stSwipe.moved = true;
     event.preventDefault();
     _stSwipe.row.style.transition = 'none';
-    _stSwipe.row.style.transform = 'translateX(' + Math.min(dx, 90) + 'px)';
-    _stSwipe.row.style.opacity = String(Math.max(0.45, 1 - dx / 220));
+    _stSwipe.row.style.transform = 'translateX(' + Math.max(-90, Math.min(dx, 90)) + 'px)';
+    _stSwipe.row.style.opacity = String(Math.max(0.45, 1 - Math.abs(dx) / 220));
   }
 }
 function stSwipeEnd(event) {
@@ -16170,6 +16179,7 @@ function stSwipeEnd(event) {
   s.row.style.transition = 'transform 0.16s, opacity 0.16s';
   s.row.style.transform = ''; s.row.style.opacity = '';
   if (s.moved && dx > 48) toggleEditorTaskFlag(s.i);
+  else if (s.moved && dx < -48 && _dirCanHide(s.i)) hideTask(_dirJobName(), _subtaskItems[s.i]);
 }
 
 function stTouchStart(event, idx) {
@@ -17189,6 +17199,7 @@ function renderTaskActionsSheet() {
     row('type', isRep ? '↻' : '1×', 'Type', isRep ? 'Repeatable — tap to make once-per-run' : 'Once per run — tap to make repeatable') +
     (featureHidden('reminders') ? '' : row('remind', '🔔', 'Reminder', remOn ? 'On' : 'Off')) +
     row('flag', `<span class="rsi rsi-go${flagged ? '' : ' off'}" style="vertical-align:-1px;"></span>`, flagged ? 'Take off the run sheet' : 'Add to the run sheet', '') +
+    (_dirCanHide(i) ? row('hide', '🙈', 'Hide from the list', 'Swipe left') : '') +
     row('delete', '✕', 'Delete task', '', true);
   return true;
 }
@@ -17204,6 +17215,7 @@ function taskActionGo(act) {
   else if (act === 'guide') openSubtaskGuide(s, _dirJobName() || null);
   else if (act === 'origin') openItemOrigin(s);
   else if (act === 'remind') openTaskRemindPicker(i);
+  else if (act === 'hide') { if (_dirCanHide(i)) hideTask(_dirJobName(), s); }
   else if (act === 'delete') removeSubtaskItem(i);
 }
 // Reference photos on a recurring checklist item (keyed by item text) — shown on
