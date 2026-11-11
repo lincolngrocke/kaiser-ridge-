@@ -951,6 +951,7 @@
   .rsn-obatch .rsi-chev { color: var(--rsn-sub); }
   .rsn-obatch .rsn-pencil { padding: 6px 4px; margin: -6px 0; }
   .rsn-obatch-n { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .rsn-bdel { display: inline-flex; align-items: center; height: 24px; box-sizing: border-box; padding: 0 10px; border-radius: 12px; border: 1px solid var(--red); color: var(--red); font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
   .rsn-obatch-c { font-size: 12px; font-weight: 600; color: var(--rsn-sub); background: var(--rsn-line); border-radius: 10px; padding: 1px 9px; flex-shrink: 0; }
   .rsn-obatch .rsi-grip { color: var(--rsn-check); }
   .rsn-ohead { font-size: 13px; font-weight: 700; color: var(--rsn-sub); margin: 14px 0 8px; }
@@ -3680,7 +3681,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.491';
+const APP_VERSION = '2026-06-21.492';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -10250,7 +10251,8 @@ function _ciRenderList(resetScroll) {
       return '<div data-ci-batch="' + _attr(sec.loose ? '' : (sec.name || '')) + '" onclick="_ciToggle(' + i + ')" style="display:flex;' + hRow + 'gap:8px;border-bottom:1px solid var(--border);cursor:pointer;-webkit-tap-highlight-color:transparent;border-radius:6px;">'
         + '<span style="flex-shrink:0;width:14px;font-size:12px;color:var(--subtext);">' + (open ? '\u25be' : '\u25b8') + '</span>'
         + '<span style="flex:1;min-width:0;font-size:15px;font-weight:700;color:var(--text);' + hName + '">' + _escHtml(sec.name || 'Other tasks') + '</span>'
-        + '<span style="flex-shrink:0;font-size:12px;color:var(--subtext);white-space:nowrap;">' + _escHtml(meta) + '</span></div>'
+        + '<span style="flex-shrink:0;font-size:12px;color:var(--subtext);white-space:nowrap;">' + _escHtml(meta) + '</span>'
+        + ((!sec.items.length && sec.name && !sec.loose && _ciCtx.job === _ciAddJob) ? _batchDelBtn(_ciCtx.job, sec.name) : '') + '</div>'
         + (open ? '<div style="padding-left:22px;">' + sec.items.map(t => _ciCanMove
             ? '<div data-ci-task="' + _attr(t) + '" ontouchstart="_ciDragStart(event)" ontouchmove="_ciDragMove(event)" ontouchend="_ciDragEnd(event)" ontouchcancel="_ciDragEnd(event)">' + _clockInRowHtml(t, lastMap, est, laps(t), doneOf(t), _ciWrap) + '</div>'
             : _clockInRowHtml(t, lastMap, est, laps(t), doneOf(t), _ciWrap)).join('') + '</div>' : '');
@@ -16015,16 +16017,19 @@ function renderDirSubtaskList(items) {
   const _bTools = document.getElementById('dir-batch-tools');
   if (_bRec && _bRec.order.length) {
     const _used = new Set();
-    const _secHd = (label, key, n, muted) => {
+    const _secHd = (label, key, n, muted, extra) => {
       const shut = !!_dirBatchShut[key];
       return `<div data-batch-hd="${_attr(key)}" onclick="dirBatchToggle(decodeURIComponent('${_encArg(key)}'))"
         style="display:flex;align-items:center;gap:7px;font-size:13px;font-weight:700;color:var(--subtext);${muted ? 'opacity:0.75;' : ''}padding:12px 4px 6px 0;cursor:pointer;-webkit-tap-highlight-color:transparent;border-radius:8px;">
-        <span style="width:12px;font-size:11px;">${shut ? '▸' : '▾'}</span><span style="flex:1;min-width:0;">▣ ${_escTxt(label)} · ${n}</span></div>`;
+        <span style="width:12px;font-size:11px;">${shut ? '▸' : '▾'}</span><span style="flex:1;min-width:0;">▣ ${_escTxt(label)} · ${n}</span>${extra || ''}</div>`;
     };
     _listHtml = _bRec.order.map(bn => {
       const ps = _display.filter(p => _bRec.items[p.s] === bn);
       ps.forEach(p => _used.add(p.i));
-      return ps.length ? _secHd(bn, bn, ps.length, false) + (_dirBatchShut[bn] ? '' : ps.map(_rowFor).join('')) : '';
+      if (ps.length) return _secHd(bn, bn, ps.length, false) + (_dirBatchShut[bn] ? '' : ps.map(_rowFor).join(''));
+      // An empty batch shows too (v492), as a heading to drop tasks onto or delete.
+      const del = _batchDelBtn(_jn, bn);
+      return del ? _secHd(bn, bn, 0, true, del) : '';
     }).join('');
     const _rest = _display.filter(p => !_used.has(p.i));
     if (_rest.length) _listHtml += _secHd('Unbatched', '__unbatched__', _rest.length, true) + (_dirBatchShut['__unbatched__'] ? '' : _rest.map(_rowFor).join(''));
@@ -16808,6 +16813,48 @@ function deleteBatch(bi) {
   autoBackup();
   renderBatchManager();
   renderDirSubtaskList();
+}
+// ▣ AN EMPTY BATCH CAN BE DELETED WHEREVER ITS HEADING SHOWS (v492). Lincoln, 12 Nov 2026:
+// "Integrated Waste Services - Wingfield Rubish · 0" sat on Organise with no way to remove it
+// there, and Edit Job's list never drew an empty batch at all (only ▣ Batches could delete).
+// Empty = no task of the job (hidden ones count) and no to-do is in it, so deleting one can
+// never unbatch anything, which is why it needs no confirm, only Undo.
+function _batchIsEmpty(job, name) {
+  const rec = _batchRec(job); if (!rec || !rec.order.includes(name)) return false;
+  const dm = document.getElementById('modal-dir-task');
+  const editing = !!(dm && dm.classList.contains('open') && _dirJobName() === job);
+  const tasks = (SUBTASKS[job] || []).concat(editing ? _subtaskItems : []);
+  if (tasks.some(t => rec.items[t] === name)) return false;
+  const ti = rec.todoItems || {};
+  return !(getTaskNotes()[job] || []).some(p => p && ti[p.id] === name);
+}
+function _deleteEmptyBatch(job, name) {
+  if (isWorker()) return;
+  if (!_batchIsEmpty(job, name)) { showToast('That batch still has tasks in it'); return; }
+  const all = getTaskBatches(), rec = all[job], at = rec.order.indexOf(name);
+  rec.order.splice(at, 1);
+  // Left-overs pointing at it: tasks no longer on the job, to-dos since deleted.
+  Object.keys(rec.items).forEach(t => { if (rec.items[t] === name) delete rec.items[t]; });
+  if (rec.todoItems) Object.keys(rec.todoItems).forEach(id => { if (rec.todoItems[id] === name) delete rec.todoItems[id]; });
+  if (!rec.order.length && !Object.keys(rec.items).length && !(rec.todoItems && Object.keys(rec.todoItems).length)) delete all[job];
+  saveTaskBatches(all);
+  autoBackup();
+  _refreshBatchSurfaces(job);
+  showUndoToast('Deleted the batch ' + name, () => {
+    const a = getTaskBatches(), r = a[job] || (a[job] = { order: [], items: {} });
+    r.items = r.items || {};
+    if (!r.order.includes(name)) r.order.splice(Math.min(at, r.order.length), 0, name);
+    saveTaskBatches(a); autoBackup(); _refreshBatchSurfaces(job);
+  }, 5000);
+}
+function _refreshBatchSurfaces(job) {
+  try { _refreshHiddenSurfaces(job); } catch (e) {}   // the clock, Organise, the job previews, Edit Job
+  try { const bm = document.getElementById('modal-batch-manager'); if (bm && bm.classList.contains('open')) renderBatchManager(); } catch (e) {}
+}
+// The ✕ that sits on an empty batch's heading, the same on every screen.
+function _batchDelBtn(job, name) {
+  if (isWorker() || !_batchIsEmpty(job, name)) return '';
+  return `<span class="rsn-bdel" ontouchstart="event.stopPropagation()" ontouchmove="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_deleteEmptyBatch(decodeURIComponent('${_encArg(job)}'),decodeURIComponent('${_encArg(name)}'))" title="delete this empty batch">Delete</span>`;
 }
 // Reorder batches — the saved order is the one true order: the manager, the Edit
 // Job task list and the clock's batch headers all draw from it (on the clock a
@@ -27544,7 +27591,7 @@ function _renderClOrganiseBody() {
   // a compact target. `count` shown; `collapsed` hides the rows below.
   const secHd = (label, looseAttr, count, collapsed) => `<div data-batch-sec="1"${looseAttr ? ' data-batch-loose="1"' : ''} data-batch-name="${_attr(label)}" data-batch-task="${taskAttr}" onclick="_clToggleBatchCollapse(decodeURIComponent('${encodeURIComponent(label).replace(/'/g, '%27')}'))"${looseAttr ? ' ontouchstart="clBatchSwipeStart(event)" ontouchmove="clBatchSwipeMove(event)" ontouchend="clBatchSwipeEnd(event)"' : ' ontouchstart="clHeadStart(event)" ontouchmove="clHeadMove(event)" ontouchend="clHeadEnd(event)"'} class="rsn-obatch">
     <span class="rsi rsi-chev${collapsed ? '' : ' open'}"></span>${_rsIcon('box')}<span class="rsn-obatch-n">${_escHtml(label)}</span>
-    <span class="rsn-obatch-c">${count}</span>${looseAttr || isWorker() ? '' : `<span class="rsn-pencil" ontouchstart="event.stopPropagation()" ontouchmove="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_clOrgRenameBatch(decodeURIComponent('${encodeURIComponent(label).replace(/'/g, '%27')}'))" title="rename this batch">${_rsIcon('pencil')}</span>`}${looseAttr ? '' : _rsIcon('grip')}</div>`;
+    <span class="rsn-obatch-c">${count}</span>${looseAttr ? '' : _batchDelBtn(task, label)}${looseAttr || isWorker() ? '' : `<span class="rsn-pencil" ontouchstart="event.stopPropagation()" ontouchmove="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_clOrgRenameBatch(decodeURIComponent('${encodeURIComponent(label).replace(/'/g, '%27')}'))" title="rename this batch">${_rsIcon('pencil')}</span>`}${looseAttr ? '' : _rsIcon('grip')}</div>`;
   let bodyHtml;
   if (_hasBatches) {
     // Batches are the organisation — a flagged task STAYS in its batch (floated to
