@@ -989,6 +989,7 @@
   .rsn-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; min-height: 24px; color: var(--rsn-sub); }
   #modal-run-sheet.rs-run .rs-tp, #modal-cl-organise .rs-tp { height: 24px; box-sizing: border-box; padding: 0 9px !important; border-radius: 12px !important; background: var(--rsn-blue-bg); border-color: var(--rsn-blue-line) !important; color: var(--rsn-blue) !important; font-weight: 600; white-space: nowrap; }
   #modal-run-sheet.rs-run .rs-est, #modal-cl-organise .rs-est { color: var(--rsn-sub) !important; }
+  #modal-run-sheet.rs-run .rs-est.rs-est-btn, #modal-cl-organise .rs-est.rs-est-btn { display: inline-flex; align-items: center; height: 24px; box-sizing: border-box; padding: 0 10px; border-radius: 12px; border: 1px dashed var(--rsn-blue); color: var(--rsn-blue) !important; font-weight: 600; white-space: nowrap; }
   .rsn-steps-btn { display: inline-flex; align-items: center; gap: 4px; height: 24px; font-size: 11px; font-weight: 600; color: var(--rsn-blue); cursor: pointer; white-space: nowrap; }
   .rsn-steps-btn.all { color: var(--rsn-green); }
   .rsn-grip { margin-left: auto; color: var(--rsn-check); cursor: pointer; padding: 8px 6px; margin-top: -6px; margin-bottom: -6px; margin-right: -6px; display: inline-flex; }
@@ -3679,7 +3680,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.490';
+const APP_VERSION = '2026-06-21.491';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -23702,9 +23703,12 @@ function _avgMeta(item, avgMap, cntMap) {
   // A task with no history is exactly the one that throws the day out, so this is
   // where the invitation to estimate belongs — on the existing meta line, not a
   // new row. Workers see the blank as before; the library is theirs to read only.
+  // ⭐ A BUTTON THAT LOOKS LIKE ONE (v491). Lincoln, 12 Nov 2026: Claudia couldn't tell
+  // the faint italic "＋ est" was something to press. It is a pill now (.rs-est-btn), shaped
+  // like the avg pill beside it but dashed: dashed = a guess you can set, solid = measured.
   if (!t) {
     if (isWorker()) return '';
-    return `<span class="rs-est" ontouchstart="event.stopPropagation()" onclick="event.stopPropagation();setTaskEstimate(decodeURIComponent('${_encArg(item)}'))" style="font-size:11px;color:#4a5165;font-style:italic;cursor:pointer;">＋ est</span>`;
+    return `<span class="rs-est rs-est-btn" ontouchstart="event.stopPropagation()" onclick="event.stopPropagation();setTaskEstimate(decodeURIComponent('${_encArg(item)}'))" style="font-size:11px;color:#4a5165;cursor:pointer;">＋ Add time</span>`;
   }
   // Faint and italic for a guess, solid for a measurement. The difference has to
   // be visible at a glance, not only readable — you should be able to see your
@@ -23713,7 +23717,7 @@ function _avgMeta(item, avgMap, cntMap) {
   // A guess is editable, a measurement is not. Tapping your own real average to
   // "correct" it would launder a guess into the learning engine.
   if (seeded && !isWorker()) {
-    return `<span class="rs-est" ontouchstart="event.stopPropagation()" onclick="event.stopPropagation();setTaskEstimate(decodeURIComponent('${_encArg(item)}'))" style="font-size:11px;color:#4a5165;font-style:italic;cursor:pointer;">${t}</span>`;
+    return `<span class="rs-est rs-est-btn" ontouchstart="event.stopPropagation()" onclick="event.stopPropagation();setTaskEstimate(decodeURIComponent('${_encArg(item)}'))" style="font-size:11px;color:#4a5165;font-style:italic;cursor:pointer;">${t}</span>`;
   }
   if (seeded) return `<span class="rs-est" style="font-size:11px;color:#4a5165;font-style:italic;">${t}</span>`;
   // ⭐ "~8m avg · 9× · 3–15m". The average says what to expect, the spread says how
@@ -27442,15 +27446,15 @@ function _renderClOrganiseBody() {
     const est = plan ? _estimateBlockMins(plan) : null;
     // ⚠️ The missing line is the point of the whole panel. A block sized from 32
     // tasks while 6 more contribute nothing is not "sized", it is short, and the
-    // old copy gave no hint. Tap ＋ est on a row to fill one in.
+    // old copy gave no hint. Tap ＋ Add time on a row to fill one in.
     _heroLab = 'Block size';
     _heroHint = ' You can still edit the block’s duration.';
     if (est) {
       _heroMins = est.mins;
       _heroN = est.basis === 'flagged' ? est.n : 0;
       _heroSub = (est.basis === 'flagged' ? 'from ' + est.n + ' task' + (est.n === 1 ? '' : 's') + ' on the run sheet' + (est.lapped ? ' · 🔁 laps counted' : '') : 'from this job’s history') + ', auto-filled from your timed history';
-      if (est.basis === 'flagged' && est.missing > 0) _heroWarn = `${est.missing} task${est.missing === 1 ? ' has' : 's have'} no time yet, so ${est.missing === 1 ? 'it adds' : 'they add'} nothing to this total. Tap ＋ est on a task below.`;
-    } else _heroSub = 'Nothing here has a time yet. Tap ＋ est on a task to estimate it, or clock this job once and the real times take over.';
+      if (est.basis === 'flagged' && est.missing > 0) _heroWarn = `${est.missing} task${est.missing === 1 ? ' has' : 's have'} no time yet, so ${est.missing === 1 ? 'it adds' : 'they add'} nothing to this total. Tap ＋ Add time on a task below.`;
+    } else _heroSub = 'Nothing here has a time yet. Tap ＋ Add time on a task to estimate it, or clock this job once and the real times take over.';
   } else if (!_clOrganisePlanId && clockState && clockState.running && clockState.task === task) {
     // Clock-opened sheet: the same accumulating total the planner shows — the sum
     // of the flagged tasks' learned averages (laps counted), live as you flag.
