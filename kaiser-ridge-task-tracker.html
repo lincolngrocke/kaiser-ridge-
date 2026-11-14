@@ -442,6 +442,13 @@
   .ts-entry-row { display: flex; justify-content: space-between; align-items: flex-start; }
   .ts-entry-sub { margin-left: 32px; }
   .ts-day-job { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-top: 4px; font-size: 13px; color: var(--subtext); }
+  .ts-day-job > span:last-child { white-space: nowrap; flex-shrink: 0; }
+  /* 🎯 v495: ahead of / behind target, beside the hours. Green ahead, orange over. */
+  .ts-tgt { font-size: 12px; font-weight: 600; }
+  .ts-day-job .ts-tgt { margin-right: 10px; }
+  .ts-tgt.on { color: #30a14e; }
+  .ts-tgt.over { color: #e8850c; }
+  .ts-tgt-day { margin-top: 8px; font-size: 12px; font-weight: 600; color: var(--subtext); }
   .ts-entry-date { font-size: 15px; font-weight: 600; }
   .ts-entry-hours { font-size: 15px; font-weight: 600; }
   .ts-entry-time { font-size: 13px; color: var(--subtext); }
@@ -3698,7 +3705,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.494';
+const APP_VERSION = '2026-06-21.495';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4934,6 +4941,20 @@ function clockOut(overrideTime) {
   const breakHours = breakTotal / 3600000;
   const totalHours = (endMs - clockState.startMs) / 3600000;
   const durationHours = Math.max(0, totalHours - breakHours);
+  // 🎯 THE TARGET GOES ON THE TIMESHEET (v495). Lincoln, 15 Nov 2026: so you can "gain
+  // confidence that you're actually making progress with your times". Kept as WORK
+  // minutes, worked out so actual − target is exactly how far clock-out landed from the 🎯
+  // on the run sheet (breaks treated as there: planned ones allowed for, unplanned ones
+  // sliding it). Only once the target had LOCKED: before the first tick it just follows
+  // the finish, so it would always read "on target".
+  let targetMins = null;
+  try {
+    if (clockState.targetMs && _runPlanStarted()) {
+      const tgt = clockState.targetMs + Math.max(0, breakTotal - (clockState.targetBreakMs0 || 0) - _targetPlannedCreditMs());
+      const t = Math.round(durationHours * 60 - (endMs - tgt) / 60000);
+      if (t > 0) targetMins = t;
+    }
+  } catch (e) {}
   const entry = {
     id: clockState.tempId || ('e' + Date.now() + Math.random().toString(36).slice(2, 6)),   // never id-less: undo/edit/delete all key on it
     date: clockState.date,
@@ -4963,6 +4984,7 @@ function clockOut(overrideTime) {
     synced: false,
     createdAt: new Date().toISOString(),
   };
+  if (targetMins) entry.targetMins = targetMins;
   // Fold per-item checklist times into notes, one row per completed item, led by
   // the completion time and minutes taken — so they persist and sync to the sheet.
   if (clockState.checklistDone && clockState.checklistDone.length) {
@@ -8582,11 +8604,24 @@ function _tsDays(rows) {
     const day = byKey[key] || (byKey[key] = days[days.push({ key, date: e.date, dt, rows: [], jobs: [], total: 0 }) - 1]);
     const hours = e.durationHours || 0;
     const name = e.bot ? (e.botEmoji || '🤖') + ' ' + [e.personnel, e.task].filter(Boolean).join(' · ') : (e.task || 'No job name');
-    const job = day.jobs.find(j => j.name === name);
-    if (job) job.hours += hours; else day.jobs.push({ name, hours });
+    let job = day.jobs.find(j => j.name === name);
+    if (job) job.hours += hours; else day.jobs.push(job = { name, hours, diff: 0, hasT: false });
+    const d = _tsTargetDiff(e);
+    if (d != null) { job.diff += d; job.hasT = true; day.nT = (day.nT || 0) + 1; if (d <= 0) day.nOn = (day.nOn || 0) + 1; }
     day.rows.push(e); day.total += hours;
   });
   return days;
+}
+// 🎯 HOW YOU WENT AGAINST THE TARGET (v495). Minutes over (+) or under (−) the 🎯 the run
+// sheet showed, for a timesheet that saved one. Older timesheets have none and show nothing.
+function _tsTargetDiff(e) {
+  return (e && e.targetMins > 0 && isFinite(e.durationHours)) ? Math.round(e.durationHours * 60) - e.targetMins : null;
+}
+// Green ▾ = finished ahead of target, orange ▴ = took longer. Small, beside the hours.
+function _tsDiffMark(diff) {
+  if (diff == null) return '';
+  if (diff === 0) return '<span class="ts-tgt on">on target</span>';
+  return diff < 0 ? `<span class="ts-tgt on">▾${fmtMin(-diff)}</span>` : `<span class="ts-tgt over">▴${fmtMin(diff)}</span>`;
 }
 function renderTimesheets() {
   updateRestoreEntryBanner();
@@ -8658,6 +8693,7 @@ function renderTimesheets() {
         </div>
       </div>
       <div class="ts-entry-tag" style="margin-top:4px">${hl(tag)}</div>
+      ${(() => { const df = _tsTargetDiff(e); return df == null ? '' : `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🎯 ${fmtMin(e.targetMins)} target · ${fmtMin(Math.round(e.durationHours * 60))} actual · ${df === 0 ? '<span class="ts-tgt on">on target</span>' : df < 0 ? `<span class="ts-tgt on">${fmtMin(-df)} ahead</span>` : `<span class="ts-tgt over">${fmtMin(df)} over</span>`}</div>`; })()}
       ${projLabel ? `<div style="font-size:12px;color:var(--blue);margin-top:2px;">📁 ${hl(projLabel)}</div>` : ''}
       ${(e.tool && !featureHidden('equipment')) ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">🔧 ${hl(e.tool)}</div>` : ''}
       ${e.break > 0 ? `<div style="font-size:12px;color:var(--subtext);margin-top:2px;">☕ ${e.break.toFixed(2)}h break${_breakRangesLabel(e.breaks) ? ' · ' + _breakRangesLabel(e.breaks) : ''}</div>` : ''}
@@ -8681,7 +8717,8 @@ function renderTimesheets() {
         <div class="ts-entry-date">${open ? '▾' : '▸'} ${dateStr}${syncBadge}</div>
         <div class="ts-entry-hours">${formatHours(d.total)}</div>
       </div>
-      ${d.jobs.map(j => `<div class="ts-day-job"><span class="ts-entry-tag">${hl(_escHtml(j.name))}</span><span>${formatHours(j.hours)}</span></div>`).join('')}
+      ${d.jobs.map(j => `<div class="ts-day-job"><span class="ts-entry-tag">${hl(_escHtml(j.name))}</span><span>${j.hasT ? _tsDiffMark(j.diff) : ''}${formatHours(j.hours)}</span></div>`).join('')}
+      ${d.nT ? `<div class="ts-tgt-day">🎯 ${d.nOn || 0} of ${d.nT} on target</div>` : ''}
     </div>${open ? d.rows.map(e => card(e, true)).join('') : ''}`;
   };
   list.innerHTML = _tsView() === 'days' ? _tsDays(filtered).map(dayCard).join('') : filtered.map(e => card(e)).join('');
