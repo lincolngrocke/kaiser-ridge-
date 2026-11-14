@@ -3698,7 +3698,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.493';
+const APP_VERSION = '2026-06-21.494';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -27998,7 +27998,11 @@ function _plannerSearchRender() {
   out.sort((a, b) => b.sort - a.sort);
   _psResults = out.slice(0, 50);
   if (!_psResults.length) { list.innerHTML = '<div style="padding:18px 2px;font-size:14px;color:var(--subtext);">No planned or finished job matches “' + _escHtml(q) + '”.</div>'; return; }
-  list.innerHTML = _psResults.map((r, i) => `<div onclick="_plannerSearchOpen(${i})" style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--border);cursor:pointer;">
+  // v494, Lincoln 15 Nov 2026: "It just needs to display how many jobs it's found."
+  const nDone = out.filter(r => r.done).length, nPlan = out.length - nDone;
+  const _count = `<div style="padding:4px 2px 6px;font-size:13px;font-weight:600;color:var(--subtext);">${out.length} found`
+    + ` · ${[nPlan ? nPlan + ' planned' : '', nDone ? nDone + ' done' : ''].filter(Boolean).join(', ')}</div>`;
+  list.innerHTML = _count + _psResults.map((r, i) => `<div onclick="_plannerSearchOpen(${i})" style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--border);cursor:pointer;">
       <div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:600;color:var(--text);overflow-wrap:anywhere;">${r.done ? '<span style="color:var(--green);">✓</span> ' : ''}${_escHtml(r.task)}</div>
         <div style="font-size:12px;color:var(--subtext);margin-top:2px;">${_escHtml(r.sub)}</div></div>
       <span onclick="event.stopPropagation();_plannerSearchCopy(${i})" style="flex-shrink:0;height:30px;display:inline-flex;align-items:center;padding:0 14px;border-radius:15px;background:var(--blue);color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Copy</span>
