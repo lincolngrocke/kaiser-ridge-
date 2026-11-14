@@ -1595,8 +1595,10 @@
 
 <!-- ══════════════ DAY PLANNER SCREEN ══════════════ -->
 <div class="screen" id="screen-planner">
-  <div class="header" style="flex-direction:row;align-items:center;justify-content:space-between;padding:12px 16px;">
-    <button id="planner-prev" onclick="plannerChangeDay(-1)" style="background:none;border:none;color:var(--blue);font-size:22px;padding:4px 8px;cursor:pointer;">‹</button>
+  <div class="header" style="flex-direction:row;align-items:center;justify-content:space-between;padding:12px 16px;position:relative;">
+    <!-- 🔍 v493: top right, clear of the day arrows, so the button row below stays as it was. -->
+    <button id="planner-search-btn" onclick="openPlannerSearch()" title="Find a job to copy" aria-label="Find a job" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);width:38px;height:38px;background:none;border:none;padding:0;font-size:17px;cursor:pointer;">🔍</button>
+    <button id="planner-prev" onclick="plannerChangeDay(-1)" style="background:none;border:none;color:var(--blue);font-size:22px;padding:4px 8px;cursor:pointer;margin-left:34px;">‹</button>
     <label style="text-align:center;position:relative;cursor:pointer;" title="Tap to pick a date">
       <div style="display:flex;align-items:center;justify-content:center;gap:6px;">
         <span class="header-title" id="planner-date-label">Today</span>
@@ -1605,7 +1607,7 @@
       <div style="font-size:12px;color:var(--subtext);" id="planner-date-sub"></div>
       <input type="date" id="planner-date-input" onchange="plannerJumpToDate(this.value)" style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;-webkit-appearance:none;">
     </label>
-    <button id="planner-next" onclick="plannerChangeDay(1)" style="background:none;border:none;color:var(--blue);font-size:22px;padding:4px 8px;cursor:pointer;">›</button>
+    <button id="planner-next" onclick="plannerChangeDay(1)" style="background:none;border:none;color:var(--blue);font-size:22px;padding:4px 8px;cursor:pointer;margin-right:34px;">›</button>
   </div>
   <div style="padding:0 16px 8px;display:flex;gap:8px;align-items:center;">
     <span id="planner-day-actions" style="display:contents;">
@@ -2757,6 +2759,21 @@
 </div>
 
 <!-- ══════════════ PLANNER MOVE-TO-DAY MODAL ══════════════ -->
+<!-- 🔍 FIND A JOB ON THE PLANNER (v493): every planned block and finished job, by name. -->
+<div class="modal-backdrop" id="modal-planner-search" style="z-index:340;" onclick="if(event.target===this)closeModal('modal-planner-search')">
+  <div class="modal-sheet" style="padding:22px 0 0;height:88vh;display:flex;flex-direction:column;">
+    <div class="modal-handle"></div>
+    <div style="padding:0 22px 12px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+      <span style="font-size:20px;font-weight:700;">Find a job</span>
+      <span onclick="closeModal('modal-planner-search')" style="color:var(--blue);font-size:17px;font-weight:600;cursor:pointer;">Done</span>
+    </div>
+    <div style="padding:0 22px 8px;flex-shrink:0;">
+      <input id="planner-search-input" type="search" placeholder="Type part of a job’s name" autocomplete="off" autocorrect="off" spellcheck="false" oninput="_plannerSearchRender()"
+        style="width:100%;box-sizing:border-box;padding:13px 14px;border:1px solid var(--border);border-radius:12px;background:var(--card);color:var(--text);font-size:16px;outline:none;">
+    </div>
+    <div id="planner-search-list" style="flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;padding:0 22px calc(env(safe-area-inset-bottom) + 24px);"></div>
+  </div>
+</div>
 <div class="modal-backdrop" id="modal-planner-move" style="z-index:340;" onclick="if(event.target===this){closeModal('modal-planner-move');_quickMove=false;}">
   <div class="modal-sheet" style="padding:22px 0 38px;">
     <div class="modal-handle"></div>
@@ -3681,7 +3698,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.492';
+const APP_VERSION = '2026-06-21.493';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -27932,6 +27949,84 @@ function pastePlannerBlock() {
   scheduleCalendarAutoPush(block.date);
   renderPlannerScreen();
   showToast('Pasted into ' + _plannerDate.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) + (nFlags ? ' · ' + nFlags + ' task' + (nFlags === 1 ? '' : 's') + ' carried' : ''));
+}
+
+// 🔍 FIND A JOB TO COPY (v493). Lincoln, 15 Nov 2026: copying a job meant paging back
+// through days to find one. 🔍 searches every planned block and every finished job by name
+// (or group), newest first. Copy takes it straight to the clipboard, run sheet and all,
+// exactly as Copy on its detail would; tapping the row opens that detail instead.
+let _psResults = [];
+function openPlannerSearch() {
+  const inp = document.getElementById('planner-search-input');
+  if (inp) inp.value = '';
+  _plannerSearchRender();
+  openModal('modal-planner-search');
+  setTimeout(() => { try { inp && inp.focus(); } catch (e) {} }, 250);
+}
+function _psDayWords(ddmmyyyy) {
+  const [d, m, y] = String(ddmmyyyy || '').split('/').map(Number);
+  if (!d || !m || !y) return '';
+  const day = new Date(y, m - 1, d), today = new Date(); today.setHours(0, 0, 0, 0);
+  const diff = Math.round((day - today) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Tomorrow';
+  if (diff === -1) return 'Yesterday';
+  return day.toLocaleDateString('en-AU', Object.assign({ weekday: 'short', day: 'numeric', month: 'short' }, y !== today.getFullYear() ? { year: 'numeric' } : {}));
+}
+function _plannerSearchRender() {
+  const list = document.getElementById('planner-search-list'); if (!list) return;
+  const q = ((document.getElementById('planner-search-input') || {}).value || '').trim().toLowerCase();
+  if (!q) { _psResults = []; list.innerHTML = '<div style="padding:18px 2px;font-size:14px;color:var(--subtext);line-height:1.5;">Every job you have planned or done is here. Type part of its name, then tap <b>Copy</b> and paste it into any day.</div>'; return; }
+  const hit = (task, group) => String(task || '').toLowerCase().includes(q) || String(group || '').toLowerCase().includes(q);
+  const out = [];
+  (_plannerPlans || []).forEach(p => {
+    if (!p || !p.task || !hit(p.task, p.group)) return;
+    const mins = Math.round((p.durationHours || 0) * 60);
+    let when = '';
+    if (!p.parked && p.startTime) {
+      const [h, mm] = p.startTime.split(':').map(Number), end = h * 60 + mm + mins;
+      when = formatTimeAmPm(p.startTime) + ' – ' + formatTimeAmPm(String(Math.floor(end / 60) % 24).padStart(2, '0') + ':' + String(end % 60).padStart(2, '0'));
+    }
+    out.push({ kind: 'plan', id: p.id, task: p.task, date: p.date, sort: _plannerDateNumFromStr(p.date) * 10000 + (p.startTime ? Number(p.startTime.replace(':', '')) : 0),
+      sub: [_psDayWords(p.date), p.parked ? 'holding bay' : when, mins ? fmtMin(mins) : ''].filter(Boolean).join(' · '), done: false });
+  });
+  (entries || []).forEach(e => {
+    if (!e || !e.task || !e.clockIn || !e.clockOut || !hit(e.task, e.group)) return;
+    out.push({ kind: 'done', entry: e, task: e.task, date: e.date, sort: _plannerDateNumFromStr(e.date) * 10000 + Number(String(e.clockIn).replace(':', '')),
+      sub: [_psDayWords(e.date), formatTimeAmPm(e.clockIn) + ' – ' + formatTimeAmPm(e.clockOut), e.durationHours ? e.durationHours + 'h' : ''].filter(Boolean).join(' · '), done: true });
+  });
+  out.sort((a, b) => b.sort - a.sort);
+  _psResults = out.slice(0, 50);
+  if (!_psResults.length) { list.innerHTML = '<div style="padding:18px 2px;font-size:14px;color:var(--subtext);">No planned or finished job matches “' + _escHtml(q) + '”.</div>'; return; }
+  list.innerHTML = _psResults.map((r, i) => `<div onclick="_plannerSearchOpen(${i})" style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--border);cursor:pointer;">
+      <div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:600;color:var(--text);overflow-wrap:anywhere;">${r.done ? '<span style="color:var(--green);">✓</span> ' : ''}${_escHtml(r.task)}</div>
+        <div style="font-size:12px;color:var(--subtext);margin-top:2px;">${_escHtml(r.sub)}</div></div>
+      <span onclick="event.stopPropagation();_plannerSearchCopy(${i})" style="flex-shrink:0;height:30px;display:inline-flex;align-items:center;padding:0 14px;border-radius:15px;background:var(--blue);color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Copy</span>
+    </div>`).join('') + (out.length > 50 ? `<div style="padding:12px 2px;font-size:12px;color:var(--subtext);">Showing the 50 most recent of ${out.length}. Type more of the name to narrow it down.</div>` : '');
+}
+// Load the result into the same three slots a detail sheet fills, so Copy and the detail's
+// own Copy can never disagree about what goes on the clipboard.
+function _plannerSearchLoad(r) {
+  if (r.kind === 'plan') {
+    const p = _plannerPlans.find(x => x.id === r.id); if (!p) return false;
+    _plannerDetailCopySource = { task: p.task, group: p.group, frequency: p.frequency, location: p.location, tool: p.tool, durationHours: p.durationHours, startTime: p.startTime };
+    _plannerDetailArrId = p.id; _plannerDetailArrRec = null;
+  } else {
+    const e = r.entry;
+    _plannerDetailCopySource = { task: e.task, group: e.group, frequency: e.frequency, location: e.location, tool: e.tool, durationHours: e.durationHours, startTime: e.clockIn };
+    _plannerDetailArrId = null; _plannerDetailArrRec = _arrFromDoneEntry(e);
+  }
+  return true;
+}
+function _plannerSearchCopy(i) {
+  const r = _psResults[i]; if (!r || !_plannerSearchLoad(r)) return;
+  closeModal('modal-planner-search');
+  copyPlannerBlock();
+}
+function _plannerSearchOpen(i) {
+  const r = _psResults[i]; if (!r) return;
+  closeModal('modal-planner-search');
+  if (r.kind === 'plan') openPlannerDetail(r.id); else openPlannerDoneDetail(r.entry);
 }
 
 // ── Move a planned task to another day (lands parked in that day's holding) ──
