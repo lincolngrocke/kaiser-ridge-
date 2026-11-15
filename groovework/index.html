@@ -908,6 +908,14 @@
   #modal-run-sheet.rs-run .rsn-pin, #modal-cl-organise .rsn-pin { background: var(--rsn-bg); margin: 0 -16px; padding: 6px 16px 7px; opacity: 0; pointer-events: none; transition: opacity 0.12s; border-bottom: 1px solid var(--rsn-line); }
   #modal-run-sheet.rs-run .rsn-pin.on, #modal-run-sheet.rs-run .rsn-pin.held, #modal-cl-organise .rsn-pin.on { opacity: 1; pointer-events: auto; }
   #modal-run-sheet.rs-run .rsn-pin.held { margin-top: 6px; }
+  /* 🧊 v497: the run sheet's whole top is one frozen block; the list scrolls beneath it. */
+  #modal-run-sheet.rs-run .rsn-frozen { background: var(--rsn-bg); margin: 0 -16px; padding: 0 16px 8px; border-bottom: 1px solid var(--rsn-line); }
+  #modal-run-sheet.rs-run .rsn-frozen .rsn-pin { margin: 0; padding: 0; border-bottom: none; background: none; opacity: 1; pointer-events: auto; transition: none; }
+  #modal-run-sheet.rs-run .rsn-frozen:not(.collapsed) .rsn-pin .rsn-slim-tap, #modal-run-sheet.rs-run .rsn-frozen:not(.collapsed) .rsn-pin .rsn-bar { display: none; }
+  #modal-run-sheet.rs-run .rsn-frozen.collapsed .rsn-top, #modal-run-sheet.rs-run .rsn-frozen.collapsed .rsn-big,
+  #modal-run-sheet.rs-run .rsn-frozen.collapsed .rsn-sec, #modal-run-sheet.rs-run .rsn-frozen.collapsed .rsn-addbrk { display: none; }
+  #modal-run-sheet.rs-run .rsn-frozen.collapsed .rsn-pin { padding-top: 8px; }
+  #modal-run-sheet.rs-run .rsn-frozen .rsn-addbrk { margin-bottom: 0; }
   .rsn-slim-job { font-size: 11px; color: var(--rsn-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .rsn-slim { display: flex; align-items: center; gap: 12px; }
   .rsn-slim-tap { cursor: pointer; }
@@ -3709,7 +3717,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.496';
+const APP_VERSION = '2026-06-21.497';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -26144,12 +26152,12 @@ function openRunSheet(planId) {
   openModal('modal-run-sheet');
   _rsRender();
   _rsRestWire();
-  // ⭐ OPENS WITH THE WHOLE TOP SHOWING (v496). Lincoln, 15 Nov 2026: "I would like to see
-  // the full detail at the top of this page rather than it retracting. You can tap on the
-  // top to shrink it." It used to open at rest (running) or wherever it was last scrolled
-  // (planning), so the finish block was always out of sight. Tap the top to shrink it.
-  _rsShrunk = false;
+  // 🧊 Opens with the frozen top showing in full (v497). Running: the list starts at rest,
+  // the task you're on second. Planning: the list starts at its first task.
+  _rsCollapsed = false;
+  const _f = document.getElementById('rs-frozen'); if (_f) _f.classList.remove('collapsed');
   const _b = document.getElementById('run-sheet-body'); if (_b) _b.scrollTop = 0;
+  _rsGoRest(false);
 }
 function _rsHM(ms) { const d = new Date(ms); return formatTimeAmPm(String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')); }
 
@@ -26245,7 +26253,7 @@ function _rsRunTop(job, planning) {
 function _rsPinSync(scId) {
   const sc = document.getElementById(scId || 'run-sheet-body');
   const pin = sc && sc.querySelector('.rsn-pin');
-  if (!pin || pin.classList.contains('held')) return;
+  if (!pin || pin.classList.contains('held') || pin.closest('.rsn-frozen')) return;   // a frozen top holds its own bar (v497)
   const h = pin.offsetHeight;
   if (pin._h !== h) { pin.style.marginTop = -h + 'px'; pin._h = h; }
   pin.classList.toggle('on', pin.getBoundingClientRect().top <= sc.getBoundingClientRect().top + 0.5);
@@ -26257,26 +26265,28 @@ function _rsPinSync(scId) {
 function _rsPinTop(scId) {
   const sc = document.getElementById(scId);
   if (!sc) return;
-  if (scId === 'run-sheet-body') _rsShrunk = false;   // opened again: it stays open (v496)
+  if (scId === 'run-sheet-body') { _rsSetCollapsed(false); _rsGoRest(true); return; }   // the run sheet's top is frozen (v497): open it out
   if (typeof sc.scrollTo === 'function') sc.scrollTo({ top: 0, behavior: 'smooth' }); else sc.scrollTop = 0;
   _rsRestArm();
 }
-// ⇡ TAP THE TOP TO SHRINK IT (v496), the reverse of tapping the slim bar. The running sheet
-// goes to its resting place (the row you are on, under the slim bar) and from then on keeps
-// going back there as before; the planning sheet and Organise bring their first row up.
-let _rsShrunk = false, _rsShrinkAt = 0;   // _rsShrinkAt: the shrink's own scroll starts at the top, which must not read as "opened again"
+// 🧊 Folded down to the slim bar (true) or the whole frozen top showing (false). v497.
+let _rsCollapsed = false;
+function _rsSetCollapsed(on) {
+  _rsCollapsed = !!on;
+  const f = document.getElementById('rs-frozen'); if (f) f.classList.toggle('collapsed', _rsCollapsed);
+}
+// ⇡ TAP THE TOP. On the run sheet it folds the frozen top down to the slim bar so the list
+// gets the screen (v497), and it comes back after 10 quiet seconds. On Organise (v496) it
+// brings the first row up under the slim bar.
 function _rsShrink(scId) {
   if (Date.now() < (_clSwipeBlockClickUntil || 0)) return;
   const sc = document.getElementById(scId);
   if (!sc) return;
-  let top = null;
-  if (scId === 'run-sheet-body') { _rsShrunk = true; _rsShrinkAt = Date.now(); const c = _rsCtx(); if (c && c.kind === 'clock') top = _rsRestTop(); }
-  if (top == null) {
-    const first = sc.querySelector('.rs-row, [data-batch-sec], .cl-row');
-    const sticky = sc.querySelector('.cl-sticky-top');
-    if (!first) return;
-    top = Math.max(0, Math.min(Math.round(sc.scrollTop + first.getBoundingClientRect().top - sc.getBoundingClientRect().top - (sticky ? sticky.offsetHeight : 0) - 4), sc.scrollHeight - sc.clientHeight));
-  }
+  if (scId === 'run-sheet-body') { _rsSetCollapsed(true); _rsGoRest(true); _rsRestArm(); return; }
+  const first = sc.querySelector('.rs-row, [data-batch-sec], .cl-row');
+  const sticky = sc.querySelector('.cl-sticky-top');
+  if (!first) return;
+  const top = Math.max(0, Math.min(Math.round(sc.scrollTop + first.getBoundingClientRect().top - sc.getBoundingClientRect().top - (sticky ? sticky.offsetHeight : 0) - 4), sc.scrollHeight - sc.clientHeight));
   if (typeof sc.scrollTo === 'function') sc.scrollTo({ top, behavior: 'smooth' }); else sc.scrollTop = top;
 }
 
@@ -26404,19 +26414,26 @@ function _rsRender() {
   const _addBrk = !(_rsMoveKey || _rsPlacing);
   const _orderBack = ctx.order && _addBrk && !featureHidden('order-reset');
   const _orderLink = _orderBack ? `<span class="rsn-reset" onclick="_rsResetOrder()">↺ Back to the learned order</span>` : '';
-  const head = `${_rsRunTop(null, planning)}
-    <div class="rsn-fin rsn-fin-tap" onclick="_rsShrink('run-sheet-body')" title="Tap to shrink"><div class="rsn-fin-l"><div class="rsn-lab">${_allDone ? 'Finished' : 'Projected finish'}<span class="rsi rsi-chev up"></span></div><div class="rsn-time">${_finBig}</div></div>
+  // 🧊 THE TOP IS FROZEN, DOWN TO AND INCLUDING ADD A BREAK (v497, Lincoln 15 Nov 2026).
+  // "Everything above Add a break, including Add a break, is frozen, and then below that
+  // you can scroll." The whole block is ONE sticky element (.cl-sticky-top, so the ⚓ rest
+  // and the drag's edge-scroll both measure it), and the list scrolls beneath it with the
+  // task you're on second, under the last one you finished. Tap the big finish time (˄) and
+  // it folds down to the slim bar so the list gets the screen; it opens again by itself
+  // after 10 quiet seconds, or straight away from a tap on the slim bar.
+  const head = `<div class="cl-sticky-top rsn-frozen${_rsCollapsed ? ' collapsed' : ''}" id="rs-frozen">${_rsRunTop(null, planning)}
+    <div class="rsn-big"><div class="rsn-fin rsn-fin-tap" onclick="_rsShrink('run-sheet-body')" title="Tap to give the list the whole screen"><div class="rsn-fin-l"><div class="rsn-lab">${_allDone ? 'Finished' : 'Projected finish'}<span class="rsi rsi-chev up"></span></div><div class="rsn-time">${_finBig}</div></div>
       ${tgt ? `<div class="rsn-tgt">${_rsIcon('dart')}<div class="rsn-time2">${_rsBigTime(tgt)}</div></div>` : ''}</div>
     ${planning ? '' : _rsLineHtml()}
     ${planning ? `<div class="rsn-count">${_stepsTxt}${_planTotal} · from ${_rsHM(ctx.startMs)}</div>`
-      : `<div class="rsn-job">${_escHtml(ctx.job)}</div><div class="rsn-count rsn-count-row"><span>${_doneTxt}</span>${_RS_UNDO}</div>${bankedNote}`}
-    <div class="cl-sticky-top rsn-pin${_addBrk ? '' : ' held'}">
+      : `<div class="rsn-job">${_escHtml(ctx.job)}</div><div class="rsn-count rsn-count-row"><span>${_doneTxt}</span>${_RS_UNDO}</div>${bankedNote}`}</div>
+    <div class="rsn-pin${_addBrk ? '' : ' held'}">
       <div class="rsn-slim-tap" onclick="_rsPinTop('run-sheet-body')"><div class="rsn-slim-job">${_escHtml(ctx.job)}</div>
       <div class="rsn-slim"><span class="rsn-time2">${_noEst ? '<span class="rsn-noest sm">Add times</span>' : _rsBigTime(_finMs)}</span>${tgt ? `<span class="rsn-slim-t">${_rsIcon('dart')}<span class="rsn-time3">${_rsBigTime(tgt)}</span></span>` : ''}<span class="rsn-slim-n">${planning ? (_planMins > 0 ? `~${fmtMin(_planMins)} total` : _stepsTxt) : _slimTxt}</span><span class="rsi rsi-chev open"></span>${(planning && _addBrk) ? `<span class="rsn-slim-brk" onclick="event.stopPropagation();_rsSetPlacing(true)" title="Add a break">${_rsIcon('coffee')}</span>` : ''}</div></div>
       ${planning ? '' : `<div class="rsn-bar"><span id="rs-slim-fill" style="width:0;"></span></div>`}
       ${_moveBanner}${placingCancel}</div>
     <div class="rsn-sec${planning ? ' plan' : ''}"><span>${planning ? _escHtml(ctx.job) : 'Your session'}</span>${_orderLink}</div>
-    ${_addBrk ? `<div class="rsn-addbrk" onclick="_rsSetPlacing(true)">${_rsIcon('coffee')}Add a break</div>` : ''}
+    ${_addBrk ? `<div class="rsn-addbrk" onclick="_rsSetPlacing(true)">${_rsIcon('coffee')}Add a break</div>` : ''}</div>
     ${_orderBack ? `<div class="rsn-order-note">The learned order is the order you ticked these off <b>last time you did this job</b>. You have arranged this one by hand, so it is following your order instead.</div>` : ''}`;
   const avgMap = _taskEstMap(), cntMap = _taskHistCountMap();   // built once, not per row
   const _lastMap = _checklistItemLastDone(ctx.job);   // 🗓 when each task was last done, as on Organise (v483)
@@ -26787,9 +26804,12 @@ function _rsRestTop() {
   return Math.max(0, Math.min(Math.round(want), sc.scrollHeight - sc.clientHeight));
 }
 function _rsRestOk() {
-  if (!_rsShrunk) return false;   // v496: only once you've tapped the top to shrink it
   const ctx = _rsCtx();
   if (!ctx || ctx.kind !== 'clock') return false;
+  return _rsIdleOk();
+}
+// Nothing in hand and nothing on top: safe to move the sheet without a finger on it.
+function _rsIdleOk() {
   const m = document.getElementById('modal-run-sheet');
   if (!m || !m.classList.contains('open')) return false;
   if (_rsMoveKey || _rsPlacing || _rsDrag || _rsFingerDown) return false;
@@ -26811,7 +26831,11 @@ function _rsGoRest(smooth) {
 function _rsRestArm() {
   clearTimeout(_rsRestTimer); _rsRestTimer = null;
   if (_rsFingerDown) return;   // starts when the finger lifts
-  _rsRestTimer = setTimeout(() => { _rsRestTimer = null; _rsGoRest(true); }, _RS_REST_MS);
+  _rsRestTimer = setTimeout(() => {
+    _rsRestTimer = null;
+    if (_rsCollapsed && _rsIdleOk()) _rsSetCollapsed(false);   // 🧊 the full top comes back (v497)
+    _rsGoRest(true);
+  }, _RS_REST_MS);
 }
 // Wired once on the scroller. Passive, so it never slows the scroll itself. A
 // momentum scroll keeps firing after the finger lifts, and each event restarts the
@@ -26825,7 +26849,7 @@ function _rsRestWire() {
   const up = () => { _rsFingerDown = false; _rsRestArm(); };
   sc.addEventListener('touchend', up, { passive: true });
   sc.addEventListener('touchcancel', up, { passive: true });
-  sc.addEventListener('scroll', () => { _rsPinSync(); if (sc.scrollTop < 2 && Date.now() - _rsShrinkAt > 1200) _rsShrunk = false; if (!_rsFingerDown) _rsRestArm(); }, { passive: true });   // scrolled back to the top = open again
+  sc.addEventListener('scroll', () => { _rsPinSync(); if (!_rsFingerDown) _rsRestArm(); }, { passive: true });
 }
 // ↺ Tapping a ✓ row brings it back. Ticking the wrong row is easy here — the rows are
 // large and the sheet is built for fast tapping — and the only way back used to be to
