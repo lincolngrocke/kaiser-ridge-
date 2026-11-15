@@ -730,6 +730,59 @@
   }
 
   /* ── TOAST ── */
+  /* 👋 Onboarding v2 (v498). One screen at a time: Back and progress, the screen, its button. */
+  .gwo-top { display: flex; align-items: center; gap: 14px; flex-shrink: 0; padding: 6px 0 14px; }
+  .gwo-back { font-size: 15px; font-weight: 600; color: var(--blue); cursor: pointer; white-space: nowrap; }
+  .gwo-back.off { visibility: hidden; }
+  .gwo-prog { flex: 1; height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; }
+  .gwo-prog span { display: block; height: 100%; background: var(--blue); border-radius: 3px; transition: width 0.3s; }
+  .gwo-main { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; padding-bottom: 12px; }
+  .gwo-foot { flex-shrink: 0; padding-top: 10px; }
+  .gwo-hero { font-size: 48px; line-height: 1; margin: 18px 0 18px; }
+  .gwo-h { font-size: 27px; font-weight: 700; line-height: 1.25; color: var(--text); margin-bottom: 10px; }
+  .gwo-sub { font-size: 16px; line-height: 1.55; color: var(--subtext); margin-bottom: 18px; }
+  .gwo-note { font-size: 15px; line-height: 1.55; color: var(--text); margin-top: 18px; }
+  .gwo-small { font-size: 13px; line-height: 1.5; color: var(--subtext); margin-top: 10px; }
+  .gwo-btn { display: block; width: 100%; height: 54px; border: none; border-radius: 14px; background: var(--blue); color: #fff; font-size: 17px; font-weight: 700; cursor: pointer; margin-top: 8px; }
+  .gwo-btn:disabled { opacity: 0.35; }
+  .gwo-btn.gwo-apple { background: #000; }
+  .gwo-btn.gwo-google { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+  .gwo-link { text-align: center; font-size: 15px; color: var(--subtext); padding: 14px 0 2px; cursor: pointer; }
+  .gwo-opt { padding: 15px 16px; margin-bottom: 10px; border: 1.5px solid var(--border); border-radius: 14px; background: var(--card); font-size: 16px; line-height: 1.35; color: var(--text); cursor: pointer; }
+  .gwo-opt.on { border-color: var(--blue); background: rgba(10,132,255,0.10); font-weight: 600; }
+  .gwo-time { display: block; width: 100%; box-sizing: border-box; font-size: 26px; font-weight: 700; text-align: center; padding: 16px; margin-top: 8px; border: 1.5px solid var(--border); border-radius: 14px; background: var(--card); color: var(--text); }
+  .gwo-steps { margin: 18px 0; }
+  .gwo-step { display: flex; align-items: center; gap: 12px; font-size: 17px; color: var(--subtext); padding: 9px 0; transition: color 0.2s; }
+  .gwo-step.done { color: var(--text); font-weight: 600; }
+  .gwo-tick { width: 22px; text-align: center; color: var(--blue); font-weight: 700; }
+  .gwo-quote { font-size: 16px; line-height: 1.6; color: var(--text); font-style: italic; background: var(--card); border-radius: 14px; padding: 14px 16px; margin-top: 8px; }
+  .gwo-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px; margin: 10px 0; }
+  .gwo-job { display: flex; align-items: center; justify-content: space-between; font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+  .gwo-edit { font-size: 14px; font-weight: 600; color: var(--blue); }
+  .gwo-trow { display: flex; justify-content: space-between; gap: 12px; font-size: 15px; color: var(--text); padding: 4px 0; }
+  .gwo-trow span:last-child { color: var(--subtext); white-space: nowrap; }
+  .gwo-trow.gwo-sum { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 8px; font-weight: 600; }
+  .gwo-input { width: 100%; box-sizing: border-box; padding: 13px 14px; border: 1.5px solid var(--border); border-radius: 12px; background: var(--card); color: var(--text); font-size: 16px; outline: none; }
+  .gwo-input:focus { border-color: var(--blue); }
+  .gwo-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .gwo-chip { padding: 8px 13px; border-radius: 18px; border: 1px solid var(--border); background: var(--card); font-size: 14px; color: var(--blue); font-weight: 600; cursor: pointer; }
+  .gwo-chip.on { border-color: var(--blue); background: rgba(10,132,255,0.10); }
+  .gwo-row { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 10px; background: var(--bg); border-radius: 12px; }
+  .gwo-row.lift { position: relative; z-index: 2; box-shadow: 0 6px 18px rgba(0,0,0,0.18); }
+  .gwo-grip { flex-shrink: 0; width: 22px; padding: 14px 0; text-align: center; color: var(--subtext); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+  .gwo-mins { flex-shrink: 0; width: 66px; text-align: center; padding: 13px 6px; }
+  .gwo-x { flex-shrink: 0; padding: 14px 2px; color: var(--subtext); cursor: pointer; font-size: 14px; }
+  .gwo-colhead { display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; color: var(--subtext); padding: 0 34px 6px 30px; }
+  .gwo-hint { font-size: 12px; color: #e8850c; margin: 4px 2px 0; line-height: 1.4; }
+  .gwo-hint:empty { display: none; }
+  .gwo-add { font-size: 15px; font-weight: 600; color: var(--blue); padding: 6px 0 4px 30px; cursor: pointer; }
+  .gwo-total { font-size: 15px; font-weight: 600; color: var(--text); margin-top: 12px; }
+  .gwo-hold { position: relative; height: 58px; border-radius: 16px; background: var(--card); border: 1.5px solid var(--blue); overflow: hidden; display: flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: none; }
+  .gwo-hold-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--blue); }
+  .gwo-hold-t { position: relative; font-size: 17px; font-weight: 700; color: var(--text); }
+  .gwo-hold.done .gwo-hold-t { color: #fff; }
+  .gwo-links { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--subtext); margin-top: 18px; }
+  .gwo-links span, .gwo-links a { color: var(--subtext); cursor: pointer; text-decoration: underline; }
   .toast {
     position: fixed;
     bottom: calc(var(--nav-height) + 12px);
@@ -2382,6 +2435,10 @@
 </div>
 
 <!-- ══════════════ SIGN IN (M1/S2) ══════════════ -->
+<!-- 👋 FIRST-RUN ONBOARDING v2 (v498): the App Accelerator flow. Drawn by gwoRender(). -->
+<div class="modal-backdrop" id="modal-gwo" style="z-index:950;background:var(--bg);align-items:stretch;">
+  <div id="gwo-root" style="position:absolute;inset:0;max-width:430px;margin:0 auto;display:flex;flex-direction:column;padding:calc(env(safe-area-inset-top) + 10px) 22px calc(env(safe-area-inset-bottom) + 16px);box-sizing:border-box;"></div>
+</div>
 <!-- Optional in S2: only ever shown on a genuinely fresh install, and always
      skippable. An install that already holds data is never gated. -->
 <div class="modal-backdrop" id="modal-signin" style="z-index:901;background:var(--bg);align-items:stretch;">
@@ -3717,7 +3774,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.497';
+const APP_VERSION = '2026-06-21.498';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4557,13 +4614,476 @@ function onboardPick(key) {
   showToast(name ? ('Welcome, ' + name + '! 👋') : 'Welcome to Groovework 👋');
 }
 // Show the welcome only on a genuinely fresh install (no data, never onboarded).
+// ⭐ v498: the new flow (gwo, below) is the front door. A flow left part way (closing the
+// app, or the round trip to Google to sign in) picks up on the screen it was on. The old
+// welcome (modal-onboard, the guided job + templates) is HIDDEN, not deleted: set
+// kr_flag_old_welcome to '1' to get it back.
 function maybeShowOnboarding() {
+  const g = _gwoLoad();
+  if (g && g.startedAt && !g.completedAt) { gwoOpen(g); return; }
   if (localStorage.getItem('kr_onboarded') === '1') return;
   if (DIRECTORY && DIRECTORY.length) { _storeSet('kr_onboarded', '1'); return; } // existing user — skip
+  if (!_gwFlag('old_welcome')) { gwoOpen(null); return; }
   const nameEl = document.getElementById('onboard-name');
   if (nameEl) nameEl.value = getUserName();
   _ob = null; obRender();   // always open on the intro, never mid-flow from last time
   openModal('modal-onboard');
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  👋 ONBOARDING v2 (v498): the build spec of 15 Nov 2026, in Steven Cravotta's App
+//  Accelerator order: congratulations, sign-in, value, survey, personal result, set up,
+//  commit, then the paywall. One question per screen, a progress bar and Back.
+//
+//  ⭐ NO INVENTED NUMBERS. Every figure on screen is worked out from the person's own
+//  answers: the gap from their two times, each job's total from their own task guesses.
+//  ⭐ TASKS ARE PAST TENSE, as if done, because you tick a task off once it's finished.
+//  Job names are written normally. A present-tense first word gets a soft hint, never a
+//  block or an auto-change.
+//  ⭐ THE JOBS ARE REAL. "Looks good" writes them into the job list (DIRECTORY, SUBTASKS)
+//  in the order typed, and each guess into kr_task_seeds as source 'user': the same
+//  starting-estimate store as ＋ Add time, shared by task name, read as "~12m est" and
+//  replaced by the measured average once the task is timed. Seeds never touch the
+//  learned times (see the hard line at getTaskSeeds).
+//  ⭐ THE ANSWERS ARE KEPT. Everything lives in kr_onboarding (survey, times, jobs, when
+//  each step happened), on the phone, in the backup, and in the synced app data once
+//  signed in (KR_SYNC_KEYS), so it can be analysed later. No new table (Lincoln, 15 Nov).
+//  ⚠️ App Store pieces are built but switched OFF on the web (_gwNative): Sign in with
+//  Apple, the review prompt, the purchase on the paywall and the haptic. They switch on
+//  with the iPhone version. Screen 23 (a daily reminder) is dropped: no push reminders.
+//  Flags (localStorage, '1' = on): kr_flag_paywall (paywall shown; off = skipped, for
+//  testing and Marlo), kr_flag_socialproof (screens 7 and 25, which also stay hidden
+//  while GW_REVIEWS is empty: no made-up reviews, ever), kr_flag_old_welcome.
+// ════════════════════════════════════════════════════════════════════════════
+const KR_ONBOARDING = 'kr_onboarding';
+const GW_REVIEWS = [];   // real reviews only, once there are some: [{ text, who }]
+const GW_TERMS_URL = '', GW_PRIVACY_URL = '';   // TBC
+function _gwFlag(name) { try { return localStorage.getItem('kr_flag_' + name) === '1'; } catch (e) { return false; } }
+function _gwNative() { return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform()); }
+function _gwPlugin(name) { try { return (_gwNative() && window.Capacitor.Plugins && window.Capacitor.Plugins[name]) || null; } catch (e) { return null; } }
+function _gwHaptic() {
+  const h = _gwPlugin('Haptics');
+  if (h && h.impact) { try { h.impact({ style: 'LIGHT' }); } catch (e) {} return; }
+  if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
+}
+function _gwoLoad() { try { return JSON.parse(localStorage.getItem(KR_ONBOARDING) || 'null'); } catch (e) { return null; } }
+
+let _gwo = null, _gwoTimer = null;
+function _gwoSave() { if (!_gwo) return; _gwo.updatedAt = new Date().toISOString(); _storeSet(KR_ONBOARDING, JSON.stringify(_gwo)); }
+function _gwoNewJob() { return { name: '', chip: '', tasks: [{ name: '', mins: '' }, { name: '', mins: '' }] }; }
+
+const _GWO_STEPS = ['congrats', 'signin', 'v1', 'v2', 'v3', 'v4', 'proof1', 'sintro',
+  'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9', 'q10', 'build', 'gap',
+  'jintro', 'jname', 'jtasks', 'jreview', 'commit', 'review', 'proof2', 'paywall'];
+const _GWO_Q = {
+  q1: { t: 'What brings you to Groovework?', opts: ['My list keeps growing and I never know when I’ll finish', 'I work hard all day and still feel behind', 'I’m busy all day but not sure what I got done', 'Urgent jobs push out the important ones', 'My plans fall apart by mid-morning', 'Just curious'] },
+  q2: { t: 'What fills most of your day?', multi: true, opts: ['Paid work', 'Running a home or family', 'Study', 'My own business', 'A mix of everything'] },
+  q3: { t: 'Roughly how many things are on your to-do list right now?', opts: ['Fewer than 10', '10 to 25', '25 to 50', 'More than 50', 'Too many to count'] },
+  q4: { t: 'How do you plan your day now?', opts: ['Paper or a notebook', 'Another app', 'A calendar', 'In my head', 'I don’t really plan'] },
+  q5: { t: 'What time do you want to be finished most days?', time: 'targetFinish' },
+  q6: { t: 'And what time do you usually actually finish?', time: 'actualFinish' },
+  q7: { t: 'When you guess how long a job will take, how close are you?', opts: ['Usually spot on', 'A bit under', 'Way under', 'I’ve honestly got no idea'] },
+  q8: { t: 'How often do you finish the day feeling behind?', opts: ['Rarely', 'Some days', 'Most days', 'Every day'] },
+  q9: { t: 'How often do the important jobs get pushed to tomorrow?', opts: ['Rarely', 'Once or twice a week', 'Most days'] },
+  q10: { t: 'When your day runs late, what misses out?', multi: true, none: 'Nothing really', opts: ['Time with family or friends', 'Sleep', 'Exercise', 'Time to myself', 'Nothing really'] },
+};
+// Job ideas by what fills their day (Q2), and task ideas for each of those jobs (past tense).
+const _GWO_JOB_CHIPS = {
+  'Paid work': ['Inbox', 'Start of day', 'Invoicing'],
+  'Running a home or family': ['School morning', 'Kitchen clean-up', 'Washing'],
+  'Study': ['Exam study', 'Assignment'],
+  'My own business': ['Bookkeeping', 'Social media', 'Opening up'],
+};
+const _GWO_TASK_CHIPS = {
+  'Inbox': ['Cleared new emails', 'Replied to the urgent ones', 'Filed the rest'],
+  'Start of day': ['Checked my calendar', 'Set my top three tasks', 'Cleared my desk'],
+  'Invoicing': ['Checked what was ready to bill', 'Wrote the invoices', 'Sent the invoices'],
+  'School morning': ['Made breakfast', 'Packed lunches', 'Did the school run'],
+  'Kitchen clean-up': ['Unloaded the dishwasher', 'Wiped the benches', 'Swept the floor'],
+  'Washing': ['Put a load on', 'Hung it out', 'Folded and put it away'],
+  'Exam study': ['Reviewed my notes', 'Did practice questions', 'Checked my answers'],
+  'Assignment': ['Researched the topic', 'Wrote a draft', 'Edited and submitted it'],
+  'Bookkeeping': ['Entered the receipts', 'Reconciled the bank', 'Followed up unpaid invoices'],
+  'Social media': ['Planned a post', 'Took the photos', 'Posted and replied to comments'],
+  'Opening up': ['Unlocked and switched on', 'Set up the counter', 'Checked the stock'],
+};
+
+function gwoOpen(saved) {
+  _gwo = saved || { v: 1, startedAt: new Date().toISOString(), step: 'congrats', hist: [], jobIdx: 0, editFrom: null,
+    answers: {}, jobs: [_gwoNewJob()], savedJobs: [], userId: null, committedAt: null, completedAt: null, paywall: null };
+  if (!saved) _gwoSave();
+  openModal('modal-gwo');
+  gwoRender();
+}
+// Screens that are skipped where they stand: signed in already, the flagged ones, the
+// review prompt (it is Apple's own sheet, not a screen of ours), and the paywall when off.
+function _gwoSkip(step) {
+  if (step === 'signin') return isSignedIn();
+  if (step === 'proof1' || step === 'proof2') return !(_gwFlag('socialproof') && GW_REVIEWS.length);
+  if (step === 'review') return true;
+  if (step === 'paywall') return !_gwFlag('paywall');
+  return false;
+}
+function _gwoGo(step, push) {
+  clearTimeout(_gwoTimer); _gwoTimer = null;
+  if (push !== false && _gwo.step !== 'build') _gwo.hist.push({ step: _gwo.step, jobIdx: _gwo.jobIdx });
+  _gwo.step = step;
+  _gwo['at_' + step] = _gwo['at_' + step] || new Date().toISOString();
+  _gwoSave();
+  gwoRender();
+  const m = document.querySelector('#gwo-root .gwo-main'); if (m) m.scrollTop = 0;
+}
+function gwoNext() {
+  let i = _GWO_STEPS.indexOf(_gwo.step);
+  for (i = i + 1; i < _GWO_STEPS.length; i++) {
+    const s = _GWO_STEPS[i];
+    if (s === 'jname' || s === 'jtasks') continue;   // only reached from the job screens
+    if (s === 'review') { _gwoReviewPrompt(); continue; }
+    if (!_gwoSkip(s)) return _gwoGo(s);
+  }
+  _gwoFinish();
+}
+function gwoBack() {
+  clearTimeout(_gwoTimer); _gwoTimer = null;
+  let h = _gwo.hist.pop();
+  while (h && _gwoSkip(h.step)) h = _gwo.hist.pop();
+  if (!h) return;
+  _gwo.step = h.step; _gwo.jobIdx = h.jobIdx || 0;
+  _gwoSave(); gwoRender();
+}
+// Apple's review prompt (screen 24). The App Store version only; nothing on the web.
+function _gwoReviewPrompt() {
+  if (_gwo.reviewAsked) return;
+  const r = _gwPlugin('InAppReview');
+  if (r && r.requestReview) { try { r.requestReview(); _gwo.reviewAsked = new Date().toISOString(); } catch (e) {} }
+}
+
+// ── Little helpers ──
+function _gwoHM(hm) { return hm ? formatTimeAmPm(hm) : ''; }
+function _gwoList(arr) { return arr.length < 2 ? (arr[0] || '') : arr.slice(0, -1).join(', ') + ' and ' + arr[arr.length - 1]; }
+function _gwoHours(h) { const s = (h % 1) ? h.toFixed(1) : String(h); return s + ' hour' + (h === 1 ? '' : 's'); }
+function _gwoGapHours() {
+  const a = _gwo.answers, toM = s => { const [h, m] = String(s || '').split(':').map(Number); return h * 60 + m; };
+  if (!a.targetFinish || !a.actualFinish) return 0;
+  let d = toM(a.actualFinish) - toM(a.targetFinish);
+  if (d < -12 * 60) d += 24 * 60; else if (d > 12 * 60) d -= 24 * 60;   // past midnight either way
+  return Math.round(d / 30) / 2;   // nearest half hour
+}
+function _gwoJobTotal(job) { return (job.tasks || []).reduce((s, t) => s + (parseInt(t.mins, 10) > 0 ? parseInt(t.mins, 10) : 0), 0); }
+
+// Past tense: a hint only. Knows the common present-tense verbs a task starts with, and
+// how to put each one in the past, so the tip shows THEIR task done ("Wiped the benches").
+const _GWO_IRREG = { make: 'made', do: 'did', take: 'took', put: 'put', sweep: 'swept', write: 'wrote', get: 'got', go: 'went', run: 'ran', set: 'set', read: 'read', cut: 'cut', hang: 'hung', send: 'sent', pay: 'paid', buy: 'bought', bring: 'brought', feed: 'fed', give: 'gave', have: 'had', keep: 'kept', leave: 'left', meet: 'met', ring: 'rang', sit: 'sat', sell: 'sold', spend: 'spent', tell: 'told', throw: 'threw', wear: 'wore', eat: 'ate', drive: 'drove', ride: 'rode', begin: 'began', choose: 'chose', catch: 'caught', teach: 'taught', find: 'found', hold: 'held', lay: 'laid', lead: 'led', lose: 'lost', sweep: 'swept', shut: 'shut', split: 'split', spread: 'spread', stick: 'stuck', sing: 'sang', swim: 'swam', wake: 'woke', build: 'built' };
+const _GWO_REG = 'clean answer wash wipe pack check call email reply cook sort fold empty load unload tidy vacuum mop plan update review file post book order fix pick drop walk open close lock unlock prepare brush shower dress finish start prep chop iron water mow weed rake recycle scrub dust polish rinse dry change collect deliver print scan schedule organise organize return wrap bake boil fill refill replace restock count enter reconcile invoice transfer study practise practice research edit submit draft type list note label store move carry lift shop visit attend apply turn switch plug charge log record track test measure mix stir serve clear stack sharpen grease oil service inspect bath bathe help phone text message tick sign plant prune spray feed clip trim hoover declutter unpack wake'.split(' ');
+const _GWO_DOUBLE = ['drop', 'plan', 'prep', 'chop', 'mop', 'shop', 'stop', 'plug', 'scrub', 'ship', 'skip', 'tip', 'wrap', 'step', 'jog', 'hug', 'rub', 'pat', 'clip', 'trim'];
+function _gwoPastHint(name) {
+  const m = String(name || '').trim().match(/^([A-Za-z]+)(.*)$/);
+  if (!m) return '';
+  const w = m[1].toLowerCase();
+  let past = _GWO_IRREG[w];
+  if (!past && _GWO_REG.indexOf(w) >= 0) {
+    past = _GWO_DOUBLE.indexOf(w) >= 0 ? w + w.slice(-1) + 'ed'
+      : /e$/.test(w) ? w + 'd'
+      : /[^aeiou]y$/.test(w) ? w.slice(0, -1) + 'ied'
+      : w + 'ed';
+  }
+  if (!past) return '';
+  return 'Tip: write it as if it’s done, e.g. ‘' + past.charAt(0).toUpperCase() + past.slice(1) + m[2] + '’';
+}
+
+// ── The screens ──
+function gwoRender() {
+  const root = document.getElementById('gwo-root');
+  if (!root || !_gwo) return;
+  const s = _gwo.step, a = _gwo.answers, e = _escHtml;
+  const pos = Math.max(0, _GWO_STEPS.indexOf(s)), pct = Math.round(pos / (_GWO_STEPS.length - 1) * 100);
+  const noBack = s === 'congrats' || s === 'build' || s === 'paywall' || !_gwo.hist.length;
+  const btn = (label, fn, dis) => `<button class="gwo-btn" onclick="${fn}"${dis ? ' disabled' : ''}>${label}</button>`;
+  const head = (h, sub) => `<div class="gwo-h">${h}</div>${sub ? `<div class="gwo-sub">${sub}</div>` : ''}`;
+  let main = '', foot = '';
+
+  if (s === 'congrats') {
+    main = `<div class="gwo-hero">🎉</div>` + head('Good call. You’re about to find out when your day really ends.', 'Groovework learns how long your work really takes and tells you when you’ll finish.');
+    foot = btn('Let’s go', 'gwoNext()');
+  } else if (s === 'signin') {
+    main = `<div class="gwo-hero">🔑</div>` + head('Save your times as you go');
+    foot = (_gwNative() ? `<button class="gwo-btn gwo-apple" onclick="gwoSignInApple()"> Sign in with Apple</button>` : '')
+      + `<button class="gwo-btn gwo-google" onclick="gwoSignInGoogle()">Sign in with Google</button>`
+      + `<div class="gwo-link" onclick="gwoNext()">Not now</div>`;
+  } else if (s === 'v1' || s === 'v2' || s === 'v3' || s === 'v4') {
+    const V = { v1: ['🕔', 'Will you be done by 5, or by 8?', 'Guessing how long tasks take is hard for everyone. It’s one of the reasons people feel constantly behind.'],
+                v2: ['▶️', 'Press start. That’s it.', 'Every job starts with the timer, so Groovework learns how long your work really takes.'],
+                v3: ['📋', 'Today’s run sheet, with a finish time you can trust', 'Once the clock is running, you see what’s left and when you’ll be done.'],
+                v4: ['📊', 'See exactly where your time went', 'Finish the day knowing what you got done.'] }[s];
+    main = `<div class="gwo-hero">${V[0]}</div>` + head(V[1], V[2]);
+    foot = btn('Continue', 'gwoNext()');
+  } else if (s === 'proof1' || s === 'proof2') {
+    main = head('What people are saying') + GW_REVIEWS.map(r => `<div class="gwo-card"><div>${e(r.text)}</div>${r.who ? `<div class="gwo-small">${e(r.who)}</div>` : ''}</div>`).join('');
+    foot = btn('Continue', 'gwoNext()');
+  } else if (s === 'sintro') {
+    main = `<div class="gwo-hero">📝</div>` + head('A few quick questions so Groovework fits your day', 'About 2 minutes.');
+    foot = btn('Start', 'gwoNext()');
+  } else if (_GWO_Q[s]) {
+    const q = _GWO_Q[s];
+    if (q.time) {
+      main = head(q.t) + `<input id="gwo-time" type="time" class="gwo-time" value="${e(a[q.time] || '')}" oninput="gwoTimeSet('${q.time}', this.value)">`;
+      foot = btn('Continue', 'gwoNext()', !a[q.time]);
+    } else {
+      const cur = a[s], on = o => q.multi ? (Array.isArray(cur) && cur.indexOf(o) >= 0) : cur === o;
+      main = head(q.t, q.multi ? 'Pick as many as fit.' : '') + q.opts.map((o, i) => `<div class="gwo-opt${on(o) ? ' on' : ''}" onclick="gwoPick('${s}', ${i})">${e(o)}</div>`).join('');
+      foot = q.multi ? btn('Continue', 'gwoNext()', !(Array.isArray(cur) && cur.length)) : '';
+    }
+  } else if (s === 'build') {
+    const late = (a.q10 || []).filter(x => x !== 'Nothing really').map(x => x.charAt(0).toLowerCase() + x.slice(1));
+    const said = [a.targetFinish ? `I want to be done by ${_gwoHM(a.targetFinish)}.` : '', a.actualFinish ? `I’m usually done at ${_gwoHM(a.actualFinish)}.` : '',
+      late.length ? `My ${_gwoList(late)} miss out.` : ''].filter(Boolean).join(' ');
+    main = head('Building your Groovework plan…') + `<div class="gwo-steps">${['Your finish time', 'Your list', 'Where your time goes'].map((t, i) => `<div class="gwo-step" id="gwo-bs-${i}"><span class="gwo-tick">○</span>${t}</div>`).join('')}</div>`
+      + (said ? `<div class="gwo-quote">“${e(said)}”</div>` : '');
+  } else if (s === 'gap') {
+    const g = _gwoGapHours();
+    main = `<div class="gwo-hero">⏱</div>` + (g > 0 ? head('That’s ' + _gwoHours(g) + ' a day past your plan', 'About ' + _gwoHours(g * 5) + ' over a 5-day week.')
+      : head('You’re already close. Groovework will help you keep it that way.'))
+      + `<div class="gwo-note">The good news: once Groovework knows your real times, it shows your finish time before you start.</div>`;
+    foot = btn('Continue', 'gwoNext()');
+  } else if (s === 'jintro') {
+    main = head('Let’s set up your first three jobs', 'A job is something you do regularly, like getting the kids off to school. Each job is made up of smaller tasks, and Groovework times every task on its own.')
+      + `<div class="gwo-card"><div class="gwo-job">School morning</div>${[['Made breakfast', 15], ['Packed lunches', 10], ['Did the school run', 20]].map(t => `<div class="gwo-trow"><span>${t[0]}</span><span>${t[1]} min</span></div>`).join('')}</div>`
+      + `<div class="gwo-small">Tasks are written as if they’re already done, because you’ll tick each one off once it’s finished.</div>`;
+    foot = btn('Add my first job', 'gwoJobStart(0)');
+  } else if (s === 'jname') {
+    const job = _gwo.jobs[_gwo.jobIdx] || (_gwo.jobs[_gwo.jobIdx] = _gwoNewJob());
+    const used = _gwo.jobs.map((j, i) => i === _gwo.jobIdx ? '' : j.name.trim().toLowerCase());
+    const cats = (a.q2 || []).indexOf('A mix of everything') >= 0 ? Object.keys(_GWO_JOB_CHIPS) : (a.q2 || []);
+    const chips = [].concat(...cats.map(c => _GWO_JOB_CHIPS[c] || [])).filter(c => used.indexOf(c.toLowerCase()) < 0);
+    main = head(_gwo.jobIdx === 0 ? 'What’s a job you do most days?' : 'What’s another job you do regularly?', 'Think of something with a few steps.')
+      + `<input id="gwo-jobname" class="gwo-input" type="text" placeholder="e.g. Kitchen clean-up" autocapitalize="sentences" value="${e(job.name)}" oninput="gwoJobName(this.value)">`
+      + (chips.length ? `<div class="gwo-chips">${chips.map(c => `<span class="gwo-chip${job.chip === c ? ' on' : ''}" onclick="gwoJobChip(decodeURIComponent('${_encArg(c)}'))">${e(c)}</span>`).join('')}</div>` : '');
+    foot = btn('Next: add its tasks', 'gwoJobNameNext()', !job.name.trim()) + (_gwo.jobIdx > 0 && !_gwo.editFrom ? `<div class="gwo-link" onclick="gwoJobSkip()">Skip for now</div>` : '');
+  } else if (s === 'jtasks') {
+    const job = _gwo.jobs[_gwo.jobIdx];
+    const have = job.tasks.map(t => t.name.trim().toLowerCase());
+    const chips = (_GWO_TASK_CHIPS[job.chip] && job.chip === job.name.trim()) ? _GWO_TASK_CHIPS[job.chip].filter(c => have.indexOf(c.toLowerCase()) < 0) : [];
+    main = head('What are the steps in ' + e(job.name) + '?', 'Walk through the job in your head from start to finish. What did you do first? Then what? Write each task as if it’s done.')
+      + `<div class="gwo-colhead"><span>Task, as if done</span><span>Minutes</span></div>`
+      + `<div id="gwo-rows">${job.tasks.map((t, i) => `<div class="gwo-row" data-i="${i}">
+          <span class="gwo-grip" onpointerdown="gwoDragStart(event, ${i})">⠿</span>
+          <div style="flex:1;min-width:0;"><input class="gwo-input gwo-tname" type="text" placeholder="e.g. Wiped the benches" autocapitalize="sentences" value="${e(t.name)}" oninput="gwoTaskSet(${i}, 'name', this.value)">
+            <div class="gwo-hint" id="gwo-hint-${i}">${e(_gwoPastHint(t.name))}</div></div>
+          <input class="gwo-input gwo-mins" type="number" inputmode="numeric" min="1" max="600" placeholder="min" value="${e(String(t.mins || ''))}" oninput="gwoTaskSet(${i}, 'mins', this.value)">
+          ${job.tasks.length > 2 ? `<span class="gwo-x" onclick="gwoTaskDel(${i})">✕</span>` : '<span class="gwo-x" style="visibility:hidden;">✕</span>'}
+        </div>`).join('')}</div>`
+      + (job.tasks.length < 10 ? `<div class="gwo-add" onclick="gwoTaskAdd()">＋ Add another task</div>` : '')
+      + `<div class="gwo-total" id="gwo-total">Your guess for this job: ${_gwoJobTotal(job)} min</div>`
+      + (chips.length ? `<div class="gwo-chips">${chips.map(c => `<span class="gwo-chip" onclick="gwoTaskChip(decodeURIComponent('${_encArg(c)}'))">＋ ${e(c)}</span>`).join('')}</div>` : '');
+    foot = btn('Save job', 'gwoJobSave()') + (_gwo.jobIdx > 0 && !_gwo.editFrom ? `<div class="gwo-link" onclick="gwoJobSkip()">Skip for now</div>` : '');
+  } else if (s === 'jreview') {
+    const jobs = _gwo.jobs.filter(j => j.name.trim() && j.tasks.some(t => t.name.trim()));
+    main = head('Here’s your Groovework setup') + jobs.map(j => {
+      const i = _gwo.jobs.indexOf(j);
+      return `<div class="gwo-card" onclick="gwoJobEdit(${i})" style="cursor:pointer;"><div class="gwo-job">${e(j.name)}<span class="gwo-edit">Edit</span></div>`
+        + j.tasks.filter(t => t.name.trim()).map(t => `<div class="gwo-trow"><span>${e(t.name)}</span><span>${parseInt(t.mins, 10)} min</span></div>`).join('')
+        + `<div class="gwo-trow gwo-sum"><span>Your guess</span><span>${_gwoJobTotal(j)} min</span></div></div>`;
+    }).join('') + `<div class="gwo-small">This week, Groovework checks your guesses against the clock, task by task.</div>`;
+    foot = btn('Looks good', 'gwoJobsCommit()');
+  } else if (s === 'commit') {
+    main = `<div class="gwo-hero">🎯</div>` + head(a.targetFinish ? 'Let’s aim to be done by ' + _gwoHM(a.targetFinish) : 'Let’s aim to be done on time');
+    foot = `<div class="gwo-hold${_gwo.committedAt ? ' done' : ''}" id="gwo-hold" onpointerdown="gwoHoldStart(event)" onpointerup="gwoHoldEnd()" onpointerleave="gwoHoldEnd()" onpointercancel="gwoHoldEnd()" oncontextmenu="return false"><span class="gwo-hold-fill" id="gwo-hold-fill"${_gwo.committedAt ? ' style="width:100%;"' : ''}></span><span class="gwo-hold-t">${_gwo.committedAt ? 'Committed ✓' : 'Hold to commit'}</span></div>`
+      + (_gwo.committedAt ? btn('Continue', 'gwoNext()') : '');
+  } else if (s === 'paywall') {
+    main = head('Know when you’ll be done, before you start')
+      + `<div class="gwo-card"><div class="gwo-job">[PLAN]</div><div class="gwo-small">7 days free, then [PRICE] per [period]. Cancel anytime in your Apple ID settings.</div></div>`
+      + `<div class="gwo-links"><span onclick="gwoRestore()">Restore purchases</span>${GW_TERMS_URL ? `<a href="${GW_TERMS_URL}" target="_blank" rel="noopener">Terms of Use</a>` : '<span>Terms of Use</span>'}${GW_PRIVACY_URL ? `<a href="${GW_PRIVACY_URL}" target="_blank" rel="noopener">Privacy Policy</a>` : '<span>Privacy Policy</span>'}</div>`;
+    foot = btn('Start my 7 days free', 'gwoStartTrial()');
+  }
+
+  root.innerHTML = `<div class="gwo-top"><span class="gwo-back${noBack ? ' off' : ''}" onclick="gwoBack()">‹ Back</span><div class="gwo-prog"><span style="width:${pct}%;"></span></div></div>`
+    + `<div class="gwo-main">${main}</div><div class="gwo-foot">${foot}</div>`;
+  if (s === 'build') _gwoBuildRun();
+}
+
+// ── Screen actions ──
+function gwoSignInGoogle() {
+  // Google sends the page away and back. Land on the screen AFTER this one when it returns.
+  _gwo.hist.push({ step: 'signin', jobIdx: 0 });
+  _gwo.step = 'v1'; _gwo.at_v1 = _gwo.at_v1 || new Date().toISOString();
+  _gwoSave();
+  signInGoogle();
+}
+function gwoSignInApple() { showToast('Sign in with Apple switches on with the App Store version.'); }
+function gwoPick(qid, i) {
+  const q = _GWO_Q[qid], o = q.opts[i], a = _gwo.answers;
+  if (q.multi) {
+    let cur = Array.isArray(a[qid]) ? a[qid].slice() : [];
+    if (cur.indexOf(o) >= 0) cur = cur.filter(x => x !== o);
+    else if (q.none && o === q.none) cur = [o];                    // "Nothing really" stands alone
+    else cur = cur.filter(x => x !== q.none).concat([o]);
+    a[qid] = cur; _gwoSave(); gwoRender();
+    return;
+  }
+  a[qid] = o; _gwoSave(); gwoRender();
+  _gwoTimer = setTimeout(gwoNext, 220);   // a beat to see the choice land
+}
+function gwoTimeSet(key, v) {
+  _gwo.answers[key] = v || '';
+  const qid = key === 'targetFinish' ? 'q5' : 'q6'; _gwo.answers[qid] = v || '';
+  _gwoSave();
+  const b = document.querySelector('#gwo-root .gwo-foot .gwo-btn'); if (b) b.disabled = !v;
+}
+function _gwoBuildRun() {
+  const tick = i => { const el = document.getElementById('gwo-bs-' + i); if (el) { el.classList.add('done'); el.querySelector('.gwo-tick').textContent = '✓'; } };
+  [0, 1, 2].forEach(i => setTimeout(() => { if (_gwo && _gwo.step === 'build') tick(i); }, 900 * (i + 1)));
+  _gwoTimer = setTimeout(() => { if (_gwo && _gwo.step === 'build') gwoNext(); }, 3900);
+}
+function gwoJobStart(i) { _gwo.jobIdx = i; if (!_gwo.jobs[i]) _gwo.jobs[i] = _gwoNewJob(); _gwoGo('jname'); setTimeout(() => { const el = document.getElementById('gwo-jobname'); if (el && !el.value) el.focus(); }, 300); }
+function gwoJobName(v) {
+  const job = _gwo.jobs[_gwo.jobIdx]; job.name = v;
+  if (job.chip && job.chip !== v.trim()) job.chip = '';
+  _gwoSave();
+  const b = document.querySelector('#gwo-root .gwo-foot .gwo-btn'); if (b) b.disabled = !v.trim();
+}
+function gwoJobChip(c) { const job = _gwo.jobs[_gwo.jobIdx]; job.name = c; job.chip = c; _gwoSave(); gwoRender(); }
+function gwoJobNameNext() {
+  const job = _gwo.jobs[_gwo.jobIdx];
+  if (!job.name.trim()) { showToast('Give the job a name'); return; }
+  if (_gwo.jobs.some((j, i) => i !== _gwo.jobIdx && j.name.trim().toLowerCase() === job.name.trim().toLowerCase())) { showToast('You already have a job called that'); return; }
+  _gwoGo('jtasks');
+}
+function gwoTaskSet(i, field, v) {
+  const job = _gwo.jobs[_gwo.jobIdx]; if (!job.tasks[i]) return;
+  job.tasks[i][field] = field === 'mins' ? String(v).replace(/[^0-9]/g, '') : v;
+  _gwoSave();
+  if (field === 'name') { const h = document.getElementById('gwo-hint-' + i); if (h) h.textContent = _gwoPastHint(v); }
+  const t = document.getElementById('gwo-total'); if (t) t.textContent = 'Your guess for this job: ' + _gwoJobTotal(job) + ' min';
+}
+function gwoTaskAdd() {
+  const job = _gwo.jobs[_gwo.jobIdx]; if (job.tasks.length >= 10) return;
+  job.tasks.push({ name: '', mins: '' }); _gwoSave(); gwoRender();
+  const ins = document.querySelectorAll('#gwo-rows .gwo-tname'); const last = ins[ins.length - 1]; if (last) last.focus();
+}
+function gwoTaskDel(i) { const job = _gwo.jobs[_gwo.jobIdx]; if (job.tasks.length <= 2) return; job.tasks.splice(i, 1); _gwoSave(); gwoRender(); }
+function gwoTaskChip(c) {
+  const job = _gwo.jobs[_gwo.jobIdx];
+  if (job.tasks.some(t => t.name.trim().toLowerCase() === c.toLowerCase())) { gwoRender(); return; }   // typed it already
+  const blank = job.tasks.find(t => !t.name.trim());
+  if (blank) blank.name = c; else if (job.tasks.length < 10) job.tasks.push({ name: c, mins: '' }); else return;
+  _gwoSave(); gwoRender();
+}
+// Drag ⠿ to reorder the task rows. The row follows the finger; the order changes on release.
+let _gwoDrag = null;
+function gwoDragStart(ev, i) {
+  ev.preventDefault();
+  const rows = [...document.querySelectorAll('#gwo-rows .gwo-row')];
+  _gwoDrag = { i, y0: ev.clientY, row: rows[i], mids: rows.map(r => { const b = r.getBoundingClientRect(); return b.top + b.height / 2; }), to: i };
+  _gwoDrag.row.classList.add('lift');
+  document.addEventListener('pointermove', _gwoDragMove);
+  document.addEventListener('pointerup', _gwoDragEnd, { once: true });
+  document.addEventListener('pointercancel', _gwoDragEnd, { once: true });
+}
+function _gwoDragMove(ev) {
+  const d = _gwoDrag; if (!d) return;
+  const dy = ev.clientY - d.y0; d.row.style.transform = 'translateY(' + dy + 'px)';
+  // Past a neighbour's middle = it lands in that neighbour's place.
+  const y = d.mids[d.i] + dy; let to = d.i;
+  if (dy > 0) d.mids.forEach((m, k) => { if (k > d.i && y > m) to = k; });
+  else for (let k = d.i - 1; k >= 0; k--) if (y < d.mids[k]) to = k;
+  d.to = to;
+}
+function _gwoDragEnd() {
+  document.removeEventListener('pointermove', _gwoDragMove);
+  const d = _gwoDrag; _gwoDrag = null; if (!d) return;
+  const job = _gwo.jobs[_gwo.jobIdx];
+  if (d.to !== d.i) { const [m] = job.tasks.splice(d.i, 1); job.tasks.splice(d.to, 0, m); _gwoSave(); }
+  gwoRender();
+}
+function gwoJobSave() {
+  const job = _gwo.jobs[_gwo.jobIdx];
+  const named = job.tasks.filter(t => t.name.trim() || t.mins);
+  if (named.some(t => !t.name.trim())) { showToast('Give every task a name, or clear its minutes'); return; }
+  if (named.some(t => !(parseInt(t.mins, 10) > 0))) { showToast('Add your best guess in minutes for every task'); return; }
+  if (named.length < 2) { showToast('Add at least two tasks'); return; }
+  const seen = new Set();
+  if (named.some(t => { const k = t.name.trim().toLowerCase(); if (seen.has(k)) return true; seen.add(k); return false; })) { showToast('Two tasks have the same name'); return; }
+  job.tasks = named.map(t => ({ name: t.name.trim(), mins: String(parseInt(t.mins, 10)) }));
+  job.name = job.name.trim();
+  if (_gwo.editFrom === 'review' || _gwo.jobIdx >= 2) { _gwo.editFrom = null; return _gwoGo('jreview'); }
+  gwoJobStart(_gwo.jobIdx + 1);
+}
+function gwoJobSkip() {
+  // Jobs 2 and 3 only. Drop this one and anything after it, then review.
+  _gwo.jobs = _gwo.jobs.slice(0, _gwo.jobIdx);
+  _gwoGo('jreview');
+}
+function gwoJobEdit(i) { _gwo.jobIdx = i; _gwo.editFrom = 'review'; _gwoGo('jname'); }
+
+// "Looks good": the jobs become real. Safe to run again after an edit: a job saved here
+// earlier and since renamed or dropped is taken back out, unless it has been clocked.
+function gwoJobsCommit() {
+  const jobs = _gwo.jobs.filter(j => j.name.trim() && j.tasks.filter(t => t.name.trim()).length >= 2);
+  if (!jobs.length) { showToast('Set up at least one job with its tasks'); return; }
+  const names = jobs.map(j => j.name.trim());
+  (_gwo.savedJobs || []).forEach(n => {
+    if (names.indexOf(n) >= 0 || entries.some(x => x.task === n)) return;
+    DIRECTORY = DIRECTORY.filter(r => r.task !== n); delete SUBTASKS[n];
+  });
+  const seeds = getTaskSeeds(), measured = _taskHistAvgMap(), at = new Date().toISOString();
+  jobs.forEach((j, idx) => {
+    const name = j.name.trim();
+    if (!DIRECTORY.some(r => r.task === name)) DIRECTORY.push({ frequency: _gwo.jobs.indexOf(j) === 0 ? 'Daily' : 'Weekly', group: 'General', task: name, equipment: '' });
+    SUBTASKS[name] = j.tasks.filter(t => t.name.trim()).map(t => t.name.trim());
+    j.tasks.forEach(t => {
+      const k = _normTaskKey(t.name.trim()), m = parseInt(t.mins, 10);
+      if (!(m > 0) || (isFinite(measured[k]) && measured[k] > 0)) return;   // never over a real time
+      seeds[k] = { mins: m, source: 'user', at };
+    });
+  });
+  _storeSet('kr_directory', JSON.stringify(DIRECTORY));
+  _storeSet('kr_subtasks', JSON.stringify(SUBTASKS));
+  saveTaskSeeds(seeds);
+  _gwo.savedJobs = names;
+  _gwo.jobsSavedAt = at;
+  try { autoBackup(); } catch (e) {}
+  gwoNext();
+}
+// Hold to commit: about 2 seconds, the bar filling under the finger.
+let _gwoHoldT = null;
+function gwoHoldStart(ev) {
+  if (_gwo.committedAt) return;
+  ev.preventDefault();
+  const f = document.getElementById('gwo-hold-fill'); if (!f) return;
+  f.style.transition = 'width 2s linear'; f.style.width = '100%';
+  clearTimeout(_gwoHoldT);
+  _gwoHoldT = setTimeout(() => {
+    _gwoHoldT = null; _gwHaptic();
+    _gwo.committedAt = new Date().toISOString(); _gwoSave();
+    gwoRender();
+    _gwoTimer = setTimeout(gwoNext, 700);
+  }, 2000);
+}
+function gwoHoldEnd() {
+  if (!_gwoHoldT) return;
+  clearTimeout(_gwoHoldT); _gwoHoldT = null;
+  const f = document.getElementById('gwo-hold-fill'); if (f) { f.style.transition = 'width 0.25s ease-out'; f.style.width = '0'; }
+}
+// Paywall (screen 26): a placeholder until prices and the purchase setup are decided.
+function gwoRestore() { if (!_gwNative()) { showToast('Restore purchases switches on with the App Store version.'); return; } showToast('Restore purchases is not set up yet.'); }
+function gwoStartTrial() {
+  // The App Store version starts the trial here. On the web there is nothing to buy, so a
+  // test build with the paywall turned on is let through and the pass is recorded.
+  if (_gwNative()) { showToast('The free trial is not set up yet.'); return; }
+  _gwo.paywall = 'test-pass'; _gwoFinish();
+}
+function _gwoFinish() {
+  clearTimeout(_gwoTimer); _gwoTimer = null;
+  _gwo.completedAt = new Date().toISOString();
+  if (!_gwo.paywall) _gwo.paywall = _gwFlag('paywall') ? 'passed' : 'off';
+  const u = currentUser(); if (u && u.id) _gwo.userId = u.id;
+  _gwoSave();
+  _storeSet('kr_onboarded', '1');
+  closeModal('modal-gwo');
+  _gwo = null;
+  try { renderDirectory(); renderClockState(); } catch (e) {}
+  try { showScreen('clock', document.querySelector(".nav-tab[onclick*=\"'clock'\"]")); } catch (e) {}
+  showToast('You’re set up. Start a job’s timer when you begin it.');
 }
 
 window.addEventListener('load', () => {
@@ -11645,6 +12165,9 @@ const KR_SYNC_KEYS = [
   // here; the harm is a stale age on a meta line, and the running clock recomputes
   // its own from entries anyway (_checklistItemLastDone).
   'kr_lastdone',
+  // v498: the onboarding answers (survey, finish times, first jobs), kept with the
+  // account so they can be analysed later. Lincoln, 15 Nov 2026: no new table.
+  'kr_onboarding',
 ];
 
 // ⭐ Per-member planner stores have DYNAMIC key names (kr_planner_m_<user_id> and
@@ -11789,7 +12312,7 @@ function _syncOutValue(k, raw) {
 // from the keys that predate this fix, so only the v441+ ones are caught up.
 // Every key added since v441. A phone that has never stored its known list treats these
 // as new, so one that jumps several versions at once still catches them all up.
-const _SYNC_KEYS_V441_PLUS = ['kr_task_video_by_job', 'kr_subtask_photos_by_job', 'kr_task_timer_by_job'];
+const _SYNC_KEYS_V441_PLUS = ['kr_task_video_by_job', 'kr_subtask_photos_by_job', 'kr_task_timer_by_job', 'kr_onboarding'];
 function _syncMergeValue(k, serverRaw, localRaw) {
   let sv, lv;
   try { sv = JSON.parse(serverRaw || '{}') || {}; } catch (e) { sv = {}; }
@@ -12933,6 +13456,7 @@ const KR_BACKUP_KEYS = [
   'kr_planner', 'kr_projects', 'kr_inbox', 'kr_task_notes', 'kr_task_videos', 'kr_checklist_flags', 'kr_hidden_tasks', 'kr_task_merges', 'kr_subtask_origin', 'kr_pins_applied',
   'kr_agents', 'kr_agent_runs', 'kr_planner_checklist', 'kr_pin_order', 'kr_subtask_photos', 'kr_subtask_photos_by_job', 'kr_task_video_by_job', 'kr_photo_pending', 'kr_task_timer_by_job', 'kr_job_reminders', 'kr_task_reminders',
   'kr_task_types', 'kr_job_runs', 'kr_job_flags', 'kr_task_moves', 'kr_job_horizon', 'kr_job_links', 'kr_task_batches', 'kr_time_excl',
+  'kr_onboarding',   // v498: onboarding answers
   // Added v219 — these were silently LOST on restore (Lincoln's icon re-add restore
   // dropped team mode → the Ethan tab vanished). Team/role, Ethan's planned day +
   // sent-state, the shared last-done map, view/sort preferences, and the one-time
