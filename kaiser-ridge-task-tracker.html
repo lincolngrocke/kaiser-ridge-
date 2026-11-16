@@ -3781,7 +3781,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.500';
+const APP_VERSION = '2026-06-21.501';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5334,7 +5334,7 @@ function startClock(taskInfo) {
     projectStepId: taskInfo.projectStepId || '',
     notes: taskInfo.notes,
     pin: (taskInfo.pin && taskInfo.pin.url) ? taskInfo.pin : null,
-    flagOverride: {},   // clock in with NO flags; only a planner-block preset adds them (a job's global flags stay off the clock)
+    flagOverride: Object.assign({}, getChecklistFlags()[taskInfo.task || ''] || {}),   // the job's own flags come along (v501, see confirmTime)
     tempId: _newEntryId(),
   };
   _storeRemove('kr_clock_trash'); // fresh session supersedes any discarded one
@@ -11057,7 +11057,13 @@ function confirmTime(choice) {
       projectStepId: taskInfo.projectStepId || '',
       notes:     taskInfo.notes     || '',
       pin: _pendingTaskInfo && _pendingTaskInfo.pin ? _pendingTaskInfo.pin : (currentPin || null),
-      flagOverride: {},   // clock in with NO flags; a planner block (_planId) fills these below
+      // ⭐ THE JOB'S OWN FLAGS COME ALONG (v501). Lincoln, 17 Nov 2026: a task swiped onto
+      // the run sheet on the job screen made it there once, then never again. Clock-in used
+      // to start with NO flags, so tasks added to the run sheet between runs (Edit Job's
+      // swipe right or "Add to the run sheet") were dropped here, unless a planner block
+      // happened to have copied them. Clock-out already clears the job's flags, so any
+      // still set were added on purpose for this run. A block or a resume replaces them below.
+      flagOverride: Object.assign({}, getChecklistFlags()[taskInfo.task || ''] || {}),
       tempId: _newEntryId(),
     };
     _storeRemove('kr_clock_trash'); // fresh session supersedes any discarded one
