@@ -3774,7 +3774,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.498';
+const APP_VERSION = '2026-06-21.499';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -16537,7 +16537,7 @@ function renderDirSubtaskList(items) {
   // 🚩 Flagged tasks float to the top of the editor — same global flag the running
   // clock uses. Display order only: each row keeps its true index into _subtaskItems,
   // so editing, deleting, reordering and the saved order are all unaffected.
-  const _clFlags = (_jn && getChecklistFlags()[_jn]) || {};
+  const _clFlags = _jn ? _sessionOrGlobalFlags(_jn) : {};
   // 🙈 HIDDEN HERE TOO (v490). Lincoln, 12 Nov 2026: a task hidden on the planning or run
   // sheet "should also be hidden automatically on the job screen". It leaves the list for the
   // same folded Hidden line every other list ends with. The row keeps its place in
@@ -16736,16 +16736,49 @@ function toggleEditorTaskFlag(i) {
   const job = _dirJobName();
   if (!job) { showToast('Save the job first, then add its tasks to the run sheet'); return; }
   const item = _subtaskItems[i]; if (!item) return;
-  const all = getChecklistFlags();
-  const f = all[job] || (all[job] = {});
-  const on = !f[item];
-  if (on) f[item] = Date.now(); else delete f[item];
-  if (!Object.keys(f).length) delete all[job];
-  if (!saveChecklistFlags(all)) return;
+  const on = !_sessionOrGlobalFlags(job)[item];
+  const nBlocks = _setJobRunFlag(job, item, on);
+  if (nBlocks === false) return;
   if (navigator.vibrate) { try { navigator.vibrate(12); } catch (e) {} }
   renderDirSubtaskList();
-  if (clockState && clockState.running && clockState.task === job) renderRunChecklist();
+  _refreshChecklistSurfaces(job);
+  try { if (nBlocks && typeof renderPlannerScreen === 'function') renderPlannerScreen(); } catch (e) {}
+  try { const rs = document.getElementById('modal-run-sheet'); if (rs && rs.classList.contains('open') && typeof _rsRender === 'function') _rsRender(); } catch (e) {}
   showToast(on ? 'Added to the run sheet' : 'Taken off the run sheet');
+}
+// ⭐ EDIT JOB'S RUN SHEET FLAG LANDS WHERE THE RUN SHEET READS (v499). Lincoln, 16 Nov
+// 2026: "Add to the run sheet" left the task sitting on Organise, never on the sheet.
+// It wrote only the job's own flags, but a planned block keeps its OWN flags once its
+// Organise has been opened, and a running job started from a block keeps the session's.
+// Both outrank the job's flags, so the tap changed nothing anyone was looking at. Now it
+// writes all three: the job's flags (what a block planned from now on starts with), the
+// running session if this job is clocked in, and every block of this job not yet started
+// (today on, or in the holding bay) that already has its own arrangement. Flags stay
+// per-run: clocking out still clears them. Returns the number of blocks changed, or
+// false if the job's flags could not be saved.
+function _setJobRunFlag(job, item, on) {
+  const stamp = Date.now();
+  const put = f => { if (on) { if (!f[item]) f[item] = stamp; } else delete f[item]; };
+  const all = getChecklistFlags();
+  const g = all[job] || (all[job] = {});
+  put(g);
+  if (!Object.keys(g).length) delete all[job];
+  if (!saveChecklistFlags(all)) return false;
+  if (clockState && clockState.running && clockState.task === job && clockState.flagOverride) {
+    put(clockState.flagOverride);
+    _storeSet('kr_clock', JSON.stringify(clockState));
+  }
+  const today = _plannerDateNumFromStr(plannerDateStr(new Date()));
+  const pcm = getPlannerChecklist();
+  const ids = [];
+  (_plannerPlans || []).forEach(p => {
+    if (!p || p.task !== job || !pcm[p.id]) return;
+    if (!p.parked && _plannerDateNumFromStr(p.date) < today) return;   // a past block nobody started
+    put(pcm[p.id].flags || (pcm[p.id].flags = {}));
+    ids.push(p.id);
+  });
+  if (ids.length && savePlannerChecklist(pcm) !== false) ids.forEach(id => { try { _applyBlockEstimate(id); } catch (e) {} });
+  return ids.length;
 }
 function stSwipeStart(event, i) {
   if (_stDragging) return;
@@ -17822,7 +17855,7 @@ function renderTaskActionsSheet() {
   const hasOrigin = !!getSubtaskOrigin()[s];
   const isRep = jn && taskTypeOf(jn, s) === 'repeat';
   const remOn = !!(jn && getTaskReminders()[_taskRemKey(jn, s)]);
-  const flagged = !!(jn && (getChecklistFlags()[jn] || {})[s]);
+  const flagged = !!(jn && _sessionOrGlobalFlags(jn)[s]);
   document.getElementById('task-actions-title').textContent = s.length > 80 ? s.slice(0, 80) + '…' : s;
   const row = (act, icon, label, value, danger) => `
     <div onclick="taskActionGo('${act}')" style="display:flex;align-items:center;gap:12px;padding:13px 2px;border-bottom:1px solid var(--border);cursor:pointer;">
@@ -17832,7 +17865,9 @@ function renderTaskActionsSheet() {
     </div>`;
   document.getElementById('task-actions-list').innerHTML =
     row('steps', '≣', nSteps ? 'Steps' : 'Add steps', nSteps ? String(nSteps) : '') +
-    row('guide', (_ag && _ag.url) ? '▶️' : '📋', hasGuide ? 'Guide' : 'Add guide', hasGuide ? ((_ag && _ag.url) ? 'Video ✓' : '✓') : '') +
+    // v499: "Add guide" is hidden (register: task-guide). A task that already has a
+    // guide keeps its Guide row, so nothing written there is stranded.
+    ((hasGuide || !featureHidden('task-guide')) ? row('guide', (_ag && _ag.url) ? '▶️' : '📋', hasGuide ? 'Guide' : 'Add guide', hasGuide ? ((_ag && _ag.url) ? 'Video ✓' : '✓') : '') : '') +
     (hasOrigin ? row('origin', 'ℹ️', 'History (from Inbox)', '') : '') +
     row('type', isRep ? '↻' : '1×', 'Type', isRep ? 'Repeatable — tap to make once-per-run' : 'Once per run — tap to make repeatable') +
     (featureHidden('reminders') ? '' : row('remind', '🔔', 'Reminder', remOn ? 'On' : 'Off')) +
@@ -21912,6 +21947,8 @@ function sharedJobApply(mode) {
 // ⚠️ Before hiding a screen, check what can only be reached THROUGH it and give
 // that its own door first. The Dashboard held the only route to the Times list.
 const KR_HIDDEN_FEATURES = [
+  { id: 'task-guide', name: 'Add guide on a task', since: 'v499',
+    what: 'The Add guide row in a task\'s ⋯ menu on Edit Job. A task that already has a guide still shows it there.' },
   { id: 'run-done', name: 'The green ✓ count on the Clock tab', since: 'v465',
     what: 'The count of tasks finished this session and the list behind it. The run sheet shows each finished task with its time, and a tap there brings one back.' },
   { id: 'order-reset', name: 'Back to the learned order', since: 'v464',
