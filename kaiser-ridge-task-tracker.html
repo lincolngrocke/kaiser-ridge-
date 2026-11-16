@@ -1056,6 +1056,13 @@
   .rsn-when { font-size: 13px; font-weight: 600; color: var(--rsn-sub); white-space: nowrap; flex-shrink: 0; }
   .rsn-when.next { color: var(--rsn-green); }
   .rsn-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; min-height: 24px; color: var(--rsn-sub); }
+  /* Edit Job rows wear the run sheet's time pill and last-done words (v500). */
+  #dir-subtask-list { --rsn-sub: #777e79; --rsn-blue: #3478f6; --rsn-blue-bg: #eef4ff; --rsn-blue-line: #d7e6ff; }
+  body.dark #dir-subtask-list { --rsn-sub: #a1a1a6; --rsn-blue: #5b9bff; --rsn-blue-bg: rgba(52,120,246,0.18); --rsn-blue-line: rgba(91,155,255,0.35); }
+  #dir-subtask-list .dir-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--subtext); padding: 2px 0 5px 2px; }
+  #dir-subtask-list .rs-tp { height: 24px; box-sizing: border-box; padding: 0 9px !important; border-radius: 12px !important; background: var(--rsn-blue-bg); border-color: var(--rsn-blue-line) !important; color: var(--rsn-blue) !important; font-weight: 600; white-space: nowrap; }
+  #dir-subtask-list .rs-est { color: var(--rsn-sub) !important; }
+  #dir-subtask-list .rs-est.rs-est-btn { display: inline-flex; align-items: center; height: 24px; box-sizing: border-box; padding: 0 10px; border-radius: 12px; border: 1px dashed var(--rsn-blue); color: var(--rsn-blue) !important; font-weight: 600; white-space: nowrap; }
   #modal-run-sheet.rs-run .rs-tp, #modal-cl-organise .rs-tp { height: 24px; box-sizing: border-box; padding: 0 9px !important; border-radius: 12px !important; background: var(--rsn-blue-bg); border-color: var(--rsn-blue-line) !important; color: var(--rsn-blue) !important; font-weight: 600; white-space: nowrap; }
   #modal-run-sheet.rs-run .rs-est, #modal-cl-organise .rs-est { color: var(--rsn-sub) !important; }
   #modal-run-sheet.rs-run .rs-est.rs-est-btn, #modal-cl-organise .rs-est.rs-est-btn { display: inline-flex; align-items: center; height: 24px; box-sizing: border-box; padding: 0 10px; border-radius: 12px; border: 1px dashed var(--rsn-blue); color: var(--rsn-blue) !important; font-weight: 600; white-space: nowrap; }
@@ -3774,7 +3781,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.499';
+const APP_VERSION = '2026-06-21.500';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -16543,7 +16550,24 @@ function renderDirSubtaskList(items) {
   // same folded Hidden line every other list ends with. The row keeps its place in
   // _subtaskItems, so saving, ordering and batches carry it untouched.
   const _pairs = _subtaskItems.map((s, i) => ({ s, i })).filter(p => !_hidHere.has(p.s));
-  const _display = _pairs.filter(p => _clFlags[p.s]).concat(_pairs.filter(p => !_clFlags[p.s]));
+  // 🗓 MOST RECENTLY DONE FIRST, LONGEST AGO LAST (v500). Lincoln, 17 Nov 2026: "the most
+  // recent tasks are sitting at the top of their batch, and the tasks that haven't been
+  // done for the longest time will sit at the bottom." The same date-then-tick order
+  // (_tickRank, v437) the clock, Organise and the run sheet already open in, so the job
+  // screen now agrees with them: newest DAY first, inside a day the order they were
+  // ticked, never-done last in the saved order. Display only: each row keeps its true
+  // index, so the saved list and its learned order are untouched.
+  const _rank = _jn ? _tickRank(_jn) : {};
+  const _byRecent = (a, b) => {
+    const ra = _rank[a.s], rb = _rank[b.s];
+    if (ra && rb) return (rb.day - ra.day) || (ra.first - rb.first) || (a.i - b.i);
+    if (ra || rb) return ra ? -1 : 1;
+    return a.i - b.i;
+  };
+  const _display = _pairs.filter(p => _clFlags[p.s]).sort(_byRecent).concat(_pairs.filter(p => !_clFlags[p.s]).sort(_byRecent));
+  // ⏱ The run sheet's own line on each row (v500): "~11m avg · 16×" (how long, how many
+  // times done) and when it was last done. Built once per render, not per row.
+  const _dAvg = _taskEstMap(), _dCnt = _taskHistCountMap(), _dLast = _jn ? _checklistItemLastDone(_jn) : {};
   const _rowFor = ({ s, i }) => {
     // One ⋯ replaces the old six-button strip (steps/guide/history/type/reminder/✕)
     // — they live in a labelled action sheet now, so the task text gets the width.
@@ -16573,7 +16597,10 @@ function renderDirSubtaskList(items) {
     const _media = _jn ? _taskMediaChips(_jn, s, 'var(--blue)', _mmDir) : '';
     if (_media) metaBits.push(_media);
     { const _tc = _jn ? _timerChip(_jn, s) : ''; if (_tc) metaBits.push(_tc); }   // ⏱ v446
-    const metaLine = metaBits.length ? `<div style="font-size:11px;color:var(--subtext);padding:0 0 3px 2px;">${metaBits.join(' · ')}</div>` : '';
+    const _ld = _dLast[s];
+    const _timeBits = (_jn ? _avgMeta(s, _dAvg, _dCnt) : '')
+      + (_jn ? (_ld ? `<span class="rsn-last">${_agoWords(_ld)}</span>` : '<span class="rsn-last none">not done yet</span>') : '');
+    const metaLine = (_timeBits || metaBits.length) ? `<div class="dir-meta">${_timeBits}${metaBits.length ? `<span>${metaBits.join(' · ')}</span>` : ''}</div>` : '';
     return `
     <div id="strow-${i}" ontouchstart="stSwipeStart(event,${i})" ontouchmove="stSwipeMove(event)" ontouchend="stSwipeEnd(event)"
       style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);${_flagged ? 'background:rgba(26,127,55,0.07);' : ''}">
@@ -16896,6 +16923,10 @@ function stTouchEnd(event) {
   if (targetIdx !== _stSrcIdx) {
     const [moved] = _subtaskItems.splice(_stSrcIdx, 1);
     _subtaskItems.splice(targetIdx, 0, moved);
+    // v500: the list sorts by when each task was last done, so a task with a history
+    // goes back to its place. Say why rather than look broken.
+    const _jn = _dirJobName();
+    if (_jn && _tickRank(_jn)[moved]) showToast('Tasks sit in the order they were last done. Drop on a batch heading to move batches.');
   }
   _stSrcIdx = null; _stDragging = false; _stRects = [];
   renderDirSubtaskList();
