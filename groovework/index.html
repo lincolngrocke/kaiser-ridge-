@@ -3781,7 +3781,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.501';
+const APP_VERSION = '2026-06-21.502';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5334,7 +5334,7 @@ function startClock(taskInfo) {
     projectStepId: taskInfo.projectStepId || '',
     notes: taskInfo.notes,
     pin: (taskInfo.pin && taskInfo.pin.url) ? taskInfo.pin : null,
-    flagOverride: Object.assign({}, getChecklistFlags()[taskInfo.task || ''] || {}),   // the job's own flags come along (v501, see confirmTime)
+    flagOverride: {},   // clock in with NO flags (v502, see confirmTime); only a planner-block preset adds them
     tempId: _newEntryId(),
   };
   _storeRemove('kr_clock_trash'); // fresh session supersedes any discarded one
@@ -11057,13 +11057,13 @@ function confirmTime(choice) {
       projectStepId: taskInfo.projectStepId || '',
       notes:     taskInfo.notes     || '',
       pin: _pendingTaskInfo && _pendingTaskInfo.pin ? _pendingTaskInfo.pin : (currentPin || null),
-      // ⭐ THE JOB'S OWN FLAGS COME ALONG (v501). Lincoln, 17 Nov 2026: a task swiped onto
-      // the run sheet on the job screen made it there once, then never again. Clock-in used
-      // to start with NO flags, so tasks added to the run sheet between runs (Edit Job's
-      // swipe right or "Add to the run sheet") were dropped here, unless a planner block
-      // happened to have copied them. Clock-out already clears the job's flags, so any
-      // still set were added on purpose for this run. A block or a resume replaces them below.
-      flagOverride: Object.assign({}, getChecklistFlags()[taskInfo.task || ''] || {}),
+      // ⛔ CLOCK IN WITH NO FLAGS, and keep it that way (v502). v501 carried the job's own
+      // flags in, and Lincoln took it back out the same day, 17 Nov 2026: tasks set ahead on
+      // the job screen "removes the habit of going through all your tasks quickly and
+      // checking what needs to be done", puts tasks on the run sheet that aren't needed
+      // today, and so throws the target out. Each run is chosen fresh in Organise. Only a
+      // planner block (_planId) or a resume fills these, below.
+      flagOverride: {},
       tempId: _newEntryId(),
     };
     _storeRemove('kr_clock_trash'); // fresh session supersedes any discarded one
@@ -16550,7 +16550,8 @@ function renderDirSubtaskList(items) {
   // 🚩 Flagged tasks float to the top of the editor — same global flag the running
   // clock uses. Display order only: each row keeps its true index into _subtaskItems,
   // so editing, deleting, reordering and the saved order are all unaffected.
-  const _clFlags = _jn ? _sessionOrGlobalFlags(_jn) : {};
+  // v502: with job-flag hidden the job screen shows no run sheet marks at all.
+  const _clFlags = (_jn && !featureHidden('job-flag')) ? _sessionOrGlobalFlags(_jn) : {};
   // 🙈 HIDDEN HERE TOO (v490). Lincoln, 12 Nov 2026: a task hidden on the planning or run
   // sheet "should also be hidden automatically on the job screen". It leaves the list for the
   // same folded Hidden line every other list ends with. The row keeps its place in
@@ -16824,7 +16825,7 @@ function _dirCanHide(i) { const jn = _dirJobName(), s = _subtaskItems[i]; return
 function stSwipeMove(event) {
   if (_stDragging || !_stSwipe || !_stSwipe.row) return;
   const dx = event.touches[0].clientX - _stSwipe.x, dy = event.touches[0].clientY - _stSwipe.y;
-  if (!_stSwipe.moved && (Math.abs(dy) > Math.abs(dx) || (dx < 0 && !_dirCanHide(_stSwipe.i)))) { _stSwipe = null; return; }   // scroll, or nothing to hide
+  if (!_stSwipe.moved && (Math.abs(dy) > Math.abs(dx) || (dx < 0 && !_dirCanHide(_stSwipe.i)) || (dx > 0 && featureHidden('job-flag')))) { _stSwipe = null; return; }   // scroll, nothing to hide, or swipe right switched off (v502)
   if (Math.abs(dx) > 6) {
     _stSwipe.moved = true;
     event.preventDefault();
@@ -16840,7 +16841,7 @@ function stSwipeEnd(event) {
   const dx = (event.changedTouches[0] ? event.changedTouches[0].clientX : s.x) - s.x;
   s.row.style.transition = 'transform 0.16s, opacity 0.16s';
   s.row.style.transform = ''; s.row.style.opacity = '';
-  if (s.moved && dx > 48) toggleEditorTaskFlag(s.i);
+  if (s.moved && dx > 48) { if (!featureHidden('job-flag')) toggleEditorTaskFlag(s.i); }
   else if (s.moved && dx < -48 && _dirCanHide(s.i)) hideTask(_dirJobName(), _subtaskItems[s.i]);
 }
 
@@ -17908,7 +17909,7 @@ function renderTaskActionsSheet() {
     (hasOrigin ? row('origin', 'ℹ️', 'History (from Inbox)', '') : '') +
     row('type', isRep ? '↻' : '1×', 'Type', isRep ? 'Repeatable — tap to make once-per-run' : 'Once per run — tap to make repeatable') +
     (featureHidden('reminders') ? '' : row('remind', '🔔', 'Reminder', remOn ? 'On' : 'Off')) +
-    row('flag', `<span class="rsi rsi-go${flagged ? '' : ' off'}" style="vertical-align:-1px;"></span>`, flagged ? 'Take off the run sheet' : 'Add to the run sheet', '') +
+    (featureHidden('job-flag') ? '' : row('flag', `<span class="rsi rsi-go${flagged ? '' : ' off'}" style="vertical-align:-1px;"></span>`, flagged ? 'Take off the run sheet' : 'Add to the run sheet', '')) +
     (_dirCanHide(i) ? row('hide', '🙈', 'Hide from the list', 'Swipe left') : '') +
     row('delete', '✕', 'Delete task', '', true);
   return true;
@@ -21984,6 +21985,8 @@ function sharedJobApply(mode) {
 // ⚠️ Before hiding a screen, check what can only be reached THROUGH it and give
 // that its own door first. The Dashboard held the only route to the Times list.
 const KR_HIDDEN_FEATURES = [
+  { id: 'job-flag', name: 'Adding tasks to the run sheet from the job screen', since: 'v502',
+    what: 'Swipe right and "Add to the run sheet" on Edit Job, and the run sheet marks there. Lincoln, 17 Nov 2026: it broke the habit of choosing each run\'s tasks fresh in Organise and threw the target out. Tasks are added to a run in Organise.' },
   { id: 'task-guide', name: 'Add guide on a task', since: 'v499',
     what: 'The Add guide row in a task\'s ⋯ menu on Edit Job. A task that already has a guide still shows it there.' },
   { id: 'run-done', name: 'The green ✓ count on the Clock tab', since: 'v465',
@@ -28154,7 +28157,9 @@ function openChecklistOrganiseForPlan(planId) {
   _clOrganisePlanId = planId;
   _clOrgCollapsed = {};
   const m = getPlannerChecklist();
-  if (!m[planId]) { m[planId] = { flags: { ...(getChecklistFlags()[plan.task] || {}) } }; savePlannerChecklist(m); }
+  // v502: with job-flag hidden, a new block starts empty too, so flags left over from the
+  // job screen's old swipe right can't come back this way.
+  if (!m[planId]) { m[planId] = { flags: featureHidden('job-flag') ? {} : { ...(getChecklistFlags()[plan.task] || {}) } }; savePlannerChecklist(m); }
   _applyBlockEstimate(planId);   // size the block from history on open (flagged sum, else job average)
   document.getElementById('cl-organise-title').textContent = plan.task;
   openModal('modal-cl-organise');   // open FIRST — _clTargetPlanId() needs the open modal, else the first render shows the job's flags instead of this block's arrangement
