@@ -3794,7 +3794,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.503';
+const APP_VERSION = '2026-06-21.504';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -26850,7 +26850,10 @@ function _rsNextPlan() {
   const today = plannerDateStr(new Date());
   const [h, m] = String(clockState.startTime || '0:0').split(':').map(Number);
   const inMins = (h || 0) * 60 + (m || 0);
-  return _myPlans().filter(p => p && p.date === today && !p.parked && !p.allDay && !p.leftover && p.startTime && _planStartMins(p) >= inMins)
+  // ⚠️ A leftover counts once it's on the grid (v504). It keeps `leftover: true` after you drag it
+  // out of the bay, and v503 skipped it, so the 9:10 rest-of-Morning-Routine was passed over for a
+  // 10:20 job. `parked` is what keeps the holding bay out.
+  return _myPlans().filter(p => p && p.date === today && !p.parked && !p.allDay && p.startTime && _planStartMins(p) >= inMins)
     .sort((a, b) => _planStartMins(a) - _planStartMins(b))[0] || null;
 }
 function _rsNextHtml(finMs) {
