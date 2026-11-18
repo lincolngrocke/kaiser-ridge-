@@ -3832,7 +3832,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.513';
+const APP_VERSION = '2026-06-21.514';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -8161,7 +8161,7 @@ function updateRunRing(netElapsedSec) {
   // longer than its average) — the same meaning in both modes now.
   const over = frac >= 1;
   ring.classList.toggle('over', over);
-  _rsRing = { frac, over, est };
+  _rsRing = { frac, over, est, base: live ? elapsedAtAnchor : null };
   if (label) {
     label.style.color = over ? '#ff9f0a' : 'var(--run-blue)';
     label.textContent = (live
@@ -27084,35 +27084,40 @@ function _rsLineSync() {
 }
 // 📍 A MARK PER TASK ON THE LINE (v513, Lincoln 19 Nov 2026: "each task would represent a mark
 // on this line, representative of the time it's due to be done. You would be able to see
-// whether you're ahead of time or behind time"). Each mark is the point of WORK by which that
-// task is due if you keep to the 🎯: the 🎯's work shared out over the rows by their learned
-// minutes, so the last mark is the 🎯 itself. Ticked rows come first, in the order they were
-// ticked, then the rest in sheet order, so the first N marks are green once N tasks are done.
-//   green  = done
-//   orange = the fill has passed it and the task is still to do: you are behind
-//   grey   = still to come
-// A green mark out ahead of the fill means you are ahead. Breaks stay out on both sides: the
-// fill is work time, and the 🎯's work here leaves out every break, taken or still planned.
+// whether you're ahead of time or behind time").
+// ⭐ EACH TASK IS JUDGED ON ITS OWN TIME (v514, Lincoln 19 Nov 2026: "one task shouldn't
+// affect the other tasks… If you're over on a task, that line stays orange"). v513 spaced the
+// marks out to the 🎯, so 2 minutes over on Pack my lunch carried forward and turned Get
+// dressed orange 5 minutes into its 7. Now:
+//   a done task's mark sits where you ticked it, green if it took its average or less, orange
+//     if it ran over (the same ✓ minutes its card shows, against its ~avg);
+//   the task you're on is due its average after the last tick, which is exactly where the
+//     fill starts on it, so its mark turns orange only when THIS task runs past its own average;
+//   the rest follow on by their averages, grey.
+// Breaks stay out: the fill is work time, so a planned break still to come is the gap after
+// the last mark.
 function _rsMarksSync(f) {
   const box = document.getElementById('rs-line-marks'); if (!box) return;
   let html = '';
-  const est = _rsRing.est || 0, tgt = _targetDisplayMs();
-  if (est > 0 && tgt && clockState.startMs) {
-    const bd = clockState.brkDone || {};
-    const brkAhead = (clockState.plannedBreaks || []).reduce((s, b) =>
-      s + ((b && !bd[b.id] && b.id !== clockState.brkActiveId) ? (b.mins || 0) : 0), 0) * 60;
-    const work = (tgt - clockState.startMs - _breakNowMs()) / 1000 - brkAhead;   // the 🎯's work, seconds
-    const rows = _rsRows().filter(r => !r.brk && r.mins > 0);
-    const total = rows.reduce((s, r) => s + r.mins, 0);
-    if (rows.length && work > 0 && total > 0) {
-      const done = rows.filter(r => r.isDone).sort((a, b) => new Date(a.doneAt) - new Date(b.doneAt));
-      let cum = 0;
-      done.concat(rows.filter(r => !r.isDone)).forEach(r => {
-        cum += r.mins;
-        const at = work * cum / total / est;   // where it falls on the line, 0 to 1
-        html += `<i class="${r.isDone ? 'done' : (at <= f ? 'owed' : '')}" style="left:${(Math.min(1, at) * 100).toFixed(2)}%"></i>`;
-      });
-    }
+  const est = _rsRing.est || 0, base = _rsRing.base;
+  if (est > 0 && base != null && clockState.startMs) {
+    const t0 = clockState.startMs, brks = Array.isArray(clockState.breaks) ? clockState.breaks : [];
+    const workAt = t => Math.max(0, t - t0 - _breakOverlapMs(brks, t0, t)
+      - ((clockState.onBreak && clockState.breakStartMs && clockState.breakStartMs < t) ? t - clockState.breakStartMs : 0)) / 1000;
+    const durs = _checklistDurations();
+    const mark = (at, cls) => { html += `<i class="${cls}" style="left:${(Math.max(0, Math.min(1, at)) * 100).toFixed(2)}%"></i>`; };
+    const rows = _rsRows().filter(r => !r.brk);
+    rows.filter(r => r.isDone && new Date(r.doneAt).getTime() > t0).forEach(r => {
+      const took = durs[r.n === 0 ? r.t : _occKey({ item: r.t, rep: r.n })];
+      const over = isFinite(took) && r.mins > 0 && Math.round(took) > Math.round(r.mins);
+      mark(workAt(new Date(r.doneAt).getTime()) / est, over ? 'owed' : 'done');
+    });
+    let cum = base;
+    rows.filter(r => !r.isDone && r.mins > 0).forEach((r, i) => {
+      cum += r.mins * 60;
+      const at = cum / est;
+      mark(at, (i === 0 && f >= at) ? 'owed' : '');
+    });
   }
   if (box.innerHTML !== html) box.innerHTML = html;
 }
