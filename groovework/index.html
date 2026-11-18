@@ -348,12 +348,12 @@
     font-weight: 600;
     cursor: pointer;
   }
-  .btn-clock-out {
+  .btn-clock-out {   /* dark grey, not red: red is kept for real alerts (Mitch's spec, 18 Nov 2026) */
     flex: 1.6;
     height: 56px;
     border-radius: 28px;
     border: none;
-    background: var(--red);
+    background: #3a3a3c;
     color: white;
     font-size: 18px;
     font-weight: 600;
@@ -371,7 +371,7 @@
     cursor: pointer;
   }
   .btn-pause.on-pause { background: rgba(48,209,88,0.16); color: var(--green); border-color: rgba(48,209,88,0.3); } /* on break */
-  .running-buttons .btn-clock-out { height: 54px; border-radius: 27px; font-size: 16px; background: #ff453a; }
+  .running-buttons .btn-clock-out { height: 54px; border-radius: 27px; font-size: 16px; background: #3a3a3c; }
   /* While paused: freeze + dim the timer and flag the status line */
   .clock-running-overlay.paused .running-big-timer { opacity: 0.4; }
   .clock-running-overlay.paused #run-clockedin-text { color: #FF9500; font-weight: 600; }
@@ -781,6 +781,13 @@
   .gwo-hold-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--blue); }
   .gwo-hold-t { position: relative; font-size: 17px; font-weight: 700; color: var(--text); }
   .gwo-hold.done .gwo-hold-t { color: #fff; }
+  .gwo-plan { display: flex; align-items: center; gap: 12px; }
+  .gwo-plan-dot { flex-shrink: 0; width: 20px; height: 20px; box-sizing: border-box; border-radius: 50%; border: 2px solid var(--border); }
+  .gwo-opt.on .gwo-plan-dot { border: 6px solid var(--blue); }
+  .gwo-plan-n { font-size: 17px; font-weight: 700; }
+  .gwo-plan-s { font-size: 14px; font-weight: 400; color: var(--subtext); margin-top: 2px; }
+  .gwo-legal { font-size: 13px; line-height: 1.5; color: var(--subtext); text-align: center; margin-top: 4px; }
+  .gwo-due { font-size: 15px; font-weight: 700; color: var(--text); text-align: center; margin-bottom: 4px; }
   .gwo-links { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--subtext); margin-top: 18px; }
   .gwo-links span, .gwo-links a { color: var(--subtext); cursor: pointer; text-decoration: underline; }
   .toast {
@@ -3804,7 +3811,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.506';
+const APP_VERSION = '2026-06-21.507';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4380,7 +4387,7 @@ const STARTER_PACKS = {
 //  ⭐ THE GOAL IS NOT A POPULATED APP. Cold, this app renders a column of dashes
 //  and looks like a checklist with a stopwatch: everything that makes it worth
 //  having — learned order, the auto estimate, the 🏁 forecast, the 🎯 target — is
-//  downstream of history a new user has not generated. The magic lands in week
+//  downstream of history a new user has not generated. The payoff lands in week
 //  three and most people leave in week one.
 //
 //  So day one aims at the smallest COMPLETE circuit: one job, described, timed,
@@ -4661,15 +4668,17 @@ function maybeShowOnboarding() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  👋 ONBOARDING v2 (v498): the build spec of 15 Nov 2026, in Steven Cravotta's App
-//  Accelerator order: congratulations, sign-in, value, survey, personal result, set up,
-//  commit, then the paywall. One question per screen, a progress bar and Back.
+//  👋 ONBOARDING v2 (v498, reordered v507): Mitch's build spec of 18 Nov 2026, in Steven
+//  Cravotta's App Accelerator order: congratulations, value, survey, personal result, set
+//  up, commit, sign-in, then the paywall. Sign-in sits right before the paywall since
+//  v507 (Steven, 18 Nov), so everything before it is kept on the phone and goes up with
+//  the first sync after sign-in. One question per screen, a progress bar and Back.
 //
 //  ⭐ NO INVENTED NUMBERS. Every figure on screen is worked out from the person's own
 //  answers: the gap from their two times, each job's total from their own task guesses.
-//  ⭐ TASKS ARE PAST TENSE, as if done, because you tick a task off once it's finished.
-//  Job names are written normally. A present-tense first word gets a soft hint, never a
-//  block or an auto-change.
+//  ⭐ TASKS ARE PRESENT TENSE, as an instruction ("Wipe the benches"; Lincoln, 18 Nov
+//  2026, replacing the past tense of v498). Job names are written normally. A past-tense
+//  first word gets a soft hint, never a block or an auto-change.
 //  ⭐ THE JOBS ARE REAL. "Looks good" writes them into the job list (DIRECTORY, SUBTASKS)
 //  in the order typed, and each guess into kr_task_seeds as source 'user': the same
 //  starting-estimate store as ＋ Add time, shared by task name, read as "~12m est" and
@@ -4680,14 +4689,21 @@ function maybeShowOnboarding() {
 //  signed in (KR_SYNC_KEYS), so it can be analysed later. No new table (Lincoln, 15 Nov).
 //  ⚠️ App Store pieces are built but switched OFF on the web (_gwNative): Sign in with
 //  Apple, the review prompt, the purchase on the paywall and the haptic. They switch on
-//  with the iPhone version. Screen 23 (a daily reminder) is dropped: no push reminders.
+//  with the iPhone version. The daily reminder screen is dropped: no push reminders.
 //  Flags (localStorage, '1' = on): kr_flag_paywall (paywall shown; off = skipped, for
-//  testing and Marlo), kr_flag_socialproof (screens 7 and 25, which also stay hidden
+//  testing and Marlo), kr_flag_socialproof (screens 6 and 23, which also stay hidden
 //  while GW_REVIEWS is empty: no made-up reviews, ever), kr_flag_old_welcome.
 // ════════════════════════════════════════════════════════════════════════════
 const KR_ONBOARDING = 'kr_onboarding';
 const GW_REVIEWS = [];   // real reviews only, once there are some: [{ text, who }]
 const GW_TERMS_URL = '', GW_PRIVACY_URL = '';   // TBC
+// The two plans (Steven, 18 Nov 2026): a 7-day App Store free trial on YEARLY only;
+// MONTHLY has no trial and is billed straight away. Prices are TO CONFIRM and will come
+// from the store, so they are never typed in here: an empty price shows its placeholder.
+const GW_PLANS = {
+  yearly:  { name: 'Yearly',  price: '', ph: '[YEARLY PRICE]',  sub: '7 days free, then billed yearly' },
+  monthly: { name: 'Monthly', price: '', ph: '[MONTHLY PRICE]', sub: 'Billed monthly, starting today' },
+};
 function _gwFlag(name) { try { return localStorage.getItem('kr_flag_' + name) === '1'; } catch (e) { return false; } }
 function _gwNative() { return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform()); }
 function _gwPlugin(name) { try { return (_gwNative() && window.Capacitor.Plugins && window.Capacitor.Plugins[name]) || null; } catch (e) { return null; } }
@@ -4702,9 +4718,9 @@ let _gwo = null, _gwoTimer = null;
 function _gwoSave() { if (!_gwo) return; _gwo.updatedAt = new Date().toISOString(); _storeSet(KR_ONBOARDING, JSON.stringify(_gwo)); }
 function _gwoNewJob() { return { name: '', chip: '', tasks: [{ name: '', mins: '' }, { name: '', mins: '' }] }; }
 
-const _GWO_STEPS = ['congrats', 'signin', 'v1', 'v2', 'v3', 'v4', 'proof1', 'sintro',
+const _GWO_STEPS = ['congrats', 'v1', 'v2', 'v3', 'v4', 'proof1', 'sintro',
   'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9', 'q10', 'build', 'gap',
-  'jintro', 'jname', 'jtasks', 'jreview', 'commit', 'review', 'proof2', 'paywall'];
+  'jintro', 'jname', 'jtasks', 'jreview', 'commit', 'review', 'proof2', 'signin', 'paywall'];
 const _GWO_Q = {
   q1: { t: 'What brings you to Groovework?', opts: ['My list keeps growing and I never know when I’ll finish', 'I work hard all day and still feel behind', 'I’m busy all day but not sure what I got done', 'Urgent jobs push out the important ones', 'My plans fall apart by mid-morning', 'Just curious'] },
   q2: { t: 'What fills most of your day?', multi: true, opts: ['Paid work', 'Running a home or family', 'Study', 'My own business', 'A mix of everything'] },
@@ -4717,7 +4733,7 @@ const _GWO_Q = {
   q9: { t: 'How often do the important jobs get pushed to tomorrow?', opts: ['Rarely', 'Once or twice a week', 'Most days'] },
   q10: { t: 'When your day runs late, what misses out?', multi: true, none: 'Nothing really', opts: ['Time with family or friends', 'Sleep', 'Exercise', 'Time to myself', 'Nothing really'] },
 };
-// Job ideas by what fills their day (Q2), and task ideas for each of those jobs (past tense).
+// Job ideas by what fills their day (Q2), and task ideas for each of those jobs (present tense).
 const _GWO_JOB_CHIPS = {
   'Paid work': ['Inbox', 'Start of day', 'Invoicing'],
   'Running a home or family': ['School morning', 'Kitchen clean-up', 'Washing'],
@@ -4725,17 +4741,17 @@ const _GWO_JOB_CHIPS = {
   'My own business': ['Bookkeeping', 'Social media', 'Opening up'],
 };
 const _GWO_TASK_CHIPS = {
-  'Inbox': ['Cleared new emails', 'Replied to the urgent ones', 'Filed the rest'],
-  'Start of day': ['Checked my calendar', 'Set my top three tasks', 'Cleared my desk'],
-  'Invoicing': ['Checked what was ready to bill', 'Wrote the invoices', 'Sent the invoices'],
-  'School morning': ['Made breakfast', 'Packed lunches', 'Did the school run'],
-  'Kitchen clean-up': ['Unloaded the dishwasher', 'Wiped the benches', 'Swept the floor'],
-  'Washing': ['Put a load on', 'Hung it out', 'Folded and put it away'],
-  'Exam study': ['Reviewed my notes', 'Did practice questions', 'Checked my answers'],
-  'Assignment': ['Researched the topic', 'Wrote a draft', 'Edited and submitted it'],
-  'Bookkeeping': ['Entered the receipts', 'Reconciled the bank', 'Followed up unpaid invoices'],
-  'Social media': ['Planned a post', 'Took the photos', 'Posted and replied to comments'],
-  'Opening up': ['Unlocked and switched on', 'Set up the counter', 'Checked the stock'],
+  'Inbox': ['Clear new emails', 'Reply to the urgent ones', 'File the rest'],
+  'Start of day': ['Check my calendar', 'Set my top three tasks', 'Clear my desk'],
+  'Invoicing': ['Check what’s ready to bill', 'Write the invoices', 'Send the invoices'],
+  'School morning': ['Make breakfast', 'Pack lunches', 'Do the school run'],
+  'Kitchen clean-up': ['Unload the dishwasher', 'Wipe the benches', 'Sweep the floor'],
+  'Washing': ['Put a load on', 'Hang it out', 'Fold and put it away'],
+  'Exam study': ['Review my notes', 'Do practice questions', 'Check my answers'],
+  'Assignment': ['Research the topic', 'Write a draft', 'Edit and submit it'],
+  'Bookkeeping': ['Enter the receipts', 'Reconcile the bank', 'Follow up unpaid invoices'],
+  'Social media': ['Plan a post', 'Take the photos', 'Post and reply to comments'],
+  'Opening up': ['Unlock and switch on', 'Set up the counter', 'Check the stock'],
 };
 
 function gwoOpen(saved) {
@@ -4743,6 +4759,13 @@ function gwoOpen(saved) {
     answers: {}, jobs: [_gwoNewJob()], savedJobs: [], userId: null, committedAt: null, completedAt: null, paywall: null };
   if (!saved) _gwoSave();
   openModal('modal-gwo');
+  // Back from Google's sign-in page (v507): the flow was left on the sign-in screen. Signed
+  // in now, so carry on to the paywall, or finish when the paywall is off. Not signed in
+  // (they backed out at Google) and the sign-in screen simply shows again.
+  if (saved && saved.step === 'signin' && isSignedIn()) {
+    _gwo.signedInAt = _gwo.signedInAt || new Date().toISOString();
+    return gwoNext();
+  }
   gwoRender();
 }
 // Screens that are skipped where they stand: signed in already, the flagged ones, the
@@ -4781,7 +4804,7 @@ function gwoBack() {
   _gwo.step = h.step; _gwo.jobIdx = h.jobIdx || 0;
   _gwoSave(); gwoRender();
 }
-// Apple's review prompt (screen 24). The App Store version only; nothing on the web.
+// Apple's review prompt (screen 22). The App Store version only; nothing on the web.
 function _gwoReviewPrompt() {
   if (_gwo.reviewAsked) return;
   const r = _gwPlugin('InAppReview');
@@ -4801,24 +4824,35 @@ function _gwoGapHours() {
 }
 function _gwoJobTotal(job) { return (job.tasks || []).reduce((s, t) => s + (parseInt(t.mins, 10) > 0 ? parseInt(t.mins, 10) : 0), 0); }
 
-// Past tense: a hint only. Knows the common present-tense verbs a task starts with, and
-// how to put each one in the past, so the tip shows THEIR task done ("Wiped the benches").
+// Present tense: a hint only (v507; it was the other way round in v498). Knows the common
+// verbs a task starts with and their past forms, so a task typed as done ("Wiped the
+// benches") gets a tip showing THEIR task as an instruction ("Wipe the benches"). A word
+// that is the same both ways (put, set, cut, read) is never flagged.
 const _GWO_IRREG = { make: 'made', do: 'did', take: 'took', put: 'put', sweep: 'swept', write: 'wrote', get: 'got', go: 'went', run: 'ran', set: 'set', read: 'read', cut: 'cut', hang: 'hung', send: 'sent', pay: 'paid', buy: 'bought', bring: 'brought', feed: 'fed', give: 'gave', have: 'had', keep: 'kept', leave: 'left', meet: 'met', ring: 'rang', sit: 'sat', sell: 'sold', spend: 'spent', tell: 'told', throw: 'threw', wear: 'wore', eat: 'ate', drive: 'drove', ride: 'rode', begin: 'began', choose: 'chose', catch: 'caught', teach: 'taught', find: 'found', hold: 'held', lay: 'laid', lead: 'led', lose: 'lost', sweep: 'swept', shut: 'shut', split: 'split', spread: 'spread', stick: 'stuck', sing: 'sang', swim: 'swam', wake: 'woke', build: 'built' };
 const _GWO_REG = 'clean answer wash wipe pack check call email reply cook sort fold empty load unload tidy vacuum mop plan update review file post book order fix pick drop walk open close lock unlock prepare brush shower dress finish start prep chop iron water mow weed rake recycle scrub dust polish rinse dry change collect deliver print scan schedule organise organize return wrap bake boil fill refill replace restock count enter reconcile invoice transfer study practise practice research edit submit draft type list note label store move carry lift shop visit attend apply turn switch plug charge log record track test measure mix stir serve clear stack sharpen grease oil service inspect bath bathe help phone text message tick sign plant prune spray feed clip trim hoover declutter unpack wake'.split(' ');
 const _GWO_DOUBLE = ['drop', 'plan', 'prep', 'chop', 'mop', 'shop', 'stop', 'plug', 'scrub', 'ship', 'skip', 'tip', 'wrap', 'step', 'jog', 'hug', 'rub', 'pat', 'clip', 'trim'];
+let _gwoPastMap = null;
+function _gwoPresentOf(word) {
+  if (!_gwoPastMap) {
+    _gwoPastMap = {};
+    _GWO_REG.forEach(w => {
+      const past = _GWO_DOUBLE.indexOf(w) >= 0 ? w + w.slice(-1) + 'ed'
+        : /e$/.test(w) ? w + 'd'
+        : /[^aeiou]y$/.test(w) ? w.slice(0, -1) + 'ied'
+        : w + 'ed';
+      _gwoPastMap[past] = w;
+    });
+    Object.keys(_GWO_IRREG).forEach(w => { _gwoPastMap[_GWO_IRREG[w]] = w; });   // irregular wins
+    Object.keys(_gwoPastMap).forEach(p => { if (_gwoPastMap[p] === p) delete _gwoPastMap[p]; });
+  }
+  return _gwoPastMap[word] || '';
+}
 function _gwoPastHint(name) {
   const m = String(name || '').trim().match(/^([A-Za-z]+)(.*)$/);
   if (!m) return '';
-  const w = m[1].toLowerCase();
-  let past = _GWO_IRREG[w];
-  if (!past && _GWO_REG.indexOf(w) >= 0) {
-    past = _GWO_DOUBLE.indexOf(w) >= 0 ? w + w.slice(-1) + 'ed'
-      : /e$/.test(w) ? w + 'd'
-      : /[^aeiou]y$/.test(w) ? w.slice(0, -1) + 'ied'
-      : w + 'ed';
-  }
-  if (!past) return '';
-  return 'Tip: write it as if it’s done, e.g. ‘' + past.charAt(0).toUpperCase() + past.slice(1) + m[2] + '’';
+  const pres = _gwoPresentOf(m[1].toLowerCase());
+  if (!pres) return '';
+  return 'Tip: write it in the present tense, e.g. ‘' + pres.charAt(0).toUpperCase() + pres.slice(1) + m[2] + '’';
 }
 
 // ── The screens ──
@@ -4877,8 +4911,8 @@ function gwoRender() {
     foot = btn('Continue', 'gwoNext()');
   } else if (s === 'jintro') {
     main = head('Let’s set up your first three jobs', 'A job is something you do regularly, like getting the kids off to school. Each job is made up of smaller tasks, and Groovework times every task on its own.')
-      + `<div class="gwo-card"><div class="gwo-job">School morning</div>${[['Made breakfast', 15], ['Packed lunches', 10], ['Did the school run', 20]].map(t => `<div class="gwo-trow"><span>${t[0]}</span><span>${t[1]} min</span></div>`).join('')}</div>`
-      + `<div class="gwo-small">Tasks are written as if they’re already done, because you’ll tick each one off once it’s finished.</div>`;
+      + `<div class="gwo-card"><div class="gwo-job">School morning</div>${[['Make breakfast', 15], ['Pack lunches', 10], ['Do the school run', 20]].map(t => `<div class="gwo-trow"><span>${t[0]}</span><span>${t[1]} min</span></div>`).join('')}</div>`
+      + `<div class="gwo-small">Write task names in the present tense, e.g. ‘Wipe the benches’.</div>`;
     foot = btn('Add my first job', 'gwoJobStart(0)');
   } else if (s === 'jname') {
     const job = _gwo.jobs[_gwo.jobIdx] || (_gwo.jobs[_gwo.jobIdx] = _gwoNewJob());
@@ -4893,11 +4927,11 @@ function gwoRender() {
     const job = _gwo.jobs[_gwo.jobIdx];
     const have = job.tasks.map(t => t.name.trim().toLowerCase());
     const chips = (_GWO_TASK_CHIPS[job.chip] && job.chip === job.name.trim()) ? _GWO_TASK_CHIPS[job.chip].filter(c => have.indexOf(c.toLowerCase()) < 0) : [];
-    main = head('What are the steps in ' + e(job.name) + '?', 'Walk through the job in your head from start to finish. What did you do first? Then what? Write each task as if it’s done.')
-      + `<div class="gwo-colhead"><span>Task, as if done</span><span>Minutes</span></div>`
+    main = head('What are the steps in ' + e(job.name) + '?', 'Walk through the job in your head from start to finish. What do you do first? Then what? Write each task in the present tense.')
+      + `<div class="gwo-colhead"><span>Task</span><span>Minutes</span></div>`
       + `<div id="gwo-rows">${job.tasks.map((t, i) => `<div class="gwo-row" data-i="${i}">
           <span class="gwo-grip" onpointerdown="gwoDragStart(event, ${i})">⠿</span>
-          <div style="flex:1;min-width:0;"><input class="gwo-input gwo-tname" type="text" placeholder="e.g. Wiped the benches" autocapitalize="sentences" value="${e(t.name)}" oninput="gwoTaskSet(${i}, 'name', this.value)">
+          <div style="flex:1;min-width:0;"><input class="gwo-input gwo-tname" type="text" placeholder="e.g. Wipe the benches" autocapitalize="sentences" value="${e(t.name)}" oninput="gwoTaskSet(${i}, 'name', this.value)">
             <div class="gwo-hint" id="gwo-hint-${i}">${e(_gwoPastHint(t.name))}</div></div>
           <input class="gwo-input gwo-mins" type="number" inputmode="numeric" min="1" max="600" placeholder="min" value="${e(String(t.mins || ''))}" oninput="gwoTaskSet(${i}, 'mins', this.value)">
           ${job.tasks.length > 2 ? `<span class="gwo-x" onclick="gwoTaskDel(${i})">✕</span>` : '<span class="gwo-x" style="visibility:hidden;">✕</span>'}
@@ -4920,10 +4954,18 @@ function gwoRender() {
     foot = `<div class="gwo-hold${_gwo.committedAt ? ' done' : ''}" id="gwo-hold" onpointerdown="gwoHoldStart(event)" onpointerup="gwoHoldEnd()" onpointerleave="gwoHoldEnd()" onpointercancel="gwoHoldEnd()" oncontextmenu="return false"><span class="gwo-hold-fill" id="gwo-hold-fill"${_gwo.committedAt ? ' style="width:100%;"' : ''}></span><span class="gwo-hold-t">${_gwo.committedAt ? 'Committed ✓' : 'Hold to commit'}</span></div>`
       + (_gwo.committedAt ? btn('Continue', 'gwoNext()') : '');
   } else if (s === 'paywall') {
+    // Hard paywall: no close and no Back. Yearly is picked to start with.
+    const plan = _gwo.plan === 'monthly' ? 'monthly' : 'yearly', price = k => GW_PLANS[k].price || GW_PLANS[k].ph;
     main = head('Know when you’ll be done, before you start')
-      + `<div class="gwo-card"><div class="gwo-job">[PLAN]</div><div class="gwo-small">7 days free, then [PRICE] per [period]. Cancel anytime in your Apple ID settings.</div></div>`
+      + ['yearly', 'monthly'].map(k => `<div class="gwo-opt${plan === k ? ' on' : ''}" onclick="gwoPlan('${k}')"><div class="gwo-plan"><span class="gwo-plan-dot"></span><div><div class="gwo-plan-n">${GW_PLANS[k].name}</div><div class="gwo-plan-s">${GW_PLANS[k].sub}</div></div></div></div>`).join('')
       + `<div class="gwo-links"><span onclick="gwoRestore()">Restore purchases</span>${GW_TERMS_URL ? `<a href="${GW_TERMS_URL}" target="_blank" rel="noopener">Terms of Use</a>` : '<span>Terms of Use</span>'}${GW_PRIVACY_URL ? `<a href="${GW_PRIVACY_URL}" target="_blank" rel="noopener">Privacy Policy</a>` : '<span>Privacy Policy</span>'}</div>`;
-    foot = btn('Start my 7 days free', 'gwoStartTrial()');
+    // "No payment due now" only with the yearly trial. Monthly never uses trial words.
+    // The monthly button's wording is TO CONFIRM (Mitch, 18 Nov 2026).
+    foot = (plan === 'yearly' ? `<div class="gwo-due">No payment due now</div>` : '')
+      + btn(plan === 'yearly' ? 'Start your 7-day free trial' : 'Subscribe monthly', 'gwoBuy()')
+      + `<div class="gwo-legal">${plan === 'yearly'
+        ? `7 days free, then ${e(price('yearly'))} per year. Cancel anytime in your Apple ID settings.`
+        : `${e(price('monthly'))} per month. Billed immediately. Cancel anytime in your Apple ID settings.`}</div>`;
   }
 
   root.innerHTML = `<div class="gwo-top"><span class="gwo-back${noBack ? ' off' : ''}" onclick="gwoBack()">‹ Back</span><div class="gwo-prog"><span style="width:${pct}%;"></span></div></div>`
@@ -4933,9 +4975,9 @@ function gwoRender() {
 
 // ── Screen actions ──
 function gwoSignInGoogle() {
-  // Google sends the page away and back. Land on the screen AFTER this one when it returns.
-  _gwo.hist.push({ step: 'signin', jobIdx: 0 });
-  _gwo.step = 'v1'; _gwo.at_v1 = _gwo.at_v1 || new Date().toISOString();
+  // Google sends the page away and back. The flow stays on this screen, and gwoOpen moves
+  // it on once the page comes back signed in. Everything so far is already on the phone.
+  _gwo.step = 'signin';
   _gwoSave();
   signInGoogle();
 }
@@ -5094,13 +5136,16 @@ function gwoHoldEnd() {
   clearTimeout(_gwoHoldT); _gwoHoldT = null;
   const f = document.getElementById('gwo-hold-fill'); if (f) { f.style.transition = 'width 0.25s ease-out'; f.style.width = '0'; }
 }
-// Paywall (screen 26): a placeholder until prices and the purchase setup are decided.
+// Paywall (screen 25): prices and the purchase setup (RevenueCat or Superwall) are TO CONFIRM.
 function gwoRestore() { if (!_gwNative()) { showToast('Restore purchases switches on with the App Store version.'); return; } showToast('Restore purchases is not set up yet.'); }
-function gwoStartTrial() {
-  // The App Store version starts the trial here. On the web there is nothing to buy, so a
-  // test build with the paywall turned on is let through and the pass is recorded.
-  if (_gwNative()) { showToast('The free trial is not set up yet.'); return; }
-  _gwo.paywall = 'test-pass'; _gwoFinish();
+function gwoPlan(k) { _gwo.plan = k; _gwoSave(); gwoRender(); }
+function gwoBuy() {
+  // The App Store version starts the yearly trial, or the monthly subscription, here. On
+  // the web there is nothing to buy, so a test build with the paywall turned on is let
+  // through, and the plan they picked is recorded for later.
+  const plan = _gwo.plan === 'monthly' ? 'monthly' : 'yearly';
+  if (_gwNative()) { showToast(plan === 'yearly' ? 'The free trial is not set up yet.' : 'The monthly plan is not set up yet.'); return; }
+  _gwo.plan = plan; _gwo.paywall = 'test-pass'; _gwoFinish();
 }
 function _gwoFinish() {
   clearTimeout(_gwoTimer); _gwoTimer = null;
@@ -24300,7 +24345,7 @@ function _taskHistCountMap() {
 //  🌱 SEEDED TIMES — the onboarding's guesses, kept apart from what was measured
 //
 //  A new install has no history, so every estimate the app is built on renders as
-//  a dash. The magic arrives around week three and most people leave before it.
+//  a dash. The payoff arrives around week three and most people leave before it.
 //  Onboarding fixes that by SEEDING a time for each task on day one.
 //
 //  ⭐⭐ THE HARD LINE, and it is the whole product. A seed is a GUESS and must
