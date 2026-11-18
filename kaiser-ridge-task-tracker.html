@@ -3819,7 +3819,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.510';
+const APP_VERSION = '2026-06-21.511';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -29256,6 +29256,30 @@ function _plannerStartPlan(id, fromBay) {
 
 // ── Drag to reposition ──
 
+// ⏱ LIVE TIMES WHILE DRAGGING (v511, Lincoln 19 Nov 2026): "so you know when your intended
+// finish time is before you release your finger". The block's own start – finish line, and
+// its planned ☕ breaks, follow the finger. A chip dragged out of the holding bay shows its
+// start – finish too. Display only: nothing is saved until the finger lifts, as before.
+let _plannerDragBrk = null;   // the block's planned breaks, read once per drag
+function _plDragRange(plan, gridMins) {
+  const s = PLANNER_START_HOUR * 60 + gridMins, e = s + Math.round((Number(plan.durationHours) || 1) * 60);
+  const f = x => formatTimeAmPm(`${String(Math.floor(x / 60) % 24).padStart(2, '0')}:${String(x % 60).padStart(2, '0')}`);
+  return f(s) + ' – ' + f(e);
+}
+function _plDragLiveTimes(block, plan, gridMins) {
+  const meta = block.querySelector('.planner-block-meta');
+  if (meta) meta.textContent = _plDragRange(plan, gridMins) + ' · ' + plan.durationHours + 'h';
+  if (!_plannerDragBrk || _plannerDragBrk.id !== plan.id) {
+    const [h, m] = String(plan.startTime || '00:00').split(':').map(Number);
+    let list = []; try { list = _plannedBreaksFor(plan.id); } catch (e) {}
+    _plannerDragBrk = { id: plan.id, list, orig: h * 60 + m };
+  }
+  if (!_plannerDragBrk.list.length) return;
+  const delta = (PLANNER_START_HOUR * 60 + gridMins - _plannerDragBrk.orig) * 60000;
+  block.querySelectorAll('.pt-brk').forEach(x => x.remove());
+  block.insertAdjacentHTML('beforeend', _plannerBreakLines(_plannerDragBrk.list.map(b => Object.assign({}, b, { ms: b.ms + delta }))));
+}
+
 function plannerDragStart(e, planId, origTop) {
   if (e.touches.length !== 1) return;
   _plannerDragId = planId;
@@ -29302,7 +29326,8 @@ function plannerDragMove(e) {
   e.preventDefault();
   const block = document.querySelector(`[data-plan-id="${_plannerDragId}"]`);
   if (!block) return;
-  block.style.opacity = '0.7';
+  block.style.opacity = '0.93';   // v511: was 0.7, nearly solid now so a block underneath can't show through its live times
+  block.style.zIndex = '20';   // v511: over its neighbours while it moves, so its live times can be read
   const grid = document.getElementById('planner-grid');
   const gridRect = grid.getBoundingClientRect();
   // gridRect.top is already viewport-relative (moves as user scrolls), so no need to add scrollTop
@@ -29325,6 +29350,8 @@ function plannerDragMove(e) {
   const absM = snapMins % 60;
   _plannerDragLabel.textContent = formatTimeAmPm(`${String(absH).padStart(2,'0')}:${String(absM).padStart(2,'0')}`);
   _plannerDragLabel.style.top = snapTop + 'px';
+  const _dragPlan = _plannerPlans.find(p => p.id === _plannerDragId);
+  if (_dragPlan) _plDragLiveTimes(block, _dragPlan, snapMins);
 }
 
 function plannerDragEnd(e) {
@@ -29335,11 +29362,12 @@ function plannerDragEnd(e) {
 
   // Remove the floating time bubble
   if (_plannerDragLabel) { _plannerDragLabel.remove(); _plannerDragLabel = null; }
+  _plannerDragBrk = null;
 
   if (!_plannerDragId) return; // was a tap, already handled
   const block = document.querySelector(`[data-plan-id="${_plannerDragId}"]`);
   const plan = _plannerPlans.find(p => p.id === _plannerDragId);
-  if (block && plan && block.style.opacity === '0.7') {
+  if (block && plan && block.style.opacity === '0.93') {
     // Only update position if block was actually moved (opacity was set during drag)
     block.style.opacity = '';
     const topPx = parseFloat(block.style.top) || 0;
@@ -29450,6 +29478,12 @@ function _parkDragMove(e) {
     const absH = PLANNER_START_HOUR + Math.floor(d.mins / 60), absM = d.mins % 60;
     _plannerDragLabel.textContent = formatTimeAmPm(`${String(absH).padStart(2, '0')}:${String(absM).padStart(2, '0')}`);
     _plannerDragLabel.style.top = (d.mins / 60 * PLANNER_HOUR_PX) + 'px';
+  }
+  // v511: the chip under the finger reads start – finish while over the day, its length off it.
+  const sub = _parkClone && _parkClone.querySelector('.pt-sub'), plan = _plannerPlans.find(p => p.id === _parkDragId);
+  if (sub && plan) {
+    if (sub.dataset.orig == null) sub.dataset.orig = sub.textContent;
+    sub.textContent = d.overGrid ? _plDragRange(plan, d.mins) : sub.dataset.orig;
   }
 }
 function _parkDragEnd(e) {
