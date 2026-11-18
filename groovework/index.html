@@ -775,6 +775,9 @@
   .gwo-colhead { display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; color: var(--subtext); padding: 0 34px 6px 30px; }
   .gwo-hint { font-size: 12px; color: #e8850c; margin: 4px 2px 0; line-height: 1.4; }
   .gwo-hint:empty { display: none; }
+  .gwo-input.gwo-miss { border-color: #e8850c; }
+  .gwo-err { font-size: 15px; font-weight: 600; color: #e8850c; text-align: center; margin: 16px 0 0; line-height: 1.4; }
+  .gwo-err:empty { display: none; }
   .gwo-add { font-size: 15px; font-weight: 600; color: var(--blue); padding: 6px 0 4px 30px; cursor: pointer; }
   .gwo-total { font-size: 15px; font-weight: 600; color: var(--text); margin-top: 12px; }
   .gwo-hold { position: relative; height: 58px; border-radius: 16px; background: var(--card); border: 1.5px solid var(--blue); overflow: hidden; display: flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: none; }
@@ -3811,7 +3814,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.508';
+const APP_VERSION = '2026-06-21.509';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4945,15 +4948,20 @@ function gwoRender() {
       + `<div class="gwo-colhead"><span>Task</span><span>Minutes</span></div>`
       + `<div id="gwo-rows">${job.tasks.map((t, i) => `<div class="gwo-row" data-i="${i}">
           <span class="gwo-grip" onpointerdown="gwoDragStart(event, ${i})">⠿</span>
-          <div style="flex:1;min-width:0;"><input class="gwo-input gwo-tname" type="text" placeholder="e.g. Wipe the benches" autocapitalize="sentences" value="${e(t.name)}" oninput="gwoTaskSet(${i}, 'name', this.value)">
+          <div style="flex:1;min-width:0;"><input class="gwo-input gwo-tname" type="text" placeholder="e.g. Wipe the benches" autocapitalize="sentences" enterkeyhint="next" value="${e(t.name)}" oninput="gwoTaskSet(${i}, 'name', this.value)" onkeydown="gwoTaskKey(event, ${i}, 'name')" onfocus="gwoRowFocus(this)">
             <div class="gwo-hint" id="gwo-hint-${i}">${e(_gwoPastHint(t.name))}</div></div>
-          <input class="gwo-input gwo-mins" type="number" inputmode="numeric" min="1" max="600" placeholder="min" value="${e(String(t.mins || ''))}" oninput="gwoTaskSet(${i}, 'mins', this.value)">
+          <input class="gwo-input gwo-mins" type="number" inputmode="numeric" min="1" max="600" placeholder="min" enterkeyhint="next" value="${e(String(t.mins || ''))}" oninput="gwoTaskSet(${i}, 'mins', this.value)" onkeydown="gwoTaskKey(event, ${i}, 'mins')" onfocus="gwoRowFocus(this)">
           ${job.tasks.length > 2 ? `<span class="gwo-x" onclick="gwoTaskDel(${i})">✕</span>` : '<span class="gwo-x" style="visibility:hidden;">✕</span>'}
         </div>`).join('')}</div>`
       + (job.tasks.length < 10 ? `<div class="gwo-add" onclick="gwoTaskAdd()">＋ Add another task</div>` : '')
       + `<div class="gwo-total" id="gwo-total">Your guess for this job: ${_gwoJobTotal(job)} min</div>`
       + (chips.length ? `<div class="gwo-chips">${chips.map(c => `<span class="gwo-chip" onclick="gwoTaskChip(decodeURIComponent('${_encArg(c)}'))">＋ ${e(c)}</span>`).join('')}</div>` : '');
-    foot = btn('Save job', 'gwoJobSave()') + (_gwo.jobIdx > 0 && !_gwo.editFrom ? `<div class="gwo-link" onclick="gwoJobSkip()">Skip for now</div>` : '');
+    // ⭐ Save job sits UNDER the task rows, in the scroll, not pinned at the foot (v509).
+    // Lincoln, 18 Nov 2026: with the keyboard up, a pinned button sat straight under the
+    // first task and hid the second box, so he saved with one task. Now you pass every
+    // row, and "Add another task", before you reach it.
+    main += `<div class="gwo-err" id="gwo-err"></div><div style="margin-top:18px;">` + btn('Save job', 'gwoJobSave()')
+      + (_gwo.jobIdx > 0 && !_gwo.editFrom ? `<div class="gwo-link" onclick="gwoJobSkip()">Skip for now</div>` : '') + `</div>`;
   } else if (s === 'jreview') {
     const jobs = _gwo.jobs.filter(j => j.name.trim() && j.tasks.some(t => t.name.trim()));
     main = head('Here’s your Groovework setup') + jobs.map(j => {
@@ -5038,6 +5046,8 @@ function gwoTaskSet(i, field, v) {
   const job = _gwo.jobs[_gwo.jobIdx]; if (!job.tasks[i]) return;
   job.tasks[i][field] = field === 'mins' ? String(v).replace(/[^0-9]/g, '') : v;
   _gwoSave();
+  const er = document.getElementById('gwo-err'); if (er) er.textContent = '';
+  document.querySelectorAll('#gwo-rows .gwo-miss').forEach(x => x.classList.remove('gwo-miss'));
   if (field === 'name') { const h = document.getElementById('gwo-hint-' + i); if (h) h.textContent = _gwoPastHint(v); }
   const t = document.getElementById('gwo-total'); if (t) t.textContent = 'Your guess for this job: ' + _gwoJobTotal(job) + ' min';
 }
@@ -5081,14 +5091,53 @@ function _gwoDragEnd() {
   if (d.to !== d.i) { const [m] = job.tasks.splice(d.i, 1); job.tasks.splice(d.to, 0, m); _gwoSave(); }
   gwoRender();
 }
+// Next on the keyboard: task name → its minutes → the next task's name, adding a row
+// after the last one (up to 10). Saves reaching for the next box.
+function gwoTaskKey(ev, i, field) {
+  if (ev.key !== 'Enter') return;
+  ev.preventDefault();
+  const rows = document.querySelectorAll('#gwo-rows .gwo-row');
+  if (field === 'name' && rows[i]) { rows[i].querySelector('.gwo-mins').focus(); return; }
+  if (rows[i + 1]) { rows[i + 1].querySelector('.gwo-tname').focus(); return; }
+  if (_gwo.jobs[_gwo.jobIdx].tasks.length < 10) gwoTaskAdd(); else ev.target.blur();
+}
+// A box in focus keeps the row BELOW it in sight too, above the keyboard, so you can see
+// there is another task to fill in. Scrolls only when that row would be hidden.
+function gwoRowFocus(el) {
+  setTimeout(() => {
+    const m = document.querySelector('#gwo-root .gwo-main'), row = el.closest('.gwo-row');
+    if (!m || !row || document.activeElement !== el) return;
+    const r = row.getBoundingClientRect(), mr = m.getBoundingClientRect();
+    const vv = window.visualViewport, bottom = Math.min(mr.bottom, vv ? vv.offsetTop + vv.height : mr.bottom);
+    const over = r.bottom + r.height + 12 - bottom;
+    if (over > 0) m.scrollTop += Math.min(over, r.top - mr.top);
+  }, 350);
+}
+// A refused save says why in place, above the button (a toast can sit behind the
+// keyboard), and puts the cursor in the box that needs filling.
+function _gwoTaskErr(msg, i, field) {
+  const er = document.getElementById('gwo-err');
+  if (er) er.textContent = msg; else showToast(msg);
+  const row = document.querySelectorAll('#gwo-rows .gwo-row')[i];
+  const box = row && row.querySelector(field === 'mins' ? '.gwo-mins' : '.gwo-tname');
+  if (box) { box.classList.add('gwo-miss'); box.focus(); }
+}
 function gwoJobSave() {
-  const job = _gwo.jobs[_gwo.jobIdx];
-  const named = job.tasks.filter(t => t.name.trim() || t.mins);
-  if (named.some(t => !t.name.trim())) { showToast('Give every task a name, or clear its minutes'); return; }
-  if (named.some(t => !(parseInt(t.mins, 10) > 0))) { showToast('Add your best guess in minutes for every task'); return; }
-  if (named.length < 2) { showToast('Add at least two tasks'); return; }
+  const job = _gwo.jobs[_gwo.jobIdx], T = job.tasks;
+  const used = t => t.name.trim() || t.mins;
+  let i = T.findIndex(t => used(t) && !t.name.trim());
+  if (i >= 0) return _gwoTaskErr('Give this task a name, or clear its minutes', i, 'name');
+  i = T.findIndex(t => used(t) && !(parseInt(t.mins, 10) > 0));
+  if (i >= 0) return _gwoTaskErr('Add your best guess in minutes', i, 'mins');
+  const named = T.filter(used);
+  if (named.length < 2) {
+    i = T.findIndex(t => !used(t));
+    if (i < 0) { T.push({ name: '', mins: '' }); _gwoSave(); gwoRender(); i = T.length - 1; }
+    return _gwoTaskErr('Add at least two tasks', i, 'name');
+  }
   const seen = new Set();
-  if (named.some(t => { const k = t.name.trim().toLowerCase(); if (seen.has(k)) return true; seen.add(k); return false; })) { showToast('Two tasks have the same name'); return; }
+  i = T.findIndex(t => { if (!used(t)) return false; const k = t.name.trim().toLowerCase(); if (seen.has(k)) return true; seen.add(k); return false; });
+  if (i >= 0) return _gwoTaskErr('Two tasks have the same name', i, 'name');
   job.tasks = named.map(t => ({ name: t.name.trim(), mins: String(parseInt(t.mins, 10)) }));
   job.name = job.name.trim();
   if (_gwo.editFrom === 'review' || _gwo.jobIdx >= 2) { _gwo.editFrom = null; return _gwoGo('jreview'); }
