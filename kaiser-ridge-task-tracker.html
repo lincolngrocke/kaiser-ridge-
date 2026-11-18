@@ -3811,7 +3811,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.507';
+const APP_VERSION = '2026-06-21.508';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4705,6 +4705,20 @@ const GW_PLANS = {
   monthly: { name: 'Monthly', price: '', ph: '[MONTHLY PRICE]', sub: 'Billed monthly, starting today' },
 };
 function _gwFlag(name) { try { return localStorage.getItem('kr_flag_' + name) === '1'; } catch (e) { return false; } }
+// 🧪 TEST LINK (v508, Lincoln 18 Nov 2026): open the app with ?paywall=1 to switch the
+// paywall on in that browser, ?paywall=0 to switch it off. A phone has no other way to
+// set the flag. Runs as the page loads, before the onboarding opens, then tidies the
+// address so a refresh or a bookmark does not carry it. The sign-in fragment is kept.
+(function () {
+  try {
+    const q = new URLSearchParams(location.search), v = q.get('paywall');
+    if (v === null) return;
+    if (v === '1') localStorage.setItem('kr_flag_paywall', '1'); else localStorage.removeItem('kr_flag_paywall');
+    q.delete('paywall');
+    const rest = q.toString();
+    history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + location.hash);
+  } catch (e) {}
+})();
 function _gwNative() { return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform()); }
 function _gwPlugin(name) { try { return (_gwNative() && window.Capacitor.Plugins && window.Capacitor.Plugins[name]) || null; } catch (e) { return null; } }
 function _gwHaptic() {
