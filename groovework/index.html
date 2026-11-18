@@ -968,7 +968,10 @@
   .rsn-fin { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-top: 8px; }
   .rsn-line { margin-top: 10px; }
   .rsn-line-track { height: 8px; border-radius: 4px; background: var(--rsn-line); overflow: hidden; }
-  .rsn-line-track span { display: block; height: 100%; min-width: 8px; border-radius: 4px; background: linear-gradient(90deg, var(--rsn-blue), var(--rsn-green)); transition: width 0.95s linear; }
+  /* v512: green → blue like the Groovework logo (Lincoln, 19 Nov 2026). The gradient spans the
+     WHOLE track (background-size set by _rsLineSync), so the fill starts green and turns blue
+     as it nears the end, rather than every fill length ending blue. */
+  .rsn-line-track span { display: block; height: 100%; min-width: 8px; border-radius: 4px; background: linear-gradient(90deg, var(--rsn-green), var(--rsn-blue)) 0 0 / 100% 100% no-repeat; transition: width 0.95s linear; }
   .rsn-line.over .rsn-line-track span { background: var(--rsn-orange); }
   .rsn-line-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 5px; font-size: 12px; color: var(--rsn-sub); }
   .rsn-line-brk { color: var(--rsn-orange); font-weight: 600; white-space: nowrap; }
@@ -978,6 +981,9 @@
   .rsn-lab { font-size: 13px; font-weight: 500; color: var(--rsn-sub); }
   .rsn-time { display: flex; align-items: baseline; gap: 4px; line-height: 1.05; }
   .rsn-time b { font-size: 52px; font-weight: 700; color: var(--rsn-text); letter-spacing: -0.5px; }
+  /* v512: the projected finish against the 🎯: green when on or under it, orange when over. */
+  .rsn-time.ok b, .rsn-time2.ok b { color: var(--rsn-green); }
+  .rsn-time.late b, .rsn-time2.late b { color: var(--rsn-orange); }
   .rsn-noest { font-size: 17px; font-weight: 600; line-height: 1.3; color: var(--rsn-sub); padding: 6px 0 4px; }
   .rsn-noest.sm { font-size: 13px; padding: 0; }
   .rsn-time i { font-size: 20px; font-style: normal; font-weight: 500; color: var(--rsn-sub); }
@@ -1011,7 +1017,7 @@
   .rsn-slim-n { margin-left: auto; font-size: 12px; font-weight: 500; color: var(--rsn-sub); white-space: nowrap; }
   .rsn-slim-brk { width: 34px; height: 30px; margin: -4px -8px -4px -6px; display: inline-flex; align-items: center; justify-content: center; color: var(--rsn-orange); cursor: pointer; flex-shrink: 0; }
   .rsn-bar { height: 3px; border-radius: 2px; background: var(--rsn-line); margin-top: 4px; overflow: hidden; }
-  .rsn-bar span { display: block; height: 100%; background: var(--rsn-blue); border-radius: 2px; transition: width 0.95s linear; }
+  .rsn-bar span { display: block; height: 100%; background: linear-gradient(90deg, var(--rsn-green), var(--rsn-blue)) 0 0 / 100% 100% no-repeat; border-radius: 2px; transition: width 0.95s linear; }
   .rsn-bar.over span { background: var(--rsn-orange); }
   .rsn-sec { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 16px; font-weight: 600; color: var(--rsn-text); margin: 14px 0 8px; }
   .rsn-sec.plan { flex-direction: column; align-items: flex-start; gap: 3px; font-size: 18px; line-height: 1.25; }
@@ -3819,7 +3825,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.511';
+const APP_VERSION = '2026-06-21.512';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -27053,11 +27059,13 @@ function _rsLineHtml() {
 function _rsLineSync() {
   const line = document.getElementById('rs-line'), slim = document.getElementById('rs-slim-fill');
   if ((!line && !slim) || !clockState || !clockState.running) return;
-  const pct = Math.max(0, Math.min(100, _rsRing.frac * 100)) + '%';
-  if (slim) { slim.style.width = pct; slim.parentNode.classList.toggle('over', _rsRing.over); }
+  const f = Math.max(0, Math.min(1, _rsRing.frac)), pct = (f * 100) + '%';
+  const gsize = (f > 0.005 ? 100 / f : 20000) + '% 100%';   // the gradient as wide as the whole track
+  if (slim) { slim.style.width = pct; slim.style.backgroundSize = gsize; slim.parentNode.classList.toggle('over', _rsRing.over); }
   if (!line) return;
   const txt = id => (document.getElementById(id) || {}).textContent || '';
   document.getElementById('rs-line-fill').style.width = pct;
+  document.getElementById('rs-line-fill').style.backgroundSize = gsize;
   line.classList.toggle('over', _rsRing.over);
   document.getElementById('rs-line-time').textContent = txt('run-timer');
   // ☕ The session's break total beside clock-in, once one has been taken (v469).
@@ -27301,6 +27309,8 @@ function _rsRender() {
   const _planMins = (planning && _finMs && ctx.startMs) ? Math.floor(_finMs / 60000) - Math.floor(ctx.startMs / 60000) : 0;
   const _planTotal = _planMins > 0 ? ` · ~${fmtMin(_planMins)}` : '';
   const _finBig = _noEst ? '<span class="rsn-noest">Add times to see your finish</span>' : _rsBigTime(_finMs);
+  // v512: green on or under the 🎯, orange over it, to the minute shown. No target, no colour.
+  const _finCls = (tgt && _finMs) ? (Math.floor(_finMs / 60000) <= Math.floor(tgt / 60000) ? ' ok' : ' late') : '';
   // ⚓ RUNNING: the sheet rests with the last finished row and the row you are on sitting
   // straight under the slim bar, so the order and break links scroll away with the list.
   // The move banner and the break-placing cancel stay pinned: while one is in hand you
@@ -27318,14 +27328,14 @@ function _rsRender() {
   // it folds down to the slim bar so the list gets the screen; it opens again by itself
   // after 10 quiet seconds, or straight away from a tap on the slim bar.
   const head = `<div class="cl-sticky-top rsn-frozen${_rsCollapsed ? ' collapsed' : ''}" id="rs-frozen">${_rsRunTop(null, planning, _finMs)}
-    <div class="rsn-big"><div class="rsn-fin rsn-fin-tap" onclick="_rsShrink('run-sheet-body')" title="Tap to give the list the whole screen"><div class="rsn-fin-l"><div class="rsn-lab">${_allDone ? 'Finished' : 'Projected finish'}<span class="rsi rsi-chev up"></span></div><div class="rsn-time">${_finBig}</div></div>
+    <div class="rsn-big"><div class="rsn-fin rsn-fin-tap" onclick="_rsShrink('run-sheet-body')" title="Tap to give the list the whole screen"><div class="rsn-fin-l"><div class="rsn-lab">${_allDone ? 'Finished' : 'Projected finish'}<span class="rsi rsi-chev up"></span></div><div class="rsn-time${_finCls}">${_finBig}</div></div>
       ${tgt ? `<div class="rsn-tgt">${_rsIcon('dart')}<div class="rsn-time2">${_rsBigTime(tgt)}</div></div>` : ''}</div>
     ${planning ? '' : _rsLineHtml()}
     ${planning ? `<div class="rsn-count">${_stepsTxt}${_planTotal} · from ${_rsHM(ctx.startMs)}</div>`
       : `<div class="rsn-job">${_escHtml(ctx.job)}</div><div class="rsn-count rsn-count-row"><span>${_doneTxt}</span>${_RS_UNDO}</div>${bankedNote}`}</div>
     <div class="rsn-pin${_addBrk ? '' : ' held'}">
       <div class="rsn-slim-tap" onclick="_rsPinTop('run-sheet-body')"><div class="rsn-slim-job">${_escHtml(ctx.job)}</div>
-      <div class="rsn-slim"><span class="rsn-time2">${_noEst ? '<span class="rsn-noest sm">Add times</span>' : _rsBigTime(_finMs)}</span>${tgt ? `<span class="rsn-slim-t">${_rsIcon('dart')}<span class="rsn-time3">${_rsBigTime(tgt)}</span></span>` : ''}<span class="rsn-slim-n">${planning ? (_planMins > 0 ? `~${fmtMin(_planMins)} total` : _stepsTxt) : _slimTxt}</span><span class="rsi rsi-chev open"></span>${(planning && _addBrk) ? `<span class="rsn-slim-brk" onclick="event.stopPropagation();_rsSetPlacing(true)" title="Add a break">${_rsIcon('coffee')}</span>` : ''}</div></div>
+      <div class="rsn-slim"><span class="rsn-time2${_finCls}">${_noEst ? '<span class="rsn-noest sm">Add times</span>' : _rsBigTime(_finMs)}</span>${tgt ? `<span class="rsn-slim-t">${_rsIcon('dart')}<span class="rsn-time3">${_rsBigTime(tgt)}</span></span>` : ''}<span class="rsn-slim-n">${planning ? (_planMins > 0 ? `~${fmtMin(_planMins)} total` : _stepsTxt) : _slimTxt}</span><span class="rsi rsi-chev open"></span>${(planning && _addBrk) ? `<span class="rsn-slim-brk" onclick="event.stopPropagation();_rsSetPlacing(true)" title="Add a break">${_rsIcon('coffee')}</span>` : ''}</div></div>
       ${planning ? '' : `<div class="rsn-bar"><span id="rs-slim-fill" style="width:0;"></span></div>`}
       ${_moveBanner}${placingCancel}</div>
     <div class="rsn-sec${planning ? ' plan' : ''}"><span>${planning ? _escHtml(ctx.job) : 'Your session'}</span>${_orderLink}</div>
