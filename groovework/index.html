@@ -915,6 +915,13 @@
   .rsn-fbtn.brk .rsi { width: 16px; height: 16px; margin-right: 3px; }
   .rsn-fbtn.brk.on { background: var(--rsn-orange); border-color: var(--rsn-orange); color: #fff; }
   .rsn-fbtn.out { background: var(--rsn-text); color: var(--rsn-bg); }
+  /* ⏸ v505: a row's ▶ starts it now and pauses the task you're on. A big hit area that
+     swallows the touch, so a thumb's drift doesn't read as a swipe of the row. */
+  .rsn-go-tap { display: inline-flex; align-items: center; justify-content: center; padding: 12px; margin: -12px; cursor: pointer; flex-shrink: 0; }
+  .rsn-pause-ic { flex-shrink: 0; font-size: 14px; line-height: 1.35; color: var(--rsn-blue); width: 14px; text-align: center; }
+  .rsn-card.paused { border-style: dashed; border-color: var(--rsn-blue-line); }
+  .rsn-nowline.paused { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; color: var(--rsn-blue); }
+  .rsn-paused-sub { font-size: 12px; font-weight: 500; color: var(--rsn-sub); }
   /* 🗓 v503: one tap from the running sheet to the planner, the icon over its name like a tab. */
   .rsn-fbtn.pl { flex: 0 0 54px; flex-direction: column; gap: 1px; border: 1px solid var(--rsn-line); background: var(--rsn-card); color: var(--rsn-blue); font-size: 10px; font-weight: 600; }
   .rsn-fbtn.pl svg { width: 19px; height: 19px; }
@@ -3794,7 +3801,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.504';
+const APP_VERSION = '2026-06-21.505';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5717,22 +5724,63 @@ const _BATCH_WINDOW_MS = 60000;
 // lost them. Swiping a row LEFT on the run sheet marks its tick `quick`, which means
 // "these seconds are all it took": it keeps its own real span, the task before it
 // keeps its full time, and a tick straight after it starts a batch of its own.
+// ⏸ A SIDE TASK (v505, Lincoln 18 Nov 2026: "halfway through that journey, I need to stop and
+// clean the windscreen ... and then continue the journey"). Tapping a row's ▶ pauses the task
+// you are on and starts that one; ticking it resumes the paused task where it left off. Its
+// tick carries `from` (when it started), so its span [from, at] is its own time and works
+// like a break for everything else: the paused task's gap skips it, and a tick inside it
+// (its steps) is timed from inside it. ⚠️ Like ⚡ quick, `from` rides on the tick and EVERY
+// caller of this function passes it, or the saved timesheets disagree with the live sheet.
+function _sideSpans(list) {
+  const out = [];
+  (list || []).forEach(d => {
+    if (!d || !d.from) return;
+    const s = new Date(d.from).getTime(), z = new Date(d.at).getTime();
+    if (isFinite(s) && isFinite(z) && z > s) out.push({ start: s, end: z });
+  });
+  return out;
+}
+// The time inside [s, e] covered by any of the interval lists, counted once where they
+// overlap (a break taken during a side task is one span of idle, not two).
+function _unionOverlapMs(lists, s, e) {
+  const iv = [];
+  lists.forEach(l => (Array.isArray(l) ? l : []).forEach(b => { const a = Math.max(s, b.start), z = Math.min(e, b.end); if (z > a) iv.push([a, z]); }));
+  iv.sort((x, y) => x[0] - y[0]);
+  let ov = 0, cs = 0, ce = -Infinity;
+  iv.forEach(([a, z]) => { if (a > ce) { if (ce > cs) ov += ce - cs; cs = a; ce = z; } else if (z > ce) ce = z; });
+  if (ce > cs) ov += ce - cs;
+  return ov;
+}
 function _computeChecklistDurations(sorted, clockInMs, breaks, outBreaks) {
   const out = {};
-  let prev = clockInMs, i = 0;
+  const sides = _sideSpans(sorted);
+  const inSide = t => sides.find(sp => t > sp.start && t <= sp.end) || null;
+  const tOf = ev => new Date(ev.at).getTime();
+  let prev = clockInMs, sidePrev = -Infinity, i = 0;
   while (i < sorted.length) {
     let j = i;
-    if (!sorted[i].quick) while (j + 1 < sorted.length && !sorted[j + 1].quick && (new Date(sorted[j + 1].at) - new Date(sorted[j].at)) < _BATCH_WINDOW_MS) j++;
-    const last = new Date(sorted[j].at).getTime();
-    const brk = _breakOverlapMs(breaks, prev, last);
-    const net = Math.max(0, (last - prev) - brk);
+    const sp = sides.length ? inSide(tOf(sorted[i])) : null;
+    if (!sp && !sorted[i].quick) while (j + 1 < sorted.length && !sorted[j + 1].quick && !(sides.length && inSide(tOf(sorted[j + 1]))) && (tOf(sorted[j + 1]) - tOf(sorted[j])) < _BATCH_WINDOW_MS) j++;
+    const last = tOf(sorted[j]);
+    let brk, net;
+    if (sp) {
+      // Inside a side task: timed from its start, or from the tick before it inside it.
+      const a = sidePrev >= sp.start ? sidePrev : sp.start;
+      brk = _breakOverlapMs(breaks, a, last);
+      net = Math.max(0, (last - a) - brk);
+      sidePrev = last;
+    } else {
+      const idle = sides.length ? _unionOverlapMs([breaks, sides], prev, last) : _breakOverlapMs(breaks, prev, last);
+      net = Math.max(0, (last - prev) - idle);
+      brk = sides.length ? idle - _unionOverlapMs([sides], prev, last) : idle;   // a side task's minutes are not break minutes
+    }
+    if (!sp) prev = last;
     const per = net / (j - i + 1) / 60000;            // minutes per item in the batch
     const brkPer = brk / (j - i + 1) / 60000;
     for (let k = i; k <= j; k++) {
       out[sorted[k].item] = per;
       if (outBreaks && brkPer > 0) outBreaks[sorted[k].item] = brkPer;
     }
-    prev = last;
     i = j + 1;
   }
   return out;
@@ -5895,6 +5943,7 @@ function _tickRank(task) {
     if (!e || e.bot || !Array.isArray(e.checklist) || (e.task !== task && !srcJobs.has(e.task))) return;
     e.checklist.forEach(d => {
       if (!d || !d.item || !_tickIsJobs(task, moved, e, d.item)) return;
+      if (d.from) return;   // ⏸ a side task was an interruption, not your order (v505): it keeps its usual place
       const t = d && d.item ? new Date(d.at).getTime() : NaN;
       if (!isFinite(t)) return;
       const day = dayOf(t), r = out[d.item];
@@ -6555,10 +6604,52 @@ function _checklistDurations() {
   // Merge checklist items + pinned-note completions into one timeline so each is
   // timed by the gap from the previous completion. Pins are keyed 'pin:<id>'; the
   // checklist keys stay the item text, so existing readers are unaffected.
-  const events = done.map(d => ({ item: _occKey(d), at: d.at, quick: !!d.quick }))
+  const events = done.map(d => ({ item: _occKey(d), at: d.at, quick: !!d.quick, from: d.from }))
     .concat(Object.keys(pinDone).map(id => ({ item: 'pin:' + id, at: pinDone[id] })))
+    .concat(_openTripEvents())
     .sort((a, b) => new Date(a.at) - new Date(b.at));
-  return _computeChecklistDurations(events, _clockInEpoch(), breaks);
+  const out = _computeChecklistDurations(events, _clockInEpoch(), breaks);
+  delete out[_TRIP_OPEN];
+  return out;
+}
+// ⏸ The side task you are on right now (v505), as a stand-in tick ending now, so a tick made
+// inside it is timed from inside it. Its own number is thrown away.
+const _TRIP_OPEN = '\u0001trip';
+function _openTrip() { return (clockState && clockState.running && clockState.sideTrip && isFinite(clockState.sideTrip.from)) ? clockState.sideTrip : null; }
+function _openTripEvents() {
+  const t = _openTrip(), now = Date.now();
+  return (t && now > t.from) ? [{ item: _TRIP_OPEN, at: new Date(now).toISOString(), from: new Date(t.from).toISOString() }] : [];
+}
+// The finished side tasks of this run, and the open one too when asked: [{ start, end }].
+function _runSideSpans(withOpen) {
+  if (!clockState) return [];
+  const out = _sideSpans((Array.isArray(clockState.checklistDone) ? clockState.checklistDone : []).filter(d => !d.carried));
+  const t = withOpen && _openTrip();
+  if (t) out.push({ start: t.from, end: Infinity });
+  return out;
+}
+// Time since `a` that the task you are on did NOT get: breaks (the one running too) and
+// finished side tasks. The open side task is not in here: until it is ticked it is the
+// task you are on, and its minutes are still owed to the forecast in full.
+function _runIdleMs(a, now) {
+  const brks = Array.isArray(clockState.breaks) ? clockState.breaks.slice() : [];
+  if (clockState.onBreak && clockState.breakStartMs) brks.push({ start: clockState.breakStartMs, end: now });
+  return _unionOverlapMs([brks, _runSideSpans(false)], a, now);
+}
+// Work minutes on the row you are on, breaks taken out. On a side task, from when it
+// started (or its last tick inside it); otherwise from the last tick outside any side task.
+function _rsWorkNowMs() {
+  if (!clockState || !clockState.running) return 0;
+  const now = Date.now(), t = _openTrip();
+  if (t) {
+    let a = t.from;
+    (clockState.checklistDone || []).forEach(d => { const x = new Date(d && d.at).getTime(); if (isFinite(x) && x > a) a = x; });
+    const brks = Array.isArray(clockState.breaks) ? clockState.breaks.slice() : [];
+    if (clockState.onBreak && clockState.breakStartMs) brks.push({ start: clockState.breakStartMs, end: now });
+    return Math.max(0, now - a - _unionOverlapMs([brks], a, now));
+  }
+  const a = _runAnchorMs();
+  return Math.max(0, now - a - _runIdleMs(a, now));
 }
 // Per-step durations for the running session, keyed "item~|~step" (so a step
 // text shared across tasks never collides). Steps are timed on the MERGED
@@ -6576,8 +6667,9 @@ function _stepDurations() {
   const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
   const pinDone = clockState.pinDone || {};
   const events = sd.map(d => ({ item: d.item + '~|~' + d.step, at: d.at }))
-    .concat(done.map(d => ({ item: 't:' + _occKey(d), at: d.at, quick: !!d.quick })))          // anchor events —
+    .concat(done.map(d => ({ item: 't:' + _occKey(d), at: d.at, quick: !!d.quick, from: d.from })))          // anchor events —
     .concat(Object.keys(pinDone).map(id => ({ item: 'p:' + id, at: pinDone[id] })))  // computed, then discarded
+    .concat(_openTripEvents())
     .sort((a, b) => new Date(a.at) - new Date(b.at));
   const all = _computeChecklistDurations(events, _clockInEpoch(), breaks);
   const out = {};
@@ -6613,14 +6705,28 @@ function markChecklistItemDone(item, opts) {
   } else {
     // 'Once' task: tap to tick, tap again to untick (stamped without a rep).
     const i = clockState.checklistDone.findIndex(d => d.item === item && !d.rep && !d.lap);
-    if (i >= 0) { clockState.checklistDone.splice(i, 1); _setTaskReminderDone(job, item, false); }
+    if (i >= 0) { const [_un] = clockState.checklistDone.splice(i, 1); _setTaskReminderDone(job, item, false); _tripRestore(_un); }
     else { doneOcc = { item, at: new Date().toISOString() }; if (_quick) doneOcc.quick = true; clockState.checklistDone.push(doneOcc); _expandedChecklistItems.delete(item); _setTaskReminderDone(job, item, true); didComplete = true; undoFn = () => markChecklistItemDone(item); }
+  }
+  // ⏸ Ticking the side task stamps when it started and hands you back to the paused one.
+  // Ticking the paused one instead drops the side task: its minutes stay with the paused
+  // task, as they did before v505.
+  const _trip = clockState.sideTrip;
+  if (didComplete && _trip && doneOcc) {
+    if (item === _trip.item && _trip.from < Date.now()) { doneOcc.from = new Date(_trip.from).toISOString(); doneOcc.paused = _trip.paused; delete clockState.sideTrip; }
+    else if (item === _trip.paused) delete clockState.sideTrip;
   }
   if (didComplete) _chipHold++;              // hold the counter number until the bubble lands
   _storeSet('kr_clock', JSON.stringify(clockState));
   renderRunChecklist();
   updateRunRing();                           // re-forecast: one less task to do → finish time moves
   if (didComplete) flyDoneBubble(undoFn, doneOcc ? _checklistDurations()[_occKey(doneOcc)] : null);   // bubble floats up w/ the time it took + Undo
+}
+// ⏸ Undoing a side task's tick puts you back on it, with the task it paused still waiting.
+function _tripRestore(d) {
+  if (!d || !d.from || !clockState || clockState.sideTrip) return;
+  const from = new Date(d.from).getTime();
+  if (isFinite(from)) clockState.sideTrip = { item: d.item, paused: d.paused || '', from };
 }
 // Undo the most recent rep of a repeatable task (drops the count + its timed entry).
 function undoTaskRep(item) {
@@ -6629,7 +6735,8 @@ function undoTaskRep(item) {
   const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
   let li = -1; for (let k = done.length - 1; k >= 0; k--) { if (done[k].item === item && done[k].rep) { li = k; break; } }
   if (li < 0) { _bumpTaskRep(job, item, -1); renderRunChecklist(); return; }   // count from an earlier session
-  done.splice(li, 1);
+  const [_un] = done.splice(li, 1);
+  _tripRestore(_un);
   _bumpTaskRep(job, item, -1);
   if (taskRepCount(job, item) === 0) _setTaskReminderDone(job, item, false);
   _storeSet('kr_clock', JSON.stringify(clockState));
@@ -7787,11 +7894,14 @@ function _runRemainingSec() {
 function _runAnchorMs() {
   if (!clockState) return 0;
   let anchor = clockState.startMs || 0;
+  // ⏸ A tick inside a side task (v505) is not where the paused task's time restarts.
+  const sides = _runSideSpans(true);
+  const inSide = t => sides.length && sides.some(sp => t > sp.start && t <= sp.end);
   (Array.isArray(clockState.checklistDone) ? clockState.checklistDone : []).forEach(d => {
-    const t = new Date(d && d.at).getTime(); if (isFinite(t) && t > anchor) anchor = t;
+    const t = new Date(d && d.at).getTime(); if (isFinite(t) && t > anchor && !inSide(t)) anchor = t;
   });
   Object.values(clockState.pinDone || {}).forEach(v => {
-    const t = new Date(v).getTime(); if (isFinite(t) && t > anchor) anchor = t;
+    const t = new Date(v).getTime(); if (isFinite(t) && t > anchor && !inSide(t)) anchor = t;
   });
   return anchor;
 }
@@ -7897,6 +8007,14 @@ function updateRunRing(netElapsedSec) {
     const brkToAnchor = _breakOverlapMs(clockState.breaks, clockState.startMs, anchorMs)
       + ((clockState.onBreak && clockState.breakStartMs && clockState.breakStartMs < anchorMs) ? (anchorMs - clockState.breakStartMs) : 0);
     elapsedAtAnchor = Math.max(0, (anchorMs - clockState.startMs - brkToAnchor) / 1000);
+    // ⏸ A side task finished since the anchor is banked work too (v505): it is no longer in
+    // what's left, so leaving it out here would forecast the total short by its minutes.
+    const _sides = _runSideSpans(false);
+    if (_sides.length) {
+      const _n = Date.now(), _b = Array.isArray(clockState.breaks) ? clockState.breaks.slice() : [];
+      if (clockState.onBreak && clockState.breakStartMs) _b.push({ start: clockState.breakStartMs, end: _n });
+      elapsedAtAnchor += Math.max(0, _unionOverlapMs([_b, _sides], anchorMs, _n) - _unionOverlapMs([_b], anchorMs, _n)) / 1000;
+    }
   }
   const est = live ? (elapsedAtAnchor + remaining) : baseEst;
   const finishEl = document.getElementById('run-ring-finish');
@@ -8380,7 +8498,7 @@ function _entryChecklistDurations(e, keepExcluded) {
   const list = Array.isArray(e.checklist) ? e.checklist : [];
   if (!list.length) return {};
   const sorted = list.slice().sort((a, b) => new Date(a.at) - new Date(b.at))
-    .map(d => ({ item: _occKey(d), at: d.at, quick: !!d.quick }));   // lap-stamped completions stay distinct; ⚡ quick ticks stay unshared
+    .map(d => ({ item: _occKey(d), at: d.at, quick: !!d.quick, from: d.from }));   // lap-stamped completions stay distinct; ⚡ quick ticks stay unshared; ⏸ side tasks keep their own span
   const ci = _entryClockInEpoch(e);
   const clockIn = (ci != null) ? ci : new Date(sorted[0].at).getTime();
   const raw = _computeChecklistDurations(sorted, clockIn, e.breaks);
@@ -24474,7 +24592,7 @@ function _entryStepDurations(e) {
   if (!sd.length) return {};
   const done = Array.isArray(e.checklist) ? e.checklist : [];
   const events = sd.map(d => ({ item: _stepKey(d.item, d.step), at: d.at }))
-    .concat(done.map(d => ({ item: 't:' + _occKey(d), at: d.at, quick: !!d.quick })))   // anchors, discarded after
+    .concat(done.map(d => ({ item: 't:' + _occKey(d), at: d.at, quick: !!d.quick, from: d.from })))   // anchors, discarded after
     .sort((a, b) => new Date(a.at) - new Date(b.at));
   const ci = _entryClockInEpoch(e);
   const clockIn = (ci != null) ? ci : new Date(events[0].at).getTime();
@@ -26625,9 +26743,25 @@ function _rsRows(ctx) {
     cursor = ctx.startMs; floor = -Infinity;
   } else {
     const anchor = _runAnchorMs();
-    let idle = _breakOverlapMs(clockState.breaks, anchor, now);
-    if (clockState.onBreak && clockState.breakStartMs) idle += Math.max(0, now - Math.max(clockState.breakStartMs, anchor));
-    cursor = anchor + idle; floor = now;
+    cursor = anchor + _runIdleMs(anchor, now); floor = now;
+  }
+  // ⏸ SIDE TASK (v505): it sits straight above the task it paused and is the one you are on.
+  // Its finish is its own clock (now + what's left of it); the cursor still moves by its full
+  // minutes, because the paused task's work so far is already behind the anchor.
+  const _trip = ctx.kind === 'clock' ? _openTrip() : null;
+  let _tripIdx = -1, _pausedIdx = -1, _tripWork = 0, _pausedWork = 0;
+  if (_trip) {
+    const si = rows.findIndex(r => !r.brk && !r.doneAt && r.t === _trip.item);
+    if (si >= 0) {
+      const [sr] = rows.splice(si, 1);
+      const pi = rows.findIndex(r => !r.brk && !r.doneAt && r.t === _trip.paused);
+      _pausedIdx = pi >= 0 ? pi + 1 : -1;
+      _tripIdx = pi >= 0 ? pi : si;
+      rows.splice(_tripIdx, 0, sr);
+      _tripWork = _rsWorkNowMs();
+      const a = _runAnchorMs(), brks = Array.isArray(clockState.breaks) ? clockState.breaks : [];
+      _pausedWork = Math.max(0, _trip.from - a - _unionOverlapMs([brks, _runSideSpans(false)], a, _trip.from));
+    }
   }
   const perTask = {};
   rows.forEach(r => { if (!r.brk) perTask[r.t] = (perTask[r.t] || 0) + 1; });
@@ -26641,7 +26775,7 @@ function _rsRows(ctx) {
   if (ctx.kind === 'clock') {
     const bi = (clockState.onBreak && clockState.brkActiveId)
       ? rows.findIndex(r => r.brk && r.id === clockState.brkActiveId) : -1;
-    nowIdx = bi >= 0 ? bi : rows.findIndex(r => !r.brk && !r.doneAt);
+    nowIdx = bi >= 0 ? bi : (_tripIdx >= 0 ? _tripIdx : rows.findIndex(r => !r.brk && !r.doneAt));
   }
   // The LAST completed lap of each task — the only one that can be brought back, because
   // that is the one undoTaskRep removes. Offering ↺ on an earlier lap would appear to undo
@@ -26666,9 +26800,10 @@ function _rsRows(ctx) {
     const startWhen = cursor;            // when this row begins — steps accumulate from here
     let when = null;
     if (r.doneAt) when = new Date(r.doneAt).getTime();
+    else if (i === _tripIdx) { cursor += Math.max(0, mins) * 60000; when = mins > 0 ? Math.max(now + Math.max(0, mins * 60000 - _tripWork), floor) : null; }
     else if (mins > 0) { cursor += mins * 60000; when = Math.max(cursor, floor); }
     return { ...r, mins, when, startWhen, floor, isDone: !!r.doneAt, lapIdx: seen[r.t], lapTotal: perTask[r.t],
-             isNow: i === nowIdx,
+             isNow: i === nowIdx, isSide: i === _tripIdx, pausedMs: i === _pausedIdx ? _pausedWork : null,
              tappable: ctx.kind === 'clock' && !r.doneAt && nextUndone[r.t] === r.n,
              undoable: ctx.kind === 'clock' && !!r.doneAt && lastDoneN[r.t] === r.n };
   });
@@ -26703,9 +26838,7 @@ function _runForecastFinishMs() {
   const remaining = _runRemainingSec();
   if (remaining != null) {
     const anchor = _runAnchorMs();
-    let idle = _breakOverlapMs(clockState.breaks, anchor, now);
-    if (clockState.onBreak && clockState.breakStartMs) idle += Math.max(0, now - Math.max(clockState.breakStartMs, anchor));
-    return Math.max(anchor + idle + remaining * 1000, now);
+    return Math.max(anchor + _runIdleMs(anchor, now) + remaining * 1000, now);
   }
   const est = _runEstSec();
   if (!est) return null;
@@ -26739,10 +26872,7 @@ function _rsNowElapsedMin() {
   if (!clockState || !clockState.running) return 0;
   // On a break, "how long have I been at this" means how long the BREAK has run.
   if (clockState.onBreak && clockState.breakStartMs) return Math.max(0, (Date.now() - clockState.breakStartMs) / 60000);
-  const a = _runAnchorMs(), now = Date.now();
-  let idle = _breakOverlapMs(clockState.breaks, a, now);
-  if (clockState.onBreak && clockState.breakStartMs) idle += Math.max(0, now - Math.max(clockState.breakStartMs, a));
-  return Math.max(0, (now - a - idle) / 60000);
+  return _rsWorkNowMs() / 60000;
 }
 // Patched in place by the per-second clock tick so the figure stays live without
 // re-rendering the list (a re-render mid-drag would drop the row being held).
@@ -27230,7 +27360,14 @@ function _rsRender() {
       ? `<div class="rsn-nowline on">${_rsIcon('going')}<span>ON TASK · <span id="rs-now-elapsed" data-secs="1">${_fmtMinSec(_rsNowElapsedMin())}</span></span>${_rnc(timerBit)}</div>` : '';
     const _cmts = (!planning && _cmtRow[r.t] === r && clockState.itemComments && clockState.itemComments[r.t]) || [];
     const _cmtHtml = _cmts.map(c => `<div class="rsn-cmt">💬 ${_escHtml(c.text)} <span>· ${_timeShort(c.at)}</span></div>`).join('');
-    const _lead = _rsHeldBadge(key) || (r.isNow ? '' : (r.isDone ? `<span class="rsn-tick">✓</span>` : _rsIcon('go')));
+    // ⏸ The ▶ on a row you could tick starts it now and pauses the one you're on (v505).
+    const _canSide = !planning && r.tappable && !r.isNow && !_rsMoveKey && !_rsPlacing && !clockState.sideTrip && !clockState.onBreak;
+    const _goBtn = _canSide
+      ? `<span class="rsn-go-tap" ontouchstart="event.stopPropagation()" ontouchmove="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_rsSideStart(decodeURIComponent('${_encArg(r.t)}'))" title="Do this now">${_rsIcon('go')}</span>`
+      : _rsIcon('go');
+    const _lead = _rsHeldBadge(key) || (r.isNow ? '' : (r.isDone ? `<span class="rsn-tick">✓</span>` : (r.pausedMs != null ? '<span class="rsn-pause-ic">⏸&#xFE0E;</span>' : _goBtn)));
+    const _pausedLine = r.pausedMs != null
+      ? `<div class="rsn-nowline paused"><span>PAUSED · ${_fmtMinSec(r.pausedMs / 60000)}</span><span class="rsn-paused-sub">carries on when the task above is ticked</span></div>` : '';
     const _edit = (_rsMoveKey || _rsPlacing) ? '' : `<span class="rsn-pencil" ontouchstart="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_rsEditTask(decodeURIComponent('${_encArg(r.t)}'))" title="edit: photo, video, name">${_rsIcon('pencil')}</span>`;
     const _when = r.isDone
       ? `<span class="rsn-when done">${r.undoable ? '↺ ' : ''}✓ ${_rsHM(r.when)}</span>`
@@ -27245,8 +27382,8 @@ function _rsRender() {
     const _ld = r.isDone ? null : _lastMap[r.t];
     const _lastBit = r.isDone ? '' : (_ld ? `<span class="rsn-last">${_agoWords(_ld)}</span>` : '<span class="rsn-last none">not done yet</span>');
     return `${_ins(_i)}<div class="rs-row rsn-row" data-rs-key="${_attr(key)}"${r.isNow ? ' data-rs-now="1"' : ''}${r.isDone ? ' data-rs-done="1"' : ''}${_canQuick ? ' data-rs-quick="1"' : ''} ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)">
-    <div class="rsn-card${_cardCls}"${tap}>
-      ${_nowLine}
+    <div class="rsn-card${_cardCls}${r.pausedMs != null ? ' paused' : ''}"${tap}>
+      ${_nowLine}${_pausedLine}
       <div class="rsn-head">${_lead}<span class="rsn-title">${_escHtml(r.t)}</span>${_edit}</div>
       ${_cmtHtml}
       <div class="rsn-mid">${markChip}${_batch}${_rnc(lap)}${_when}</div>
@@ -27368,6 +27505,26 @@ function _rsTick(task) {
   // one under it (v431). Only when a tick actually landed.
   if (clockState && (clockState.checklistDone || []).length > before) _rsGoRest(true);
 }
+// ⏸ ▶ ON A ROW: DO THIS ONE NOW (v505). The task you are on pauses where it is, this one
+// becomes ON TASK, and ticking it brings the paused one back. One side task at a time.
+function _rsSideStart(task) {
+  if (Date.now() < _clSwipeBlockClickUntil) return;
+  if (!clockState || !clockState.running || _rsPlanId) return;
+  const short = t => t.length > 26 ? t.slice(0, 26).trimEnd() + '…' : t;
+  if (clockState.sideTrip) { showToast('Tick off ' + short(clockState.sideTrip.item) + ' first'); return; }
+  if (clockState.onBreak) { showToast('End the break first'); return; }
+  const cur = _rsRows().find(r => r.isNow && !r.brk);
+  if (!cur || cur.t === task) return;
+  clockState.sideTrip = { item: task, paused: cur.t, from: Date.now() };
+  _storeSet('kr_clock', JSON.stringify(clockState));
+  _rsRender(); updateRunRing(); _rsGoRest(true);
+  showUndoToast('⏸ Paused: ' + short(cur.t), () => {
+    if (!clockState || !clockState.sideTrip || clockState.sideTrip.item !== task) return;
+    delete clockState.sideTrip;
+    _storeSet('kr_clock', JSON.stringify(clockState));
+    _rsRender(); updateRunRing(); _rsGoRest(true);
+  }, 8000, 'Tick off ' + short(task) + ' to carry on');
+}
 // ✎ Edit a task from the run sheet (v441): the same edit sheet as the clock and
 // Organise, aimed at the job this sheet is for, so a photo or a video link can be
 // added in the moment, planning or running. Lincoln, 27 Oct 2026: "every piece of
@@ -27394,10 +27551,7 @@ function _rsRenderKeepScroll() {
 // tick (or clock-in), less any break inside that span.
 function _rsQuickTick(task) {
   if (!clockState || !clockState.running) return;
-  const now = Date.now(), a = _runAnchorMs();
-  let idle = _breakOverlapMs(clockState.breaks, a, now);
-  if (clockState.onBreak && clockState.breakStartMs) idle += Math.max(0, now - Math.max(clockState.breakStartMs, a));
-  const secs = Math.max(0, (now - a - idle) / 1000);
+  const secs = _rsWorkNowMs() / 1000;
   const quick = secs <= 60;
   const done = clockState.checklistDone || [];
   const before = done.length;
