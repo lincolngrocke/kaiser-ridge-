@@ -973,6 +973,13 @@
      as it nears the end, rather than every fill length ending blue. */
   .rsn-line-track span { display: block; height: 100%; min-width: 8px; border-radius: 4px; background: linear-gradient(90deg, var(--rsn-green), var(--rsn-blue)) 0 0 / 100% 100% no-repeat; transition: width 0.95s linear; }
   .rsn-line.over .rsn-line-track span { background: var(--rsn-orange); }
+  /* v513: a mark per task at the point it is due (_rsMarksSync). Taller than the track and
+     ringed in the page colour, so it reads over the fill and over the empty track alike. */
+  .rsn-line-bar { position: relative; }
+  .rsn-marks { position: absolute; top: -3px; bottom: -3px; left: 0; right: 0; pointer-events: none; }
+  .rsn-marks i { position: absolute; top: 0; bottom: 0; width: 3px; margin-left: -1.5px; border-radius: 2px; background: var(--rsn-sub); opacity: 0.55; box-shadow: 0 0 0 1.5px var(--rsn-bg); }
+  .rsn-marks i.done { background: var(--rsn-green); opacity: 1; }
+  .rsn-marks i.owed { background: var(--rsn-orange); opacity: 1; }
   .rsn-line-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 5px; font-size: 12px; color: var(--rsn-sub); }
   .rsn-line-brk { color: var(--rsn-orange); font-weight: 600; white-space: nowrap; }
   #rs-line-time { font-size: 15px; font-weight: 600; color: var(--rsn-text); font-variant-numeric: tabular-nums; }
@@ -3825,7 +3832,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.512';
+const APP_VERSION = '2026-06-21.513';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -8154,7 +8161,7 @@ function updateRunRing(netElapsedSec) {
   // longer than its average) — the same meaning in both modes now.
   const over = frac >= 1;
   ring.classList.toggle('over', over);
-  _rsRing = { frac, over };
+  _rsRing = { frac, over, est };
   if (label) {
     label.style.color = over ? '#ff9f0a' : 'var(--run-blue)';
     label.textContent = (live
@@ -27053,7 +27060,7 @@ function _rsBigTime(ms) {
 // (updateRunRing runs on, hidden, because the 🎯 hangs off it): time worked against the
 // forecast total. Patched every second by the clock tick, so a drag is never interrupted.
 function _rsLineHtml() {
-  return `<div class="rsn-line" id="rs-line"><div class="rsn-line-track"><span id="rs-line-fill" style="width:0;"></span></div>
+  return `<div class="rsn-line" id="rs-line"><div class="rsn-line-bar"><div class="rsn-line-track"><span id="rs-line-fill" style="width:0;"></span></div><div class="rsn-marks" id="rs-line-marks"></div></div>
     <div class="rsn-line-row"><span id="rs-line-time"></span><span id="rs-line-in"></span><span id="rs-line-pct"></span></div></div>`;
 }
 function _rsLineSync() {
@@ -27073,6 +27080,41 @@ function _rsLineSync() {
   document.getElementById('rs-line-in').innerHTML = _escHtml(txt('run-clockedin-text'))
     + (_brkMins >= 1 ? ` · <span class="rsn-line-brk">${fmtMin(_brkMins)} break</span>` : '');
   document.getElementById('rs-line-pct').textContent = txt('run-ring-label');
+  _rsMarksSync(f);
+}
+// 📍 A MARK PER TASK ON THE LINE (v513, Lincoln 19 Nov 2026: "each task would represent a mark
+// on this line, representative of the time it's due to be done. You would be able to see
+// whether you're ahead of time or behind time"). Each mark is the point of WORK by which that
+// task is due if you keep to the 🎯: the 🎯's work shared out over the rows by their learned
+// minutes, so the last mark is the 🎯 itself. Ticked rows come first, in the order they were
+// ticked, then the rest in sheet order, so the first N marks are green once N tasks are done.
+//   green  = done
+//   orange = the fill has passed it and the task is still to do: you are behind
+//   grey   = still to come
+// A green mark out ahead of the fill means you are ahead. Breaks stay out on both sides: the
+// fill is work time, and the 🎯's work here leaves out every break, taken or still planned.
+function _rsMarksSync(f) {
+  const box = document.getElementById('rs-line-marks'); if (!box) return;
+  let html = '';
+  const est = _rsRing.est || 0, tgt = _targetDisplayMs();
+  if (est > 0 && tgt && clockState.startMs) {
+    const bd = clockState.brkDone || {};
+    const brkAhead = (clockState.plannedBreaks || []).reduce((s, b) =>
+      s + ((b && !bd[b.id] && b.id !== clockState.brkActiveId) ? (b.mins || 0) : 0), 0) * 60;
+    const work = (tgt - clockState.startMs - _breakNowMs()) / 1000 - brkAhead;   // the 🎯's work, seconds
+    const rows = _rsRows().filter(r => !r.brk && r.mins > 0);
+    const total = rows.reduce((s, r) => s + r.mins, 0);
+    if (rows.length && work > 0 && total > 0) {
+      const done = rows.filter(r => r.isDone).sort((a, b) => new Date(a.doneAt) - new Date(b.doneAt));
+      let cum = 0;
+      done.concat(rows.filter(r => !r.isDone)).forEach(r => {
+        cum += r.mins;
+        const at = work * cum / total / est;   // where it falls on the line, 0 to 1
+        html += `<i class="${r.isDone ? 'done' : (at <= f ? 'owed' : '')}" style="left:${(Math.min(1, at) * 100).toFixed(2)}%"></i>`;
+      });
+    }
+  }
+  if (box.innerHTML !== html) box.innerHTML = html;
 }
 // The sheet's own buttons: Running now breaks and clocks out, Planning clocks in.
 function _rsFootSync() {
