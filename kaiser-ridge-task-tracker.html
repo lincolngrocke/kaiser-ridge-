@@ -906,9 +906,14 @@
     --rsn-bg: #f6f6f3; --rsn-card: #ffffff; --rsn-line: #e8eae5; --rsn-text: #202724; --rsn-sub: #777e79;
     --rsn-blue: #3478f6; --rsn-blue-bg: #eef4ff; --rsn-blue-line: #d7e6ff; --rsn-steps: #e6effe;
     --rsn-check: #bfc4bf; --rsn-orange-bg: #fff2e6; --rsn-orange: #f26b00; --rsn-red: #d92d20; --rsn-green: #1a7f37;
+    /* v510: task cards sit lifted off the page (Lincoln, 18 Nov 2026), the on-task card most */
+    --rsn-lift: 0 1px 2px rgba(0,0,0,0.06), 0 4px 8px rgba(0,0,0,0.08), 0 12px 24px rgba(0,0,0,0.10);
+    --rsn-lift-now: 0 2px 4px rgba(0,0,0,0.08), 0 8px 16px rgba(0,0,0,0.12), 0 18px 36px rgba(0,0,0,0.16);
     background: var(--rsn-bg);
   }
   body.dark #modal-run-sheet.rs-run, body.dark #modal-cl-organise {
+    --rsn-lift: 0 1px 2px rgba(0,0,0,0.45), 0 4px 8px rgba(0,0,0,0.35), 0 12px 24px rgba(0,0,0,0.40), inset 0 1px 0 rgba(255,255,255,0.06);
+    --rsn-lift-now: 0 2px 4px rgba(0,0,0,0.5), 0 8px 16px rgba(0,0,0,0.45), 0 18px 36px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08);
     --rsn-bg: #1c1c1e; --rsn-card: #2c2c2e; --rsn-line: #3a3a3c; --rsn-text: #f2f2f7; --rsn-sub: #a1a1a6;
     --rsn-blue: #5b9bff; --rsn-blue-bg: rgba(52,120,246,0.18); --rsn-blue-line: rgba(91,155,255,0.35); --rsn-steps: rgba(52,120,246,0.13);
     --rsn-check: #636366; --rsn-orange-bg: rgba(255,159,10,0.16); --rsn-orange: #ff9f0a; --rsn-red: #ff6257; --rsn-green: #4cd964;
@@ -1014,12 +1019,12 @@
   .rsn-order-note { font-size: 11px; line-height: 1.45; color: var(--rsn-sub); margin-bottom: 8px; }
   .rsn-addbrk { position: relative; height: 38px; display: flex; align-items: center; justify-content: center; gap: 7px; border-radius: 14px; background: linear-gradient(rgba(242,107,0,0.04), rgba(242,107,0,0.04)), var(--rsn-card); border: 1px solid rgba(242,107,0,0.16); color: var(--rsn-orange); font-size: 13px; font-weight: 600; cursor: pointer; margin-bottom: 8px; }
   .rsn-row { margin-bottom: 8px; }
-  .rsn-card { display: flex; flex-direction: column; gap: 5px; padding: 11px 12px 9px; background: var(--rsn-card); border: 1px solid var(--rsn-line); border-radius: 16px; }
-  .rsn-card.now { background: var(--rsn-blue-bg); border-color: var(--rsn-blue); }
+  .rsn-card { display: flex; flex-direction: column; gap: 5px; padding: 11px 12px 9px; background: var(--rsn-card); border: 1px solid var(--rsn-line); border-radius: 16px; box-shadow: var(--rsn-lift); }
+  .rsn-card.now { background: var(--rsn-blue-bg); border-color: var(--rsn-blue); box-shadow: var(--rsn-lift-now); transform: translateY(-2px); }
   .rsn-card.now.brk-on { background: var(--rsn-orange-bg); border-color: var(--rsn-orange); }
   .rsn-card.lifted { background: var(--rsn-blue-bg); border-color: var(--rsn-blue); }
-  .rsn-card.marked { border-color: var(--rsn-blue); box-shadow: 0 0 0 1px var(--rsn-blue); }
-  .rsn-card.done { background: transparent; }
+  .rsn-card.marked { border-color: var(--rsn-blue); box-shadow: 0 0 0 1px var(--rsn-blue), var(--rsn-lift); }
+  .rsn-card.done { background: transparent; box-shadow: none; }   /* finished: flat, sitting back in the page */
   /* v459: Organise is the Clock tab's screen while clocked in. It docks under the top strip
      (banners, hours, ✓ count) and above the tabs. Docked is NOT .open: plenty of code reads an
      open sheet as "something is covering the app", and this is the app. */
@@ -3814,7 +3819,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.509';
+const APP_VERSION = '2026-06-21.510';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
