@@ -3832,7 +3832,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.514';
+const APP_VERSION = '2026-06-21.515';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -26795,7 +26795,15 @@ function _rsPlaceFresh(out, x, multi) {
   // own kind if it has one, else the end.
   let at = -1;
   for (let i = out.length - 1; i >= 0; i--) if (out[i].t === x.t) { at = i; break; }
-  if (at >= 0) out.splice(at + 1, 0, x); else out.push(x);
+  if (at >= 0) { out.splice(at + 1, 0, x); return; }
+  // v515: lap 1 of a task that laps, new to the sheet, goes at the end of the FIRST pass
+  // (just above where lap 2 of the circuit starts), not under the once-off tail at the
+  // very bottom. Its lap 2 then follows into the second pass.
+  if (x.n === 1 && multi.has(x.t)) {
+    const p2 = out.findIndex(r => r.n >= 2 && multi.has(r.t));
+    if (p2 >= 0) { out.splice(p2, 0, x); return; }
+  }
+  out.push(x);
 }
 
 // Merge the arranged order with what's actually on the sheet now. Survivors keep
@@ -26819,12 +26827,35 @@ function _rsOrdered(ctx) {
   // at 11:42, which reads as the break happening after the trip rather than inside
   // it. The sort was never the optional part; the saved order is only the order of
   // what is still TO DO.
-  if (!pool.size) return _rsDoneFirst(out);
-  const fresh = _rsDefaultOrder([...pool.values()], ctx);
-  // Nothing arranged yet → the circuit default IS the order.
-  if (!out.length) return _rsDoneFirst(fresh);
-  fresh.forEach(x => _rsPlaceFresh(out, x, multi));
+  if (pool.size) {
+    const fresh = _rsDefaultOrder([...pool.values()], ctx);
+    // Nothing arranged yet → the circuit default IS the order.
+    if (!out.length) return _rsDoneFirst(fresh);
+    fresh.forEach(x => _rsPlaceFresh(out, x, multi));
+  }
+  if (_rsLapsInOrder(out) && ctx.order) ctx.saveOrder(out.map(_rsInstKey));
   return _rsDoneFirst(out);
+}
+// ⭐ A TASK'S LAPS NUMBER DOWN THE PAGE (v515). A tick goes by task NAME and always lands
+// on the lowest lap still owing, wherever the row you tapped sits. So if lap 2's row sat
+// ABOVE lap 1's, the row labelled "1/2" was really lap 2: ticking it marked the lower
+// row done, which floated to the top, and lap 2 was left as the very next thing to do.
+// Lincoln, 19 Nov 2026, straw carting: "Travel from main entrance gate to Farm 4" lap 1
+// ticked, lap 2 popped up straight under it instead of in the second pass. Twice, both on
+// tasks new to the job, because a task added mid-run had its lap 2 placed in the second
+// pass and its lap 1 dropped at the bottom of the sheet.
+// The rows stay exactly where they are; only which lap each one holds is re-paired, the
+// lowest lap to the highest row. Saved back so a drag or a swipe-off works on true keys.
+function _rsLapsInOrder(out) {
+  const at = {};
+  out.forEach((r, i) => { if (!r.brk && r.n > 0) (at[r.t] = at[r.t] || []).push(i); });
+  let moved = false;
+  Object.keys(at).forEach(t => {
+    const idx = at[t]; if (idx.length < 2) return;
+    const laps = idx.map(i => out[i]).sort((a, b) => a.n - b.n);
+    idx.forEach((i, k) => { if (out[i] !== laps[k]) { out[i] = laps[k]; moved = true; } });
+  });
+  return moved;
 }
 
 // ⭐ FINISHED WORK FLOATS TO THE TOP, IN THE ORDER IT ACTUALLY HAPPENED.
