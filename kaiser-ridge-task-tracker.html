@@ -3867,7 +3867,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.519';
+const APP_VERSION = '2026-06-21.520';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -25199,6 +25199,10 @@ function _plannerBreakLines(list) {
     '<div class="pt-brk" style="font-size:10px;opacity:0.95;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _brkIco(b.lunch) + ' '
       + (b.ahead ? '~' : '') + _rsHM(b.ms) + ' · ' + (b.now ? (b.lunch ? 'on lunch now' : 'on break now') : fmtMin(b.mins)) + '</div>').join('');
 }
+// " · includes 30m break time", kept whole so it wraps onto its own line rather than splitting (v520).
+function _rsBrkIncl(mins) {
+  return ` <span style="white-space:nowrap;">· includes ${fmtMin(mins)} break time</span>`;
+}
 function _rsRowsFor(planId) {   // the run sheet's rows for a block (planId) or the running job (null)
   const prev = _rsPlanId;
   try { _rsPlanId = planId; return _rsRows(); } catch (e) { return []; } finally { _rsPlanId = prev; }
@@ -27429,6 +27433,10 @@ function _rsRender() {
   // Whole minutes of each clock time as shown, so 10:15 to 11:36 reads 1h 21m, never 1h 22m.
   const _planMins = (planning && _finMs && ctx.startMs) ? Math.floor(_finMs / 60000) - Math.floor(ctx.startMs / 60000) : 0;
   const _planTotal = _planMins > 0 ? ` · ~${fmtMin(_planMins)}` : '';
+  // v520, Lincoln 20 Nov 2026: the total runs start to finish, so it has the breaks in it.
+  // Say how much, on the same line, so 6h 55m isn't read as 6h 55m of work.
+  const _brkMins = rows.filter(r => r.brk).reduce((s, r) => s + (+r.mins || 0), 0);
+  const _brkTxt = (planning && _planMins > 0 && _brkMins > 0) ? _rsBrkIncl(_brkMins) : '';
   const _finBig = _noEst ? '<span class="rsn-noest">Add times to see your finish</span>' : _rsBigTime(_finMs);
   // v512: green on or under the 🎯, orange over it, to the minute shown. No target, no colour.
   const _finCls = (tgt && _finMs) ? (Math.floor(_finMs / 60000) <= Math.floor(tgt / 60000) ? ' ok' : ' late') : '';
@@ -27452,7 +27460,7 @@ function _rsRender() {
     <div class="rsn-big"><div class="rsn-fin rsn-fin-tap" onclick="_rsShrink('run-sheet-body')" title="Tap to give the list the whole screen"><div class="rsn-fin-l"><div class="rsn-lab">${_allDone ? 'Finished' : 'Projected finish'}<span class="rsi rsi-chev up"></span></div><div class="rsn-time${_finCls}">${_finBig}</div></div>
       ${tgt ? `<div class="rsn-tgt">${_rsIcon('dart')}<div class="rsn-time2">${_rsBigTime(tgt)}</div></div>` : ''}</div>
     ${planning ? '' : _rsLineHtml()}
-    ${planning ? `<div class="rsn-count">${_stepsTxt}${_planTotal} · from ${_rsHM(ctx.startMs)}</div>`
+    ${planning ? `<div class="rsn-count">${_stepsTxt}${_planTotal} · from ${_rsHM(ctx.startMs)}${_brkTxt}</div>`
       : `<div class="rsn-job">${_escHtml(ctx.job)}</div><div class="rsn-count rsn-count-row"><span>${_doneTxt}</span>${_RS_UNDO}</div>${bankedNote}`}</div>
     <div class="rsn-pin${_addBrk ? '' : ' held'}">
       <div class="rsn-slim-tap" onclick="_rsPinTop('run-sheet-body')"><div class="rsn-slim-job">${_escHtml(ctx.job)}</div>
@@ -29132,7 +29140,7 @@ function openPlannerDetail(planId) {
     : '';
   document.getElementById('planner-detail-info').innerHTML =
     `<div style="margin-bottom:6px;">⏰ ${startStr} – ${endStr}</div>
-     <div style="margin-bottom:6px;">⏱ ${plan.durationHours}h planned</div>
+     <div style="margin-bottom:6px;">⏱ ${plan.durationHours}h planned${(() => { let m = 0; try { m = _plannedBreaksFor(plan.id).reduce((s, b) => s + (+b.mins || 0), 0); } catch (e) {} return m > 0 ? _rsBrkIncl(m) : ''; })()}</div>
      ${(() => {
        // 🗓 WHEN THIS JOB WAS LAST DONE. Planning a job, "last done 29 days ago" is
        // the fact that decides whether it needs doing this week, and it lived only
