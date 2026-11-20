@@ -1083,7 +1083,7 @@
   .rsn-oc.off { background: transparent; }
   .rsn-oc.off .rsn-title { color: var(--rsn-sub); }
   .rsn-oc.off .rsi-go { color: var(--rsn-check); }
-  .rsn-last { font-size: 12px; color: var(--rsn-sub); white-space: nowrap; }
+  .rsn-last { font-size: 12px; color: var(--rsn-sub); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   .rsn-last.none { font-style: italic; }
   .rsn-lap { display: inline-flex; align-items: center; height: 24px; box-sizing: border-box; border-radius: 12px; border: 1px solid var(--rsn-line); background: var(--rsn-card); font-size: 12px; font-weight: 700; color: var(--rsn-green); white-space: nowrap; }
   .rsn-lap span { padding: 0 8px; font-size: 16px; font-weight: 700; color: var(--rsn-sub); cursor: pointer; line-height: 1; }
@@ -3867,7 +3867,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.520';
+const APP_VERSION = '2026-06-21.521';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -6756,6 +6756,38 @@ function _checklistItemLastDone(job) {
     });
   }
   return map;
+}
+// 🗓 LAST DONE, ANY JOB, FOR SHOWING (v521). Lincoln, 20 Nov 2026: Cut fingernails had been
+// done on another job, so its average came across, but Household chores evening said "not
+// done yet"; and flossing in the morning instead of at night should count at night too.
+// The task's own job still comes first. When another job did it more recently, or this job
+// never has, that newer date shows WITH the job's name ("yesterday on Morning chores"), so
+// two cabins sharing task names can't be mistaken for each other. Display only:
+// _checklistItemLastDone stays per job, because the learned order and sorting read it.
+// { item: { at, job } }, where job is null for this job's own tick.
+function _lastDoneAny(job) {
+  const out = {};
+  if (!job) return out;
+  const own = _checklistItemLastDone(job);
+  Object.keys(own).forEach(k => { out[k] = { at: own[k], job: null }; });
+  const take = (item, at, j) => {
+    if (!item || !at || !j || j === job) return;
+    const t = new Date(at).getTime();
+    if (!isNaN(t) && (!out[item] || t > out[item].at)) out[item] = { at: t, job: j };
+  };
+  entries.forEach(e => {
+    if (!e || e.bot || !e.task || e.task === job || !Array.isArray(e.checklist)) return;
+    e.checklist.forEach(d => { if (d) take(d.item, d.at, e.task); });
+  });
+  if (clockState && clockState.running && clockState.task && clockState.task !== job && Array.isArray(clockState.checklistDone)) {
+    clockState.checklistDone.forEach(d => { if (d) take(d.item, d.at, clockState.task); });
+  }
+  return out;
+}
+// The words for one of those: "13 days ago", "yesterday on Morning chores" or "not done yet".
+function _lastDoneHtml(o) {
+  if (!o) return '<span class="rsn-last none">not done yet</span>';
+  return `<span class="rsn-last">${_agoWords(o.at)}${o.job ? ` on ${_escHtml(o.job)}` : ''}</span>`;
 }
 function _checklistDurations() {
   if (!clockState) return {};
@@ -16869,7 +16901,7 @@ function renderDirSubtaskList(items) {
   const _display = _pairs.filter(p => _clFlags[p.s]).sort(_byRecent).concat(_pairs.filter(p => !_clFlags[p.s]).sort(_byRecent));
   // ⏱ The run sheet's own line on each row (v500): "~11m avg · 16×" (how long, how many
   // times done) and when it was last done. Built once per render, not per row.
-  const _dAvg = _taskEstMap(), _dCnt = _taskHistCountMap(), _dLast = _jn ? _checklistItemLastDone(_jn) : {};
+  const _dAvg = _taskEstMap(), _dCnt = _taskHistCountMap(), _dLast = _jn ? _lastDoneAny(_jn) : {};
   const _rowFor = ({ s, i }) => {
     // One ⋯ replaces the old six-button strip (steps/guide/history/type/reminder/✕)
     // — they live in a labelled action sheet now, so the task text gets the width.
@@ -16901,7 +16933,7 @@ function renderDirSubtaskList(items) {
     { const _tc = _jn ? _timerChip(_jn, s) : ''; if (_tc) metaBits.push(_tc); }   // ⏱ v446
     const _ld = _dLast[s];
     const _timeBits = (_jn ? _avgMeta(s, _dAvg, _dCnt) : '')
-      + (_jn ? (_ld ? `<span class="rsn-last">${_agoWords(_ld)}</span>` : '<span class="rsn-last none">not done yet</span>') : '');
+      + (_jn ? _lastDoneHtml(_ld) : '');
     const metaLine = (_timeBits || metaBits.length) ? `<div class="dir-meta">${_timeBits}${metaBits.length ? `<span>${metaBits.join(' · ')}</span>` : ''}</div>` : '';
     return `
     <div id="strow-${i}" ontouchstart="stSwipeStart(event,${i})" ontouchmove="stSwipeMove(event)" ontouchend="stSwipeEnd(event)"
@@ -27471,7 +27503,7 @@ function _rsRender() {
     ${_addBrk ? `<div class="rsn-addbrk"><span class="rsn-addbrk-h" onclick="_rsSetPlacing(true, 'coffee')">${_rsIcon('coffee')}Coffee break</span><span class="rsn-addbrk-h" onclick="_rsSetPlacing(true, 'lunch')">Lunch break${_rsIcon('lunch')}</span></div>` : ''}</div>
     ${_orderBack ? `<div class="rsn-order-note">The learned order is the order you ticked these off <b>last time you did this job</b>. You have arranged this one by hand, so it is following your order instead.</div>` : ''}`;
   const avgMap = _taskEstMap(), cntMap = _taskHistCountMap();   // built once, not per row
-  const _lastMap = _checklistItemLastDone(ctx.job);   // 🗓 when each task was last done, as on Organise (v483)
+  const _lastMap = _lastDoneAny(ctx.job);   // 🗓 when each task was last done, as on Organise (v483); any job since v521
   const _brkOn = ctx.kind === 'clock' ? _rsBreakMap(rows) : {};   // ☕ finished breaks, by row
   // ⚠️ cntMap stays MEASURED — the ×N must never count a guess.
   // ▣ which batch each task belongs to, and — once ticked — how long it ACTUALLY
@@ -27645,7 +27677,7 @@ function _rsRender() {
     // when that task was last done, like it does on the Organise sheet". Only on rows still
     // to do: a ticked row already says when, with its ✓ time.
     const _ld = r.isDone ? null : _lastMap[r.t];
-    const _lastBit = r.isDone ? '' : (_ld ? `<span class="rsn-last">${_agoWords(_ld)}</span>` : '<span class="rsn-last none">not done yet</span>');
+    const _lastBit = r.isDone ? '' : _lastDoneHtml(_ld);
     return `${_ins(_i)}<div class="rs-row rsn-row" data-rs-key="${_attr(key)}"${r.isNow ? ' data-rs-now="1"' : ''}${r.isDone ? ' data-rs-done="1"' : ''}${_canQuick ? ' data-rs-quick="1"' : ''}${_parkAttr} ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)">
     <div class="rsn-card${_cardCls}${r.pausedMs != null ? ' paused' : ''}"${tap}>
       ${_nowLine}${_pausedLine}
@@ -28878,7 +28910,7 @@ function _renderClOrganiseBody() {
   const _lapEnc = s => encodeURIComponent(s).replace(/'/g, '%27');   // %27: apostrophes survive encodeURIComponent and would break the onclick string
   const _lapAdjFn = _lapPlan ? '_clLapAdj' : '_clSessionLapAdj';
   const _oAvg = _taskEstMap(), _oCnt = _taskHistCountMap();   // built once, not per row (count stays measured)
-  const _oLast = _checklistItemLastDone(task);   // 🗓 last-done per task, same one pass
+  const _oLast = _lastDoneAny(task);   // 🗓 last-done per task, same one pass; any job since v521
   const _oSteps = learnedStepsResolver(task), _oGuide = guidesResolver(task), _oMm = _mediaMaps(task), _oTmr = getJobTimers();
   const _oChecks = (_live && clockState.stepChecks) || {};
   // ▶ The task the run sheet is timing right now wears the filled mark (none on a break).
@@ -28916,7 +28948,7 @@ function _renderClOrganiseBody() {
     // ago" is the fact that makes the decision. "~5m avg · 46×" says how long and how
     // often; it never said WHEN.
     const _ld = _oLast[s];
-    const _lastBit = _ld ? `<span class="rsn-last">${_agoWords(_ld)}</span>` : '<span class="rsn-last none">not done yet</span>';
+    const _lastBit = _lastDoneHtml(_ld);
     return `<div class="cl-row rsn-card rsn-oc${isFlagged ? '' : ' off'}" data-cl-item="${_attr(s)}" data-cl-task="${taskAttr}" data-cl-flagged="${isFlagged ? '1' : ''}" ontouchstart="clSwipeStart(event)" ontouchmove="clSwipeMove(event)" ontouchend="clSwipeEnd(event)" onclick="_clOrgTapFlag(decodeURIComponent('${_lapEnc(s)}'))">
       <div class="rsn-head">${_rsIcon(isFlagged && s === _oNowT ? 'going' : 'go')}<span class="rsn-title">${_escHtml(s)}</span><span class="rsn-pencil" ontouchstart="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_clOrgEditTask(decodeURIComponent('${_lapEnc(s)}'))" title="edit this task">${_rsIcon('pencil')}</span></div>
       ${_cmtHtml}
@@ -29073,7 +29105,8 @@ function openPlannerDetail(planId) {
   // sorts by LAST COMPLETED, most recent first, with never-done settling to the
   // bottom. The clock has done this since v276; the planner never did, so
   // household chores read as a flat list here and a sensible one there.
-  const _pdLast = _checklistItemLastDone(plan.task);
+  const _pdLast = _checklistItemLastDone(plan.task);   // sorting stays per job
+  const _pdAny = _lastDoneAny(plan.task);              // 🗓 the words can borrow another job's date (v521)
   const _pdRecency = (members) => {
     const head = [], tail = [];
     members.forEach(t => (clFlags[t] ? head : tail).push(t));
@@ -29125,8 +29158,8 @@ function openPlannerDetail(planId) {
           // 🗓 When each task was last done. Planning household chores, "vacuum,
           // 12 days ago" is the fact that decides whether you flag it, and it was
           // only ever visible in the job directory.
-          const _ld = _pdLast[s];
-          const _ldLine = _ld ? `<div style="font-size:11px;color:#616a7e;margin-top:1px;">🗓 ${_agoWords(_ld)}</div>`
+          const _ld = _pdAny[s];
+          const _ldLine = _ld ? `<div style="font-size:11px;color:#616a7e;margin-top:1px;">🗓 ${_agoWords(_ld.at)}${_ld.job ? ` on ${_escHtml(_ld.job)}` : ''}</div>`
                               : `<div style="font-size:11px;color:#4a5165;margin-top:1px;font-style:italic;">🗓 not done yet</div>`;
           const _hd = _pdHeads[s]
             ? `<div style="display:flex;align-items:center;gap:6px;margin:12px 0 6px;font-size:11px;font-weight:700;color:var(--subtext);letter-spacing:0.4px;text-transform:uppercase;">${_pdHeads[s]}</div>`
