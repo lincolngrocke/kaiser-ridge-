@@ -965,6 +965,7 @@
   .rsn-help { width: 30px; height: 30px; border-radius: 15px; display: inline-flex; align-items: center; justify-content: center; background: var(--rsn-blue-bg); border: 1px solid var(--rsn-blue-line); color: var(--rsn-blue); font-size: 15px; font-weight: 500; cursor: pointer; }
   .rsn-help-text { margin-top: 8px; padding: 10px 12px; border-radius: 12px; background: var(--rsn-blue-bg); border: 1px solid var(--rsn-blue-line); font-size: 13px; line-height: 1.45; color: var(--rsn-text); }
   .rsn-kind { font-size: 13px; font-weight: 700; color: var(--rsn-blue); margin-top: 8px; }
+  .rsn-date { color: var(--rsn-text); white-space: nowrap; }   /* v518: the day, in the text colour so it reads apart from the screen's name */
   .rsn-fin { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-top: 8px; }
   .rsn-line { margin-top: 10px; }
   .rsn-line-track { height: 8px; border-radius: 4px; background: var(--rsn-line); overflow: hidden; }
@@ -3863,7 +3864,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.517';
+const APP_VERSION = '2026-06-21.518';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -27252,10 +27253,18 @@ function _rsRunTools() {
     + (featureHidden('edit-active') ? '' : `<span class="rsn-tool" onclick="openEditActive()" title="Edit entry"><svg ${_RS_TOOL_SVG}><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg></span>`);
 }
 const _RS_UNDO = '<span class="rsn-undo" onclick="undoClockIn()">Undo clock-in</span>';
-function _rsRunTop(job, planning, finMs) {
+// 📅 THE DAY ON THE TITLE LINE (v518, Lincoln 20 Nov 2026: "none of these screens display the
+// day of the week and the date"). On the line that already names the screen, not a new row.
+// Planning shows the BLOCK's day, which may well be tomorrow; running shows today.
+function _rsDayDate(ms) {
+  const d = new Date(ms || Date.now());
+  return d.toLocaleDateString('en-AU', { weekday: 'short' }) + ' ' + d.getDate() + ' ' + d.toLocaleDateString('en-AU', { month: 'short' });
+}
+function _rsDateBit(ms) { return `<span class="rsn-date"> · ${_rsDayDate(ms)}</span>`; }
+function _rsRunTop(job, planning, finMs, dayMs) {
   return `<div class="rsn-top"><div class="rsn-nav"><span class="rsn-brand">groovework</span>${planning ? '' : _rsNextHtml(finMs)}<span class="rsn-nav-r">${planning ? '' : _rsRunTools()}<span class="rsn-help" onclick="_rsHelpToggle()" title="How this screen works">?</span></span></div>`
     + (_rsHelpOpen ? `<div class="rsn-help-text">${planning ? _RS_PLAN_HINT : _RS_RUN_HINT}</div>` : '')
-    + `<div class="rsn-kind">Run Sheet · ${planning ? 'Planning' : 'Running now'}</div>${job ? `<div class="rsn-job">${_escHtml(job)}</div>` : ''}</div>`;
+    + `<div class="rsn-kind">Run Sheet · ${planning ? 'Planning' : 'Running now'}${_rsDateBit(dayMs)}</div>${job ? `<div class="rsn-job">${_escHtml(job)}</div>` : ''}</div>`;
 }
 // ⭐ THE SLIM BAR SITS ON TOP OF THE BIG FINISH BLOCK, NOT BELOW IT. Its negative margin
 // (the height of the bar) means it takes no room in the list, so showing it never moves a
@@ -27353,7 +27362,7 @@ function _rsRender() {
     : '';
   if (!rows.length) {
     if (titleEl) titleEl.textContent = ctx.job;
-    body.innerHTML = _rsRunTop(ctx.job, planning) + (planning ? '' : `${_rsLineHtml()}<div class="rsn-count rsn-count-row" style="margin-top:6px;"><span></span>${_RS_UNDO}</div>`) + (banked
+    body.innerHTML = _rsRunTop(ctx.job, planning, null, planning ? ctx.startMs : Date.now()) + (planning ? '' : `${_rsLineHtml()}<div class="rsn-count rsn-count-row" style="margin-top:6px;"><span></span>${_RS_UNDO}</div>`) + (banked
       ? `<div style="padding:34px 6px;text-align:center;color:var(--subtext);font-size:15px;line-height:1.55;">Every task on the run sheet is already done this run.<br>
          <span style="font-size:13px;">🔁 ${banked} task${banked === 1 ? '' : 's'} banked ${banked === 1 ? 'its' : 'their'} planned laps in an earlier session. Tap ${_rsReset} to run ${banked === 1 ? 'it' : 'them'} again, or add something else.</span></div>`
       : `<div style="padding:38px 6px;text-align:center;color:var(--subtext);font-size:15px;line-height:1.55;">Nothing on the run sheet yet.<br>
@@ -27434,7 +27443,7 @@ function _rsRender() {
   // task you're on second, under the last one you finished. Tap the big finish time (˄) and
   // it folds down to the slim bar so the list gets the screen; it opens again by itself
   // after 10 quiet seconds, or straight away from a tap on the slim bar.
-  const head = `<div class="cl-sticky-top rsn-frozen${_rsCollapsed ? ' collapsed' : ''}" id="rs-frozen">${_rsRunTop(null, planning, _finMs)}
+  const head = `<div class="cl-sticky-top rsn-frozen${_rsCollapsed ? ' collapsed' : ''}" id="rs-frozen">${_rsRunTop(null, planning, _finMs, planning ? ctx.startMs : Date.now())}
     <div class="rsn-big"><div class="rsn-fin rsn-fin-tap" onclick="_rsShrink('run-sheet-body')" title="Tap to give the list the whole screen"><div class="rsn-fin-l"><div class="rsn-lab">${_allDone ? 'Finished' : 'Projected finish'}<span class="rsi rsi-chev up"></span></div><div class="rsn-time${_finCls}">${_finBig}</div></div>
       ${tgt ? `<div class="rsn-tgt">${_rsIcon('dart')}<div class="rsn-time2">${_rsBigTime(tgt)}</div></div>` : ''}</div>
     ${planning ? '' : _rsLineHtml()}
@@ -28944,9 +28953,12 @@ function _renderClOrganiseBody() {
   // the JOB, so it is there on every run of it, the same as one made in Edit Job.
   const addCtl = `<div class="rsn-otools"><span onclick="_clOrgAddTask()">+ Add task</span>${isWorker() ? '' : `<span onclick="_clOrgNewBatch()">+ New batch</span>`}${collapseAllCtl}</div>`;
   const _heroTime = _heroMins == null ? '<b>—</b>' : (m => m ? `<b>~${m[1]}</b><i>${m[2]}</i>` : `<b>~${fmtMin(_heroMins)}</b>`)(String(fmtMin(_heroMins)).match(/^(.*?)\s*([a-z]+)$/));
-  const top = `<div class="rsn-top"><div class="rsn-nav">${_docked ? '<span class="rsn-kind" style="margin:0;">Organise</span>' : '<span class="rsn-brand">groovework</span>'}<span class="rsn-nav-r"><span class="rsn-help" onclick="_orgHelpToggle()" title="How this screen works">?</span></span></div>`
+  // 📅 v518: the block's day when planning one, else today.
+  const _orgPlan = pid ? _plannerPlans.find(p => p.id === pid) : null;
+  const _orgDate = _rsDateBit(_orgPlan ? _rsPlanStartMs(_orgPlan) : Date.now());
+  const top = `<div class="rsn-top"><div class="rsn-nav">${_docked ? `<span class="rsn-kind" style="margin:0;">Organise${_orgDate}</span>` : '<span class="rsn-brand">groovework</span>'}<span class="rsn-nav-r"><span class="rsn-help" onclick="_orgHelpToggle()" title="How this screen works">?</span></span></div>`
     + (_orgHelpOpen ? `<div class="rsn-help-text">${_orgHint}</div>` : '')
-    + `${_docked ? '' : `<div class="rsn-kind">Organise${pid ? ' · Planning' : ''}</div>`}${pid ? '<div class="rsn-note">Arranges just this planned run. The job stays as it is.</div>' : ''}</div>`;
+    + `${_docked ? '' : `<div class="rsn-kind">Organise${pid ? ' · Planning' : ''}${_orgDate}</div>`}${pid ? '<div class="rsn-note">Arranges just this planned run. The job stays as it is.</div>' : ''}</div>`;
   const hero = _heroLab ? `<div class="rsn-fin rsn-fin-tap" onclick="_rsShrink('cl-organise-body')" title="Tap to shrink"><div class="rsn-fin-l"><div class="rsn-lab">${_heroLab}<span class="rsi rsi-chev up"></span></div><div class="rsn-time">${_heroTime}</div></div></div>
     <div class="rsn-note">${_heroSub}</div>${_heroWarn ? `<div class="rsn-warn">${_heroWarn}</div>` : ''}` : '';
   const pin = `<div class="cl-sticky-top rsn-pin"><div class="rsn-slim-tap" onclick="_rsPinTop('cl-organise-body')"><div class="rsn-slim-job">${_escHtml(task)}</div>
