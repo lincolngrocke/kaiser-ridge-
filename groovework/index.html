@@ -1032,6 +1032,32 @@
   .rsn-order-note { font-size: 11px; line-height: 1.45; color: var(--rsn-sub); margin-bottom: 8px; }
   .rsn-addbrk { position: relative; height: 38px; display: flex; align-items: center; justify-content: center; gap: 7px; border-radius: 14px; background: linear-gradient(rgba(242,107,0,0.04), rgba(242,107,0,0.04)), var(--rsn-card); border: 1px solid rgba(242,107,0,0.16); color: var(--rsn-orange); font-size: 13px; font-weight: 600; cursor: pointer; margin-bottom: 8px; }
   .rsn-row { margin-bottom: 8px; }
+  /* 🅿️ v516: PARKED cards on the left, the list on the right (Lincoln, 20 Nov 2026). The park
+     column is sticky under the frozen top, so it stays put while the list scrolls past it.
+     Its top and height are set by _rsParkSize, because the frozen top folds and unfolds. */
+  .rsn-split { display: flex; align-items: flex-start; gap: 8px; }
+  .rsn-park { flex: 0 0 38%; min-width: 0; position: sticky; top: 0; z-index: 2; overflow-y: auto; overscroll-behavior: contain; padding: 2px 2px 10px 0; }
+  .rsn-list { flex: 1; min-width: 0; position: relative; }
+  .rsn-park-h { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; font-size: 13px; font-weight: 700; color: var(--rsn-blue); margin: 2px 0 2px; }
+  .rsn-park-back { font-size: 12px; font-weight: 600; color: var(--rsn-sub); cursor: pointer; padding: 4px 0 4px 6px; white-space: nowrap; }
+  .rsn-park-tip { font-size: 11px; line-height: 1.35; color: var(--rsn-sub); margin-bottom: 8px; }
+  .rsn-park-drop { margin: 0 0 8px; padding: 8px 9px; border-radius: 10px; background: var(--rsn-blue); color: #fff; font-size: 12px; font-weight: 700; line-height: 1.3; cursor: pointer; }
+  .rsn-pk { position: relative; min-height: 58px; box-sizing: border-box; margin-bottom: 7px; padding: 9px 26px 8px 10px; border-radius: 13px; background: var(--rsn-blue-bg); border: 1px solid var(--rsn-blue); box-shadow: 0 1px 2px rgba(0,0,0,0.06), 0 2px 5px rgba(0,0,0,0.06); touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+  .rsn-pk.brk { background: var(--rsn-orange-bg); border-color: var(--rsn-orange); }
+  .rsn-pk-t { font-size: 13px; font-weight: 600; line-height: 1.3; color: var(--rsn-text); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .rsn-pk-m { font-size: 11px; font-weight: 600; color: var(--rsn-sub); margin-top: 3px; }
+  .rsn-pk-x { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--rsn-sub); cursor: pointer; }
+  .rsn-pk-arrow { position: absolute; right: 7px; bottom: 7px; font-size: 13px; color: var(--rsn-blue); }
+  .rsn-pk.lifting { opacity: 0.35; }
+  .rsn-pk-fly { position: fixed; left: 0; top: 0; z-index: 100000; margin: 0; pointer-events: none; transform-origin: 20% 50%; box-shadow: 0 10px 26px rgba(0,0,0,0.28); }
+  .rsn-dropline { display: none; position: absolute; left: -4px; right: 0; height: 4px; margin-top: -6px; border-radius: 2px; background: var(--rsn-blue); box-shadow: 0 0 0 2px var(--rsn-bg); pointer-events: none; z-index: 3; }
+  .rsn-dropline.on { display: block; }
+  .rsn-dropline::before { content: ''; position: absolute; left: -4px; top: -4px; width: 12px; height: 12px; border-radius: 6px; background: var(--rsn-blue); }
+  /* The list goes compact while cards are parked: name, lap and time, so more of the day fits. */
+  .rsn-split .rsn-foot, .rsn-split .rsn-batch, .rsn-split .rsn-cmt, .rsn-split .rsn-steps-wrap, .rsn-split .rsn-pencil, .rsn-split .rsn-brk-sub, .rsn-split .rsn-step-btn, .rsn-split .rsn-brk .rsn-x { display: none; }
+  .rsn-split .rsn-card { padding: 9px 10px 8px; gap: 3px; }
+  .rsn-split .rsn-title { font-size: 14px; }
+  .rsn-split .rsn-row { margin-bottom: 6px; }
   .rsn-card { display: flex; flex-direction: column; gap: 5px; padding: 11px 12px 9px; background: var(--rsn-card); border: 1px solid var(--rsn-line); border-radius: 16px; box-shadow: var(--rsn-lift); }
   .rsn-card.now { background: var(--rsn-blue-bg); border-color: var(--rsn-blue); box-shadow: var(--rsn-lift-now); transform: translateY(-2px); }
   .rsn-card.now.brk-on { background: var(--rsn-orange-bg); border-color: var(--rsn-orange); }
@@ -3832,7 +3858,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.515';
+const APP_VERSION = '2026-06-21.516';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -27074,8 +27100,8 @@ function _rsHM(ms) { const d = new Date(ms); return formatTimeAmPm(String(d.getH
 // Every tap, swipe and figure is the same one the old rows used. Only the markup changed.
 // ⭐ Lead with the ⠿ tap, not the drag. On a 44-step sheet the drag is the thing that does
 // not work, so naming it first taught the wrong habit.
-const _RS_RUN_HINT = 'Tap ⠿ on a row (or on several), then tap the gap where they go. Every time below re-forecasts. Hold &amp; drag still works for a short nudge. Tap a row to tick it off, or swipe it left for a ⚡ quick tick when it took under a minute.';
-const _RS_PLAN_HINT = 'Tap a row to 📍 mark where things go, then tap ⠿ on the rows to move (or on several) and tap ⤵ Drop under 📍. Or tap the gap where they go. Every time below re-forecasts. This order carries onto the clock when you start the job.';
+const _RS_RUN_HINT = 'Tap ⠿ on a row to park it on the left (park several if you like), scroll the list on the right, then drag a parked card across to where it goes. Every time below re-forecasts. Hold &amp; drag still works for a short nudge. Tap a row to tick it off, or swipe it left for a ⚡ quick tick when it took under a minute.';
+const _RS_PLAN_HINT = 'Swipe a row left (or tap its ⠿) to park it on the left. Park as many as you like, scroll the list on the right, then drag each parked card across to where it goes. Or tap a row first to 📍 mark the spot, park the rows to move and tap ⤵ Drop under 📍. Every time below re-forecasts. This order carries onto the clock when you start the job.';
 let _rsHelpOpen = false;
 function _rsHelpToggle() { _rsHelpOpen = !_rsHelpOpen; _rsRender(); }
 function _rsIcon(n) { return `<span class="rsi rsi-${n}"></span>`; }
@@ -27256,6 +27282,7 @@ let _rsCollapsed = false;
 function _rsSetCollapsed(on) {
   _rsCollapsed = !!on;
   const f = document.getElementById('rs-frozen'); if (f) f.classList.toggle('collapsed', _rsCollapsed);
+  _rsParkSize(); setTimeout(_rsParkSize, 300);   // 🅿️ the park column hangs off the frozen top's height
 }
 // ⇡ TAP THE TOP. On the run sheet it folds the frozen top down to the slim bar so the list
 // gets the screen (v497), and it comes back after 10 quiet seconds. On Organise (v496) it
@@ -27348,12 +27375,9 @@ function _rsRender() {
   const tgt = (!planning && clockState && clockState.targetMs) ? _targetDisplayMs() : null;   // slides by post-lock breaks
   const placingCancel = _rsPlacing
     ? `<div style="text-align:right;padding:0 0 2px;"><span onclick="_rsSetPlacing(false)" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:13px;">✕ cancel — tap a gap to drop the break in</span></div>` : '';
-  const _moveBanner = _rsMoveKey ? `<div style="margin:0 0 8px;padding:9px 12px;border-radius:10px;background:rgba(90,200,250,0.12);border:1px solid rgba(90,200,250,0.5);font-size:13px;color:var(--text);">
-      ⤴ Moving <b>${_escHtml(_rsMoveLabel())}</b><div style="font-size:11px;color:var(--subtext);margin-top:2px;">${_rsMoveSet.length > 1
-        ? 'Tap a <b>⤵ move here</b> gap to drop them all in, in the order you tapped them (1, 2, 3…). Tap ⠿ on another row to add it, or on a blue one to put it back.'
-        : 'Tap a <b>⤵ move here</b> gap to drop it in, or tap ⠿ on more rows to move several together. Scroll as far as you like first.'}</div>
-      ${(_rsMarkKey && !_rsMoveSet.includes(_rsMarkKey)) ? `<div onclick="_rsDropUnderMark()" style="margin-top:8px;padding:9px 12px;border-radius:9px;background:#0a84ff;color:#fff;font-weight:700;font-size:14px;text-align:center;cursor:pointer;">⤵ Drop under 📍 ${_escHtml(_rsKeyName(_rsMarkKey))}</div>` : ''}
-      <div onclick="_rsMoveClear();_rsRender()" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:12px;margin-top:5px;">✕ cancel</div></div>` : '';
+  // v516: the old "⤴ Moving …, tap a gap" banner is gone. Rows in hand now sit in the parked
+  // column, whose header carries the way out and the "Drop under 📍" button (_rsParkHtml).
+  const _moveBanner = '';
   // ⭐ COUNT THE BANKED ONES. Lincoln, 14 Sep: "I have six flagged tasks in the
   // organise screen, when I go to run sheet, only three are available?"
   // Nothing was missing. Three had banked their laps in an earlier session of
@@ -27435,8 +27459,11 @@ function _rsRender() {
   // 30 places on a 44-step straw run is the pain this replaces: pick the row up,
   // scroll wherever you like, tap the gap. Distance stops costing anything, which
   // a drag can never manage no matter how good the edge-scrolling is.
+  // 🅿️ v516: with cards parked the sheet splits (see _rsParkHtml). Parked rows leave the
+  // list, and the cards are dragged across instead of dropped on a gap, so no gap bars.
+  const _split = !!_rsMoveKey, _parkedKeys = new Set(_split ? _rsMoveSet : []);
   const _ins = (i) => _rsMoveKey
-    ? `<div onclick="_rsMoveTo(${i}, this)" style="margin:2px 0 6px;padding:5px 10px;border-radius:8px;border:1px dashed rgba(90,200,250,0.75);background:rgba(90,200,250,0.10);color:var(--rsn-blue);font-size:12px;font-weight:700;text-align:center;cursor:pointer;">⤵ move here</div>`
+    ? ''
     : (_rsPlacing
     ? `<div onclick="_rsPlaceBreak(${i}, this)" style="margin:2px 0 6px;padding:5px 10px;border-radius:8px;border:1px dashed rgba(255,159,10,0.75);background:rgba(255,159,10,0.10);color:var(--rsn-orange);font-size:12px;font-weight:700;text-align:center;cursor:pointer;">☕ break goes here</div>`
     : '');
@@ -27453,6 +27480,11 @@ function _rsRender() {
     // clock, tapping it STARTS your break, and ending the break ticks it off, so one
     // action does the whole thing and the planned minutes are replaced by the real
     // ones. Planning ahead, it is purely a reservation that shapes the finish time.
+    if (_parkedKeys.has(r.brk ? _rsBrkKey(r.id) : _rsKey(r.t, r.n))) return '';
+    // 🅿️ Planning: a row still to do can be swiped LEFT to park it. While the split is open a
+    // tap on a row parks it too, on either sheet (on Running, swipe left is the ⚡ quick tick).
+    const _parkTap = k => ` onclick="_rsPickUp(decodeURIComponent('${_encArg(k)}'))"`;
+    const _parkAttr = (planning && !r.isDone) ? ' data-rs-park="1"' : '';
     if (r.brk) {
       const bk = _rsBrkKey(r.id);
       const onBreakNow = !planning && clockState && clockState.onBreak && clockState.brkActiveId === r.id;
@@ -27463,7 +27495,7 @@ function _rsRender() {
       const nowB = r.isNow
         ? `<span style="display:inline-flex;align-items:center;flex-shrink:0;font-size:11px;font-weight:700;color:#ff9f0a;background:rgba(255,159,10,0.18);border:1px solid rgba(255,159,10,0.55);border-radius:9px;padding:0 7px;gap:4px;"><span>&#9654; NOW &#183;</span><span id="rs-now-elapsed">${fmtMin(_rsNowElapsedMin())}</span></span>`
         : '';
-      const tapB = planning || r.isDone ? ''
+      const tapB = (_split && !r.isDone) ? _parkTap(bk) : planning || r.isDone ? ''
         : (onBreakNow ? ` onclick="_rsBrkEnd()"`
           : (!clockState.onBreak ? ` onclick="_rsBrkStart('${r.id}')"` : ''));
       const hintB = (!planning && !r.isDone)
@@ -27479,7 +27511,7 @@ function _rsRender() {
       const _bTime = r.isDone
         ? `<span class="rsn-when done">✓ ${_rsHM(r.when)}</span>`
         : `<span class="rsn-when" style="color:var(--rsn-orange);">~${_rsHM(r.when)}</span>`;
-      return `${_ins(_i)}<div class="rs-row rsn-row" data-rs-key="${_attr(bk)}"${r.isNow ? ' data-rs-now="1"' : ''}${r.isDone ? ' data-rs-done="1"' : ''} ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)">
+      return `${_ins(_i)}<div class="rs-row rsn-row" data-rs-key="${_attr(bk)}"${r.isNow ? ' data-rs-now="1"' : ''}${r.isDone ? ' data-rs-done="1"' : ''}${_parkAttr} ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)">
       <div class="rsn-brk${onBreakNow ? ' on' : ''}${r.isDone ? ' done' : ''}"${tapB}>
         <div class="rsn-brk-top">${_rsHeldBadge(bk) || _rsIcon('coffee')}<span class="rsn-brk-lab">${_bLabel}</span>${_bStep}
           <span class="rsn-x" onclick="event.stopPropagation();_rsBrkRemove('${r.id}')" title="remove this break">✕</span>
@@ -27534,7 +27566,8 @@ function _rsRender() {
     // 📍 Planning: a tap marks this row as WHERE THINGS GO (v430). On the clock a tap
     // ticks, so marking is a planning-sheet gesture.
     const _markTap = (ctx.kind === 'plan' && !_rsPlacing) ? ` onclick="_rsMark(decodeURIComponent('${_encArg(key)}'))"` : '';
-    const tap = (_rsMoveKey || _rsPlacing) ? _markTap
+    const tap = _rsMoveKey ? (r.isDone ? '' : _parkTap(key))
+              : _rsPlacing ? _markTap
               : (r.tappable ? ` onclick="_rsTick(decodeURIComponent('${_enc}'))"`
               : (r.undoable ? ` onclick="_rsUntick(decodeURIComponent('${_enc}'))"` : _markTap));
     // Blue means "this is the one": in your hand while placing, and for 3 seconds
@@ -27585,7 +27618,7 @@ function _rsRender() {
     // to do: a ticked row already says when, with its ✓ time.
     const _ld = r.isDone ? null : _lastMap[r.t];
     const _lastBit = r.isDone ? '' : (_ld ? `<span class="rsn-last">${_agoWords(_ld)}</span>` : '<span class="rsn-last none">not done yet</span>');
-    return `${_ins(_i)}<div class="rs-row rsn-row" data-rs-key="${_attr(key)}"${r.isNow ? ' data-rs-now="1"' : ''}${r.isDone ? ' data-rs-done="1"' : ''}${_canQuick ? ' data-rs-quick="1"' : ''} ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)">
+    return `${_ins(_i)}<div class="rs-row rsn-row" data-rs-key="${_attr(key)}"${r.isNow ? ' data-rs-now="1"' : ''}${r.isDone ? ' data-rs-done="1"' : ''}${_canQuick ? ' data-rs-quick="1"' : ''}${_parkAttr} ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)">
     <div class="rsn-card${_cardCls}${r.pausedMs != null ? ' paused' : ''}"${tap}>
       ${_nowLine}${_pausedLine}
       <div class="rsn-head">${_lead}<span class="rsn-title">${_escHtml(r.t)}</span>${_edit}</div>
@@ -27597,9 +27630,12 @@ function _rsRender() {
   }).join('');
   // Title and body land in the same breath — nothing above this line touches the DOM.
   if (titleEl) titleEl.textContent = ctx.job;
-  body.innerHTML = head + rowsHtml + _ins(rows.length);
+  body.innerHTML = head + (_split
+    ? `<div class="rsn-split"><div class="rsn-park" id="rs-park">${_rsParkHtml(rows)}</div><div class="rsn-list" id="rs-list">${rowsHtml}<div class="rsn-dropline" id="rs-dropline"></div></div></div>`
+    : rowsHtml + _ins(rows.length));
   if (!planning) { try { _pomoRefresh(); _pomoTick(); } catch (e) {} _rsLineSync(); }   // ⏱ the countdown shows at once, not a second later
   _rsPinSync();
+  _rsParkSize();
 }
 
 // ── Steps on the run sheet ────────────────────────────────────────────────────
@@ -27993,6 +28029,9 @@ function _rsDragStart(e) {
   const row = e.currentTarget, y = e.touches[0].clientY;
   _rsTouch = { row, y, x: e.touches[0].clientX, swiped: false };
   clearTimeout(_rsHoldTimer);
+  // 🅿️ No hold-to-drag while cards are parked (v516): a drag saves the order it can SEE, and
+  // the parked rows are not in the list, so it would drop them out of the saved order.
+  if (_rsMoveKey) return;
   _rsHoldTimer = setTimeout(() => {
     _rsHoldTimer = null;
     const rect = row.getBoundingClientRect();
@@ -28028,7 +28067,9 @@ function _rsDragMove2(e) {
   if (_rsHoldTimer && (dx > 8 || dy > 8)) { clearTimeout(_rsHoldTimer); _rsHoldTimer = null; }   // scrolling or swiping, not holding
   // A vertical move is the list scrolling — leave it alone. A leftward one is only a
   // gesture on a row that can take a ⚡ quick tick (v431); anywhere else it is ignored.
-  const _canLeft = _rsTouch.row.dataset.rsQuick === '1';
+  // 🅿️ v516: on the Planning sheet a leftward swipe parks the row instead (data-rs-park), in blue.
+  const _park = _rsTouch.row.dataset.rsPark === '1';
+  const _canLeft = _rsTouch.row.dataset.rsQuick === '1' || _park;
   if (!_rsTouch.swiped && (dy > dx || (rawDx < 0 && !_canLeft))) { if (dy > 8) _rsTouch = null; return; }
   if (rawDx > 6 && _rsTouch.swiped !== 'left') {
     _rsTouch.swiped = true;
@@ -28044,7 +28085,8 @@ function _rsDragMove2(e) {
     _rsTouch.row.style.transition = 'none';
     _rsTouch.row.style.transform = 'translateX(' + Math.max(rawDx, -90) + 'px)';
     _rsTouch.row.style.borderRadius = '8px';
-    _rsTouch.row.style.boxShadow = '0 0 0 2px ' + (rawDx < -48 ? 'rgba(48,209,88,0.95)' : 'rgba(48,209,88,0.35)');
+    _rsTouch.row.style.boxShadow = '0 0 0 2px ' + (_park ? (rawDx < -48 ? 'rgba(52,120,246,0.95)' : 'rgba(52,120,246,0.35)')
+      : (rawDx < -48 ? 'rgba(48,209,88,0.95)' : 'rgba(48,209,88,0.35)'));
   }
 }
 function _rsDragEnd2(e) {
@@ -28058,6 +28100,7 @@ function _rsDragEnd2(e) {
     if (sw.swiped === 'left') {
       if (dx < -48) {
         const k = sw.row.dataset.rsKey || '';
+        if (sw.row.dataset.rsPark === '1') { if (k) _rsParkToggle(k); return; }
         const i = k.lastIndexOf(_RS_SEP);
         if (i > 0) _rsQuickTick(k.slice(0, i));
       }
@@ -28204,13 +28247,135 @@ function _rsPickUp(key) {
   // ⭐ A tap target sitting inside a swipeable row must stop the touch, not just
   // the click. By the time a click fires the gesture has already been judged.
   if (Date.now() < _clSwipeBlockClickUntil) return;   // a real drag just finished elsewhere
+  _rsParkToggle(key);
+}
+// 🅿️ PARK IT (v516, Lincoln 20 Nov 2026: "swipe left to park the task card, so the screen
+// is basically split in half … you can then push the tasks you want to move to the right,
+// in the right spot"). The rows in hand (_rsMoveSet, the same set ⠿ always filled) leave the
+// list and sit in a column down the left; the list scrolls on the right; each card is
+// dragged across and let go where it belongs. Nothing is saved until a card is dropped,
+// so "Put back" (or closing the sheet) returns every parked row to where it was.
+// The list reflows narrower, so the place is kept by the row just below the one parked.
+function _rsParkToggle(key) {
   _rsPlacing = false;                                  // the two modes are exclusive
-  const top = _rsRowTop(key);                          // where it sits right now, before the gaps appear
-  // A held row's handle puts that one back down; any other row joins the set.
+  const sc = document.getElementById('run-sheet-body');
+  const els = sc ? [...sc.querySelectorAll('.rs-row')] : [];
+  const i = els.findIndex(r => r.dataset.rsKey === key);
+  const near = i < 0 ? null : (els.slice(i + 1).find(r => !_rsMoveSet.includes(r.dataset.rsKey)) || els.slice(0, i).reverse().find(r => !_rsMoveSet.includes(r.dataset.rsKey)));
+  const aKey = near ? near.dataset.rsKey : key, aTop = near ? near.getBoundingClientRect().top : _rsRowTop(key);
+  // A parked row's ✕ puts that one back down; any other row joins the set.
   if (_rsMoveSet.includes(key)) _rsMoveSet = _rsMoveSet.filter(k => k !== key);
   else _rsMoveSet.push(key);
   _rsMoveKey = _rsMoveSet.length ? _rsMoveSet[0] : null;
-  _rsRenderKeeping(key, top);
+  _rsRenderKeeping(aKey, aTop);
+}
+function _rsParkHtml(rows) {
+  const byKey = new Map(rows.map(r => [r.brk ? _rsBrkKey(r.id) : _rsKey(r.t, r.n), r]));
+  const keys = _rsMoveSet.filter(k => byKey.has(k));
+  const cards = keys.map(k => {
+    const r = byKey.get(k);
+    const name = r.brk ? `Break, ${fmtMin(r.mins)}` : r.t;
+    const meta = r.brk ? '' : [r.lapTotal > 1 ? `🔁 ${r.lapIdx}/${r.lapTotal}` : '', r.mins > 0 ? `~${fmtMin(r.mins)}` : ''].filter(Boolean).join(' · ');
+    return `<div class="rsn-pk${r.brk ? ' brk' : ''}" data-rs-key="${_attr(k)}" ontouchstart="_rsPkStart(event)" ontouchmove="_rsPkMove(event)" ontouchend="_rsPkEnd(event)" ontouchcancel="_rsPkEnd(event)">
+      <div class="rsn-pk-t">${r.brk ? _rsIcon('coffee') + ' ' : ''}${_escHtml(name)}</div>${meta ? `<div class="rsn-pk-m">${meta}</div>` : ''}
+      <span class="rsn-pk-x" ontouchstart="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_rsParkToggle(decodeURIComponent('${_encArg(k)}'))" title="put this one back">✕</span><span class="rsn-pk-arrow">➜</span></div>`;
+  }).join('');
+  const mark = (_rsMarkKey && !_rsMoveSet.includes(_rsMarkKey))
+    ? `<div class="rsn-park-drop" onclick="_rsDropUnderMark()">⤵ Drop ${keys.length > 1 ? 'all' : ''} under 📍 ${_escHtml(_rsKeyName(_rsMarkKey))}</div>` : '';
+  return `<div class="rsn-park-h"><span>Parked · ${keys.length}</span><span class="rsn-park-back" onclick="_rsMoveClear();_rsRender()">Put back</span></div>
+    <div class="rsn-park-tip">Drag one across to where it goes. Tap a row on the right to park it too.</div>${mark}${cards}`;
+}
+// Sticky just under the frozen top, and no taller than the space left below it. The frozen
+// top folds to the slim bar and back, so this is re-measured whenever it does.
+function _rsParkSize() {
+  const sc = document.getElementById('run-sheet-body'), pk = document.getElementById('rs-park');
+  if (!sc || !pk) return;
+  const head = sc.querySelector('.rsn-frozen');
+  const h = head ? head.offsetHeight : 0;
+  pk.style.top = h + 'px';
+  pk.style.maxHeight = Math.max(160, sc.clientHeight - h - 10) + 'px';
+}
+// ── Dragging a parked card across ──
+// A sideways move lifts it (an up-or-down one scrolls the park column instead). A blue line
+// shows the gap it will land in, the list scrolls itself near the top and bottom edges,
+// and letting go anywhere left of the list puts it back in the park.
+let _rsPk = null;
+function _rsPkStart(e) {
+  const t = e.touches[0];
+  _rsPk = { el: e.currentTarget, key: e.currentTarget.dataset.rsKey, x: t.clientX, y: t.clientY, drag: false, gap: null };
+}
+function _rsPkMove(e) {
+  const p = _rsPk; if (!p) return;
+  const t = e.touches[0], dx = t.clientX - p.x, dy = t.clientY - p.y;
+  if (!p.drag) {
+    if (Math.abs(dy) > 8 && Math.abs(dy) > Math.abs(dx)) { _rsPk = null; return; }   // scrolling the park
+    if (Math.abs(dx) < 10) return;
+    const r = p.el.getBoundingClientRect();
+    const fly = p.el.cloneNode(true);
+    fly.classList.add('rsn-pk-fly'); fly.removeAttribute('ontouchstart'); fly.style.width = r.width + 'px';
+    (document.getElementById('modal-run-sheet') || document.body).appendChild(fly);
+    p.fly = fly; p.gx = p.x - r.left; p.gy = p.y - r.top; p.drag = true;
+    p.el.classList.add('lifting');
+    _clSwipeBlockClickUntil = Date.now() + 600;
+    if (navigator.vibrate) { try { navigator.vibrate(12); } catch (err) {} }
+  }
+  e.preventDefault();
+  p.lx = t.clientX; p.ly = t.clientY;
+  p.fly.style.transform = `translate(${t.clientX - p.gx}px, ${t.clientY - p.gy}px) scale(1.04)`;
+  _rsPkGap(t.clientX, t.clientY);
+  _clEdgeScroll(document.getElementById('run-sheet-body'), t.clientY, () => { if (_rsPk && _rsPk.drag) _rsPkGap(_rsPk.lx, _rsPk.ly); });
+}
+// Which gap of the list the finger is over: before the first row whose middle is below it.
+function _rsPkGap(x, y) {
+  const p = _rsPk, list = document.getElementById('rs-list'), line = document.getElementById('rs-dropline');
+  if (!p || !list || !line) return;
+  const lr = list.getBoundingClientRect();
+  const rows = [...list.children].filter(c => c.classList.contains('rs-row'));
+  if (x < lr.left - 12 || !rows.length) { p.gap = null; line.classList.remove('on'); return; }
+  let gap = rows.findIndex(r => { const b = r.getBoundingClientRect(); return y < b.top + b.height / 2; });
+  if (gap < 0) gap = rows.length;
+  p.gap = gap;
+  line.style.top = (gap < rows.length ? rows[gap].offsetTop : rows[rows.length - 1].offsetTop + rows[rows.length - 1].offsetHeight + 6) + 'px';
+  line.classList.add('on');
+}
+function _rsPkEnd() {
+  const p = _rsPk; _rsPk = null;
+  if (!p || !p.drag) return;
+  _clStopEdgeScroll();
+  _clSwipeBlockClickUntil = Date.now() + 600;
+  if (p.fly) p.fly.remove();
+  p.el.classList.remove('lifting');
+  const line = document.getElementById('rs-dropline'), lineTop = line && line.classList.contains('on') ? line.getBoundingClientRect().top : null;
+  if (line) line.classList.remove('on');
+  if (p.gap == null) return;   // let go over the park: it stays parked
+  _rsDropParked(p.key, p.gap, lineTop);
+}
+// Put one parked row into the list at gap `gap` (counted over the rows the list shows).
+// Every other parked row keeps its old place in the saved order, still waiting.
+function _rsDropParked(key, gap, atTop) {
+  const ctx = _rsCtx(); if (!ctx) return;
+  const keys = _rsOrdered(ctx).map(x => _rsInstKey(x));
+  const parked = new Set(_rsMoveSet);
+  const shown = keys.filter(k => !parked.has(k));
+  const next = keys.filter(k => k !== key);
+  if (gap < shown.length) next.splice(next.indexOf(shown[gap]), 0, key);
+  else if (shown.length) next.splice(next.indexOf(shown[shown.length - 1]) + 1, 0, key);
+  else next.push(key);
+  _rsMoveSet = _rsMoveSet.filter(k => k !== key);
+  _rsMoveKey = _rsMoveSet.length ? _rsMoveSet[0] : null;
+  _rsMarkKey = _rsMoveKey ? _rsMarkKey : null;
+  if (!next.every((k, i) => k === keys[i])) ctx.saveOrder(next);
+  _rsJustMoved = [key];
+  clearTimeout(_rsJustMovedTimer);
+  _rsJustMovedTimer = setTimeout(() => {
+    _rsJustMoved = [];
+    const sc = document.getElementById('run-sheet-body');
+    const keep = sc ? sc.scrollTop : null;
+    if (_rsPk) return;   // mid-drag: the next render picks it up
+    _rsRender();
+    if (sc && isFinite(keep)) sc.scrollTop = keep;
+  }, 3000);
+  _rsRenderKeeping(key, atTop);
 }
 // Drop it in. The gap index counts the CURRENT rendering, which still includes the
 // row being moved, so removing it first shifts every later gap down by one.
