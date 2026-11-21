@@ -1602,7 +1602,7 @@
     <button id="chip-horizon" onclick="openHorizonReview()" class="dir-chip" data-feature="horizon" style="color:var(--blue);font-weight:600;">🗓 Horizon</button>
     <button id="chip-filters" onclick="openDirFilters()" class="dir-chip">⚲ Filter</button>
     <button id="chip-dir-sort" onclick="cycleDirSort()" class="dir-chip">↕ Grouped</button>
-    <button id="chip-shared-job" onclick="sharedJobAddStart()" class="dir-chip" style="color:var(--blue);font-weight:600;">＋ Shared job</button>
+    <button id="chip-shared-job" onclick="sharedJobAddStart()" class="dir-chip" data-feature="share-code" style="color:var(--blue);font-weight:600;">＋ Shared job</button>
     <button id="chip-dir-select" onclick="dirSelectStart()" class="dir-chip">☑ Select</button>
   </div>
   <!-- Select jobs to delete several at once (v398). Replaces the chip line while on. -->
@@ -3397,7 +3397,7 @@
       </div>
 
       <div style="padding:16px 20px 0;" id="dir-duplicate-wrap">
-        <button onclick="shareJobStart()" style="width:100%;padding:14px;margin-bottom:10px;background:var(--blue);border:none;border-radius:12px;color:#fff;font-size:16px;font-weight:600;cursor:pointer;">Share this job</button>
+        <button onclick="shareJobStart()" data-feature="share-code" style="width:100%;padding:14px;margin-bottom:10px;background:var(--blue);border:none;border-radius:12px;color:#fff;font-size:16px;font-weight:600;cursor:pointer;">Share this job</button>
         <button onclick="duplicateDirTask()" style="width:100%;padding:14px;background:none;border:1px solid var(--blue);border-radius:12px;color:var(--blue);font-size:16px;font-weight:600;cursor:pointer;">⎘ Duplicate Job</button>
       </div>
 
@@ -3867,7 +3867,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.521';
+const APP_VERSION = '2026-06-21.522';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -13069,6 +13069,56 @@ function recPending() {
 }
 
 // ── Push ────────────────────────────────────────────────────────────────────
+// ── 📷 PICTURES NEVER GO UP INSIDE A RECORD (v522) ──────────────────────────
+// Lincoln and Mitch, 21 Nov 2026, for the privacy policy: comment photos stay on
+// the phone, the same as task photos. A record's copy on the server carries only
+// Drive tickets ({id}), never picture bytes ({data}, or the old `image` string).
+// Found by the privacy check: with no Google Sheet linked the upload below has
+// nowhere to go, and the record used to go up anyway with every picture inside it.
+//
+// These are every field a synced record keeps photos in: commentPhotos on a
+// timesheet, photos (and the older image / imageId pair) on an inbox note or a
+// to-do. Add a field here if a record ever gains another one.
+const _REC_PHOTO_LISTS = ['photos', 'commentPhotos'];
+function _recWirePayload(p) {
+  if (!p || typeof p !== 'object') return p;
+  let out = null;
+  const copy = () => out || (out = Object.assign({}, p));
+  _REC_PHOTO_LISTS.forEach(f => {
+    if (!Array.isArray(p[f])) return;
+    if (!p[f].some(x => x && (x.data || !x.id))) return;
+    // Keep a ticket exactly as it is (minus any bytes riding along with it), so a
+    // record that only ever held tickets goes up unchanged, as it did before v522.
+    copy()[f] = p[f].filter(x => x && x.id).map(x => { if (!x.data) return x; const y = Object.assign({}, x); delete y.data; return y; });
+  });
+  if (typeof p.image === 'string' && p.image) delete copy().image;
+  return out || p;
+}
+// The other half, or the fix would itself lose photos. A phone with "Apply changes
+// from other devices" on pulls its own records back down, and they now arrive with
+// the pictures stripped. Replacing the local record with that would delete every
+// picture only this phone holds. So keep the phone's own pictures: anything with
+// bytes and no ticket, plus the old `image`. Tickets come from the server's copy,
+// in this phone's order first. The merged record then fingerprints the same as the
+// local one, so an unchanged record is still a no-op.
+function _recKeepLocalPhotos(here, incoming) {
+  if (!here || !incoming || typeof incoming !== 'object') return incoming;
+  let out = null;
+  const copy = () => out || (out = Object.assign({}, incoming));
+  _REC_PHOTO_LISTS.forEach(f => {
+    const mine = Array.isArray(here[f]) ? here[f] : [];
+    if (!mine.some(x => x && x.data && !x.id)) return;   // nothing only this phone holds
+    const theirs = Array.isArray(incoming[f]) ? incoming[f] : [];
+    const ids = new Set(theirs.filter(x => x && x.id).map(x => x.id));
+    const merged = [];
+    mine.forEach(x => { if (!x) return; if (x.id) { if (ids.has(x.id)) { merged.push(x); ids.delete(x.id); } } else if (x.data) merged.push(x); });
+    theirs.forEach(x => { if (x && x.id && ids.has(x.id)) merged.push(x); });
+    copy()[f] = merged;
+  });
+  if (typeof here.image === 'string' && here.image && !incoming.image) copy().image = here.image;
+  return out || incoming;
+}
+
 async function _recPush(name) {
   const desc = KR_REC_TABLES[name];
   const org = currentOrg();
@@ -13083,7 +13133,10 @@ async function _recPush(name) {
   // Storage is where bytes belong (stage 4). Uploading first also shrinks the
   // biggest store on the device, which is the point of the exercise.
   let stuck = 0;
-  if (typeof _notePhotos === 'function' && typeof _uploadPhoto === 'function') {
+  // v522: only with a Google Sheet linked. Without one there is nowhere to upload to,
+  // and the pictures stay on the phone by design (_recWirePayload), so they are not
+  // "stuck" and must not be reported as an error on every sync.
+  if (typeof _notePhotos === 'function' && typeof _uploadPhoto === 'function' && localStorage.getItem('kr_sheet_url')) {
     const all = desc.read() || [];
     let rewrote = false;
     for (const rec of all) {
@@ -13125,7 +13178,7 @@ async function _recPush(name) {
       // table has no UPDATE policy to fall back on. Everything else upserts on the
       // record's own id, which is what makes a re-push idempotent.
       const row = { id: desc.ledger ? desc.rowId(id) : id, org_id: org.id,
-                    payload: rec ? (desc.payloadOf ? desc.payloadOf(rec) : rec) : {} };
+                    payload: rec ? _recWirePayload(desc.payloadOf ? desc.payloadOf(rec) : rec) : {} };
       if (!desc.ledger) row.deleted_at = null;
       if (desc.scope === 'user') row.user_id = uid;
       // Columns the table carries in its own right (task_notes.task_id). A DELETED
@@ -13219,7 +13272,7 @@ async function _recPull(name) {
           return;
         }
         if (!r.payload || typeof r.payload !== 'object') return;
-        const incomingRec = desc.fromRow ? desc.fromRow(r) : r.payload;
+        const incomingRec = _recKeepLocalPhotos(here, desc.fromRow ? desc.fromRow(r) : r.payload);
         // Idempotent: an unchanged record costs nothing, and gte deliberately
         // re-delivers the boundary rows every pull.
         if (here && _recFingerprint(JSON.stringify(here)) === _recFingerprint(JSON.stringify(incomingRec))) return;
@@ -22083,6 +22136,9 @@ function _shareBuildPayload(job) {
 function _shareBody(html) { document.getElementById('shared-job-body').innerHTML = html; }
 const _shareBtn = 'width:100%;padding:14px;border:none;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;';
 async function shareJobStart() {
+  // Hidden for launch (v522). The button is hidden too; this stops a job being sent
+  // even if the door were reached some other way.
+  if (featureHidden('share-code')) return;
   const job = _dirJobName();
   if (!job) { showToast('Save the job first, then share it'); return; }
   document.getElementById('shared-job-title').textContent = 'Share this job';
@@ -22136,6 +22192,7 @@ function shareJobSend() {
 // ── The receiving end ──
 let _sharedIncoming = null;
 function sharedJobAddStart() {
+  if (featureHidden('share-code')) return;   // hidden for launch (v522), see shareJobStart
   _sharedIncoming = null;
   document.getElementById('shared-job-title').textContent = 'Add a shared job';
   if (!isSignedIn()) {
@@ -22189,6 +22246,7 @@ function _sharedValid(p) {
     && p.tasks.every(t => typeof t === 'string'));
 }
 async function sharedJobFetch() {
+  if (featureHidden('share-code')) return;   // hidden for launch (v522)
   const inp = document.getElementById('shared-job-input'), msg = document.getElementById('shared-job-msg');
   const code = _shareFindCode(inp && inp.value);
   if (code.length !== 7) { if (msg) { msg.style.color = 'var(--red)'; msg.textContent = 'A code is 7 letters and numbers, like ABC-2DEF.'; } return; }
@@ -22312,6 +22370,8 @@ function sharedJobApply(mode) {
 // ⚠️ Before hiding a screen, check what can only be reached THROUGH it and give
 // that its own door first. The Dashboard held the only route to the Times list.
 const KR_HIDDEN_FEATURES = [
+  { id: 'share-code', name: 'Share a job by code', since: 'v522',
+    what: '"Share this job" on Edit Job and "+ Shared job" on Jobs. Lincoln and Mitch, 21 Nov 2026: hidden at launch, because sharing sends a copy of the job through our server and it is not in the privacy policy. Switch it on here to bring both back.' },
   { id: 'job-flag', name: 'Adding tasks to the run sheet from the job screen', since: 'v502',
     what: 'Swipe right and "Add to the run sheet" on Edit Job, and the run sheet marks there. Lincoln, 17 Nov 2026: it broke the habit of choosing each run\'s tasks fresh in Organise and threw the target out. Tasks are added to a run in Organise.' },
   { id: 'task-guide', name: 'Add guide on a task', since: 'v499',
