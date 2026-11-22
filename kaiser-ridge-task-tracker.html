@@ -3867,7 +3867,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.522';
+const APP_VERSION = '2026-06-21.523';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -24745,6 +24745,11 @@ function _estRefresh() {
   if (_clOrganiseTask) _refreshChecklistSurfaces(_clOrganiseTask);
   const det = document.getElementById('modal-planner-detail');
   if (det && det.classList.contains('open') && _plannerDetailId) openPlannerDetail(_plannerDetailId);
+  // ⚠️ The run sheet (planning AND clocked in) is where ＋ Add time is mostly tapped, and
+  // it was missing from this list: the time saved at once but the row kept saying
+  // "＋ Add time" until the sheet was closed and opened again. Lincoln, 22 Nov 2026.
+  const rs = document.getElementById('modal-run-sheet');
+  if (rs && rs.classList.contains('open')) _rsRender();
 }
 // A seed has served its purpose the moment a real timing exists. Clearing it keeps
 // the store honest and small; nothing reads it once measured wins, so this is
