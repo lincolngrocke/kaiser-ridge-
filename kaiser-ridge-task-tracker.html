@@ -764,6 +764,8 @@
   .gwo-trow.gwo-sum { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 8px; font-weight: 600; }
   .gwo-input { width: 100%; box-sizing: border-box; padding: 13px 14px; border: 1.5px solid var(--border); border-radius: 12px; background: var(--card); color: var(--text); font-size: 16px; outline: none; }
   .gwo-input:focus { border-color: var(--blue); }
+  textarea.gwo-input { display: block; resize: none; overflow: hidden; font-family: inherit; line-height: 20px; min-height: 49px; }
+  .gwo-chips.gwo-tchips { margin: 0 0 14px; }
   .gwo-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
   .gwo-chip { padding: 8px 13px; border-radius: 18px; border: 1px solid var(--border); background: var(--card); font-size: 14px; color: var(--blue); font-weight: 600; cursor: pointer; }
   .gwo-chip.on { border-color: var(--blue); background: rgba(10,132,255,0.10); }
@@ -3881,7 +3883,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.526';
+const APP_VERSION = '2026-06-21.527';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5068,19 +5070,33 @@ function gwoRender() {
   } else if (s === 'jtasks') {
     const job = _gwo.jobs[_gwo.jobIdx];
     const have = job.tasks.map(t => t.name.trim().toLowerCase());
-    const chips = (_GWO_TASK_CHIPS[job.chip] && job.chip === job.name.trim()) ? _GWO_TASK_CHIPS[job.chip].filter(c => have.indexOf(c.toLowerCase()) < 0) : [];
+    // ⭐ The suggestions follow the job's NAME, not the chip that was tapped (v527): a
+    // suggested job's name typed by hand, or nudged by the keyboard, still gets its tasks.
+    // Each stays until it has been added.
+    const known = _gwoKnownTasks(job.name);
+    const chips = known ? known.filter(c => have.indexOf(c.toLowerCase()) < 0) : [];
+    // Examples in the empty boxes (Lincoln, 23 Nov 2026): a suggested job shows its own tasks
+    // not yet added, in order; a job they named themselves shows "First task", then "Next task".
+    let _phN = 0;
+    const ph = (t, i) => {
+      if (t.name.trim()) return '';
+      if (known) { const c = chips[_phN++]; return c ? 'e.g. ' + c : 'e.g. Next task'; }
+      return i === 0 ? 'e.g. First task' : 'e.g. Next task';
+    };
     main = head('What are the tasks in ' + e(job.name) + '?', 'Walk through the job from start to finish. What’s the first task? Then what?')
+      // ⭐ Suggestions sit ABOVE the boxes (v527). Below them, the keyboard covered them on a
+      // phone, so after one tap the rest looked gone (Lincoln, 23 Nov 2026).
+      + (chips.length ? `<div class="gwo-chips gwo-tchips">${chips.map(c => `<span class="gwo-chip" onpointerdown="event.preventDefault()" onclick="gwoTaskChip(decodeURIComponent('${_encArg(c)}'))">＋ ${e(c)}</span>`).join('')}</div>` : '')
       + `<div class="gwo-colhead"><span>Task</span><span>Minutes</span></div>`
       + `<div id="gwo-rows">${job.tasks.map((t, i) => `<div class="gwo-row" data-i="${i}">
           <span class="gwo-grip" onpointerdown="gwoDragStart(event, ${i})">⠿</span>
-          <div style="flex:1;min-width:0;"><input class="gwo-input gwo-tname" type="text" placeholder="e.g. Wipe the benches" autocapitalize="sentences" enterkeyhint="next" value="${e(t.name)}" oninput="gwoTaskSet(${i}, 'name', this.value)" onkeydown="gwoTaskKey(event, ${i}, 'name')" onfocus="gwoRowFocus(this)">
+          <div style="flex:1;min-width:0;"><textarea class="gwo-input gwo-tname" rows="1" placeholder="${e(ph(t, i))}" autocapitalize="sentences" enterkeyhint="next" oninput="if(/\\n/.test(this.value))this.value=this.value.replace(/\\n/g,' ');gwoTaskSet(${i}, 'name', this.value);_gwoGrow(this)" onkeydown="gwoTaskKey(event, ${i}, 'name')" onfocus="gwoRowFocus(this)">${e(t.name)}</textarea>
             <div class="gwo-hint" id="gwo-hint-${i}">${e(_gwoPastHint(t.name))}</div></div>
           <input class="gwo-input gwo-mins" type="number" inputmode="numeric" min="1" max="600" placeholder="min" enterkeyhint="next" value="${e(String(t.mins || ''))}" oninput="gwoTaskSet(${i}, 'mins', this.value)" onkeydown="gwoTaskKey(event, ${i}, 'mins')" onfocus="gwoRowFocus(this)">
           ${job.tasks.length > 2 ? `<span class="gwo-x" onclick="gwoTaskDel(${i})">✕</span>` : '<span class="gwo-x" style="visibility:hidden;">✕</span>'}
         </div>`).join('')}</div>`
       + (job.tasks.length < 10 ? `<div class="gwo-add" onclick="gwoTaskAdd()">＋ Add another task</div>` : '')
-      + `<div class="gwo-total" id="gwo-total">Your guess for this job: ${_gwoJobTotal(job)} min</div>`
-      + (chips.length ? `<div class="gwo-chips">${chips.map(c => `<span class="gwo-chip" onclick="gwoTaskChip(decodeURIComponent('${_encArg(c)}'))">＋ ${e(c)}</span>`).join('')}</div>` : '');
+      + `<div class="gwo-total" id="gwo-total">Your guess for this job: ${_gwoJobTotal(job)} min</div>`;
     // ⭐ Save job sits UNDER the task rows, in the scroll, not pinned at the foot (v509).
     // Lincoln, 18 Nov 2026: with the keyboard up, a pinned button sat straight under the
     // first task and hid the second box, so he saved with one task. Now you pass every
@@ -5124,6 +5140,7 @@ function gwoRender() {
   root.innerHTML = `<div class="gwo-top"><span class="gwo-back${noBack ? ' off' : ''}" onclick="gwoBack()">‹ Back</span><div class="gwo-prog"><span style="width:${pct}%;"></span></div></div>`
     + `<div class="gwo-main">${main}</div><div class="gwo-foot">${foot}</div>`;
   if (s === 'build') _gwoBuildRun();
+  if (s === 'jtasks') root.querySelectorAll('.gwo-tname').forEach(_gwoGrow);
 }
 
 // ── Screen actions ──
@@ -5167,6 +5184,18 @@ function gwoJobName(v) {
   const b = document.querySelector('#gwo-root .gwo-foot .gwo-btn'); if (b) b.disabled = !v.trim();
 }
 function gwoJobChip(c) { const job = _gwo.jobs[_gwo.jobIdx]; job.name = c; job.chip = c; _gwoSave(); gwoRender(); }
+// A suggested job's tasks, found by the job's name (any case, spaces trimmed), or null.
+function _gwoKnownTasks(name) {
+  const n = String(name || '').trim().toLowerCase();
+  const k = n && Object.keys(_GWO_TASK_CHIPS).find(x => x.toLowerCase() === n);
+  return k ? _GWO_TASK_CHIPS[k] : null;
+}
+// Task names wrap onto more lines rather than being cut off (v527): the box grows to fit.
+function _gwoGrow(el) {
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = (el.scrollHeight + 3) + 'px';   // + the 1.5px border top and bottom
+}
 // "More" on the job chips: open for this job only, so the next job starts with six again.
 let _gwoChipsMoreFor = -1;
 function gwoJobChipsMore() { _gwoChipsMoreFor = _gwo.jobIdx; gwoRender(); }
@@ -5194,9 +5223,16 @@ function gwoTaskDel(i) { const job = _gwo.jobs[_gwo.jobIdx]; if (job.tasks.lengt
 function gwoTaskChip(c) {
   const job = _gwo.jobs[_gwo.jobIdx];
   if (job.tasks.some(t => t.name.trim().toLowerCase() === c.toLowerCase())) { gwoRender(); return; }   // typed it already
-  const blank = job.tasks.find(t => !t.name.trim());
-  if (blank) blank.name = c; else if (job.tasks.length < 10) job.tasks.push({ name: c, mins: '' }); else return;
+  const typing = !!(document.activeElement && document.activeElement.closest && document.activeElement.closest('#gwo-rows'));
+  let row = job.tasks.find(t => !t.name.trim());
+  if (row) row.name = c; else if (job.tasks.length < 10) job.tasks.push(row = { name: c, mins: '' }); else return;
   _gwoSave(); gwoRender();
+  // Keyboard up when they tapped it? Keep it up, in that task's minutes box, as that is what
+  // the task needs next. Keyboard down stays down, so several can be tapped in a row.
+  if (typing) {
+    const box = document.querySelectorAll('#gwo-rows .gwo-mins')[job.tasks.indexOf(row)];
+    if (box) box.focus();
+  }
 }
 // Drag ⠿ to reorder the task rows. The row follows the finger; the order changes on release.
 let _gwoDrag = null;
