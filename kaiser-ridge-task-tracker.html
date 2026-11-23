@@ -2380,6 +2380,19 @@
   </div>
 </div>
 
+<!-- ══════════════ DAY-1 WIN: THE FIRST TIMED JOB ══════════════ -->
+<!-- Shown once, after a new person's first timed job (Steven, 18 Nov 2026). Their own
+     guesses against the clock, nothing else. Filled by _day1Show. Wording is a draft. -->
+<div class="modal-backdrop" id="modal-day1" style="z-index:675;">
+  <div class="modal-sheet" style="padding:16px 0 24px;max-height:85vh;display:flex;flex-direction:column;">
+    <div class="modal-handle"></div>
+    <div id="day1-body" style="flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 20px;"></div>
+    <div style="padding:14px 20px 0;flex-shrink:0;">
+      <button onclick="closeModal('modal-day1')" style="width:100%;height:50px;border-radius:12px;border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:600;cursor:pointer;">Done</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══════════════ TO-DO ON SEVERAL JOBS ══════════════ -->
 <!-- One Inbox note filed against several jobs becomes a SEPARATE to-do in each,
      linked by inboxId. Ticking it here has only ever cleared this job's copy.
@@ -3867,7 +3880,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.523';
+const APP_VERSION = '2026-06-21.524';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4756,10 +4769,30 @@ const GW_TERMS_URL = '', GW_PRIVACY_URL = '';   // TBC
 // The two plans (Steven, 18 Nov 2026): a 7-day App Store free trial on YEARLY only;
 // MONTHLY has no trial and is billed straight away. Prices are TO CONFIRM and will come
 // from the store, so they are never typed in here: an empty price shows its placeholder.
+// ⭐ PRICES COME FROM THE STORE PRODUCT, NEVER FROM HERE (Lincoln, 21 Nov 2026). Working
+// prices are A$29.99 a month and A$229.99 a year in Australia (the base storefront), and
+// US$19 and US$149.99 in the US, but Apple's price points and each country's price are
+// the store's to say. When the purchase service is wired up it fills in, per plan:
+//   price    the store's own price text, already localised ("A$229.99")
+//   amount   the same price as a number (229.99), currency its code ("AUD")
+// From those two numbers the paywall works out the yearly plan's "a month" figure and its
+// saving against monthly, so no figure on screen is typed in by us.
 const GW_PLANS = {
-  yearly:  { name: 'Yearly',  price: '', ph: '[YEARLY PRICE]',  sub: '7 days free, then billed yearly' },
-  monthly: { name: 'Monthly', price: '', ph: '[MONTHLY PRICE]', sub: 'Billed monthly, starting today' },
+  yearly:  { name: 'Yearly',  price: '', amount: null, currency: '', ph: '[YEARLY PRICE]' },
+  monthly: { name: 'Monthly', price: '', amount: null, currency: '', ph: '[MONTHLY PRICE]' },
 };
+function _gwPrice(k) { return GW_PLANS[k].price || GW_PLANS[k].ph; }
+// Yearly shown as a monthly figure, and its saving on twelve months of monthly. Both only
+// when the store has given both prices in the same currency; placeholders otherwise.
+function _gwYearlyPerMonth() {
+  const y = GW_PLANS.yearly, m = GW_PLANS.monthly;
+  if (!(y.amount > 0) || !(m.amount > 0) || !y.currency || y.currency !== m.currency) return { perMonth: '[YEARLY ÷ 12]', save: '[SAVING]' };
+  const pm = Math.round(y.amount / 12 * 100) / 100;
+  let perMonth;
+  try { perMonth = new Intl.NumberFormat(undefined, { style: 'currency', currency: y.currency }).format(pm); } catch (e) { perMonth = pm.toFixed(2); }
+  const save = Math.round((1 - y.amount / (12 * m.amount)) * 100);
+  return { perMonth, save: save > 0 ? save + '%' : '' };
+}
 function _gwFlag(name) { try { return localStorage.getItem('kr_flag_' + name) === '1'; } catch (e) { return false; } }
 // 🧪 TEST LINK (v508, Lincoln 18 Nov 2026): open the app with ?paywall=1 to switch the
 // paywall on in that browser, ?paywall=0 to switch it off. A phone has no other way to
@@ -4945,7 +4978,7 @@ function gwoRender() {
       + `<button class="gwo-btn gwo-google" onclick="gwoSignInGoogle()">Sign in with Google</button>`
       + `<div class="gwo-link" onclick="gwoNext()">Not now</div>`;
   } else if (s === 'v1' || s === 'v2' || s === 'v3' || s === 'v4') {
-    const V = { v1: ['🕔', 'Will you be done by 5, or by 8?', 'Guessing how long tasks take is hard for everyone. It’s one of the reasons people feel constantly behind.'],
+    const V = { v1: ['🕔', 'Where did the day go?','Guessing how long tasks take is hard for everyone. It’s one of the reasons people feel constantly behind.'],
                 v2: ['▶️', 'Press start. That’s it.', 'Every job starts with the timer, so Groovework learns how long your work really takes.'],
                 v3: ['📋', 'Today’s run sheet, with a finish time you can trust', 'Once the clock is running, you see what’s left and when you’ll be done.'],
                 v4: ['📊', 'See exactly where your time went', 'Finish the day knowing what you got done.'] }[s];
@@ -5030,14 +5063,20 @@ function gwoRender() {
       + (_gwo.committedAt ? btn('Continue', 'gwoNext()') : '');
   } else if (s === 'paywall') {
     // Hard paywall: no close and no Back. Yearly is picked to start with.
-    const plan = _gwo.plan === 'monthly' ? 'monthly' : 'yearly', price = k => GW_PLANS[k].price || GW_PLANS[k].ph;
+    const plan = _gwo.plan === 'monthly' ? 'monthly' : 'yearly', price = _gwPrice, ypm = _gwYearlyPerMonth();
+    const subs = {
+      yearly: `7 days free, then ${e(price('yearly'))} a year<br>${e(ypm.perMonth)} a month${ypm.save ? ', save about ' + e(ypm.save) : ''}`,
+      monthly: `${e(price('monthly'))} a month, billed today`,
+    };
     main = head('Know when you’ll be done, before you start')
-      + ['yearly', 'monthly'].map(k => `<div class="gwo-opt${plan === k ? ' on' : ''}" onclick="gwoPlan('${k}')"><div class="gwo-plan"><span class="gwo-plan-dot"></span><div><div class="gwo-plan-n">${GW_PLANS[k].name}</div><div class="gwo-plan-s">${GW_PLANS[k].sub}</div></div></div></div>`).join('')
+      + ['yearly', 'monthly'].map(k => `<div class="gwo-opt${plan === k ? ' on' : ''}" onclick="gwoPlan('${k}')"><div class="gwo-plan"><span class="gwo-plan-dot"></span><div><div class="gwo-plan-n">${GW_PLANS[k].name}</div><div class="gwo-plan-s">${subs[k]}</div></div></div></div>`).join('')
       + `<div class="gwo-links"><span onclick="gwoRestore()">Restore purchases</span>${GW_TERMS_URL ? `<a href="${GW_TERMS_URL}" target="_blank" rel="noopener">Terms of Use</a>` : '<span>Terms of Use</span>'}${GW_PRIVACY_URL ? `<a href="${GW_PRIVACY_URL}" target="_blank" rel="noopener">Privacy Policy</a>` : '<span>Privacy Policy</span>'}</div>`;
     // "No payment due now" only with the yearly trial. Monthly never uses trial words.
-    // The monthly button's wording is TO CONFIRM (Mitch, 18 Nov 2026).
+    // Monthly button and its small print approved by Lincoln, 21 Nov 2026. The legal line
+    // under it is the spec's required text for the selected plan, so both show.
     foot = (plan === 'yearly' ? `<div class="gwo-due">No payment due now</div>` : '')
-      + btn(plan === 'yearly' ? 'Start your 7-day free trial' : 'Subscribe monthly', 'gwoBuy()')
+      + btn(plan === 'yearly' ? 'Start your 7-day free trial' : `Subscribe monthly, ${e(price('monthly'))}/month`, 'gwoBuy()')
+      + (plan === 'monthly' ? `<div class="gwo-legal">Billed today. Cancel anytime in your Apple ID settings.</div>` : '')
       + `<div class="gwo-legal">${plan === 'yearly'
         ? `7 days free, then ${e(price('yearly'))} per year. Cancel anytime in your Apple ID settings.`
         : `${e(price('monthly'))} per month. Billed immediately. Cancel anytime in your Apple ID settings.`}</div>`;
@@ -5275,6 +5314,59 @@ function _gwoFinish() {
   try { renderDirectory(); renderClockState(); } catch (e) {}
   try { showScreen('clock', document.querySelector(".nav-tab[onclick*=\"'clock'\"]")); } catch (e) {}
   showToast('You’re set up. Start a job’s timer when you begin it.');
+}
+
+// ⭐ DAY-1 WIN (Steven Cravotta, 18 Nov 2026): after a new person's FIRST timed job, show
+// what it told them, so they have a result on day 1 and don't drift before the yearly
+// trial's day 7. Not an onboarding screen: onboarding is already complete by then.
+//   • Only their own figures from that job: each task's guess (the same guess the run
+//     sheet shows as "est") against the clock. No other number, no comparison to anyone.
+//   • Once per person. Recorded as day1ShownAt in kr_onboarding (the onboarding store
+//     that already syncs). No new store and no new table.
+//   • Only for someone who came through this onboarding and had no timed work before it,
+//     so a long-time user who ran through onboarding to test it is never shown it.
+//   • A job with no ticked tasks has nothing to compare, so it waits for the next job.
+// ⚠️ Wording and layout are a DRAFT (Mitch's spec, 18 Nov 2026: "TO CONFIRM").
+// Called from clockOut BEFORE clockState is cleared, because the task times are worked
+// out from it.
+function _day1Capture(entry) {
+  try {
+    const ob = _gwoLoad();
+    if (!ob || !ob.completedAt || ob.day1ShownAt || !clockState) return null;
+    if (entries.some(x => !x.bot && x.id !== entry.id && x.createdAt && x.createdAt < ob.completedAt)) return null;
+    const dur = _checklistDurations(), seeds = _taskSeedMap();
+    const obGuess = {};   // fallback: the guesses typed in onboarding, by task name
+    (ob.jobs || []).forEach(j => (j.tasks || []).forEach(t => { const m = parseInt(t.mins, 10); if (t.name && m > 0) obGuess[_normTaskKey(t.name.trim())] = m; }));
+    const rows = (clockState.checklistDone || []).filter(d => !d.carried)
+      .slice().sort((a, b) => new Date(a.at) - new Date(b.at))
+      .map(d => {
+        const k = _normTaskKey(d.item), g = seeds[k] || obGuess[k];
+        return { item: d.item, lap: d.rep || d.lap || 0, mins: dur[_occKey(d)], guess: (isFinite(g) && g > 0) ? g : null };
+      })
+      .filter(r => isFinite(r.mins));
+    if (!rows.length) return null;
+    return { job: entry.task, workMins: Math.round((entry.durationHours || 0) * 60), rows };
+  } catch (e) { return null; }
+}
+function _day1Show(d) {
+  if (!d) return;
+  try {
+    const ob = _gwoLoad(); if (!ob || ob.day1ShownAt) return;
+    ob.day1ShownAt = new Date().toISOString(); ob.day1Job = d.job;
+    _storeSet(KR_ONBOARDING, JSON.stringify(ob));
+  } catch (e) { return; }
+  const e = _escHtml, guessed = d.rows.filter(r => r.guess);
+  const sumG = guessed.reduce((s, r) => s + r.guess, 0), sumC = guessed.reduce((s, r) => s + r.mins, 0);
+  const row = r => `<div style="display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:0.5px solid var(--border);font-size:15px;color:var(--text);">`
+    + `<span style="min-width:0;">${r.lap ? 'Lap ' + r.lap + ' · ' : ''}${e(r.item)}</span>`
+    + `<span style="white-space:nowrap;color:var(--subtext);">${r.guess ? 'guess ' + fmtMin(r.guess) + ' · ' : ''}<b style="color:var(--text);">clock ${fmtMin(r.mins)}</b></span></div>`;
+  document.getElementById('day1-body').innerHTML =
+    `<div style="font-size:19px;font-weight:700;color:var(--text);margin-bottom:4px;">Your first job, timed</div>`
+    + `<div style="font-size:15px;color:var(--subtext);line-height:1.5;margin-bottom:10px;"><b style="color:var(--text);">${e(d.job)}</b> took ${fmtMin(d.workMins)} on the clock.</div>`
+    + d.rows.map(row).join('')
+    + (guessed.length ? `<div style="font-size:15px;color:var(--text);line-height:1.5;margin-top:12px;">For the tasks you guessed, your guesses came to <b>${fmtMin(sumG)}</b> and the clock says <b>${fmtMin(sumC)}</b>.</div>` : '')
+    + `<div style="font-size:14px;color:var(--subtext);line-height:1.5;margin-top:10px;">From now on Groovework plans with these real times instead of your guesses, and every job you time sharpens your finish time.</div>`;
+  openModal('modal-day1');
 }
 
 window.addEventListener('load', () => {
@@ -5741,6 +5833,7 @@ function clockOut(overrideTime) {
     });
     if (cLines.length) entry.notes = entry.notes ? entry.notes + '\n' + cLines.join('\n') : cLines.join('\n');
   }
+  const _day1 = _day1Capture(entry);   // ⭐ day-1 win: read the task times before clockState goes
   entries.unshift(entry);
   saveEntries();
   _undo.entryId = entry.id;
@@ -5760,6 +5853,7 @@ function clockOut(overrideTime) {
   }
   const breakStr = entry.break > 0 ? ` (${(entry.break * 60).toFixed(0)}min break)` : '';
   showToast('Clocked out — ' + entry.durationHours + 'h logged' + breakStr);
+  if (_day1) _day1Show(_day1);
 }
 
 function renderClockState() {
