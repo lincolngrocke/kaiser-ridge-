@@ -738,7 +738,8 @@
   .gwo-prog span { display: block; height: 100%; background: var(--blue); border-radius: 3px; transition: width 0.3s; }
   .gwo-main { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; padding-bottom: 12px; }
   .gwo-foot { flex-shrink: 0; padding-top: 10px; }
-  .gwo-hero { font-size: 48px; line-height: 1; margin: 18px 0 18px; }
+  .gwo-hero { font-size: 48px; line-height: 1; margin: 18px 0 18px; color: var(--blue); }
+  .gwo-hero svg { display: block; width: 56px; height: 56px; }
   .gwo-h { font-size: 27px; font-weight: 700; line-height: 1.25; color: var(--text); margin-bottom: 10px; }
   .gwo-sub { font-size: 16px; line-height: 1.55; color: var(--subtext); margin-bottom: 18px; }
   .gwo-note { font-size: 15px; line-height: 1.55; color: var(--text); margin-top: 18px; }
@@ -751,6 +752,9 @@
   .gwo-opt { padding: 15px 16px; margin-bottom: 10px; border: 1.5px solid var(--border); border-radius: 14px; background: var(--card); font-size: 16px; line-height: 1.35; color: var(--text); cursor: pointer; }
   .gwo-opt.on { border-color: var(--blue); background: rgba(10,132,255,0.10); font-weight: 600; }
   .gwo-time { display: block; width: 100%; box-sizing: border-box; font-size: 26px; font-weight: 700; text-align: center; padding: 16px; margin-top: 8px; border: 1.5px solid var(--border); border-radius: 14px; background: var(--card); color: var(--text); }
+  .gwo-time { -webkit-appearance: none; appearance: none; min-height: 66px; }
+  .gwo-time::-webkit-date-and-time-value { text-align: center; }
+  .gwo-time::-webkit-datetime-edit { justify-content: center; }
   .gwo-steps { margin: 18px 0; }
   .gwo-step { display: flex; align-items: center; gap: 12px; font-size: 17px; color: var(--subtext); padding: 9px 0; transition: color 0.2s; }
   .gwo-step.done { color: var(--text); font-weight: 600; }
@@ -3883,7 +3887,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.527';
+const APP_VERSION = '2026-06-21.528';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4954,6 +4958,23 @@ function _gwoReviewPrompt() {
 
 // ── Little helpers ──
 function _gwoHM(hm) { return hm ? formatTimeAmPm(hm) : ''; }
+// Line icons (v528). Same style as the run sheet's tool icons: 24-unit box, no fill,
+// rounded 1.7 stroke in the text colour. Lincoln, 23 Nov 2026: line icons in place of
+// colour emoji, starting with onboarding; the rest of the app is to follow in this style.
+const _GW_ICON_PATHS = {
+  clock:     '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
+  play:      '<circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l5.5-3.5z"/>',
+  clipboard: '<rect x="5" y="4.5" width="14" height="16.5" rx="2"/><rect x="9" y="3" width="6" height="3.5" rx="1"/><path d="M8.5 11h7M8.5 14.5h7M8.5 18h4"/>',
+  stopwatch: '<circle cx="12" cy="13.5" r="7.5"/><path d="M12 13.5V9.5M10 2.5h4M12 2.5V6M18 7l1.5-1.5"/>',
+  bubble:    '<path d="M5 4.5h14a2 2 0 012 2v8.5a2 2 0 01-2 2h-7.5L7 20.5V17H5a2 2 0 01-2-2V6.5a2 2 0 012-2z"/><path d="M7.5 9h9M7.5 12.5h6"/>',
+  hourglass: '<path d="M6.5 3h11M6.5 21h11M8 3v2.5c0 2.5 4 4 4 6.5s-4 4-4 6.5V21M16 3v2.5c0 2.5-4 4-4 6.5s4 4 4 6.5V21"/>',
+  check:     '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5"/>',
+  cloud:     '<path d="M7 18.5h10.5a4 4 0 00.5-7.97A6 6 0 006.6 9.6 4.5 4.5 0 007 18.5z"/><path d="M12 15.5v-5M9.8 12.7l2.2-2.2 2.2 2.2"/>',
+  target:    '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="2"/>'
+};
+function _gwIcon(name) {
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${_GW_ICON_PATHS[name] || ''}</svg>`;
+}
 function _gwoList(arr) { return arr.length < 2 ? (arr[0] || '') : arr.slice(0, -1).join(', ') + ' and ' + arr[arr.length - 1]; }
 function _gwoHours(h) { const s = (h % 1) ? h.toFixed(1) : String(h); return s + ' hour' + (h === 1 ? '' : 's'); }
 function _gwoGapHours() {
@@ -5008,25 +5029,25 @@ function gwoRender() {
   let main = '', foot = '';
 
   if (s === 'congrats') {
-    main = `<div class="gwo-hero">🎉</div>` + head('Good call. You’re about to find out when your day really ends.', 'Groovework learns how long your work really takes and tells you when you’ll finish.');
+    main = `<div class="gwo-hero">${_gwIcon('check')}</div>` + head('Good call. You’re about to find out when your day really ends.', 'Groovework learns how long your work really takes and tells you when you’ll finish.');
     foot = btn('Let’s go', 'gwoNext()');
   } else if (s === 'signin') {
-    main = `<div class="gwo-hero">🔑</div>` + head('Save your times as you go');
+    main = `<div class="gwo-hero">${_gwIcon('cloud')}</div>` + head('Save your times as you go');
     foot = (_gwNative() ? `<button class="gwo-btn gwo-apple" onclick="gwoSignInApple()"> Sign in with Apple</button>` : '')
       + `<button class="gwo-btn gwo-google" onclick="gwoSignInGoogle()">Sign in with Google</button>`
       + `<div class="gwo-link" onclick="gwoNext()">Not now</div>`;
   } else if (s === 'v1' || s === 'v2' || s === 'v3' || s === 'v4') {
-    const V = { v1: ['🕔', 'Where did the day go?','Guessing how long tasks take is hard for everyone. It’s one of the reasons people feel constantly behind.'],
-                v2: ['▶️', 'Press start. That’s it.', 'Every job starts with the timer, so Groovework learns how long your work really takes.'],
-                v3: ['📋', 'Today’s run sheet, with a finish time you can trust', 'Once the clock is running, you see what’s left and when you’ll be done.'],
-                v4: ['📊', 'See exactly where your time went', 'Finish the day knowing what you got done.'] }[s];
-    main = `<div class="gwo-hero">${V[0]}</div>` + head(V[1], V[2]);
+    const V = { v1: ['clock', 'Where did the day go?','Guessing how long tasks take is hard for everyone. It’s one of the reasons people feel constantly behind.'],
+                v2: ['play', 'Press start. That’s it.', 'Every job starts with the timer, so Groovework learns how long your work really takes.'],
+                v3: ['clipboard', 'Today’s run sheet, with a finish time you can trust', 'Once the clock is running, you see what’s left and when you’ll be done.'],
+                v4: ['stopwatch', 'See exactly where your time went', 'Finish the day knowing what you got done.'] }[s];
+    main = `<div class="gwo-hero">${_gwIcon(V[0])}</div>` + head(V[1], V[2]);
     foot = btn('Continue', 'gwoNext()');
   } else if (s === 'proof1' || s === 'proof2') {
     main = head('What people are saying') + GW_REVIEWS.map(r => `<div class="gwo-card"><div>${e(r.text)}</div>${r.who ? `<div class="gwo-small">${e(r.who)}</div>` : ''}</div>`).join('');
     foot = btn('Continue', 'gwoNext()');
   } else if (s === 'sintro') {
-    main = `<div class="gwo-hero">📝</div>` + head('A few quick questions so Groovework fits your day', 'About 2 minutes.');
+    main = `<div class="gwo-hero">${_gwIcon('bubble')}</div>` + head('A few quick questions so Groovework fits your day', 'About 2 minutes.');
     foot = btn('Start', 'gwoNext()');
   } else if (_GWO_Q[s]) {
     const q = _GWO_Q[s];
@@ -5041,18 +5062,21 @@ function gwoRender() {
   } else if (s === 'build') {
     const late = (a.q10 || []).filter(x => x !== 'Nothing really').map(x => x.charAt(0).toLowerCase() + x.slice(1));
     const said = [a.targetFinish ? `I want to be done by ${_gwoHM(a.targetFinish)}.` : '', a.actualFinish ? `I’m usually done at ${_gwoHM(a.actualFinish)}.` : '',
-      late.length ? `My ${_gwoList(late)} miss out.` : ''].filter(Boolean).join(' ');
+      late.length ? `My ${_gwoList(late)} ${late.length > 1 ? 'miss' : 'misses'} out.` : ''].filter(Boolean).join(' ');
     main = head('Building your Groovework plan…') + `<div class="gwo-steps">${['Your finish time', 'Your list', 'Where your time goes'].map((t, i) => `<div class="gwo-step" id="gwo-bs-${i}"><span class="gwo-tick">○</span>${t}</div>`).join('')}</div>`
       + (said ? `<div class="gwo-quote">“${e(said)}”</div>` : '');
+    // No automatic move on (Lincoln, 23 Nov 2026): the button appears once the ticks finish,
+    // so there is time to read the quote. Hidden rather than absent, so nothing jumps.
+    foot = `<button class="gwo-btn" id="gwo-build-next" style="visibility:hidden;" onclick="gwoNext()">Next</button>`;
   } else if (s === 'gap') {
     const g = _gwoGapHours();
-    main = `<div class="gwo-hero">⏱</div>` + (g > 0 ? head('That’s ' + _gwoHours(g) + ' a day past your plan', 'About ' + _gwoHours(g * 5) + ' over a 5-day week.')
+    main = `<div class="gwo-hero">${_gwIcon('hourglass')}</div>` + (g > 0 ? head('That’s ' + _gwoHours(g) + ' a day past your plan', 'About ' + _gwoHours(g * 5) + ' over a 5-day week.')
       : head('You’re already close. Groovework will help you keep it that way.'))
       + `<div class="gwo-note">The good news: once Groovework knows your real times, it shows your finish time before you start.</div>`;
     foot = btn('Continue', 'gwoNext()');
   } else if (s === 'jintro') {
     main = head('Let’s set up your first three jobs', 'A job is something you do regularly, like getting the kids off to school. Each job is made up of smaller tasks, and Groovework times every task on its own.')
-      + `<div class="gwo-card"><div class="gwo-job">School morning</div>${[['Make breakfast', 15], ['Pack lunches', 10], ['Do the school run', 20]].map(t => `<div class="gwo-trow"><span>${t[0]}</span><span>${t[1]} min</span></div>`).join('')}</div>`
+      + `<div class="gwo-card"><div class="gwo-job">Kitchen clean-up</div>${[['Clear the table', 5], ['Load the dishwasher', 10], ['Wipe the benches', 5]].map(t => `<div class="gwo-trow"><span>${t[0]}</span><span>${t[1]} min</span></div>`).join('')}</div>`
       + `<div class="gwo-small">Write task names in the present tense, e.g. ‘Wipe the benches’.</div>`;
     foot = btn('Add my first job', 'gwoJobStart(0)');
   } else if (s === 'jname') {
@@ -5113,7 +5137,7 @@ function gwoRender() {
     }).join('') + `<div class="gwo-small">This week, Groovework checks your guesses against the clock, task by task.</div>`;
     foot = btn('Looks good', 'gwoJobsCommit()');
   } else if (s === 'commit') {
-    main = `<div class="gwo-hero">🎯</div>` + head(a.targetFinish ? 'Let’s aim to be done by ' + _gwoHM(a.targetFinish) : 'Let’s aim to be done on time');
+    main = `<div class="gwo-hero">${_gwIcon('target')}</div>` + head(a.targetFinish ? 'Let’s aim to be done by ' + _gwoHM(a.targetFinish) : 'Let’s aim to be done on time');
     foot = `<div class="gwo-hold${_gwo.committedAt ? ' done' : ''}" id="gwo-hold" onpointerdown="gwoHoldStart(event)" onpointerup="gwoHoldEnd()" onpointerleave="gwoHoldEnd()" onpointercancel="gwoHoldEnd()" oncontextmenu="return false"><span class="gwo-hold-fill" id="gwo-hold-fill"${_gwo.committedAt ? ' style="width:100%;"' : ''}></span><span class="gwo-hold-t">${_gwo.committedAt ? 'Committed ✓' : 'Hold to commit'}</span></div>`
       + (_gwo.committedAt ? btn('Continue', 'gwoNext()') : '');
   } else if (s === 'paywall') {
@@ -5174,7 +5198,7 @@ function gwoTimeSet(key, v) {
 function _gwoBuildRun() {
   const tick = i => { const el = document.getElementById('gwo-bs-' + i); if (el) { el.classList.add('done'); el.querySelector('.gwo-tick').textContent = '✓'; } };
   [0, 1, 2].forEach(i => setTimeout(() => { if (_gwo && _gwo.step === 'build') tick(i); }, 900 * (i + 1)));
-  _gwoTimer = setTimeout(() => { if (_gwo && _gwo.step === 'build') gwoNext(); }, 3900);
+  _gwoTimer = setTimeout(() => { const b = document.getElementById('gwo-build-next'); if (b && _gwo && _gwo.step === 'build') b.style.visibility = ''; }, 3300);
 }
 function gwoJobStart(i) { _gwo.jobIdx = i; if (!_gwo.jobs[i]) _gwo.jobs[i] = _gwoNewJob(); _gwoGo('jname'); setTimeout(() => { const el = document.getElementById('gwo-jobname'); if (el && !el.value) el.focus(); }, 300); }
 function gwoJobName(v) {
