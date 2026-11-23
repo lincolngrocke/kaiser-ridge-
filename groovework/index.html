@@ -767,6 +767,7 @@
   .gwo-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
   .gwo-chip { padding: 8px 13px; border-radius: 18px; border: 1px solid var(--border); background: var(--card); font-size: 14px; color: var(--blue); font-weight: 600; cursor: pointer; }
   .gwo-chip.on { border-color: var(--blue); background: rgba(10,132,255,0.10); }
+  .gwo-chip-more { color: var(--subtext); border-style: dashed; }
   .gwo-row { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 10px; background: var(--bg); border-radius: 12px; }
   .gwo-row.lift { position: relative; z-index: 2; box-shadow: 0 6px 18px rgba(0,0,0,0.18); }
   .gwo-grip { flex-shrink: 0; width: 22px; padding: 14px 0; text-align: center; color: var(--subtext); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
@@ -3880,7 +3881,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.525';
+const APP_VERSION = '2026-06-21.526';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4836,26 +4837,61 @@ const _GWO_Q = {
   q9: { t: 'How often do the important jobs get pushed to tomorrow?', opts: ['Rarely', 'Once or twice a week', 'Most days'] },
   q10: { t: 'When your day runs late, what misses out?', multi: true, none: 'Nothing really', opts: ['Time with family or friends', 'Sleep', 'Exercise', 'Time to myself', 'Nothing really'] },
 };
-// Job ideas by what fills their day (Q2), and task ideas for each of those jobs (present tense).
-const _GWO_JOB_CHIPS = {
-  'Paid work': ['Inbox', 'Start of day', 'Invoicing'],
-  'Running a home or family': ['School morning', 'Kitchen clean-up', 'Washing'],
-  'Study': ['Exam study', 'Assignment'],
-  'My own business': ['Bookkeeping', 'Social media', 'Opening up'],
-};
-const _GWO_TASK_CHIPS = {
-  'Inbox': ['Clear new emails', 'Reply to the urgent ones', 'File the rest'],
-  'Start of day': ['Check my calendar', 'Set my top three tasks', 'Clear my desk'],
-  'Invoicing': ['Check what’s ready to bill', 'Write the invoices', 'Send the invoices'],
-  'School morning': ['Make breakfast', 'Pack lunches', 'Do the school run'],
-  'Kitchen clean-up': ['Unload the dishwasher', 'Wipe the benches', 'Sweep the floor'],
-  'Washing': ['Put a load on', 'Hang it out', 'Fold and put it away'],
-  'Exam study': ['Review my notes', 'Do practice questions', 'Check my answers'],
-  'Assignment': ['Research the topic', 'Write a draft', 'Edit and submit it'],
-  'Bookkeeping': ['Enter the receipts', 'Reconcile the bank', 'Follow up unpaid invoices'],
-  'Social media': ['Plan a post', 'Take the photos', 'Post and reply to comments'],
-  'Opening up': ['Unlock and switch on', 'Set up the counter', 'Check the stock'],
-};
+// Job ideas by what fills their day (Q2), each with its task ideas in order (present tense).
+// Lincoln, 23 Nov 2026. Every task takes more than 2 minutes, so quick bits are grouped
+// into one task. ⭐ HOME COMES FIRST, always: household chores and morning routines are
+// Groovework's main focus. The groups show in this order.
+const _GWO_JOB_GROUPS = [
+  { q2: 'Running a home or family', jobs: [
+    ['Morning routine', ['Make the bed and open up the house', 'Feed the pets', 'Make breakfast', 'Empty the dishwasher']],
+    ['School morning', ['Make breakfast', 'Pack lunches', 'Get the kids ready', 'Do the school run']],
+    ['Kitchen clean-up', ['Clear the table', 'Scrape the plates', 'Load the dishwasher', 'Wipe the benches', 'Sweep the floor']],
+    ['Washing', ['Sort the dirty washing', 'Put a load on', 'Hang it out', 'Fold and put away']],
+    ['Bathroom clean', ['Clean the toilet', 'Clean the basin and mirror', 'Clean the shower', 'Mop the floor']],
+    ['Evening reset', ['Tidy the lounge', 'Pack tomorrow’s lunches', 'Put out gym clothes', 'Take the bins out']],
+    ['Outside jobs', ['Mow the lawn', 'Whipper snip the edges', 'Sweep the paths and deck', 'Water the garden', 'Pull weeds']],
+    ['Detail the car', ['Wash the car', 'Vacuum the interior', 'Wipe down the interior', 'Clean the windows']],
+  ] },
+  { q2: 'Paid work', jobs: [
+    ['Start of day', ['Check the calendar and set priorities', 'Clear the inbox', 'Return calls and messages']],
+    ['Inbox', ['Reply to urgent emails', 'File and archive', 'Flag follow-ups']],
+    ['Meeting prep', ['Review notes', 'Prepare the agenda', 'Gather documents']],
+    ['Weekly planning', ['Review last week', 'Set this week’s priorities', 'Block out time in the calendar']],
+    ['Admin catch-up', ['File paperwork', 'Update records', 'Submit timesheets or expenses']],
+    ['End of day', ['Update job notes', 'Plan tomorrow', 'Tidy the workspace']],
+  ] },
+  { q2: 'My own business', jobs: [
+    ['Opening up', ['Unlock and set up', 'Check stock', 'Open the till or booking system']],
+    ['Bookkeeping', ['Enter receipts', 'Reconcile the bank', 'Send invoices', 'Chase overdue payments']],
+    ['Customer follow-ups', ['Return calls', 'Reply to enquiries', 'Send quotes']],
+    ['Social media', ['Plan the week’s posts', 'Take photos', 'Post and reply to comments']],
+    ['Ordering and stock', ['Count stock', 'Place orders', 'Unpack deliveries']],
+    ['Closing up', ['Cash up', 'Tidy and clean', 'Lock up']],
+  ] },
+  { q2: 'Study', jobs: [
+    ['Study session', ['Review notes', 'Do practice questions', 'Summarise what I learned']],
+    ['Assignment work', ['Research the topic', 'Write a draft', 'Edit and check references']],
+    ['Exam prep', ['Make a revision plan', 'Do past papers', 'Go over weak spots']],
+    ['Lecture catch-up', ['Watch the lecture', 'Write up notes', 'List questions to ask']],
+    ['Weekly study plan', ['Check due dates', 'Plan study blocks', 'Pack the bag for the week']],
+    ['Reading', ['Read the set chapter', 'Highlight key points', 'Write a short summary']],
+  ] },
+];
+const _GWO_TASK_CHIPS = {};
+_GWO_JOB_GROUPS.forEach(g => g.jobs.forEach(([job, tasks]) => { _GWO_TASK_CHIPS[job] = tasks; }));
+const _GWO_CHIPS_FIRST = 6;   // job chips shown before "More"
+// The job chips for the Q2 answers picked. A group picked by name shows in full. "A mix of
+// everything" shows the whole Home group, then the first 2 jobs of each group not picked.
+function _gwoJobChipList(q2) {
+  q2 = Array.isArray(q2) ? q2 : [];
+  const mix = q2.indexOf('A mix of everything') >= 0;
+  const out = [];
+  _GWO_JOB_GROUPS.forEach((g, gi) => {
+    if (q2.indexOf(g.q2) >= 0 || (mix && gi === 0)) g.jobs.forEach(j => out.push(j[0]));
+    else if (mix) g.jobs.slice(0, 2).forEach(j => out.push(j[0]));
+  });
+  return out;
+}
 
 function gwoOpen(saved) {
   _gwo = saved || { v: 1, startedAt: new Date().toISOString(), step: 'congrats', hist: [], jobIdx: 0, editFrom: null,
@@ -5020,17 +5056,20 @@ function gwoRender() {
   } else if (s === 'jname') {
     const job = _gwo.jobs[_gwo.jobIdx] || (_gwo.jobs[_gwo.jobIdx] = _gwoNewJob());
     const used = _gwo.jobs.map((j, i) => i === _gwo.jobIdx ? '' : j.name.trim().toLowerCase());
-    const cats = (a.q2 || []).indexOf('A mix of everything') >= 0 ? Object.keys(_GWO_JOB_CHIPS) : (a.q2 || []);
-    const chips = [].concat(...cats.map(c => _GWO_JOB_CHIPS[c] || [])).filter(c => used.indexOf(c.toLowerCase()) < 0);
-    main = head(_gwo.jobIdx === 0 ? 'What’s a job you do most days?' : 'What’s another job you do regularly?', 'Think of something with a few steps.')
+    const all = _gwoJobChipList(a.q2).filter(c => used.indexOf(c.toLowerCase()) < 0);
+    // At most 6 at first, then "More" shows the rest. A picked chip further down keeps them all open.
+    const showAll = _gwoChipsMoreFor === _gwo.jobIdx || all.indexOf(job.chip) >= _GWO_CHIPS_FIRST;
+    const chips = showAll ? all : all.slice(0, _GWO_CHIPS_FIRST);
+    main = head(_gwo.jobIdx === 0 ? 'What’s a job you do most days?' : 'What’s another job you do regularly?', 'Think of something with a few tasks, like a morning routine.')
       + `<input id="gwo-jobname" class="gwo-input" type="text" placeholder="e.g. Kitchen clean-up" autocapitalize="sentences" value="${e(job.name)}" oninput="gwoJobName(this.value)">`
-      + (chips.length ? `<div class="gwo-chips">${chips.map(c => `<span class="gwo-chip${job.chip === c ? ' on' : ''}" onclick="gwoJobChip(decodeURIComponent('${_encArg(c)}'))">${e(c)}</span>`).join('')}</div>` : '');
+      + (chips.length ? `<div class="gwo-chips">${chips.map(c => `<span class="gwo-chip${job.chip === c ? ' on' : ''}" onclick="gwoJobChip(decodeURIComponent('${_encArg(c)}'))">${e(c)}</span>`).join('')}`
+        + (chips.length < all.length ? `<span class="gwo-chip gwo-chip-more" onclick="gwoJobChipsMore()">More…</span>` : '') + `</div>` : '');
     foot = btn('Next: add its tasks', 'gwoJobNameNext()', !job.name.trim()) + (_gwo.jobIdx > 0 && !_gwo.editFrom ? `<div class="gwo-link" onclick="gwoJobSkip()">Skip for now</div>` : '');
   } else if (s === 'jtasks') {
     const job = _gwo.jobs[_gwo.jobIdx];
     const have = job.tasks.map(t => t.name.trim().toLowerCase());
     const chips = (_GWO_TASK_CHIPS[job.chip] && job.chip === job.name.trim()) ? _GWO_TASK_CHIPS[job.chip].filter(c => have.indexOf(c.toLowerCase()) < 0) : [];
-    main = head('What are the steps in ' + e(job.name) + '?', 'Walk through the job in your head from start to finish. What do you do first? Then what? Write each task in the present tense.')
+    main = head('What are the tasks in ' + e(job.name) + '?', 'Walk through the job from start to finish. What’s the first task? Then what?')
       + `<div class="gwo-colhead"><span>Task</span><span>Minutes</span></div>`
       + `<div id="gwo-rows">${job.tasks.map((t, i) => `<div class="gwo-row" data-i="${i}">
           <span class="gwo-grip" onpointerdown="gwoDragStart(event, ${i})">⠿</span>
@@ -5128,6 +5167,9 @@ function gwoJobName(v) {
   const b = document.querySelector('#gwo-root .gwo-foot .gwo-btn'); if (b) b.disabled = !v.trim();
 }
 function gwoJobChip(c) { const job = _gwo.jobs[_gwo.jobIdx]; job.name = c; job.chip = c; _gwoSave(); gwoRender(); }
+// "More" on the job chips: open for this job only, so the next job starts with six again.
+let _gwoChipsMoreFor = -1;
+function gwoJobChipsMore() { _gwoChipsMoreFor = _gwo.jobIdx; gwoRender(); }
 function gwoJobNameNext() {
   const job = _gwo.jobs[_gwo.jobIdx];
   if (!job.name.trim()) { showToast('Give the job a name'); return; }
