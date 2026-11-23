@@ -3880,7 +3880,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.524';
+const APP_VERSION = '2026-06-21.525';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5072,11 +5072,11 @@ function gwoRender() {
       + ['yearly', 'monthly'].map(k => `<div class="gwo-opt${plan === k ? ' on' : ''}" onclick="gwoPlan('${k}')"><div class="gwo-plan"><span class="gwo-plan-dot"></span><div><div class="gwo-plan-n">${GW_PLANS[k].name}</div><div class="gwo-plan-s">${subs[k]}</div></div></div></div>`).join('')
       + `<div class="gwo-links"><span onclick="gwoRestore()">Restore purchases</span>${GW_TERMS_URL ? `<a href="${GW_TERMS_URL}" target="_blank" rel="noopener">Terms of Use</a>` : '<span>Terms of Use</span>'}${GW_PRIVACY_URL ? `<a href="${GW_PRIVACY_URL}" target="_blank" rel="noopener">Privacy Policy</a>` : '<span>Privacy Policy</span>'}</div>`;
     // "No payment due now" only with the yearly trial. Monthly never uses trial words.
-    // Monthly button and its small print approved by Lincoln, 21 Nov 2026. The legal line
-    // under it is the spec's required text for the selected plan, so both show.
+    // Monthly button wording approved by Lincoln, 21 Nov 2026. Only the required legal line
+    // sits under it: the "Billed today…" small print was dropped (Lincoln, 23 Nov 2026), as
+    // it said "Cancel anytime in your Apple ID settings" a second time.
     foot = (plan === 'yearly' ? `<div class="gwo-due">No payment due now</div>` : '')
       + btn(plan === 'yearly' ? 'Start your 7-day free trial' : `Subscribe monthly, ${e(price('monthly'))}/month`, 'gwoBuy()')
-      + (plan === 'monthly' ? `<div class="gwo-legal">Billed today. Cancel anytime in your Apple ID settings.</div>` : '')
       + `<div class="gwo-legal">${plan === 'yearly'
         ? `7 days free, then ${e(price('yearly'))} per year. Cancel anytime in your Apple ID settings.`
         : `${e(price('monthly'))} per month. Billed immediately. Cancel anytime in your Apple ID settings.`}</div>`;
@@ -5348,13 +5348,15 @@ function _day1Capture(entry) {
     return { job: entry.task, workMins: Math.round((entry.durationHours || 0) * 60), rows };
   } catch (e) { return null; }
 }
+// Returns true when the summary opened, so clockOut can leave out its "Clocked out"
+// message, which otherwise sat over the summary's last line (Lincoln, 23 Nov 2026).
 function _day1Show(d) {
-  if (!d) return;
+  if (!d) return false;
   try {
-    const ob = _gwoLoad(); if (!ob || ob.day1ShownAt) return;
+    const ob = _gwoLoad(); if (!ob || ob.day1ShownAt) return false;
     ob.day1ShownAt = new Date().toISOString(); ob.day1Job = d.job;
     _storeSet(KR_ONBOARDING, JSON.stringify(ob));
-  } catch (e) { return; }
+  } catch (e) { return false; }
   const e = _escHtml, guessed = d.rows.filter(r => r.guess);
   const sumG = guessed.reduce((s, r) => s + r.guess, 0), sumC = guessed.reduce((s, r) => s + r.mins, 0);
   const row = r => `<div style="display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:0.5px solid var(--border);font-size:15px;color:var(--text);">`
@@ -5362,11 +5364,13 @@ function _day1Show(d) {
     + `<span style="white-space:nowrap;color:var(--subtext);">${r.guess ? 'guess ' + fmtMin(r.guess) + ' · ' : ''}<b style="color:var(--text);">clock ${fmtMin(r.mins)}</b></span></div>`;
   document.getElementById('day1-body').innerHTML =
     `<div style="font-size:19px;font-weight:700;color:var(--text);margin-bottom:4px;">Your first job, timed</div>`
-    + `<div style="font-size:15px;color:var(--subtext);line-height:1.5;margin-bottom:10px;"><b style="color:var(--text);">${e(d.job)}</b> took ${fmtMin(d.workMins)} on the clock.</div>`
+    + `<div style="font-size:15px;color:var(--subtext);line-height:1.5;margin-bottom:10px;"><b style="color:var(--text);">${e(d.job)}</b> took ${fmtMin(d.workMins)}.</div>`
     + d.rows.map(row).join('')
-    + (guessed.length ? `<div style="font-size:15px;color:var(--text);line-height:1.5;margin-top:12px;">For the tasks you guessed, your guesses came to <b>${fmtMin(sumG)}</b> and the clock says <b>${fmtMin(sumC)}</b>.</div>` : '')
-    + `<div style="font-size:14px;color:var(--subtext);line-height:1.5;margin-top:10px;">From now on Groovework plans with these real times instead of your guesses, and every job you time sharpens your finish time.</div>`;
+    // Wording approved by Lincoln, 23 Nov 2026. The totals cover only the tasks that had a guess.
+    + (guessed.length ? `<div style="font-size:15px;color:var(--text);line-height:1.5;margin-top:12px;">You guessed <b>${fmtMin(sumG)}</b>. It actually took <b>${fmtMin(sumC)}</b>.</div>` : '')
+    + `<div style="font-size:14px;color:var(--subtext);line-height:1.5;margin-top:10px;">Groovework will now plan with your real times, so your finish time gets more accurate with every job you time.</div>`;
   openModal('modal-day1');
+  return true;
 }
 
 window.addEventListener('load', () => {
@@ -5852,8 +5856,8 @@ function clockOut(overrideTime) {
     syncCalendarForDate(entry.date, { silent: true });
   }
   const breakStr = entry.break > 0 ? ` (${(entry.break * 60).toFixed(0)}min break)` : '';
-  showToast('Clocked out — ' + entry.durationHours + 'h logged' + breakStr);
-  if (_day1) _day1Show(_day1);
+  // The day-1 summary says how long the job took itself, so it opens without the toast.
+  if (!_day1Show(_day1)) showToast('Clocked out — ' + entry.durationHours + 'h logged' + breakStr);
 }
 
 function renderClockState() {
