@@ -3887,7 +3887,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.531';
+const APP_VERSION = '2026-06-21.532';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5075,7 +5075,7 @@ function gwoRender() {
       + `<div class="gwo-note">The good news: once Groovework knows your real times, it shows your finish time before you start.</div>`;
     foot = btn('Continue', 'gwoNext()');
   } else if (s === 'jintro') {
-    main = head('Let’s set up your first three jobs', 'A job is something you do regularly, like getting the kids off to school. Each job is made up of smaller tasks, and Groovework times every task on its own.')
+    main = head('Let’s set up your first three jobs', 'A job is something you do regularly, like cleaning up the kitchen after dinner. Each job is made up of smaller tasks, and Groovework times every task on its own.')
       + `<div class="gwo-card"><div class="gwo-job">Kitchen clean-up</div>${[['Clear the table', 5], ['Load the dishwasher', 10], ['Wipe the benches', 5]].map(t => `<div class="gwo-trow"><span>${t[0]}</span><span>${t[1]} min</span></div>`).join('')}</div>`
       + `<div class="gwo-small">Write task names in the present tense, e.g. ‘Wipe the benches’.</div>`;
     foot = btn('Add my first job', 'gwoJobStart(0)');
