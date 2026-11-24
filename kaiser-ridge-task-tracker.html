@@ -1799,6 +1799,8 @@
   <div class="update-banner" id="assign-banner" onclick="ackAssignmentBanner()" style="display:none;background:var(--green);margin:0 16px 8px;"></div>
   <!-- All-day events (guest bookings etc.) — banner bars above the timed grid -->
   <div id="planner-allday-strip" style="display:none;padding:0 16px 6px;"></div>
+  <!-- ▶ First job after onboarding (v533): one clear next step. See _gwoFirstStartRender. -->
+  <div id="planner-first-start" style="display:none;padding:0 16px 8px;"></div>
   <div id="planner-day-wrap" style="display:flex;flex:1;min-height:0;">
     <div class="scroll-area" id="planner-scroll" style="position:relative;overflow-y:auto;flex:1;touch-action:pan-y;">
       <div id="planner-grid" style="position:relative;margin:0 16px;"></div>
@@ -3887,7 +3889,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.532';
+const APP_VERSION = '2026-06-21.533';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5032,7 +5034,7 @@ function gwoRender() {
     main = `<div class="gwo-hero">${_gwIcon('check')}</div>` + head('Good call. You’re about to find out when your day really ends.', 'Groovework learns how long your work really takes and tells you when you’ll finish.');
     foot = btn('Let’s go', 'gwoNext()');
   } else if (s === 'signin') {
-    main = `<div class="gwo-hero">${_gwIcon('cloud')}</div>` + head('Save your times as you go');
+    main = `<div class="gwo-hero">${_gwIcon('cloud')}</div>` + head('Save your times as you go', 'Your times sync to your account so you won’t lose them if you change phones.');
     foot = (_gwNative() ? `<button class="gwo-btn gwo-apple" onclick="gwoSignInApple()"> Sign in with Apple</button>` : '')
       + `<button class="gwo-btn gwo-google" onclick="gwoSignInGoogle()">Sign in with Google</button>`
       + `<div class="gwo-link" onclick="gwoNext()">Not now</div>`;
@@ -5410,12 +5412,53 @@ function _gwoFinish() {
   if (!_gwo.paywall) _gwo.paywall = _gwFlag('paywall') ? 'passed' : 'off';
   const u = currentUser(); if (u && u.id) _gwo.userId = u.id;
   _gwoSave();
+  try { _gwoPlanFirstJob(); } catch (e) {}
+  _gwoSave();
   _storeSet('kr_onboarded', '1');
   closeModal('modal-gwo');
   _gwo = null;
   try { renderDirectory(); renderClockState(); } catch (e) {}
-  try { showScreen('clock', document.querySelector(".nav-tab[onclick*=\"'clock'\"]")); } catch (e) {}
-  showToast('You’re set up. Start a job’s timer when you begin it.');
+  // ▶ LAND ON THE PLANNER, NOT AN EMPTY CLOCK (v533, Lincoln 24 Nov 2026): the first job
+  // they built is already on today, with one button to start it.
+  try { _plannerDate = new Date(); _plannerScrollKey = null; showScreen('planner', document.querySelector(".nav-tab[onclick*=\"'planner'\"]")); } catch (e) {}
+}
+// The first job from onboarding, put on TODAY at the next quarter hour, as long as the
+// guesses say it takes (at least 15 minutes). Once only: a re-run of onboarding, or a
+// plan already made, leaves the day alone. Placed rather than parked, because the
+// button under it starts it now. Their own planner only, never someone else's.
+function _gwoPlanFirstJob() {
+  if (!_gwo || _gwo.firstPlanId || _plannerView !== 'me') return;
+  const j = (_gwo.jobs || []).find(x => (x.name || '').trim() && DIRECTORY.some(r => r.task === x.name.trim()));
+  if (!j) return;
+  const name = j.name.trim(), today = plannerDateStr(new Date());
+  if (_plannerPlans.some(p => p.date === today && p.task === name)) return;
+  const mins = (j.tasks || []).reduce((s, x) => s + (parseInt(x.mins, 10) || 0), 0);
+  const dur = Math.max(0.25, Math.round(Math.max(mins, 15) / 60 * 100) / 100);
+  const now = new Date();
+  let start = Math.ceil((now.getHours() * 60 + now.getMinutes() + 1) / 15) * 15;
+  start = Math.min(start, 24 * 60 - Math.ceil(dur * 60 / 15) * 15);   // keep it inside today
+  const hm = String(Math.floor(start / 60)).padStart(2, '0') + ':' + String(start % 60).padStart(2, '0');
+  const row = DIRECTORY.find(r => r.task === name) || {};
+  const id = 'p' + Date.now() + Math.random().toString(36).slice(2, 6);
+  _plannerPlans.push({ id, date: today, task: name, group: row.group || 'General', frequency: row.frequency || 'Daily',
+    location: '', tool: '', startTime: hm, durationHours: dur });
+  savePlanner();
+  try { scheduleCalendarAutoPush(today); } catch (e) {}
+  _gwo.firstPlanId = id;
+}
+// The "Start <job>" button over today's planner. Shows while that first plan is still
+// waiting on today and nothing is clocked in; starting it (or the day passing) hides it.
+function _gwoFirstStartRender() {
+  const el = document.getElementById('planner-first-start'); if (!el) return;
+  let plan = null;
+  try {
+    const ob = _gwoLoad(), today = plannerDateStr(new Date());
+    if (ob && ob.firstPlanId && _plannerView === 'me' && _plannerMode !== 'week' && plannerDateStr(_plannerDate) === today && !(clockState && clockState.running))
+      plan = _plannerPlans.find(p => p.id === ob.firstPlanId && p.date === today) || null;
+  } catch (e) {}
+  if (!plan) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = 'block';
+  el.innerHTML = `<button onclick="_plannerStartPlan(decodeURIComponent('${_encArg(plan.id)}'), true)" style="width:100%;background:var(--green);color:#fff;border:none;border-radius:12px;padding:13px;font-size:16px;font-weight:700;cursor:pointer;">▶ Start ${_escHtml(plan.task)}</button>`;
 }
 
 // ⭐ DAY-1 WIN (Steven Cravotta, 18 Nov 2026): after a new person's FIRST timed job, show
@@ -25204,6 +25247,7 @@ function renderPlannerScreen() {
   // Update header
   const _rsBtn = document.getElementById('planner-rs-btn');
   if (_rsBtn) _rsBtn.style.display = (clockState && clockState.running && !featureHidden('planner-play')) ? 'inline-flex' : 'none';
+  _gwoFirstStartRender();
   const today = new Date();
   today.setHours(0,0,0,0);
   const viewing = new Date(_plannerDate);
