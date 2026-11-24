@@ -3887,7 +3887,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.529';
+const APP_VERSION = '2026-06-21.530';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -22570,6 +22570,8 @@ function sharedJobApply(mode) {
 // ⚠️ Before hiding a screen, check what can only be reached THROUGH it and give
 // that its own door first. The Dashboard held the only route to the Times list.
 const KR_HIDDEN_FEATURES = [
+  { id: 'planner-play', name: 'The green ▶ on the planner', since: 'v530',
+    what: 'The round green button top left of the planner while clocked in, one tap back to the run sheet. Lincoln, 24 Nov 2026: not needed, the Clock tab at the bottom does the same.' },
   { id: 'share-code', name: 'Share a job by code', since: 'v522',
     what: '"Share this job" on Edit Job and "+ Shared job" on Jobs. Lincoln and Mitch, 21 Nov 2026: hidden at launch, because sharing sends a copy of the job through our server and it is not in the privacy policy. Switch it on here to bring both back.' },
   { id: 'job-flag', name: 'Adding tasks to the run sheet from the job screen', since: 'v502',
@@ -25201,7 +25203,7 @@ function renderPlannerScreen() {
 
   // Update header
   const _rsBtn = document.getElementById('planner-rs-btn');
-  if (_rsBtn) _rsBtn.style.display = (clockState && clockState.running) ? 'inline-flex' : 'none';
+  if (_rsBtn) _rsBtn.style.display = (clockState && clockState.running && !featureHidden('planner-play')) ? 'inline-flex' : 'none';
   const today = new Date();
   today.setHours(0,0,0,0);
   const viewing = new Date(_plannerDate);
