@@ -3889,7 +3889,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.533';
+const APP_VERSION = '2026-06-21.534';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -4790,15 +4790,29 @@ const GW_PLANS = {
   yearly:  { name: 'Yearly',  price: '', amount: null, currency: '', ph: '[YEARLY PRICE]' },
   monthly: { name: 'Monthly', price: '', amount: null, currency: '', ph: '[MONTHLY PRICE]' },
 };
-function _gwPrice(k) { return GW_PLANS[k].price || GW_PLANS[k].ph; }
+// 🌐 WEB STAND-IN PRICES (v534, Lincoln 24 Nov 2026: "Put the real prices back"). The web
+// version has no store to ask, so it shows the Australian working prices instead of
+// placeholders. ⚠️ NEVER used in the App Store version (_gwNative): there the store's own
+// localised price is the only source, as decided on 21 Nov 2026, and an empty store price
+// still shows its placeholder rather than a typed one. Nothing can be bought on the web.
+const GW_WEB_PRICES = {
+  yearly:  { price: 'A$229.99', amount: 229.99, currency: 'AUD' },
+  monthly: { price: 'A$29.99',  amount: 29.99,  currency: 'AUD' },
+};
+function _gwPlan(k) {
+  const p = GW_PLANS[k];
+  return (!p.price && !_gwNative() && GW_WEB_PRICES[k]) ? Object.assign({}, p, GW_WEB_PRICES[k]) : p;
+}
+function _gwPrice(k) { const p = _gwPlan(k); return p.price || p.ph; }
 // Yearly shown as a monthly figure, and its saving on twelve months of monthly. Both only
 // when the store has given both prices in the same currency; placeholders otherwise.
 function _gwYearlyPerMonth() {
-  const y = GW_PLANS.yearly, m = GW_PLANS.monthly;
+  const y = _gwPlan('yearly'), m = _gwPlan('monthly');
   if (!(y.amount > 0) || !(m.amount > 0) || !y.currency || y.currency !== m.currency) return { perMonth: '[YEARLY ÷ 12]', save: '[SAVING]' };
   const pm = Math.round(y.amount / 12 * 100) / 100;
   let perMonth;
   try { perMonth = new Intl.NumberFormat(undefined, { style: 'currency', currency: y.currency }).format(pm); } catch (e) { perMonth = pm.toFixed(2); }
+  if (y.currency === 'AUD' && /^\$/.test(perMonth)) perMonth = 'A' + perMonth;   // match "A$229.99" on an Australian phone
   const save = Math.round((1 - y.amount / (12 * m.amount)) * 100);
   return { perMonth, save: save > 0 ? save + '%' : '' };
 }
@@ -5219,6 +5233,21 @@ function _gwoKnownTasks(name) {
 // Task names wrap onto more lines rather than being cut off (v527): the box grows to fit.
 function _gwoGrow(el) {
   if (!el) return;
+  // ⚠️ An EMPTY box is sized from its placeholder, measured in a hidden copy (v534).
+  // iPhone Safari leaves a wrapped placeholder out of scrollHeight, so the box stayed one
+  // line tall and a two-line example sat low, spilling out of the bottom (Lincoln's
+  // iPhone test, 24 Nov 2026). Same padding top and bottom, so it sits in the middle.
+  if (!el.value && el.placeholder) {
+    const cs = getComputedStyle(el), m = document.createElement('div');
+    m.textContent = el.placeholder;
+    m.style.cssText = `position:absolute;visibility:hidden;left:-9999px;top:0;box-sizing:border-box;white-space:pre-wrap;overflow-wrap:break-word;`
+      + `width:${el.clientWidth}px;padding:${cs.paddingTop} ${cs.paddingRight} ${cs.paddingBottom} ${cs.paddingLeft};`
+      + `font:${cs.font};line-height:${cs.lineHeight};letter-spacing:${cs.letterSpacing};`;
+    document.body.appendChild(m);
+    const h = m.offsetHeight; m.remove();
+    el.style.height = (h + 3) + 'px';   // + the 1.5px border top and bottom
+    return;
+  }
   el.style.height = 'auto';
   el.style.height = (el.scrollHeight + 3) + 'px';   // + the 1.5px border top and bottom
 }
@@ -5446,6 +5475,29 @@ function _gwoPlanFirstJob() {
   try { scheduleCalendarAutoPush(today); } catch (e) {}
   _gwo.firstPlanId = id;
 }
+// ▶ ONE TAP TO A RUNNING FIRST JOB (v534, Lincoln 24 Nov 2026). Start clocks in NOW and
+// opens the run sheet with every task of the job on it, in the order they were typed in
+// onboarding, so the first task is the one to do. No clock-in sheet, no Organise.
+// ⚠️ This first start only. Every other clock-in still begins with nothing on the run
+// sheet (v502), and that rule stays. The tasks ride in the way a planned block's always
+// have: as the block's own arrangement, consumed on clock-in, never the job's flags.
+function _gwoStartFirst(id) {
+  const plan = _plannerPlans.find(p => p.id === id);
+  if (!plan) return;
+  if (clockState && clockState.running) { _plannerStartPlan(id, true); return; }   // shows the usual "already clocked in"
+  const items = (SUBTASKS[plan.task] || []).slice();
+  if (items.length) {
+    const pcm = getPlannerChecklist(), flags = {};
+    items.forEach(s => { flags[s] = true; });
+    pcm[id] = Object.assign({}, pcm[id] || {}, { flags, order: items.slice() });
+    savePlannerChecklist(pcm);
+  }
+  _timeModalMode = 'in';
+  _pendingTaskInfo = { task: plan.task, group: plan.group, frequency: plan.frequency, location: plan.location || '',
+    tool: plan.tool || '', notes: '', subtask: '', pin: null, _planId: id };
+  confirmTime('now');
+  try { openRunSheet(); } catch (e) {}
+}
 // The "Start <job>" button over today's planner. Shows while that first plan is still
 // waiting on today and nothing is clocked in; starting it (or the day passing) hides it.
 function _gwoFirstStartRender() {
@@ -5458,7 +5510,7 @@ function _gwoFirstStartRender() {
   } catch (e) {}
   if (!plan) { el.style.display = 'none'; el.innerHTML = ''; return; }
   el.style.display = 'block';
-  el.innerHTML = `<button onclick="_plannerStartPlan(decodeURIComponent('${_encArg(plan.id)}'), true)" style="width:100%;background:var(--green);color:#fff;border:none;border-radius:12px;padding:13px;font-size:16px;font-weight:700;cursor:pointer;">▶ Start ${_escHtml(plan.task)}</button>`;
+  el.innerHTML = `<button onclick="_gwoStartFirst(decodeURIComponent('${_encArg(plan.id)}'))" style="width:100%;background:var(--green);color:#fff;border:none;border-radius:12px;padding:13px;font-size:16px;font-weight:700;cursor:pointer;">▶ Start ${_escHtml(plan.task)}</button>`;
 }
 
 // ⭐ DAY-1 WIN (Steven Cravotta, 18 Nov 2026): after a new person's FIRST timed job, show
