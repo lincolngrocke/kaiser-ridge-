@@ -3887,7 +3887,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.528';
+const APP_VERSION = '2026-06-21.529';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -29343,13 +29343,15 @@ function openPlannerDetail(planId) {
   // Time editor — managers only; prefill with the block's current time/duration
   const editEl = document.getElementById('planner-detail-edit');
   if (editEl) {
-    editEl.style.display = isWorker() ? 'none' : '';
+    // A holding-bay job has no place on the day yet, so no time to edit: drag it on to place it.
+    editEl.style.display = (isWorker() || plan.parked) ? 'none' : '';
     document.getElementById('planner-edit-time').value = plan.startTime || '';
     document.getElementById('planner-edit-duration').value = plan.durationHours || '';
   }
   document.getElementById('planner-detail-title').textContent = plan.task;
-  const startStr = formatTimeAmPm(plan.startTime);
-  const endMins = (parseInt(plan.startTime.split(':')[0]) * 60 + parseInt(plan.startTime.split(':')[1])) + plan.durationHours * 60;
+  const _pdStart = /^\d{1,2}:\d{2}/.test(plan.startTime || '') ? plan.startTime : '00:00';   // a parked job may have none
+  const startStr = formatTimeAmPm(_pdStart);
+  const endMins = (parseInt(_pdStart.split(':')[0]) * 60 + parseInt(_pdStart.split(':')[1])) + plan.durationHours * 60;
   const endH = String(Math.floor(endMins / 60) % 24).padStart(2,'0');
   const endM = String(Math.round(endMins % 60)).padStart(2,'0');
   const endStr = formatTimeAmPm(`${endH}:${endM}`);
@@ -29437,7 +29439,7 @@ function openPlannerDetail(planId) {
       </div>`
     : '';
   document.getElementById('planner-detail-info').innerHTML =
-    `<div style="margin-bottom:6px;">⏰ ${startStr} – ${endStr}</div>
+    `<div style="margin-bottom:6px;">${plan.parked ? '⏰ In the holding bay, no time set yet' : `⏰ ${startStr} – ${endStr}`}</div>
      <div style="margin-bottom:6px;">⏱ ${plan.durationHours}h planned${(() => { let m = 0; try { m = _plannedBreaksFor(plan.id).reduce((s, b) => s + (+b.mins || 0), 0); } catch (e) {} return m > 0 ? _rsBrkIncl(m) : ''; })()}</div>
      ${(() => {
        // 🗓 WHEN THIS JOB WAS LAST DONE. Planning a job, "last done 29 days ago" is
@@ -29833,7 +29835,15 @@ function plannerClockIn() { _plannerStartPlan(_plannerDetailId, false); }
 // calendar to start it." A tap opens the same one-screen clock-in a placed block
 // opens (its own tasks, laps, leftover), and ‹ Planner just closes it again. Drag
 // to place and hold for the move picker are unchanged.
-function plannerStartParked(id) { _plannerStartPlan(id, true); }
+// 👀 CLOCKED IN? A TAP JUST SHOWS THE JOB (v529). Lincoln, 24 Nov 2026: clocked into one
+// job and browsing other days, tapping a holding-bay job only said "You're already
+// clocked into…". He wants to glance at how it's set up, without dragging it onto the
+// calendar. So while the clock runs, a tap opens the same details sheet a placed block
+// opens. Not clocked in, a tap still goes straight to clock-in (v407).
+function plannerStartParked(id) {
+  if (clockState && clockState.running) { openPlannerDetail(id); return; }
+  _plannerStartPlan(id, true);
+}
 function _plannerStartPlan(id, fromBay) {
   const plan = _plannerPlans.find(p => p.id === id);
   if (!plan) return;
