@@ -3887,7 +3887,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.530';
+const APP_VERSION = '2026-06-21.531';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -29433,9 +29433,11 @@ function openPlannerDetail(planId) {
           const _hd = _pdHeads[s]
             ? `<div style="display:flex;align-items:center;gap:6px;margin:12px 0 6px;font-size:11px;font-weight:700;color:var(--subtext);letter-spacing:0.4px;text-transform:uppercase;">${_pdHeads[s]}</div>`
             : '';
+          // 🩶 Not on the run sheet = greyed (v531, Lincoln 24 Nov 2026): only the flagged tasks read
+          // at full strength. Opacity, not colour, so the 🗓 emoji fades with the words.
           return `${_hd}<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:7px;">
           <span style="margin-top:2px;flex-shrink:0;"><span class="rsi rsi-go${clFlags[s] ? '' : ' off'}"></span></span>
-          <div style="min-width:0;flex:1;">
+          <div style="min-width:0;flex:1;${clFlags[s] ? '' : 'opacity:0.45;'}">
           <span style="font-size:14px;color:var(--text);">${s}${_laps > 1 ? ` <span style="font-size:12px;font-weight:700;color:#30d158;">🔁×${_laps}</span>` : ''}</span>${_ldLine}</div>
         </div>`; }).join('')}
       </div>`
