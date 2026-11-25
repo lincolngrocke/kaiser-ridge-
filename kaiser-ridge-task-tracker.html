@@ -448,6 +448,8 @@
   .ts-day-job .ts-tgt { margin-right: 10px; }
   .ts-tgt.on { color: #30a14e; }
   .ts-tgt.over { color: #e8850c; }
+  .ts-day-sess { margin-top: 2px; font-size: 12px; line-height: 1.45; color: var(--subtext); }
+  .ts-day-sess .rsi { width: 13px; height: 13px; vertical-align: -2px; }
   .ts-tgt-day { margin-top: 8px; font-size: 12px; font-weight: 600; color: var(--subtext); }
   .ts-entry-date { font-size: 15px; font-weight: 600; }
   .ts-entry-hours { font-size: 15px; font-weight: 600; }
@@ -3889,7 +3891,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.534';
+const APP_VERSION = '2026-06-21.535';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -9766,7 +9768,8 @@ function _tsDays(rows) {
     const hours = e.durationHours || 0;
     const name = e.bot ? (e.botEmoji || '🤖') + ' ' + [e.personnel, e.task].filter(Boolean).join(' · ') : (e.task || 'No job name');
     let job = day.jobs.find(j => j.name === name);
-    if (job) job.hours += hours; else day.jobs.push(job = { name, hours, diff: 0, hasT: false });
+    if (job) job.hours += hours; else day.jobs.push(job = { name, hours, diff: 0, hasT: false, sess: [] });
+    job.sess.push(e);   // each clock-in of this job that day, for its times and breaks (v535)
     const d = _tsTargetDiff(e);
     if (d != null) { job.diff += d; job.hasT = true; day.nT = (day.nT || 0) + 1; if (d <= 0) day.nOn = (day.nOn || 0) + 1; }
     day.rows.push(e); day.total += hours;
@@ -9783,6 +9786,19 @@ function _tsDiffMark(diff) {
   if (diff == null) return '';
   if (diff === 0) return '<span class="ts-tgt on">on target</span>';
   return diff < 0 ? `<span class="ts-tgt on">▾${fmtMin(-diff)}</span>` : `<span class="ts-tgt over">▴${fmtMin(diff)}</span>`;
+}
+// 🕘 START, FINISH AND BREAKS ON THE DAILY TOTALS (v535). Lincoln, 25 Nov 2026: the day
+// card needs the start time, finish time, the breaks and the total break time as well.
+// One pair of lines per clock-in, under its job, oldest first: the times, then each break
+// and the break total. A clock-in with no break says so on the times line.
+function _tsDaySessHtml(rows) {
+  return (rows || []).slice().sort((a, b) => _entryDateTimeKey(a) - _entryDateTimeKey(b)).map(e => {
+    const times = (e.clockIn ? formatTimeAmPm(e.clockIn) : '—') + ' – ' + (e.clockOut ? formatTimeAmPm(e.clockOut) : '—');
+    const bMins = Math.round((Number(e.break) || 0) * 60), ranges = _breakRangesLabel(e.breaks);
+    if (!(bMins > 0) && !ranges) return `<div class="ts-day-sess">${times} · no breaks</div>`;
+    return `<div class="ts-day-sess">${times}</div>`
+      + `<div class="ts-day-sess">${_brkIco(false)} ${ranges ? _escHtml(ranges) + ' · ' : ''}${bMins > 0 ? fmtMin(bMins) + ' break' : ''}</div>`;
+  }).join('');
 }
 function renderTimesheets() {
   updateRestoreEntryBanner();
@@ -9878,7 +9894,7 @@ function renderTimesheets() {
         <div class="ts-entry-date">${open ? '▾' : '▸'} ${dateStr}${syncBadge}</div>
         <div class="ts-entry-hours">${formatHours(d.total)}</div>
       </div>
-      ${d.jobs.map(j => `<div class="ts-day-job"><span class="ts-entry-tag">${hl(_escHtml(j.name))}</span><span>${j.hasT ? _tsDiffMark(j.diff) : ''}${formatHours(j.hours)}</span></div>`).join('')}
+      ${d.jobs.map(j => `<div class="ts-day-job"><span class="ts-entry-tag">${hl(_escHtml(j.name))}</span><span>${j.hasT ? _tsDiffMark(j.diff) : ''}${formatHours(j.hours)}</span></div>${_tsDaySessHtml(j.sess)}`).join('')}
       ${d.nT ? `<div class="ts-tgt-day">🎯 ${d.nOn || 0} of ${d.nT} on target</div>` : ''}
     </div>${open ? d.rows.map(e => card(e, true)).join('') : ''}`;
   };
