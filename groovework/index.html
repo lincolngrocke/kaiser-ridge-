@@ -3914,7 +3914,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.542';
+const APP_VERSION = '2026-06-21.543';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5944,6 +5944,22 @@ function clockOut(overrideTime) {
     endMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0).getTime();
   }
   _clampCompletionsTo(endMs);
+  // 🎯 CLOCKING OUT PART WAY THROUGH (v543, Lincoln 26 Nov 2026: "Household chores says I was
+  // 42 minutes ahead ... I don't think I was"). The 🎯 is when the WHOLE job should finish.
+  // Clock out with tasks still to do and the clock-out time lands well before it, so every
+  // unfinished task was being counted as minutes ahead, and the job read far ahead once it
+  // was finished later that day. With work left, the timesheet now takes the 🏁 the run
+  // sheet showed at clock-out (now + the tasks still to do) and measures THAT against the 🎯:
+  // how far ahead or behind you really were when you stopped. The return trip locks its own
+  // 🎯 from the work that was left, so nothing is counted twice. Read here, before anything
+  // below changes the run. A job clocked out with everything done is worked out as before.
+  let _projFinMs = null;
+  try {
+    if (clockState.targetMs && _runPlanStarted() && _runWorkLeft()) {
+      const f = _runForecastFinishMs();
+      if (f) _projFinMs = Math.max(f, endMs);
+    }
+  } catch (e) {}
   // Snapshot everything clock-out is about to mutate, so an accidental clock-out
   // can be fully reversed (see undoClockOut). Taken BEFORE finalizeDonePins strips
   // the ticked to-dos off the job and stamps them done in the inbox.
@@ -5992,7 +6008,7 @@ function clockOut(overrideTime) {
   try {
     if (clockState.targetMs && _runPlanStarted()) {
       const tgt = clockState.targetMs + Math.max(0, breakTotal - (clockState.targetBreakMs0 || 0) - _targetPlannedCreditMs());
-      const t = Math.round(durationHours * 60 - (endMs - tgt) / 60000);
+      const t = Math.round(durationHours * 60 - ((_projFinMs || endMs) - tgt) / 60000);   // v543: 🏁 at clock-out when work was left
       if (t > 0) targetMins = t;
     }
   } catch (e) {}
@@ -8367,6 +8383,18 @@ function _runEstSec() {
 // tasks' learned averages for everything not yet ticked (repeat tasks: whatever
 // laps are left of the target). Returns null when there's no per-task basis to
 // forecast from, so callers fall back to the static job-average estimate.
+// Is any flagged task still to do (or a repeat task short of its laps)? Estimates don't
+// matter here: a task with no history is still work left (v543).
+function _runWorkLeft() {
+  if (!clockState || !clockState.running || !clockState.task) return false;
+  const task = clockState.task, _onJob = new Set(SUBTASKS[task] || []);
+  const done = Array.isArray(clockState.checklistDone) ? clockState.checklistDone : [];
+  const carried = new Set(Array.isArray(clockState.checklistCarried) ? clockState.checklistCarried : []);
+  const lt = clockState.lapTargets || {};
+  return Object.keys(_sessionOrGlobalFlags(task)).filter(t => _onJob.has(t)).some(item => isRepeatTask(task, item)
+    ? taskRepCount(task, item) < (lt[item] >= 1 ? lt[item] : 1)
+    : !(_isTaskDoneNow(task, item, done) || carried.has(item)));
+}
 function _runRemainingSec() {
   if (!clockState || !clockState.running || !clockState.task) return null;
   const task = clockState.task;
