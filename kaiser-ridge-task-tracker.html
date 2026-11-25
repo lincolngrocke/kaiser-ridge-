@@ -3891,7 +3891,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.535';
+const APP_VERSION = '2026-06-21.536';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -9771,7 +9771,7 @@ function _tsDays(rows) {
     if (job) job.hours += hours; else day.jobs.push(job = { name, hours, diff: 0, hasT: false, sess: [] });
     job.sess.push(e);   // each clock-in of this job that day, for its times and breaks (v535)
     const d = _tsTargetDiff(e);
-    if (d != null) { job.diff += d; job.hasT = true; day.nT = (day.nT || 0) + 1; if (d <= 0) day.nOn = (day.nOn || 0) + 1; }
+    if (d != null) { job.diff += d; job.hasT = true; day.nT = (day.nT || 0) + 1; day.diff = (day.diff || 0) + d; if (d <= 0) day.nOn = (day.nOn || 0) + 1; }
     day.rows.push(e); day.total += hours;
   });
   return days;
@@ -9791,6 +9791,13 @@ function _tsDiffMark(diff) {
 // card needs the start time, finish time, the breaks and the total break time as well.
 // One pair of lines per clock-in, under its job, oldest first: the times, then each break
 // and the break total. A clock-in with no break says so on the times line.
+// 🎯 THE DAY'S NET AGAINST TARGET (v536). Lincoln, 25 Nov 2026: beside "5 of 6 on target",
+// the minutes gained and lost added up for the day, so you can see how your guesses are
+// tracking. Only timesheets that saved a target count, the same ones the "of" counts.
+function _tsDayNet(diff) {
+  if (!diff) return '<span class="ts-tgt on">on target overall</span>';
+  return diff < 0 ? `<span class="ts-tgt on">▾${fmtMin(-diff)} ahead overall</span>` : `<span class="ts-tgt over">▴${fmtMin(diff)} behind overall</span>`;
+}
 function _tsDaySessHtml(rows) {
   return (rows || []).slice().sort((a, b) => _entryDateTimeKey(a) - _entryDateTimeKey(b)).map(e => {
     const times = (e.clockIn ? formatTimeAmPm(e.clockIn) : '—') + ' – ' + (e.clockOut ? formatTimeAmPm(e.clockOut) : '—');
@@ -9895,7 +9902,7 @@ function renderTimesheets() {
         <div class="ts-entry-hours">${formatHours(d.total)}</div>
       </div>
       ${d.jobs.map(j => `<div class="ts-day-job"><span class="ts-entry-tag">${hl(_escHtml(j.name))}</span><span>${j.hasT ? _tsDiffMark(j.diff) : ''}${formatHours(j.hours)}</span></div>${_tsDaySessHtml(j.sess)}`).join('')}
-      ${d.nT ? `<div class="ts-tgt-day">🎯 ${d.nOn || 0} of ${d.nT} on target</div>` : ''}
+      ${d.nT ? `<div class="ts-tgt-day">🎯 ${d.nOn || 0} of ${d.nT} on target · ${_tsDayNet(d.diff || 0)}</div>` : ''}
     </div>${open ? d.rows.map(e => card(e, true)).join('') : ''}`;
   };
   list.innerHTML = _tsView() === 'days' ? _tsDays(filtered).map(dayCard).join('') : filtered.map(e => card(e)).join('');
