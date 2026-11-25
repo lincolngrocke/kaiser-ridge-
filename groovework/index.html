@@ -3896,7 +3896,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.537';
+const APP_VERSION = '2026-06-21.538';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -25689,7 +25689,7 @@ function renderPlannerBlock(plan, grid) {
   // ⏱ ONE-TAP CLOCK IN (v537, Lincoln 26 Nov 2026): "It takes three clicks to get from the
   // planner screen to clock into a job. It should be just one click." Block → details → run
   // sheet → Clock in became one tap, straight to the Now / Earlier clock-in screen. Only on your
-  // own day, today, while nothing is clocked in. Tapping the rest of the block still opens its details.
+  // own day, today, while nothing is clocked in. Since v538 it opens the block's run sheet. Tapping the rest of the block still opens its details.
   const _qci = _plannerQuickClockInShown(plan);
   if (_qci) block.classList.add('has-qci');
   block.innerHTML = `${_qci ? '<span class="pl-qci">Clock in</span>' : ''}<div class="planner-block-title">${_hasFlags ? _goMark(true) : ''}${plan.task}</div>
@@ -29988,6 +29988,11 @@ function _plannerQuickClockIn(id) {
   // A new person's first job still starts the onboarding way (every task flagged, the first one on).
   try { const ob = _gwoLoad(); const el = document.getElementById('planner-first-start');
     if (ob && ob.firstPlanId === id && el && el.style.display !== 'none') { _gwoStartFirst(id); return; } } catch (e) {}
+  // v538, Lincoln 26 Nov 2026: "it should take you straight to the run sheet". A block with
+  // tasks lined up opens its Run Sheet · Planning, where its own Clock in finishes the job.
+  // A block with nothing on it has no run sheet to show, so it goes to the clock-in screen.
+  const rec = getPlannerChecklist()[id];
+  if (rec && rec.flags && Object.keys(rec.flags).length) { openRunSheet(id); return; }
   _plannerStartPlan(id, true);
 }
 function plannerStartParked(id) {
