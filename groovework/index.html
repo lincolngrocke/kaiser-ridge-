@@ -1041,11 +1041,14 @@
   .rsn-reset { font-size: 12px; font-weight: 600; color: var(--rsn-sub); cursor: pointer; }
   .rsn-order-note { font-size: 11px; line-height: 1.45; color: var(--rsn-sub); margin-bottom: 8px; }
   .rsn-addbrk { position: relative; height: 38px; display: flex; align-items: stretch; border-radius: 14px; background: linear-gradient(rgba(242,107,0,0.04), rgba(242,107,0,0.04)), var(--rsn-card); border: 1px solid rgba(242,107,0,0.16); color: var(--rsn-orange); font-size: 13px; font-weight: 600; margin-bottom: 8px; overflow: hidden; }
-  /* v517: two halves, ☕ coffee on the left and 🍴 lunch on the right (Lincoln, 20 Nov 2026). */
+  /* v517: two halves, ☕ coffee on the left and 🍴 lunch on the right (Lincoln, 20 Nov 2026).
+     v540: three thirds, Coffee · Lunch · Pause, one word each so they fit across a phone. */
   .rsn-addbrk-h { flex: 1; display: flex; align-items: center; justify-content: center; gap: 7px; cursor: pointer; }
   .rsn-addbrk-h + .rsn-addbrk-h { border-left: 1px solid rgba(242,107,0,0.16); }
   .rsn-slim-brk + .rsn-slim-brk { margin-left: 0; }
   .rsi-lunch { --rsi: url("data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTQiIGhlaWdodD0iMTQiIHZpZXdCb3g9IjAgMCAxNCAxNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMi45IDEuNFY0LjZDMi45IDUuNiAzLjcgNi40IDQuNyA2LjRDNS43IDYuNCA2LjUgNS42IDYuNSA0LjZWMS40TTQuNyAxLjRWMTIuNk0xMC45IDEyLjZWMS40QzkuNiAxLjkgOC43IDMuNCA4LjcgNS40VjcuOUgxMC45IiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMS42IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz48L3N2Zz4="); }
+  /* ⏸ v540: Pause, the third break, two plain bars in the same line weight as the cup. */
+  .rsi-pause { --rsi: url("data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTQiIGhlaWdodD0iMTQiIHZpZXdCb3g9IjAgMCAxNCAxNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNNS4xIDMuMlYxMC44TTguOSAzLjJWMTAuOCIgc3Ryb2tlPSIjMDAwIiBzdHJva2Utd2lkdGg9IjEuOCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PC9zdmc+"); }
   .rsn-row { margin-bottom: 8px; }
   /* 🅿️ v516: PARKED cards on the left, the list on the right (Lincoln, 20 Nov 2026). The park
      column is sticky under the frozen top, so it stays put while the list scrolls past it.
@@ -3896,7 +3899,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.539';
+const APP_VERSION = '2026-06-21.540';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -5957,7 +5960,7 @@ function clockOut(overrideTime) {
   if (!Array.isArray(clockState.breaks)) clockState.breaks = [];
   if (clockState.onBreak && clockState.breakStartMs) {
     breakTotal += endMs - clockState.breakStartMs;
-    clockState.breaks.push(_brkActiveIsLunch() ? { start: clockState.breakStartMs, end: endMs, kind: 'lunch' } : { start: clockState.breakStartMs, end: endMs });   // 🍴 v519
+    clockState.breaks.push(_brkActiveKind() !== 'coffee' ? { start: clockState.breakStartMs, end: endMs, kind: _brkActiveKind() } : { start: clockState.breakStartMs, end: endMs });   // 🍴 v519
     clockState.onBreak = false;
     clockState.breakStartMs = null;
   }
@@ -6082,8 +6085,8 @@ function renderClockState() {
     const pauseBtn = document.getElementById('btn-pause');
     if (clockState.onBreak) {
       overlay.classList.add('paused');
-      if (pauseBtn) { pauseBtn.innerHTML = _brkIco(_brkActiveIsLunch()) + ' End Break'; pauseBtn.classList.add('on-pause'); }
-      if (clEl) clEl.innerHTML = _brkIco(_brkActiveIsLunch()) + (_brkActiveIsLunch() ? ' On lunch since ' : ' On break since ') + formatTimeAmPm(clockState.breakStartTime || clockState.startTime);
+      if (pauseBtn) { pauseBtn.innerHTML = _brkIco(_brkActiveKind()) + ' End Break'; pauseBtn.classList.add('on-pause'); }
+      if (clEl) clEl.innerHTML = _brkIco(_brkActiveKind()) + ' ' + _brkNowWord(_brkActiveKind()) + ' since ' + formatTimeAmPm(clockState.breakStartTime || clockState.startTime);
     } else {
       overlay.classList.remove('paused');
       if (pauseBtn) { pauseBtn.innerHTML = _rsIcon('coffee') + ' Start Break'; pauseBtn.classList.remove('on-pause'); }
@@ -15229,9 +15232,9 @@ function _breakBtnUI() {
   const btn = document.getElementById('btn-pause');
   const overlay = document.getElementById('running-overlay');
   if (clockState && clockState.onBreak) {
-    if (btn) { btn.innerHTML = _brkIco(_brkActiveIsLunch()) + ' End Break'; btn.classList.add('on-pause'); }
+    if (btn) { btn.innerHTML = _brkIco(_brkActiveKind()) + ' End Break'; btn.classList.add('on-pause'); }
     if (overlay) overlay.classList.add('paused');
-    document.getElementById('run-clockedin-text').innerHTML = _brkIco(_brkActiveIsLunch()) + (_brkActiveIsLunch() ? ' On lunch since ' : ' On break since ') + formatTimeAmPm(clockState.breakStartTime);
+    document.getElementById('run-clockedin-text').innerHTML = _brkIco(_brkActiveKind()) + ' ' + _brkNowWord(_brkActiveKind()) + ' since ' + formatTimeAmPm(clockState.breakStartTime);
   } else {
     if (btn) { btn.innerHTML = _rsIcon('coffee') + ' Start Break'; btn.classList.remove('on-pause'); }
     if (overlay) overlay.classList.remove('paused');
@@ -15257,7 +15260,7 @@ function applyBreakStart(timeStr) {
   _storeSet('kr_clock', JSON.stringify(clockState));
   _breakBtnUI();
   { const _rsOpen = document.getElementById('modal-run-sheet'); if (_rsOpen && _rsOpen.classList.contains('open')) _rsRender(); }
-  showToast('Break started @ ' + formatTimeAmPm(clockState.breakStartTime));
+  showToast((_brkActiveKind() === 'pause' ? 'Pause' : 'Break') + ' started @ ' + formatTimeAmPm(clockState.breakStartTime));
 }
 // End the break at the chosen time (clamped to between its start and now); bank it.
 function applyBreakEnd(timeStr) {
@@ -15265,10 +15268,10 @@ function applyBreakEnd(timeStr) {
   let ms = _todayTimeMs(timeStr);
   if (ms > Date.now()) ms = Date.now();
   if (ms < clockState.breakStartMs) { ms = clockState.breakStartMs; showToast('Break end can’t be before its start'); }
-  const start = clockState.breakStartMs;
+  const start = clockState.breakStartMs, _endKind = _brkActiveKind();
   clockState.breakTotal = (clockState.breakTotal || 0) + (ms - start);
   if (!Array.isArray(clockState.breaks)) clockState.breaks = [];
-  clockState.breaks.push(_brkActiveIsLunch() ? { start: start, end: ms, kind: 'lunch' } : { start: start, end: ms });   // 🍴 v519
+  clockState.breaks.push(_brkActiveKind() !== 'coffee' ? { start: start, end: ms, kind: _brkActiveKind() } : { start: start, end: ms });   // 🍴 v519
   clockState.onBreak = false;
   clockState.breakStartMs = null;
   clockState.breakStartTime = null;
@@ -15287,7 +15290,7 @@ function applyBreakEnd(timeStr) {
   const _rsOpen = document.getElementById('modal-run-sheet');
   if (_rsOpen && _rsOpen.classList.contains('open')) _rsRender();
   updateRunRing();
-  showToast('Break ended — ' + Math.round((ms - start) / 60000) + ' min deducted');
+  showToast((_endKind === 'pause' ? 'Pause' : 'Break') + ' ended — ' + Math.round((ms - start) / 60000) + ' min deducted');
 }
 
 function undoClockIn() {
@@ -25619,8 +25622,8 @@ function reflowPlannerBlocks(grid) {
 //   • Finished job: the breaks actually taken (entry.breaks: start/end).
 function _plannerBreakLines(list) {
   return (list || []).sort((a, b) => a.ms - b.ms).map(b =>
-    '<div class="pt-brk" style="font-size:10px;opacity:0.95;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _brkIco(b.lunch) + ' '
-      + (b.ahead ? '~' : '') + _rsHM(b.ms) + ' · ' + (b.now ? (b.lunch ? 'on lunch now' : 'on break now') : fmtMin(b.mins)) + '</div>').join('');
+    '<div class="pt-brk" style="font-size:10px;opacity:0.95;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _brkIco(b.kind || b.lunch) + ' '
+      + (b.ahead ? '~' : '') + _rsHM(b.ms) + ' · ' + (b.now ? _brkNowWord(b.kind || (b.lunch ? 'lunch' : 'coffee')).toLowerCase() + ' now' : fmtMin(b.mins)) + '</div>').join('');
 }
 // " · includes 30m break time", kept whole so it wraps onto its own line rather than splitting (v520).
 function _rsBrkIncl(mins) {
@@ -25633,27 +25636,27 @@ function _rsRowsFor(planId) {   // the run sheet's rows for a block (planId) or 
 function _plannedBreaksFor(planId) {
   const rec = getPlannerChecklist()[planId];
   if (!rec || !Array.isArray(rec.breaks) || !rec.breaks.length) return [];
-  return _rsRowsFor(planId).filter(r => r.brk && isFinite(r.startWhen)).map(r => ({ ms: r.startWhen, mins: r.mins, lunch: _rsBrkIsLunch(r) }));
+  return _rsRowsFor(planId).filter(r => r.brk && isFinite(r.startWhen)).map(r => ({ ms: r.startWhen, mins: r.mins, lunch: _rsBrkIsLunch(r), kind: _brkKindOf(r) }));
 }
 // A taken break remembers it was a lunch (v519: `kind` on the span), so a finished block says so too.
 function _doneBreaksFor(entry) {
   return (Array.isArray(entry && entry.breaks) ? entry.breaks : [])
     .filter(b => b && isFinite(b.start) && isFinite(b.end) && b.end > b.start)
-    .map(b => ({ ms: b.start, mins: Math.max(1, Math.round((b.end - b.start) / 60000)), lunch: _rsBrkIsLunch(b) }));
+    .map(b => ({ ms: b.start, mins: Math.max(1, Math.round((b.end - b.start) / 60000)), lunch: _rsBrkIsLunch(b), kind: _brkKindOf(b) }));
 }
 function _liveBreaksFor(cs) {
   if (!cs) return [];
   const out = (Array.isArray(cs.breaks) ? cs.breaks : [])
     .filter(b => b && isFinite(b.start) && isFinite(b.end) && b.end > b.start)
-    .map(b => ({ ms: b.start, mins: Math.max(1, Math.round((b.end - b.start) / 60000)), lunch: _rsBrkIsLunch(b) }));
-  if (cs.onBreak && cs.breakStartMs) out.push({ ms: cs.breakStartMs, now: true, lunch: _brkActiveIsLunch() });
+    .map(b => ({ ms: b.start, mins: Math.max(1, Math.round((b.end - b.start) / 60000)), lunch: _rsBrkIsLunch(b), kind: _brkKindOf(b) }));
+  if (cs.onBreak && cs.breakStartMs) out.push({ ms: cs.breakStartMs, now: true, lunch: _brkActiveIsLunch(), kind: _brkActiveKind() });
   if (Array.isArray(cs.plannedBreaks) && cs.plannedBreaks.length) {
     _rsRowsFor(null).forEach(r => {
       if (!r.brk || r.isDone || !isFinite(r.startWhen)) return;
       if (cs.onBreak && cs.brkActiveId === r.id) return;   // already shown as "on break now"
       // A break not yet taken cannot start before now, even when the forecast's
       // cursor still sits back at the last tick.
-      out.push({ ms: Math.max(r.startWhen, Date.now()), mins: r.mins, ahead: true, lunch: _rsBrkIsLunch(r) });
+      out.push({ ms: Math.max(r.startWhen, Date.now()), mins: r.mins, ahead: true, lunch: _rsBrkIsLunch(r), kind: _brkKindOf(r) });
     });
   }
   return out;
@@ -27597,7 +27600,7 @@ function _rsLineSync() {
   line.classList.toggle('over', _rsRing.over);
   document.getElementById('rs-line-time').textContent = txt('run-timer');
   // v519: the clock's line carries its cup as an icon, which has no text, so it is put back here.
-  document.getElementById('rs-line-in').innerHTML = (clockState.onBreak ? _brkIco(_brkActiveIsLunch()) + ' ' : '') + _escHtml(txt('run-clockedin-text').trim())
+  document.getElementById('rs-line-in').innerHTML = (clockState.onBreak ? _brkIco(_brkActiveKind()) + ' ' : '') + _escHtml(txt('run-clockedin-text').trim())
     + _rsBrkTally();
   document.getElementById('rs-line-pct').textContent = txt('run-ring-label');
   _rsMarksSync(f);
@@ -27648,7 +27651,7 @@ function _rsFootSync() {
   if (!ctx) { el.innerHTML = ''; return; }
   if (ctx.kind === 'plan') { el.innerHTML = '<span class="rsn-fbtn in" onclick="_rsPlanClockIn()">Clock in</span>'; return; }
   const brk = !!clockState.onBreak;
-  el.innerHTML = `<span class="rsn-fbtn pl" onclick="_rsToPlanner()" title="Open the planner">${_RS_CAL_SVG}Planner</span><span class="rsn-fbtn brk${brk ? ' on' : ''}" onclick="breakButtonTap()">${_brkIco(brk && _brkActiveIsLunch())}&nbsp;${brk ? 'End' : 'Start'} Break</span><span class="rsn-fbtn out" onclick="openTimeModal('out')">Clock Out</span>`;
+  el.innerHTML = `<span class="rsn-fbtn pl" onclick="_rsToPlanner()" title="Open the planner">${_RS_CAL_SVG}Planner</span><span class="rsn-fbtn brk${brk ? ' on' : ''}" onclick="breakButtonTap()">${_brkIco(brk ? _brkActiveKind() : 'coffee')}&nbsp;${brk ? 'End' : 'Start'} Break</span><span class="rsn-fbtn out" onclick="openTimeModal('out')">Clock Out</span>`;
 }
 // 🗓 ⇄ ⏱ ONE TAP EACH WAY (v503, Lincoln 18 Nov 2026: "one tap to view the planner and one
 // tap to go back to your run sheet"). Planner from the running sheet's foot or its next-job
@@ -27845,7 +27848,7 @@ function _rsRender() {
   if (!planning && _runRemainingSec() != null) _syncProvisionalTarget();
   const tgt = (!planning && clockState && clockState.targetMs) ? _targetDisplayMs() : null;   // slides by post-lock breaks
   const placingCancel = _rsPlacing
-    ? `<div style="text-align:right;padding:0 0 2px;"><span onclick="_rsSetPlacing(false)" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:13px;">✕ cancel — tap a gap to drop the ${_rsPlacingKind === 'lunch' ? 'lunch break' : 'coffee break'} in</span></div>` : '';
+    ? `<div style="text-align:right;padding:0 0 2px;"><span onclick="_rsSetPlacing(false)" style="color:#8b93a7;cursor:pointer;font-weight:600;font-size:13px;">✕ cancel — tap a gap to drop the ${_rsPlacingKind === 'lunch' ? 'lunch break' : _rsPlacingKind === 'pause' ? 'pause' : 'coffee break'} in</span></div>` : '';
   // v516: the old "⤴ Moving …, tap a gap" banner is gone. Rows in hand now sit in the parked
   // column, whose header carries the way out and the "Drop under 📍" button (_rsParkHtml).
   const _moveBanner = '';
@@ -27916,7 +27919,7 @@ function _rsRender() {
       ${planning ? '' : `<div class="rsn-bar"><span id="rs-slim-fill" style="width:0;"></span></div>`}
       ${_moveBanner}${placingCancel}</div>
     <div class="rsn-sec${planning ? ' plan' : ''}"><span>${planning ? _escHtml(ctx.job) : 'Your session'}</span>${_orderLink}</div>
-    ${_addBrk ? `<div class="rsn-addbrk"><span class="rsn-addbrk-h" onclick="_rsSetPlacing(true, 'coffee')">${_rsIcon('coffee')}Coffee break</span><span class="rsn-addbrk-h" onclick="_rsSetPlacing(true, 'lunch')">Lunch break${_rsIcon('lunch')}</span></div>` : ''}</div>
+    ${_addBrk ? `<div class="rsn-addbrk"><span class="rsn-addbrk-h" onclick="_rsSetPlacing(true, 'coffee')">${_rsIcon('coffee')}Coffee</span><span class="rsn-addbrk-h" onclick="_rsSetPlacing(true, 'lunch')">${_rsIcon('lunch')}Lunch</span><span class="rsn-addbrk-h" onclick="_rsSetPlacing(true, 'pause')">${_rsIcon('pause')}Pause</span></div>` : ''}</div>
     ${_orderBack ? `<div class="rsn-order-note">The learned order is the order you ticked these off <b>last time you did this job</b>. You have arranged this one by hand, so it is following your order instead.</div>` : ''}`;
   const avgMap = _taskEstMap(), cntMap = _taskHistCountMap();   // built once, not per row
   const _lastMap = _lastDoneAny(ctx.job);   // 🗓 when each task was last done, as on Organise (v483); any job since v521
@@ -27940,7 +27943,7 @@ function _rsRender() {
   const _ins = (i) => _rsMoveKey
     ? ''
     : (_rsPlacing
-    ? `<div onclick="_rsPlaceBreak(${i}, this)" style="margin:2px 0 6px;padding:5px 10px;border-radius:8px;border:1px dashed rgba(255,159,10,0.75);background:rgba(255,159,10,0.10);color:var(--rsn-orange);font-size:12px;font-weight:700;text-align:center;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">${_brkIco(_rsPlacingKind === 'lunch')}${_rsPlacingKind === 'lunch' ? 'lunch goes here' : 'coffee break goes here'}</div>`
+    ? `<div onclick="_rsPlaceBreak(${i}, this)" style="margin:2px 0 6px;padding:5px 10px;border-radius:8px;border:1px dashed rgba(255,159,10,0.75);background:rgba(255,159,10,0.10);color:var(--rsn-orange);font-size:12px;font-weight:700;text-align:center;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">${_brkIco(_rsPlacingKind)}${_rsPlacingKind === 'lunch' ? 'lunch goes here' : _rsPlacingKind === 'pause' ? 'pause goes here' : 'coffee break goes here'}</div>`
     : '');
   // The chips below were written for the old dark rows, and the timer chip is shared with the
   // clock, so the sheet swaps their bright colours for its own readable ones here.
@@ -27980,8 +27983,8 @@ function _rsRender() {
                 ? '<span style="font-size:11px;color:#8b93a7;">already on another break</span>'
                 : '<span style="font-size:11px;color:#8b93a7;">tap to start it</span>'))
         : '';
-      const _lun = _rsBrkIsLunch(r);   // 🍴 v517
-      const _bLabel = r.isDone ? (_lun ? 'Lunch taken' : 'Break taken') : (onBreakNow ? (_lun ? 'On lunch now' : 'On break now') : `${_rsBrkName(r)}, ${fmtMin(r.mins)}`);
+      const _lun = _rsBrkIsLunch(r), _bk = _brkKindOf(r);   // 🍴 v517, ⏸ v540
+      const _bLabel = r.isDone ? (_lun ? 'Lunch taken' : _bk === 'pause' ? 'Pause taken' : 'Break taken') : (onBreakNow ? _brkNowWord(_bk) + ' now' : `${_rsBrkName(r)}, ${fmtMin(r.mins)}`);
       const _bStep = r.isDone ? '' :
         `<span class="rsn-step-btn" onclick="event.stopPropagation();_rsBrkAdj('${r.id}', -5)">&minus;</span><span class="rsn-step-btn" onclick="event.stopPropagation();_rsBrkAdj('${r.id}', 5)">+</span>`;
       const _bTime = r.isDone
@@ -27989,7 +27992,7 @@ function _rsRender() {
         : `<span class="rsn-when" style="color:var(--rsn-orange);">~${_rsHM(r.when)}</span>`;
       return `${_ins(_i)}<div class="rs-row rsn-row" data-rs-key="${_attr(bk)}"${r.isNow ? ' data-rs-now="1"' : ''}${r.isDone ? ' data-rs-done="1"' : ''}${_parkAttr} ontouchstart="_rsDragStart(event)" ontouchmove="_rsDragMove2(event)" ontouchend="_rsDragEnd2(event)">
       <div class="rsn-brk${onBreakNow ? ' on' : ''}${r.isDone ? ' done' : ''}"${tapB}>
-        <div class="rsn-brk-top">${_rsHeldBadge(bk) || _rsIcon(_lun ? 'lunch' : 'coffee')}<span class="rsn-brk-lab">${_bLabel}</span>${_bStep}
+        <div class="rsn-brk-top">${_rsHeldBadge(bk) || _brkIco(_bk)}<span class="rsn-brk-lab">${_bLabel}</span>${_bStep}
           <span class="rsn-x" onclick="event.stopPropagation();_rsBrkRemove('${r.id}')" title="remove this break">✕</span>
           <span class="rsi rsi-grip"></span></div>
         <div class="rsn-brk-sub"><span class="rsn-brk-meta">${_rnc(nowB + actual + hintB)}</span>${_bTime}</div></div></div>`;
@@ -28753,7 +28756,7 @@ function _rsParkHtml(rows) {
     const name = r.brk ? `${_rsBrkName(r)}, ${fmtMin(r.mins)}` : r.t;
     const meta = r.brk ? '' : [r.lapTotal > 1 ? `🔁 ${r.lapIdx}/${r.lapTotal}` : '', r.mins > 0 ? `~${fmtMin(r.mins)}` : ''].filter(Boolean).join(' · ');
     return `<div class="rsn-pk${r.brk ? ' brk' : ''}" data-rs-key="${_attr(k)}" ontouchstart="_rsPkStart(event)" ontouchmove="_rsPkMove(event)" ontouchend="_rsPkEnd(event)" ontouchcancel="_rsPkEnd(event)">
-      <div class="rsn-pk-t">${r.brk ? _rsIcon(_rsBrkIsLunch(r) ? 'lunch' : 'coffee') + ' ' : ''}${_escHtml(name)}</div>${meta ? `<div class="rsn-pk-m">${meta}</div>` : ''}
+      <div class="rsn-pk-t">${r.brk ? _brkIco(_brkKindOf(r)) + ' ' : ''}${_escHtml(name)}</div>${meta ? `<div class="rsn-pk-m">${meta}</div>` : ''}
       <span class="rsn-pk-x" ontouchstart="event.stopPropagation()" ontouchend="event.stopPropagation()" onclick="event.stopPropagation();_rsParkToggle(decodeURIComponent('${_encArg(k)}'))" title="put this one back">✕</span><span class="rsn-pk-arrow">➜</span></div>`;
   }).join('');
   const mark = (_rsMarkKey && !_rsMoveSet.includes(_rsMarkKey))
@@ -28928,16 +28931,28 @@ function _rsAfterBrkChange(ctx, keepKey, prevTop) {
 // its row shows its own icon and name. A break saved before v517 has no kind: it keeps the
 // coffee cup and is simply called "Break", since nobody said which it was.
 let _rsPlacingKind = 'coffee';
-const _RS_BRK_MINS = { coffee: 10, lunch: 30 };
+// ⏸ v540, Lincoln 26 Nov 2026: a THIRD kind, Pause, for any stop that isn't coffee or lunch
+// (a phone call, a school pickup, someone at the door). It starts at 10 minutes like a coffee.
+const _RS_BRK_MINS = { coffee: 10, lunch: 30, pause: 10 };
 function _rsBrkIsLunch(b) { return !!b && b.kind === 'lunch'; }
-function _rsBrkName(b) { return _rsBrkIsLunch(b) ? 'Lunch' : (b && b.kind === 'coffee' ? 'Coffee break' : 'Break'); }
+function _brkKindOf(b) { return (b && (b.kind === 'lunch' || b.kind === 'pause')) ? b.kind : 'coffee'; }
+function _rsBrkName(b) { return _rsBrkIsLunch(b) ? 'Lunch' : (b && b.kind === 'pause') ? 'Pause' : (b && b.kind === 'coffee' ? 'Coffee break' : 'Break'); }
+// "On lunch now" / "Paused now" / "On break now", and the same three for "since".
+function _brkNowWord(kind) { return kind === 'lunch' ? 'On lunch' : kind === 'pause' ? 'Paused' : 'On break'; }
+function _brkPlannedMsg(kind, mins) { return fmtMin(mins) + (kind === 'lunch' ? ' lunch break' : kind === 'pause' ? ' pause' : ' coffee break'); }
 // ☕ THE PLAIN ICONS EVERYWHERE (v519, Lincoln 20 Nov 2026): the simple line cup and knife and
 // fork, never the ☕/🍴 emoji, and a lunch shows as a lunch wherever a break is listed.
-function _brkIco(lunch) { return _rsIcon(lunch ? 'lunch' : 'coffee'); }
+// Takes a kind ('coffee' | 'lunch' | 'pause') or, as before v540, true for a lunch.
+function _brkIco(k) { return _rsIcon(k === 'pause' ? 'pause' : (k === true || k === 'lunch') ? 'lunch' : 'coffee'); }
 // The break you are on right now: a planned lunch started from the run sheet, or not.
 function _brkActiveIsLunch() {
   if (!clockState || !clockState.brkActiveId) return false;
   return _rsBrkIsLunch((clockState.plannedBreaks || []).find(b => b && b.id === clockState.brkActiveId));
+}
+// The kind of the break you are on: a planned lunch or pause from the run sheet, else coffee.
+function _brkActiveKind() {
+  if (!clockState || !clockState.brkActiveId) return 'coffee';
+  return _brkKindOf((clockState.plannedBreaks || []).find(b => b && b.id === clockState.brkActiveId));
 }
 // A toast led by an icon. The message is escaped, so a task name can never become markup.
 function showToastIcon(icon, msg) {
@@ -28947,7 +28962,7 @@ function showToastIcon(icon, msg) {
   setTimeout(() => t.classList.remove('show'), 2500);
 }
 function _rsSetPlacing(on, kind) {
-  if (on) _rsPlacingKind = kind === 'lunch' ? 'lunch' : 'coffee';
+  if (on) _rsPlacingKind = (kind === 'lunch' || kind === 'pause') ? kind : 'coffee';
   const sc = document.getElementById('run-sheet-body');
   let key = null, top = null;
   if (sc) {
@@ -28976,19 +28991,19 @@ function _rsPlaceBreak(idx, gapEl) {
   c2.saveOrder(keys);
   _rsPlacing = false;
   _rsAfterBrkChange(_rsCtx(), _rsBrkKey(id), gapTop);
-  showToastIcon(kind === 'lunch' ? 'lunch' : 'coffee', kind === 'lunch' ? '30 min lunch break planned' : '10 min coffee break planned');
+  showToastIcon(kind, _brkPlannedMsg(kind, mins) + ' planned');
 }
 function _rsBrkAdj(id, delta) {
   const ctx = _rsCtx(); if (!ctx || !ctx.saveBreaks) return;
-  let mins = 30, lunch = false;
+  let mins = 30, kind = 'coffee';
   ctx.saveBreaks((ctx.breaks || []).map(b => {
     if (b.id !== id) return b;
     mins = Math.max(5, Math.min(240, (b.mins || 30) + delta));
-    lunch = _rsBrkIsLunch(b);
+    kind = _brkKindOf(b);
     return Object.assign({}, b, { mins });
   }));
   _rsAfterBrkChange(_rsCtx(), _rsBrkKey(id), _rsRowTop(_rsBrkKey(id)));
-  showToastIcon(lunch ? 'lunch' : 'coffee', fmtMin(mins) + (lunch ? ' lunch break' : ' coffee break'));
+  showToastIcon(kind, _brkPlannedMsg(kind, mins));
 }
 // ⭐ DELETING A BREAK GIVES THE TIME BACK. Removing the row used to leave the REAL
 // break sitting in clockState.breaks, so those minutes carried on being subtracted as
