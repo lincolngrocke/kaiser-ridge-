@@ -3896,7 +3896,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.538';
+const APP_VERSION = '2026-06-21.539';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -27569,6 +27569,21 @@ function _rsLineHtml() {
   return `<div class="rsn-line" id="rs-line"><div class="rsn-line-bar"><div class="rsn-line-track"><span id="rs-line-fill" style="width:0;"></span></div><div class="rsn-marks" id="rs-line-marks"></div></div>
     <div class="rsn-line-row"><span id="rs-line-time"></span><span id="rs-line-in"></span><span id="rs-line-pct"></span></div></div>`;
 }
+// ☕ THE JOB'S BREAKS ADDED UP, beside clock-in on the run sheet's time line.
+// v469 showed the total once a break was over, but hid it during a break. v539, Lincoln 26 Nov
+// 2026: "If you've taken three breaks and you don't want to go for 30 minutes, you should be
+// able to see how many minutes in total you've had in breaks for that job." So with two or more
+// breaks it counts them and adds them up, the one you are on now included, ticking up live.
+// One break, finished: "10m break", as before. One break, still on it: nothing extra, because
+// its row already shows NOW and its minutes.
+function _rsBrkTally() {
+  const done = (Array.isArray(clockState.breaks) ? clockState.breaks : []).filter(b => b && isFinite(b.start) && isFinite(b.end) && b.end > b.start).length;
+  const n = done + (clockState.onBreak ? 1 : 0);
+  const mins = Math.round(_breakNowMs() / 60000);
+  if (n >= 2) return ` · <span class="rsn-line-brk">${n} breaks, ${fmtMin(mins)} total</span>`;
+  if (n === 1 && !clockState.onBreak && mins >= 1) return ` · <span class="rsn-line-brk">${fmtMin(mins)} break</span>`;
+  return '';
+}
 function _rsLineSync() {
   const line = document.getElementById('rs-line'), slim = document.getElementById('rs-slim-fill');
   if ((!line && !slim) || !clockState || !clockState.running) return;
@@ -27581,11 +27596,9 @@ function _rsLineSync() {
   document.getElementById('rs-line-fill').style.backgroundSize = gsize;
   line.classList.toggle('over', _rsRing.over);
   document.getElementById('rs-line-time').textContent = txt('run-timer');
-  // ☕ The session's break total beside clock-in, once one has been taken (v469).
-  const _brkMins = clockState.onBreak ? 0 : Math.round(_breakNowMs() / 60000);
   // v519: the clock's line carries its cup as an icon, which has no text, so it is put back here.
   document.getElementById('rs-line-in').innerHTML = (clockState.onBreak ? _brkIco(_brkActiveIsLunch()) + ' ' : '') + _escHtml(txt('run-clockedin-text').trim())
-    + (_brkMins >= 1 ? ` · <span class="rsn-line-brk">${fmtMin(_brkMins)} break</span>` : '');
+    + _rsBrkTally();
   document.getElementById('rs-line-pct').textContent = txt('run-ring-label');
   _rsMarksSync(f);
 }
