@@ -1320,6 +1320,11 @@
   }
   .planner-block-title { font-size: 12px; font-weight: 700; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; line-height: 1.2; }
   .planner-block-meta { font-size: 10px; opacity: 0.85; margin-top: 2px; }
+  /* ⏱ One-tap Clock in on a planned block (v537). */
+  .pl-qci { position: absolute; top: 4px; right: 6px; z-index: 2; background: #1a7f37; color: #fff; font-size: 12px; font-weight: 700;
+    line-height: 1; padding: 6px 10px; border-radius: 8px; cursor: pointer; touch-action: manipulation; }
+  .pl-qci:active { opacity: 0.75; }
+  .planner-block.has-qci .planner-block-title { padding-right: 70px; }
   .planner-now-line {
     position: absolute;
     left: 48px;
@@ -3891,7 +3896,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.536';
+const APP_VERSION = '2026-06-21.537';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -25681,8 +25686,20 @@ function renderPlannerBlock(plan, grid) {
   const _pov = getPlannerChecklist()[plan.id];
   const _blkFlags = (_pov && _pov.flags && Object.keys(_pov.flags).length) ? _pov.flags : (getChecklistFlags()[plan.task] || {});
   const _hasFlags = Object.keys(_blkFlags).length > 0 || (getTaskNotes()[plan.task] || []).some(p => p.flagged);
-  block.innerHTML = `<div class="planner-block-title">${_hasFlags ? _goMark(true) : ''}${plan.task}</div>
+  // ⏱ ONE-TAP CLOCK IN (v537, Lincoln 26 Nov 2026): "It takes three clicks to get from the
+  // planner screen to clock into a job. It should be just one click." Block → details → run
+  // sheet → Clock in became one tap, straight to the Now / Earlier clock-in screen. Only on your
+  // own day, today, while nothing is clocked in. Tapping the rest of the block still opens its details.
+  const _qci = _plannerQuickClockInShown(plan);
+  if (_qci) block.classList.add('has-qci');
+  block.innerHTML = `${_qci ? '<span class="pl-qci">Clock in</span>' : ''}<div class="planner-block-title">${_hasFlags ? _goMark(true) : ''}${plan.task}</div>
     <div class="planner-block-meta">${startStr} – ${endStr} · ${plan.durationHours}h</div>${_plannerBreakLines(_plannedBreaksFor(plan.id))}`;
+  if (_qci) {
+    const b = block.querySelector('.pl-qci');
+    // Its own taps never reach the block, so it neither drags the block nor opens the details.
+    ['touchstart', 'touchend'].forEach(ev => b.addEventListener(ev, e => e.stopPropagation()));
+    b.addEventListener('click', e => { e.stopPropagation(); _plannerQuickClockIn(plan.id); });
+  }
 
   let _blockTouchStartTime = 0;
 
@@ -29963,6 +29980,16 @@ function plannerClockIn() { _plannerStartPlan(_plannerDetailId, false); }
 // clocked into…". He wants to glance at how it's set up, without dragging it onto the
 // calendar. So while the clock runs, a tap opens the same details sheet a placed block
 // opens. Not clocked in, a tap still goes straight to clock-in (v407).
+function _plannerQuickClockInShown(plan) {
+  return _plannerView === 'me' && _plannerMode !== 'week' && !(clockState && clockState.running)
+    && plan.date === plannerDateStr(new Date());
+}
+function _plannerQuickClockIn(id) {
+  // A new person's first job still starts the onboarding way (every task flagged, the first one on).
+  try { const ob = _gwoLoad(); const el = document.getElementById('planner-first-start');
+    if (ob && ob.firstPlanId === id && el && el.style.display !== 'none') { _gwoStartFirst(id); return; } } catch (e) {}
+  _plannerStartPlan(id, true);
+}
 function plannerStartParked(id) {
   if (clockState && clockState.running) { openPlannerDetail(id); return; }
   _plannerStartPlan(id, true);
