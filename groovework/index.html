@@ -1050,6 +1050,9 @@
   /* ⏸ v540: Pause, the third break, two plain bars in the same line weight as the cup. */
   .rsi-pause { --rsi: url("data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTQiIGhlaWdodD0iMTQiIHZpZXdCb3g9IjAgMCAxNCAxNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNNS4xIDMuMlYxMC44TTguOSAzLjJWMTAuOCIgc3Ryb2tlPSIjMDAwIiBzdHJva2Utd2lkdGg9IjEuOCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PC9zdmc+"); }
   .rsn-row { margin-bottom: 8px; }
+  /* v542, Lincoln 26 Nov 2026: the first card sat flush under the frozen top, so its blue
+     edge and shadow vanished under the Coffee break · Lunch break row. A gap now shows them. */
+  .rsn-frozen + .rs-row { margin-top: 12px; }
   /* 🅿️ v516: PARKED cards on the left, the list on the right (Lincoln, 20 Nov 2026). The park
      column is sticky under the frozen top, so it stays put while the list scrolls past it.
      Its top and height are set by _rsParkSize, because the frozen top folds and unfolds. */
@@ -3911,7 +3914,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.541';
+const APP_VERSION = '2026-06-21.542';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -28364,7 +28367,7 @@ function _rsRestTop() {
   for (let k = (ni < 0 ? rows.length : ni) - 1; k >= 0; k--) { if (rows[k].dataset.rsDone === '1') { anchor = rows[k]; break; } }
   if (!anchor) anchor = ni < 0 ? rows[rows.length - 1] : rows[ni];
   const sticky = sc.querySelector('.cl-sticky-top');
-  const want = sc.scrollTop + (anchor.getBoundingClientRect().top - sc.getBoundingClientRect().top) - (sticky ? sticky.offsetHeight : 0) - 4;
+  const want = sc.scrollTop + (anchor.getBoundingClientRect().top - sc.getBoundingClientRect().top) - (sticky ? sticky.offsetHeight : 0) - 12;   // v542: room for the card's edge and shadow
   return Math.max(0, Math.min(Math.round(want), sc.scrollHeight - sc.clientHeight));
 }
 function _rsRestOk() {
