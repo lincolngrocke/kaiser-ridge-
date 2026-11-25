@@ -1323,6 +1323,11 @@
   }
   .planner-block-title { font-size: 12px; font-weight: 700; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; line-height: 1.2; }
   .planner-block-meta { font-size: 10px; opacity: 0.85; margin-top: 2px; }
+  /* ⏸ Start Break's three kinds (v541), in the run sheet's break orange. */
+  .tbk { flex: 1; height: 64px; border-radius: 14px; border: 1px solid rgba(242,107,0,0.35); background: #fff2e6; color: #f26b00;
+    font-size: 16px; font-weight: 700; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; }
+  .tbk .rsi { width: 20px; height: 20px; }
+  body.dark .tbk { background: rgba(255,159,10,0.16); color: #ff9f0a; border-color: rgba(255,159,10,0.45); }
   /* ⏱ One-tap Clock in on a planned block (v537). */
   .pl-qci { position: absolute; top: 4px; right: 6px; z-index: 2; background: #1a7f37; color: #fff; font-size: 12px; font-weight: 700;
     line-height: 1; padding: 6px 10px; border-radius: 8px; cursor: pointer; touch-action: manipulation; }
@@ -2609,6 +2614,13 @@
       <div id="time-job-tasks" style="flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;border-top:1px solid var(--border);border-bottom:1px solid var(--border);"></div>
     </div>
     <div id="time-controls" style="padding:20px 20px 0;flex-shrink:0;">
+      <!-- ⏸ v541, Lincoln 26 Nov 2026: Start Break offers Coffee, Lunch or Pause. One tap
+           starts that break now; change the time below first to start it earlier. -->
+      <div id="time-brk-kinds" style="display:none;gap:10px;margin-bottom:16px;">
+        <button class="tbk" onclick="_brkPickKind('coffee')"><span class="rsi rsi-coffee"></span>Coffee</button>
+        <button class="tbk" onclick="_brkPickKind('lunch')"><span class="rsi rsi-lunch"></span>Lunch</button>
+        <button class="tbk" onclick="_brkPickKind('pause')"><span class="rsi rsi-pause"></span>Pause</button>
+      </div>
       <button id="time-now-btn" onclick="confirmTime('now')" style="width:100%;height:56px;border-radius:14px;border:none;background:var(--blue);color:#fff;font-size:17px;font-weight:600;cursor:pointer;margin-bottom:16px;">Now</button>
 
       <!-- Native time picker (iOS momentum wheel — matches the Robots / Edit Entry pickers) -->
@@ -3899,7 +3911,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.540';
+const APP_VERSION = '2026-06-21.541';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -6089,7 +6101,7 @@ function renderClockState() {
       if (clEl) clEl.innerHTML = _brkIco(_brkActiveKind()) + ' ' + _brkNowWord(_brkActiveKind()) + ' since ' + formatTimeAmPm(clockState.breakStartTime || clockState.startTime);
     } else {
       overlay.classList.remove('paused');
-      if (pauseBtn) { pauseBtn.innerHTML = _rsIcon('coffee') + ' Start Break'; pauseBtn.classList.remove('on-pause'); }
+      if (pauseBtn) { pauseBtn.textContent = 'Start Break'; pauseBtn.classList.remove('on-pause'); }
     }
     // Job title (the task) + a quiet meta line: location · group · avg count.
     const jtEl = document.getElementById('run-job-title');
@@ -11639,11 +11651,35 @@ function openTimeModal(mode, taskInfo) {
   // Break and clock-in/out are pressed on the run sheet now, so this sits above it.
   { const _mt = document.getElementById('modal-time'), _rs = document.getElementById('modal-run-sheet');
     if (_mt) _mt.style.zIndex = (_rs && _rs.classList.contains('open')) ? '370' : ''; }
+  _brkKindsLayout(mode === 'breakStart');
   document.getElementById('modal-time-title').textContent =
     mode === 'in' ? 'Clock In' : mode === 'out' ? 'Clock Out' : mode === 'breakStart' ? 'Start Break' : mode === 'breakEnd' ? 'End Break' : 'Time';
   openModal('modal-time');
 }
 
+// ⏸ START BREAK, THREE KINDS (v541). In breakStart mode the sheet swaps its one "Now" button
+// for Coffee · Lunch · Pause, and drops "Set Earlier Time": the kind button IS the confirm.
+// Left alone the time wheel says now, so the tap starts the break now. Moved first, the
+// break starts at the time on the wheel (clamped to now, as Set Earlier Time was).
+let _brkSeedTime = '';
+function _brkKindsLayout(on) {
+  const k = document.getElementById('time-brk-kinds'), now = document.getElementById('time-now-btn');
+  const lab = document.getElementById('time-earlier-label'), pad = document.getElementById('time-earlier-btnpad');
+  const ti = document.getElementById('time-earlier-input');
+  if (k) k.style.display = on ? 'flex' : 'none';
+  if (now) now.style.display = on ? 'none' : '';
+  if (pad) pad.style.display = on ? 'none' : '';
+  if (lab) lab.textContent = on ? 'Started earlier? Change the time, then tap the break above.' : 'Earlier';
+  _brkSeedTime = (on && ti) ? ti.value : '';
+}
+function _brkPickKind(kind) {
+  if (!clockState || !clockState.running || clockState.onBreak) { closeModal('modal-time'); return; }
+  const ti = document.getElementById('time-earlier-input');
+  const moved = ti && ti.value && ti.value !== _brkSeedTime;
+  clockState.brkActiveId = null;   // an unplanned break, not a row on the run sheet
+  clockState.brkKind = (kind === 'lunch' || kind === 'pause') ? kind : 'coffee';
+  confirmTime(moved ? 'earlier' : 'now');
+}
 function getDrumTimeStr() {
   const hours = Array.from({length:12}, (_,i) => String(i+1).padStart(2,'0'));
   const mins  = Array.from({length:60}, (_,i) => String(i).padStart(2,'0'));
@@ -15236,7 +15272,7 @@ function _breakBtnUI() {
     if (overlay) overlay.classList.add('paused');
     document.getElementById('run-clockedin-text').innerHTML = _brkIco(_brkActiveKind()) + ' ' + _brkNowWord(_brkActiveKind()) + ' since ' + formatTimeAmPm(clockState.breakStartTime);
   } else {
-    if (btn) { btn.innerHTML = _rsIcon('coffee') + ' Start Break'; btn.classList.remove('on-pause'); }
+    if (btn) { btn.textContent = 'Start Break'; btn.classList.remove('on-pause'); }
     if (overlay) overlay.classList.remove('paused');
     if (clockState) document.getElementById('run-clockedin-text').textContent = 'Clocked in ' + formatTimeAmPm(clockState.startTime);
   }
@@ -15275,6 +15311,7 @@ function applyBreakEnd(timeStr) {
   clockState.onBreak = false;
   clockState.breakStartMs = null;
   clockState.breakStartTime = null;
+  clockState.brkKind = null;
   // ☕ If this break was a PLANNED one started from the run sheet, tick that row off
   // with the time it really took. It then stops costing its planned minutes, so the
   // break can never be counted twice against the finish.
@@ -22696,6 +22733,8 @@ function sharedJobApply(mode) {
 // ⚠️ Before hiding a screen, check what can only be reached THROUGH it and give
 // that its own door first. The Dashboard held the only route to the Times list.
 const KR_HIDDEN_FEATURES = [
+  { id: 'plan-pause', name: 'Planning a Pause on the run sheet', since: 'v541',
+    what: 'v540 put Pause on the run sheet\'s break row (Coffee · Lunch · Pause) so it could be placed ahead. Lincoln, 26 Nov 2026: "you generally wouldn\'t plan a pause. A pause is something that happens unexpectedly." Pause moved to Start Break, and the row went back to Coffee break and Lunch break.' },
   { id: 'planner-play', name: 'The green ▶ on the planner', since: 'v530',
     what: 'The round green button top left of the planner while clocked in, one tap back to the run sheet. Lincoln, 24 Nov 2026: not needed, the Clock tab at the bottom does the same.' },
   { id: 'share-code', name: 'Share a job by code', since: 'v522',
@@ -27651,7 +27690,7 @@ function _rsFootSync() {
   if (!ctx) { el.innerHTML = ''; return; }
   if (ctx.kind === 'plan') { el.innerHTML = '<span class="rsn-fbtn in" onclick="_rsPlanClockIn()">Clock in</span>'; return; }
   const brk = !!clockState.onBreak;
-  el.innerHTML = `<span class="rsn-fbtn pl" onclick="_rsToPlanner()" title="Open the planner">${_RS_CAL_SVG}Planner</span><span class="rsn-fbtn brk${brk ? ' on' : ''}" onclick="breakButtonTap()">${_brkIco(brk ? _brkActiveKind() : 'coffee')}&nbsp;${brk ? 'End' : 'Start'} Break</span><span class="rsn-fbtn out" onclick="openTimeModal('out')">Clock Out</span>`;
+  el.innerHTML = `<span class="rsn-fbtn pl" onclick="_rsToPlanner()" title="Open the planner">${_RS_CAL_SVG}Planner</span><span class="rsn-fbtn brk${brk ? ' on' : ''}" onclick="breakButtonTap()">${brk ? _brkIco(_brkActiveKind()) + '&nbsp;End' : 'Start'} Break</span><span class="rsn-fbtn out" onclick="openTimeModal('out')">Clock Out</span>`;
 }
 // 🗓 ⇄ ⏱ ONE TAP EACH WAY (v503, Lincoln 18 Nov 2026: "one tap to view the planner and one
 // tap to go back to your run sheet"). Planner from the running sheet's foot or its next-job
@@ -27919,7 +27958,9 @@ function _rsRender() {
       ${planning ? '' : `<div class="rsn-bar"><span id="rs-slim-fill" style="width:0;"></span></div>`}
       ${_moveBanner}${placingCancel}</div>
     <div class="rsn-sec${planning ? ' plan' : ''}"><span>${planning ? _escHtml(ctx.job) : 'Your session'}</span>${_orderLink}</div>
-    ${_addBrk ? `<div class="rsn-addbrk"><span class="rsn-addbrk-h" onclick="_rsSetPlacing(true, 'coffee')">${_rsIcon('coffee')}Coffee</span><span class="rsn-addbrk-h" onclick="_rsSetPlacing(true, 'lunch')">${_rsIcon('lunch')}Lunch</span><span class="rsn-addbrk-h" onclick="_rsSetPlacing(true, 'pause')">${_rsIcon('pause')}Pause</span></div>` : ''}</div>
+    ${_addBrk ? (featureHidden('plan-pause')
+      ? `<div class="rsn-addbrk"><span class="rsn-addbrk-h" onclick="_rsSetPlacing(true, 'coffee')">${_rsIcon('coffee')}Coffee break</span><span class="rsn-addbrk-h" onclick="_rsSetPlacing(true, 'lunch')">Lunch break${_rsIcon('lunch')}</span></div>`
+      : `<div class="rsn-addbrk"><span class="rsn-addbrk-h" onclick="_rsSetPlacing(true, 'coffee')">${_rsIcon('coffee')}Coffee</span><span class="rsn-addbrk-h" onclick="_rsSetPlacing(true, 'lunch')">${_rsIcon('lunch')}Lunch</span><span class="rsn-addbrk-h" onclick="_rsSetPlacing(true, 'pause')">${_rsIcon('pause')}Pause</span></div>`) : ''}</div>
     ${_orderBack ? `<div class="rsn-order-note">The learned order is the order you ticked these off <b>last time you did this job</b>. You have arranged this one by hand, so it is following your order instead.</div>` : ''}`;
   const avgMap = _taskEstMap(), cntMap = _taskHistCountMap();   // built once, not per row
   const _lastMap = _lastDoneAny(ctx.job);   // 🗓 when each task was last done, as on Organise (v483); any job since v521
@@ -28071,7 +28112,7 @@ function _rsRender() {
     const _onBrk = r.isNow && !planning && !!clockState.onBreak;
     const _cardCls = _lifted ? ' lifted' : (_marked ? ' marked' : (r.isNow ? (_onBrk ? ' now brk-on' : ' now') : (r.isDone ? ' done' : '')));
     const _nowLine = _onBrk
-      ? `<div class="rsn-nowline brk">${_rsIcon('coffee')}<span>ON BREAK · <span id="rs-now-elapsed" data-secs="1">${_fmtMinSec(_rsNowElapsedMin())}</span></span></div>`
+      ? `<div class="rsn-nowline brk">${_brkIco(_brkActiveKind())}<span>${_brkActiveKind() === 'pause' ? 'PAUSED' : _brkActiveKind() === 'lunch' ? 'ON LUNCH' : 'ON BREAK'} · <span id="rs-now-elapsed" data-secs="1">${_fmtMinSec(_rsNowElapsedMin())}</span></span></div>`
       : r.isNow
       ? `<div class="rsn-nowline on">${_rsIcon('going')}<span>ON TASK · <span id="rs-now-elapsed" data-secs="1">${_fmtMinSec(_rsNowElapsedMin())}</span></span>${_rnc(timerBit)}</div>` : '';
     const _cmts = (!planning && _cmtRow[r.t] === r && clockState.itemComments && clockState.itemComments[r.t]) || [];
@@ -28945,14 +28986,13 @@ function _brkPlannedMsg(kind, mins) { return fmtMin(mins) + (kind === 'lunch' ? 
 // Takes a kind ('coffee' | 'lunch' | 'pause') or, as before v540, true for a lunch.
 function _brkIco(k) { return _rsIcon(k === 'pause' ? 'pause' : (k === true || k === 'lunch') ? 'lunch' : 'coffee'); }
 // The break you are on right now: a planned lunch started from the run sheet, or not.
-function _brkActiveIsLunch() {
-  if (!clockState || !clockState.brkActiveId) return false;
-  return _rsBrkIsLunch((clockState.plannedBreaks || []).find(b => b && b.id === clockState.brkActiveId));
-}
-// The kind of the break you are on: a planned lunch or pause from the run sheet, else coffee.
+function _brkActiveIsLunch() { return _brkActiveKind() === 'lunch'; }
+// The kind of the break you are on: a planned row's kind from the run sheet, else the kind
+// picked on Start Break (v541: clockState.brkKind), else coffee.
 function _brkActiveKind() {
-  if (!clockState || !clockState.brkActiveId) return 'coffee';
-  return _brkKindOf((clockState.plannedBreaks || []).find(b => b && b.id === clockState.brkActiveId));
+  if (!clockState) return 'coffee';
+  if (clockState.brkActiveId) return _brkKindOf((clockState.plannedBreaks || []).find(b => b && b.id === clockState.brkActiveId));
+  return _brkKindOf({ kind: clockState.brkKind });
 }
 // A toast led by an icon. The message is escaped, so a task name can never become markup.
 function showToastIcon(icon, msg) {
@@ -29059,6 +29099,7 @@ function _rsBrkStart(id) {
   if (!clockState || !clockState.running) return;
   if (clockState.onBreak) { showToast('Already on a break'); return; }
   clockState.brkActiveId = id;
+  clockState.brkKind = null;
   const n = new Date();
   applyBreakStart(String(n.getHours()).padStart(2, '0') + ':' + String(n.getMinutes()).padStart(2, '0'));
   _rsRender(); updateRunRing();
