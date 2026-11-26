@@ -448,6 +448,9 @@
   .ts-day-job .ts-tgt { margin-right: 10px; }
   .ts-tgt.on { color: #30a14e; }
   .ts-tgt.over { color: #e8850c; }
+  .ts-tk { font-style: normal; font-weight: 600; }
+  .ts-tk.on { color: #30a14e; }
+  .ts-tk.over { color: #e8850c; }
   .ts-day-sess { margin-top: 2px; font-size: 12px; line-height: 1.45; color: var(--subtext); }
   .ts-day-sess .rsi { width: 13px; height: 13px; vertical-align: -2px; }
   .ts-tgt-day { margin-top: 8px; font-size: 12px; font-weight: 600; color: var(--subtext); }
@@ -3914,7 +3917,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.543';
+const APP_VERSION = '2026-06-21.544';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -9745,6 +9748,62 @@ function _tsNotesSplit(notes) {
   });
   return out;
 }
+// ── ⏱ EACH TASK AGAINST ITS ESTIMATE, on the detailed timesheet (v544) ─────────
+// Lincoln, 26 Nov 2026: the job says "11m ahead", but which task gained it? Every
+// timed task line now carries the estimate it was up against and how far out it
+// was: green when faster, orange when slower.
+// ⭐ THE ESTIMATE IS WHAT THE APP KNEW AT THE TIME: the task's average over every run
+// that STARTED BEFORE this one. That is the figure the job's 🎯 target was built
+// from, and it works for every old timesheet with nothing new saved on the entry.
+// Using today's average instead would fold this very run into its own yardstick.
+// Pooled exactly as _aggregateChecklistTimes pools (lap stamp stripped, normalised
+// text, ✕ excluded times left out), so it matches the ⏱ Times sheet.
+// Display only. Nothing here is written anywhere.
+let _tsEstCache = { rev: -1, map: null };
+function _tsPriorAvgMap() {
+  if (_tsEstCache.rev === _entriesRev && _tsEstCache.map) return _tsEstCache.map;
+  const map = new Map(), agg = {};
+  const rows = entries.map(e => ({ e, t: _entryClockInEpoch(e) || 0 })).sort((a, b) => a.t - b.t);
+  let i = 0;
+  while (i < rows.length) {
+    // Runs that started in the same minute can't see each other.
+    let j = i; while (j < rows.length && rows[j].t === rows[i].t) j++;
+    const batch = rows.slice(i, j).map(r => ({ e: r.e, d: _entryChecklistDurations(r.e) }));
+    batch.forEach(b => {
+      const snap = {};
+      Object.keys(b.d).forEach(k => {
+        const key = _normTaskKey(_stripLap(k));
+        const a = agg[key];
+        if (a && a.count) snap[key] = a.total / a.count;
+      });
+      map.set(b.e, snap);
+    });
+    batch.forEach(b => Object.keys(b.d).forEach(k => {
+      const key = _normTaskKey(_stripLap(k));
+      const a = agg[key] || (agg[key] = { total: 0, count: 0 });
+      a.total += b.d[k]; a.count++;
+    }));
+    i = j;
+  }
+  _tsEstCache = { rev: _entriesRev, map };
+  return map;
+}
+// One folded task line → HTML with "· est Xm · Ym faster/slower" inside the minutes
+// bracket. `hl` is the search highlighter, applied to the line's own text only.
+function _tsTaskLineHtml(e, line, hl) {
+  const m = /^(\s*\[[^\]]*\]\s*\()(\d+h \d+m|\d+m)(\).*)$/.exec(line);
+  const plain = s => hl(_escHtml(s));
+  if (!m) return plain(line);
+  const rest = m[3].slice(1).replace(/^\s*Lap \d+ · /, '').replace(/ — \d+\/\d+ steps[\s\S]*$/, '');
+  const snap = _tsPriorAvgMap().get(e) || {};
+  const est = snap[_normTaskKey(rest)];
+  if (est == null) return plain(line);
+  const hm = /^(\d+)h (\d+)m$/.exec(m[2]);
+  const act = hm ? (+hm[1] * 60 + +hm[2]) : parseInt(m[2], 10);
+  const diff = act - Math.round(est);
+  const tag = diff === 0 ? '' : ` · <span class="ts-tk ${diff < 0 ? 'on' : 'over'}">${fmtMin(Math.abs(diff))} ${diff < 0 ? 'faster' : 'slower'}</span>`;
+  return plain(m[1] + m[2]) + ` · est ${fmtMin(est)}` + tag + plain(m[3]);
+}
 // The timesheets the screen is showing right now: who, group, the old chips, the
 // date window and the search box. ONE copy, shared by the list and the PDF, so
 // "save what I'm looking at" can never drift from what is on the screen.
@@ -9937,7 +9996,8 @@ function renderTimesheets() {
         const { notes, todos, tasks } = _tsNotesSplit(e.notes);
         const head = txt => `<div style="font-size:10px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--subtext);opacity:0.7;margin:8px 0 0;">${txt}</div>`;
         const sec = (arr, label) => arr.length ? head(label) + `<div class="ts-entry-note" style="margin-top:2px;">${hl(_escHtml(arr.join('\n')))}</div>` : '';
-        const h = sec(notes, 'Notes') + sec(todos, 'To-dos') + sec(tasks, 'Tasks');
+        const tsec = tasks.length ? head('Tasks') + `<div class="ts-entry-note" style="margin-top:2px;">${tasks.map(l => _tsTaskLineHtml(e, l, hl)).join('\n')}</div>` : '';
+        const h = sec(notes, 'Notes') + sec(todos, 'To-dos') + tsec;
         return h || `<div class="ts-entry-note">${hl(_escHtml(e.notes))}</div>`;
       })() : ''}
       ${(e.commentPhotos && e.commentPhotos.length) ? _photosHtml({ photos: e.commentPhotos }, 80) : ''}
