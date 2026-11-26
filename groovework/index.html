@@ -854,6 +854,22 @@
   body.dark .undo-toast button { background: rgba(91,155,255,0.18); color: #5b9bff; }
   body.undo-on #back-to-top { display: none !important; }
   .undo-toast.show { opacity: 1; pointer-events: auto; }
+  /* ⚡ One-time quick-tick tip (v545): sits just above the run sheet's footer buttons */
+  .qt-tip {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: calc(env(safe-area-inset-bottom) + 76px);
+    width: min(calc(100vw - 32px), 398px); box-sizing: border-box;
+    display: flex; align-items: center; gap: 12px;
+    background: var(--card); color: var(--text); border: 1px solid var(--border);
+    border-radius: 14px; padding: 10px 8px 10px 14px; box-shadow: 0 6px 18px rgba(0,0,0,0.14);
+    font-size: 14px; line-height: 1.35; z-index: 2200;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s;
+  }
+  .qt-tip.show { opacity: 1; pointer-events: auto; }
+  .qt-tip-txt { flex: 1; min-width: 0; }
+  .qt-tip button { flex-shrink: 0; border: none; border-radius: 10px; padding: 8px 12px; font-size: 14px; font-weight: 700; background: rgba(52,120,246,0.12); color: #3478f6; cursor: pointer; }
+  body.dark .qt-tip { background: #2c2c2e; border-color: #48484a; box-shadow: 0 6px 18px rgba(0,0,0,0.5); }
+  body.dark .qt-tip button { background: rgba(91,155,255,0.18); color: #5b9bff; }
   /* "Caught it" thought-bubble pop when you capture a note */
   @keyframes caughtPop {
     0%   { transform: translate(-50%,-50%) scale(0.3); opacity: 0; }
@@ -3901,6 +3917,7 @@
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 <div class="undo-toast" id="undo-toast"><span class="undo-toast-txt"><span id="undo-toast-msg"></span><span id="undo-toast-sub"></span></span><button onclick="_doUndo()">Undo</button></div>
+<div class="qt-tip" id="qt-tip" role="status"><span class="qt-tip-txt"><b>Quick task?</b> Swipe it left to log just its own seconds, so your last task keeps its full time.</span><button type="button" onclick="_hideQuickTickTip()">Got it</button></div>
 <div class="caught-bubble" id="caught-bubble">💭 Caught it ✓</div>
 <!-- Haptic experiment: toggling iOS's native switch inside a tap MAY emit the picker-wheel tick (Safari 17.4+; not guaranteed) -->
 <input type="checkbox" id="haptic-tick" switch tabindex="-1" aria-hidden="true" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;pointer-events:none;">
@@ -3917,7 +3934,7 @@
 // ════════════════════════════════
 //  APP VERSION  (bump on every deploy — drives the update checker)
 // ════════════════════════════════
-const APP_VERSION = '2026-06-21.544';
+const APP_VERSION = '2026-06-21.545';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  M1 / S2 — ACCOUNTS: auth, orgs and roles
@@ -7256,6 +7273,44 @@ function markChecklistItemDone(item, opts) {
   renderRunChecklist();
   updateRunRing();                           // re-forecast: one less task to do → finish time moves
   if (didComplete) flyDoneBubble(undoFn, doneOcc ? _checklistDurations()[_occKey(doneOcc)] : null);   // bubble floats up w/ the time it took + Undo
+  if (didComplete && !_quick && doneOcc) _maybeQuickTickTip(doneOcc);
+}
+// ⚡ ONE-TIME TIP FOR THE QUICK TICK (v545, Mitch's request 26 Nov 2026). A plain tap
+// less than a minute after the last tick shares the time between the two
+// (_BATCH_WINDOW_MS), so the task before loses minutes it really took. The left swipe
+// avoids that, but nothing on screen says so. When a shared tick happens, say it in a
+// small card over the footer: up to 3 times in all (the count is saved), at most once
+// per clock-in so a burst of taps can't use all three in a minute. Display only: the
+// tick has already landed and is timed exactly as before.
+const KR_TIP_QUICKTICK = 'kr_tip_quicktick', _QT_TIP_MAX = 3;
+let _qtTipTimer = null, _qtTipRun = null;
+function _maybeQuickTickTip(occ) {
+  try {
+    const seen = parseInt(localStorage.getItem(KR_TIP_QUICKTICK) || '0', 10) || 0;
+    if (seen >= _QT_TIP_MAX) return;
+    if (_qtTipRun === clockState.startMs) return;            // already shown this clock-in
+    if (occ.from) return;                                   // a side task is timed on its own span
+    const now = new Date(occ.at).getTime();
+    let prev = null;
+    (clockState.checklistDone || []).forEach(d => {
+      if (d === occ) return;
+      const t = new Date(d.at).getTime();
+      if (isFinite(t) && t <= now && (!prev || t > prev.t)) prev = { d, t };
+    });
+    if (!prev || prev.d.quick || prev.d.from || now - prev.t >= _BATCH_WINDOW_MS) return;
+    localStorage.setItem(KR_TIP_QUICKTICK, String(seen + 1));     // counted the moment it shows
+    _qtTipRun = clockState.startMs;
+    const el = document.getElementById('qt-tip');
+    if (!el) return;
+    el.classList.add('show');
+    clearTimeout(_qtTipTimer);
+    _qtTipTimer = setTimeout(_hideQuickTickTip, 20000);
+  } catch (e) {}
+}
+function _hideQuickTickTip() {
+  clearTimeout(_qtTipTimer);
+  const el = document.getElementById('qt-tip');
+  if (el) el.classList.remove('show');
 }
 // ⏸ Undoing a side task's tick puts you back on it, with the task it paused still waiting.
 function _tripRestore(d) {
